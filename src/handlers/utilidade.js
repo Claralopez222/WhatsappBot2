@@ -3,7 +3,8 @@
  * Comandos: !qrcode, !encurtar, !cep, !tiktok, !audio, !som, !perfil, !menu,
  *           !save, !saverec, !chatgpt, !chat, !gpt, !gemini, !resumo, !explicar,
  *           !poesia, !historia, !letra, !sentimento, !corrigir,
- *           !clima, !moeda, !calcular, !dado, !piada, !fato, !traduzir
+ *           !clima, !moeda, !calcular, !dado, !piada, !fato, !traduzir,
+ *           !morse, !codigomorse, !demorse, !decodificarmorse
  */
 
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
@@ -18,6 +19,28 @@ let logger = { level: 'silent' };
 let REMOVEBG_KEY = process.env.REMOVEBG_KEY || '';
 let _cachedYtDlpPath = null;
 let _cachedFfmpegPath = null;
+
+const MORSE_TABLE = {
+  A: '.-', B: '-...', C: '-.-.', D: '-..', E: '.', F: '..-.', G: '--.', H: '....', I: '..', J: '.---', K: '-.-', L: '.-..', M: '--', N: '-.', O: '---', P: '.--.', Q: '--.-', R: '.-.', S: '...', T: '-', U: '..-', V: '...-', W: '.--', X: '-..-', Y: '-.--', Z: '--..',
+  0: '-----', 1: '.----', 2: '..---', 3: '...--', 4: '....-', 5: '.....', 6: '-....', 7: '--...', 8: '---..', 9: '----.',
+  '.': '.-.-.-', ',': '--..--', '?': '..--..', '!': '-.-.--', ':': '---...', ';': '-.-.-.', "'": '.----.', '"': '.-..-.', '/': '-..-.', '(': '-.--.', ')': '-.--.-', '&': '.-...', '=': '-...-', '+': '.-.-.', '-': '-....-', '_': '..--.-', '@': '.--.-.',
+};
+const MORSE_REVERSE = Object.entries(MORSE_TABLE).reduce((acc, [key, value]) => { acc[value] = key; return acc; }, {});
+
+function encodeMorse(text) {
+  return text.toUpperCase().split('').map((char) => {
+    if (char === ' ') return '/';
+    return MORSE_TABLE[char] || '?';
+  }).join(' ');
+}
+
+function decodeMorse(code) {
+  return code.trim().split(/\s+/).map((token) => {
+    if (token === '/') return ' ';
+    return MORSE_REVERSE[token] || '?';
+  }).join('').replace(/ {2,}/g, ' ');
+}
+
 
 
 
@@ -203,7 +226,6 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
 
 🎨 FIGURINHAS & LOGOS
 ▸ ${P}menufig
-▸ ${P}menulogos
 ▸ ${P}menuefeitos
 
 📥 DOWNLOADS
@@ -211,7 +233,6 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
 
 🛡️ ADMINISTRAÇÃO & SEGURANÇA
 ▸ ${P}menuadm
-▸ ${P}configurar
 ▸ ${P}reportar (marque a msg)
 
 🎮 DIVERSÃO & ENTRETENIMENTO
@@ -245,6 +266,10 @@ async function handleMenuUtil(sock, msg, jid, getPrefix) {
 │ 😂 ${P}piada
 │ 🤓 ${P}fato
 │ 🌐 ${P}traduzir _(idioma) (texto)_
+│ 📡 ${P}codigomorse _(texto)_
+│ 📡 ${P}morse _(texto)_
+│ 📡 ${P}decodificarmorse _(código)_
+│ 📡 ${P}demorse _(código)_
 │
 ╰━━━━━━━⊰ ✧ ⊱━━━━━━━╯`;
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
@@ -362,6 +387,7 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
 │ ▸ ${P}tiktok _(link)_
 │ ▸ ${P}save _(link)_
 │ ▸ ${P}saverec _(link)_ _(recorta 10s p/ sticker)_
+│ ▸ ${P}pinterest _(nome ou link)_
 │
 ╰━━━━━━━━⊰ ✧ ⊱━━━━━━━╯`;
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
@@ -623,6 +649,28 @@ async function handleTraduzir(sock, msg, jid, caption) {
   } catch {
     await sock.sendMessage(jid, { text: '❌ Não consegui traduzir o texto. Tente novamente.' }, { quoted: msg });
   }
+}
+
+async function handleCodigoMorse(sock, msg, jid, caption) {
+  const texto = caption.replace(/^[!.,\/]?(codigomorse|morse)\s*/i, '').trim();
+  if (!texto) {
+    await sock.sendMessage(jid, { text: '⚠️ Use: *!morse texto* ou *!codigomorse texto*' }, { quoted: msg });
+    return;
+  }
+
+  const morse = encodeMorse(texto);
+  await sock.sendMessage(jid, { text: `📡 *Morse*\n\n${morse}` }, { quoted: msg });
+}
+
+async function handleDecodificarMorse(sock, msg, jid, caption) {
+  const texto = caption.replace(/^[!.,\/]?(decodificarmorse|demorse)\s*/i, '').trim();
+  if (!texto) {
+    await sock.sendMessage(jid, { text: '⚠️ Use: *!demorse código* ou *!decodificarmorse código*' }, { quoted: msg });
+    return;
+  }
+
+  const decoded = decodeMorse(texto);
+  await sock.sendMessage(jid, { text: `📡 *Texto*\n\n${decoded}` }, { quoted: msg });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1563,6 +1611,8 @@ module.exports = {
   handleSom,
   handlePlayMp4,
   handlePlayDoc,
+  handleCodigoMorse,
+  handleDecodificarMorse,
   // Perfil
   handlePerfil,
   // IA

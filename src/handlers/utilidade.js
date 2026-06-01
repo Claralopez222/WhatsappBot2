@@ -837,14 +837,31 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 
   const ytdlp = await getYtDlpPath();
   let meta = null;
+  const { tmpdir } = require('os');
+  const tiktokCookiesEnv = process.env.TIKTOK_COOKIES?.trim();
+  let cookieFilePath = null;
+  let cookieTempFile = null;
+  if (tiktokCookiesEnv) {
+    cookieTempFile = path.join(tmpdir(), `tiktok_cookies_${require('crypto').randomUUID()}.txt`);
+    try { fs.writeFileSync(cookieTempFile, tiktokCookiesEnv, 'utf8'); } catch (e) { console.log('Erro ao gravar cookie TikTok em temp:', e.message); }
+    cookieFilePath = cookieTempFile;
+  } else {
+    const localCookies = path.join(__dirname, '../../tiktok_cookies.txt');
+    if (fs.existsSync(localCookies)) cookieFilePath = localCookies;
+  }
+
+  const cleanupCookieFile = () => {
+    if (cookieTempFile) {
+      try { fs.unlinkSync(cookieTempFile); } catch {}
+      cookieTempFile = null;
+    }
+  };
+
   try {
     meta = await new Promise((resolve) => {
       const { execFile } = require('child_process');
       let args = [...getYtDlpArgs(), '--no-playlist', '--skip-download', '--print-json', '-o', 'dummy', link];
-      const cookiesPath = path.join(__dirname, '../../tiktok_cookies.txt');
-      if (fs.existsSync(cookiesPath)) {
-        args.push('--cookies', cookiesPath);
-      }
+      if (cookieFilePath) args.push('--cookies', cookieFilePath);
       execFile(ytdlp, args, { timeout: 30000 }, (err, stdout) => {
         if (!err && stdout) { try { resolve(JSON.parse(stdout.trim())); } catch {} }
         resolve(null);
@@ -856,7 +873,6 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   console.log(`🎵 tiktok: baixando ${link}`);
 
   const { execFile } = require('child_process');
-  const { tmpdir } = require('os');
   const { randomUUID } = require('crypto');
   const ffmpegBin = getFfmpegPath();
   const tmpId = randomUUID();
@@ -866,10 +882,7 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   let dlStderr = '';
   const dlOk = await new Promise((resolve) => {
     const args = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4'];
-    const cookiesPath = path.join(__dirname, '../../tiktok_cookies.txt');
-    if (fs.existsSync(cookiesPath)) {
-      args.push('--cookies', cookiesPath);
-    }
+    if (cookieFilePath) args.push('--cookies', cookieFilePath);
     args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
     args.push('--referer', 'https://www.tiktok.com/');
     args.push('-o', rawPath, link);
@@ -886,10 +899,11 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
     } else {
       await sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.\nVerifique se o link é válido.' }, { quoted: msg });
     }
+    cleanupCookieFile();
     return;
   }
 
-  if (!fs.existsSync(rawPath)) { await sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg }); return; }
+  if (!fs.existsSync(rawPath)) { await sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg }); cleanupCookieFile(); return; }
 
   const encOk = await new Promise((resolve) => {
     const child = execFile(ffmpegBin, [
@@ -930,6 +944,9 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 
   await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  cleanupCookieFile();
+  cleanupCookieFile();
+  cleanupCookieFile();
   console.log('✅ Vídeo TikTok enviado!');
 }
 

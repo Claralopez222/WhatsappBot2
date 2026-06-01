@@ -680,7 +680,7 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'tempo'))        { await grupoHandler.handleTempo(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'antilink'))     { await grupoHandler.handleAntiLink(sock, msg, content, jid, antiLinkGroups, saveData); return; }
   if (matchCmdStart(cmd, 'autosticker'))  { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
-  if (matchCmdStart(cmd, 'reportar'))     { await grupoHandler.handleReportar(sock, msg, content, jid, warnings, contactNames, saveData); return; }
+  if (matchCmdStart(cmd, 'reportar'))     { await grupoHandler.handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid); return; }
   // Novos de grupo
   if (matchCmd(cmdWord, 'grupinfo'))      { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'listaadm'))      { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }

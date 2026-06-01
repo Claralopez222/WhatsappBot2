@@ -3,9 +3,9 @@
 /**
  * Handler de Figurinhas — Piroquinhas Bot
  * Comandos: !s, !f, !desfig, !brat, !figtexto, !attp, !attp2,
- *           !toimg, !togif, !rename, !autorename, !delrename,
- *           !figaleatoria, !figgatos, !figemoji, !figroblox, !figmeme,
- *           !figanime, !figcoreana, !figraiva, !figengracada, !figdesenho,
+ *           !toimg, !togif,
+ *           !figemoji, !figroblox, !figmeme,
+ *           !figcoreana, !figraiva, !figengracada, !figdesenho,
  *           !fig, !pesquisafig, !qc, !qc2, !emojimix, !emoji, !menufig,
  *           !estourar
  */
@@ -39,9 +39,6 @@ const VIDEO_MAX_FRAMES = 56;
 // ─── Logger (substituível externamente) ──────────────────────
 let logger = { level: 'silent' };
 function setLogger(newLogger) { logger = newLogger; }
-
-// ─── autoRename ───────────────────────────────────────────────
-const autoRenameMap = new Map(); // jid → { pack, autor }
 
 // ═══════════════════════════════════════════════════════════════
 // ─── HELPER: detecta WebP animado pelo buffer ─────────────────
@@ -511,58 +508,6 @@ async function handleToGif(sock, msg, content, jid) {
 // (comando !roubar removido)
 
 // ═══════════════════════════════════════════════════════════════
-// ─── !rename / !autorename / !delrename ───────────────────────
-// ═══════════════════════════════════════════════════════════════
-
-async function handleRename(sock, msg, content, jid, caption, stickerCount) {
-  const contextInfo = content.extendedTextMessage?.contextInfo;
-  const quoted      = contextInfo?.quotedMessage;
-
-  if (!quoted?.stickerMessage) {
-    await sock.sendMessage(jid, { text: '⚠️ Responda a uma *figurinha* com !rename pack/autor' }, { quoted: msg });
-    return;
-  }
-
-  const args  = caption.replace(/^[!.,\/]rename\s*/i, '').trim().split('/');
-  const pack  = args[0]?.trim() || 'Piroquinhas';
-  const autor = args[1]?.trim() || 'Bot';
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  const buffer    = await downloadMediaMessage(
-    buildQuotedMsg(jid, contextInfo, quoted),
-    'buffer', {},
-    { logger, reuploadRequest: sock.updateMediaMessage }
-  );
-  const sticker   = await convertImageToSticker(buffer);
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
-  await sock.sendMessage(jid, { sticker });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-}
-
-async function handleAutoRename(sock, msg, jid, caption) {
-  const args  = caption.replace(/^[!.,\/]autorename\s*/i, '').trim().split('/');
-  const pack  = args[0]?.trim();
-  const autor = args[1]?.trim();
-
-  if (!pack && !autor) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!autorename pack/autor*\nEx: *!autorename Memes/BotTop*' }, { quoted: msg });
-    return;
-  }
-
-  autoRenameMap.set(jid, { pack: pack || 'Piroquinhas', autor: autor || 'Bot' });
-  await sock.sendMessage(jid, {
-    text: `✅ AutoRename configurado!\n📦 Pack: *${pack || 'Piroquinhas'}*\n👤 Autor: *${autor || 'Bot'}*`,
-  }, { quoted: msg });
-}
-
-async function handleDelRename(sock, msg, jid) {
-  autoRenameMap.delete(jid);
-  await sock.sendMessage(jid, { text: '✅ AutoRename removido! Voltando ao padrão.' }, { quoted: msg });
-}
-
-// ═══════════════════════════════════════════════════════════════
 // ─── !estourar ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
@@ -858,13 +803,6 @@ async function buscarFigurinha(sock, msg, jid, query, qtd, stickerCount) {
   }
 }
 
-const TEMAS_ALEATORIOS = ['funny','meme','cat','anime','roblox','emoji','cute','reaction','dog','dance'];
-
-async function handleFigAleatoria(sock, msg, jid, stickerCount) {
-  const tema = TEMAS_ALEATORIOS[Math.floor(Math.random() * TEMAS_ALEATORIOS.length)];
-  await buscarFigurinha(sock, msg, jid, tema, 1, stickerCount);
-}
-
 async function handleFigCategoria(sock, msg, jid, caption, cmd, query, stickerCount) {
   const qtd = caption.replace(new RegExp(`^[!.,\/]${cmd}\\s*`, 'i'), '').trim() || '1';
   await buscarFigurinha(sock, msg, jid, query, qtd, stickerCount);
@@ -906,15 +844,8 @@ async function handleMenuFig(sock, msg, jid, getPrefix) {
     `│ ▸ ${P}desfig _— sticker → imagem/vídeo_\n` +
     `│ ▸ ${P}toimg _— alias do !desfig_\n` +
     `│ ▸ ${P}togif _— sticker → gif_\n` +
-    `` +
-    `│ ▸ ${P}rename _pack/autor_\n` +
-    `│ ▸ ${P}autorename _pack/autor_\n` +
-    `│ ▸ ${P}delrename\n` +
     `│ ▸ ${P}estourar _— amplifica áudio_\n` +
-    `│ ▸ ${P}figaleatoria\n` +
-    `│ ▸ ${P}pesquisafig _<tema>_\n` +
-    `│ ▸ ${P}figgatos / figemoji / figmeme\n` +
-    `│ ▸ ${P}figanime / figcoreana / figraiva\n` +
+    `│ ▸ ${P}figemoji / figroblox / figmeme\n` +
     `╰━━━━━━━⊰ ✧ ⊱━━━━━━━╯`;
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
@@ -931,9 +862,6 @@ module.exports = {
   handleDesfig,
   handleToImg,
   handleToGif,
-  handleRename,
-  handleAutoRename,
-  handleDelRename,
   handleEstourar,
   handleBrat,
   handleFigtexto,
@@ -941,7 +869,6 @@ module.exports = {
   handleQc,
   handleEmojiMix,
   handleEmoji,
-  handleFigAleatoria,
   handleFigCategoria,
   handlePesquisaFig,
   handleMenuFig,

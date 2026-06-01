@@ -477,6 +477,10 @@ async function handleMessage(sock, msg) {
 
   if (matchCmdStart(cmd, 'traduzir ') || matchCmd(cmdWord, 'traduzir'))
     { await utilidadeHandler.handleTraduzir(sock, msg, jid, caption); return; }
+  if (matchCmdStart(cmd, 'codigomorse ') || matchCmd(cmdWord, 'codigomorse') || matchCmdStart(cmd, 'morse ') || matchCmd(cmdWord, 'morse'))
+    { await utilidadeHandler.handleCodigoMorse(sock, msg, jid, caption); return; }
+  if (matchCmdStart(cmd, 'decodificarmorse ') || matchCmd(cmdWord, 'decodificarmorse') || matchCmdStart(cmd, 'demorse ') || matchCmd(cmdWord, 'demorse'))
+    { await utilidadeHandler.handleDecodificarMorse(sock, msg, jid, caption); return; }
 
   // ── IA ────────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'chatgpt ') || matchCmd(cmdWord, 'chatgpt'))
@@ -517,6 +521,8 @@ async function handleMessage(sock, msg) {
     { await utilidadeHandler.handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic); return; }
   if (matchCmd(cmdWord, 'playdoc'))
     { await utilidadeHandler.handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic); return; }
+  if (matchCmd(cmdWord, 'pinterest') || matchCmd(cmdWord, 'pinterest2'))
+    { await downloadsHandler.handlePinterest(sock, msg, jid, caption); return; }
 
   // ── PERFIL ────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'perfil'))

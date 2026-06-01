@@ -644,6 +644,12 @@ async function handleBaterFalta(sock, msg, jid, author, senderJid) {
     `🎯 GOLAÇO DE PLACA! *${state.cobrador}* encobriu o goleiro! Obra prima do caralho! ⭐`,
     `🤡 *${state.cobrador}* chutou e escorregou antes de bater! Todo mundo gargalhou! 😂`,
     `😤 A bola passou a 2 metros do gol. Que cobrança horrível! Vai fazer aula! 💀`,
+    `🔥 QUE GOLAÇO PORRADA! *${state.cobrador}* mandou no canto de forma DESUMANA! MUUUIIITO BOM! ⚡`,
+    `😈 PUTA QUE PARIU! A bola saiu com efeito impossível! *${state.cobrador}* é um DEUS! 🙏`,
+    `💀 *${state.cobrador}* virou as costas pro goleiro e meteu uma rabona SEM OLHAR! Que filho da puta bom! 🔥`,
+    `😂 A bola bateu na cabeça do árbitro! *${state.cobrador}* é um merda, mas acertou! VAI UM GOOOOL! 🎯`,
+    `🍆 *${state.cobrador}* chutou com tanta força que a bola saiu FOGO! *${state.time}* vence! Que tarado! ⚡`,
+    `🥵 O goleiro tava de calça baixa e apanhou na BOLA! *${state.cobrador}* goleada! Que porrada criativa! 💥`,
   ];
 
   await sock.sendMessage(jid, {
@@ -672,6 +678,20 @@ async function handleEuNunca(sock, msg, jid) {
     '🔞 Eu nunca apaguei o histórico do celular antes de emprestar... quem já fez, BEBE DOBRADO!',
     '🤡 Eu nunca fingi estar sem sinal pra não responder alguém... quem já fez, bebe!',
     '🍕 Eu nunca comi a comida de outra pessoa da geladeira... quem já fez, bebe!',
+    '💦 Eu nunca transei no carro, banheiro público ou lugar aleatório... quem já fez, BEBE TRIPLO!',
+    '🔥 Eu nunca enviei nudes pra alguém... quem já fez, bebe DOBRADO!',
+    '😈 Eu nunca fiz sexo sem camisinha com alguém (conhecida)... quem já fez, bebe DOBRADO!',
+    '🍆 Eu nunca transei em festa, balada ou dentro de um carro em movimento... quem já fez, BEBE TRIPLO!',
+    '🍑 Eu nunca traí alguém... quem já fez, bebe DOBRADO!',
+    '👅 Eu nunca fiz sexo oral... quem já fez, bebe!',
+    '💢 Eu nunca bati uma raiva de alguém tão forte que mandei um "vai se fuder"... quem já fez, bebe!',
+    '🥵 Eu nunca peguei alguém em uma situação bem comprometedora... quem já fez, bebe DOBRADO!',
+    '😤 Eu nunca xinguei meus pais/chefe mentalmente durante uma conversa... quem já fez, bebe!',
+    '🤐 Eu nunca fiz algo tão ruim que temi contar pra mãe... quem já fez, bebe DOBRADO!',
+    '🔞 Eu nunca masturbei em lugar público (banheiro, quarto de hóspede)... quem já fez, bebe!',
+    '💔 Eu nunca beijei alguém enquanto estava em um relacionamento... quem já fez, bebe TRIPLO!',
+    '🍻 Eu nunca fui tão bêbado que não lembrava de nada no dia seguinte... quem já fez, bebe!',
+    '😏 Eu nunca tive um "caso" com alguém do trabalho ou família amiga... quem já fez, bebe DOBRADO!',
   ];
 
   await sock.sendMessage(jid, {
@@ -898,6 +918,18 @@ async function handleVerdadeOuDesafio(sock, msg, content, jid, author) {
     `🔴 Verdade: *${nome}*, qual foi a última vez que você mentiu pra um amigo próximo? 🤫`,
     `🔴 Verdade: *${nome}*, você já traiu? Pode falar! 👀`,
     `🔴 Verdade: *${nome}*, qual é a fantasia mais estranha que você já teve? 😏`,
+    `🔴 Verdade: *${nome}*, você já se masturbou pensando em alguém aqui do grupo? 🔥`,
+    `🔴 Verdade: *${nome}*, qual o pior nome que já chamaram você na cama? 😈`,
+    `🔴 Verdade: *${nome}*, qual foi a posição mais maluca que você já fez? 🔞`,
+    `🔴 Verdade: *${nome}*, você já transou com alguém aqui do grupo ou quer? 👀`,
+    `🔴 Verdade: *${nome}*, qual é sua maior fetiche sexual? 🔥😏`,
+    `🔴 Verdade: *${nome}*, você faz coisa MUITO errada quando bebe ou fuma? 💨🍺`,
+    `🔴 Verdade: *${nome}*, qual foi o maior chifre que você deu ou levou? 💔`,
+    `🔴 Verdade: *${nome}*, você já pagou por sexo ou conhece alguém que pagou? 💸`,
+    `🔴 Verdade: *${nome}*, qual é a coisa mais nojenta que você já fez na intimidade? 🤢`,
+    `🔴 Verdade: *${nome}*, você abusaria de alguém aqui se soubesse que ninguém ficaria sabendo? 😈👀`,
+    `🔴 Verdade: *${nome}*, qual a pessoa aqui que você mais teria interesse sexual? 🔞`,
+    `🔴 Verdade: *${nome}*, você já foi apanhado(a) se masturbando ou fazendo sexo? 😳💀`,
   ];
 
   const desafios = [
@@ -911,6 +943,16 @@ async function handleVerdadeOuDesafio(sock, msg, content, jid, author) {
     `🟢 Desafio: *${nome}*, manda mensagem pro contato mais antigo da conversa! 💬`,
     `🟢 Desafio: *${nome}*, faz uma dança constrangedora e manda o vídeo aqui! 💃`,
     `🟢 Desafio: *${nome}*, chama o contato aleatório da agenda e fala que tá com saudade! 😂`,
+    `🟢 Desafio: *${nome}*, tira uma foto sua com roupa mínima (só sunga/calcinha) e manda! 🔞`,
+    `🟢 Desafio: *${nome}*, manda um áudio sexy/sensual pra alguém da agenda AGORA! 🔥`,
+    `🟢 Desafio: *${nome}*, confessa seu maior segredo sexual pro grupo! 😈`,
+    `🟢 Desafio: *${nome}*, manda foto ou vídeo beijando o espelho ou a câmera! 💋`,
+    `🟢 Desafio: *${nome}*, posta uma selfie sensual na sua história do WhatsApp! 🔥`,
+    `🟢 Desafio: *${nome}*, faz 20 flexões ou agachamentos SEM ROUPA e prova com vídeo! 💪🔞`,
+    `🟢 Desafio: *${nome}*, chama a pessoa que mais curte daqui e fala que quer conhecer melhor (com intenção)! 👀`,
+    `🟢 Desafio: *${nome}*, manda mensagem pro seu maior crush admitindo interesse AGORA! 💘`,
+    `🟢 Desafio: *${nome}*, fala um palavrão bem gritado num áudio! 💀`,
+    `🟢 Desafio: *${nome}*, se beija no espelho e manda vídeo! 😏💋`,
   ];
 
   const all = [...verdades, ...desafios];
@@ -943,6 +985,17 @@ async function handleConfissao(sock, msg, content, jid, author) {
     `🤡 *${nome}* confessa: já curtiu foto antiga do ex(a) acidentalmente e entrou em pânico! ❤️💀`,
     `😳 *${nome}* confessa: já respondeu "você também" quando o garçom disse "bom apetite"! 😂`,
     `💀 *${nome}* confessa: já inventou que estava doente pra faltar no trabalho/escola e foi pego(a)! 🤒`,
+    `🔥 *${nome}* confessa: já se masturbou na casa de um(a) amigo(a)! 🙈`,
+    `😈 *${nome}* confessa: já transou com alguém aqui enquanto estava em outro relacionamento! 💔`,
+    `🍆 *${nome}* confessa: já conversou sexy com alguém da família amiga! 🔞`,
+    `🥵 *${nome}* confessa: já foi apanhado(a) fazendo sexo e quase foi descoberto(a)! 💀`,
+    `🤐 *${nome}* confessa: já viu a privada de alguém e fez coisa indevida lá! 🚽😂`,
+    `😳 *${nome}* confessa: já traiu alguém com o melhor amigo(a) do casal! 👀💔`,
+    `🍺 *${nome}* confessa: já foi tão bêbado(a) que fez coisas MUITO erradas e mal lembra! 🥴`,
+    `💢 *${nome}* confessa: já falou coisa MUITO pesada no tédio/raiva de alguém aqui! 💀`,
+    `🔞 *${nome}* confessa: já viu conteúdo pornô bem pesado (MUITO pesado mesmo)! 📱🙈`,
+    `😈 *${nome}* confessa: já pediu foto intima de alguém e guardou escondido! 📸`,
+    `👀 *${nome}* confessa: já fantasiou sexualmente com alguém aqui e isso deixa constrangido(a)! 😳`,
   ];
 
   await sock.sendMessage(jid, {
@@ -970,6 +1023,11 @@ async function handleJulgamento(sock, msg, content, jid, author, contactNames) {
     `⚖️ *${nome}* foi julgado(a) por: sempre discordar de tudo sem ter argumento! Pena: ficar quieto(a)! 🤐`,
     `⚖️ *${nome}* foi julgado(a) por: nunca pagar a conta! Condenado(a) a pagar as próximas 5! 💸`,
     `⚖️ *${nome}* foi julgado(a) por: ser a melhor pessoa do grupo! Absolvido(a) com louvor! 🏆`,
+    `⚖️ *${nome}* foi julgado(a) por: ser o/a mais safado(a) do grupo! Absolvido(a) porque todos invejam! 🔥`,
+    `⚖️ *${nome}* foi julgado(a) por: contar histórias safadas e deixar todos com tesão! Condenado(a) a contar mais! 😈`,
+    `⚖️ *${nome}* foi julgado(a) por: beijar na boca todo mundo do grupo! Absolvido(a) por criatividade! 💋`,
+    `⚖️ *${nome}* foi julgado(a) por: tentar pegar múltiplos parceiros ao mesmo tempo! Mereceu promoção! 🤡`,
+    `⚖️ *${nome}* foi julgado(a) por: mandar mensagens picantes sem avisar! Condenado(a) a pagar drinks! 🍺`,
   ];
 
   await sock.sendMessage(jid, {
@@ -989,12 +1047,14 @@ async function handlePodre(sock, msg, content, jid, author) {
 
   let emoji, frase;
   if (pct <= 10)      { emoji = '😇'; frase = 'Praticamente um anjinho! Mas o lado sombrio tá chegando... 👀'; }
-  else if (pct <= 30) { emoji = '😏'; frase = 'Só um pouquinho podre! Mas o pessoal já desconfia!'; }
-  else if (pct <= 50) { emoji = '🍑'; frase = 'Na metade! Uma boa mentirinha aqui, uma safadeza ali...'; }
-  else if (pct <= 70) { emoji = '💩'; frase = 'Bastante podre! Esse(a) aqui tem segredo! 🤫'; }
-  else if (pct <= 89) { emoji = '🔞'; frase = 'MUITO podre! O histórico desse celular não pode ser visto! 📱💀'; }
-  else if (pct <= 99) { emoji = '☠️'; frase = 'Podridão total! O pastor chora se souber! 😂'; }
-  else                { emoji = '😈'; frase = '100%! SATANÁS EM PESSOA! Já entregou a alma pro capeta!'; }
+  else if (pct <= 20) { emoji = '😏'; frase = 'Só um pouquinho podre! Mas o pessoal já desconfia! Bravos!'; }
+  else if (pct <= 35) { emoji = '🍑'; frase = 'Na metade! Uma boa mentirinha aqui, uma safadeza ali... Tá começando!'; }
+  else if (pct <= 50) { emoji = '🔥'; frase = 'Bastante podre! Esse(a) faz coisa errada MUITO na cama! 😈'; }
+  else if (pct <= 65) { emoji = '💩'; frase = 'PODRE DEMAIS! Histórico de traições, sexo casual e mentiras! Bravo(a)! 😂'; }
+  else if (pct <= 79) { emoji = '🔞'; frase = 'MUITO podre! O histórico desse celular não pode ser visto! Tem coisa MUITO pesada ali! 📱💀'; }
+  else if (pct <= 92) { emoji = '☠️'; frase = 'Podridão total! Já ficou com gente daqui, tá mentindo pra parceiro(a)! O pastor chora! 😂'; }
+  else if (pct <= 99) { emoji = '😈'; frase = '99% PODRE! Transou com múltiplos(as), fez COISA PESADA, tá devendo a todo mundo! 🔥💀'; }
+  else                { emoji = '👿'; frase = '100%! SATANÁS EM PESSOA! Tá aqui no grupo fingindo pureza mas faz TUDO! Entregou a alma pro capeta MESMO! 🔥😈'; }
 
   const filled = Math.round(pct / 10);
   const barra = '🟫'.repeat(filled) + '⬜'.repeat(10 - filled);
@@ -1052,6 +1112,16 @@ async function handleMaldizer(sock, msg, content, jid, author) {
     `🌧️ Que *${nome}* sempre esqueça o guarda-chuva nos dias de chuva!`,
     `🤡 Que todo link que *${nome}* clicar abra propaganda!`,
     `💩 Que o WiFi de *${nome}* caia sempre na melhor parte do filme!`,
+    `🔥 Que *${nome}* perda a voz SEMPRE na hora de se declarar pro crush! Imagina a constrangimento!`,
+    `🔞 Que *${nome}* tenha que fazer xixi com a porta aberta SEMPRE que tiver gente em casa! 😂`,
+    `💀 Que o preservativo de *${nome}* SEMPRE fure na hora mais importante! Boa sorte! 😈`,
+    `😳 Que *${nome}* sempre envie mensagem no grupo errado! Especialmente as PICANTES! 📱🔥`,
+    `🍆 Que *${nome}* fique de tesão SEMPRE em hora inapropriada (trabalho, escola, família)! 🥵`,
+    `👀 Que todo mundo descubra o maior tabu sexual de *${nome}*! Que constrangimento! 😂`,
+    `💔 Que *${nome}* sempre lembre de ex(a) na hora mais inapropriada (com novo(a) parceiro(a))! Boa sorte! 💀`,
+    `😈 Que *${nome}* tenha que fazer xixi com urgência SEMPRE no meio de uma situação constrangedora! 🚽`,
+    `📸 Que alguém envie foto de *${nome}* dormindo e posta em algum lugar! Que humilhação! 😂`,
+    `🔥 Que *${nome}* sempre seja visto(a) com roupa chamativa por alguém que quer! Constrangedor! 😳`,
   ];
 
   await sock.sendMessage(jid, {
@@ -1080,6 +1150,12 @@ async function handleFortuna(sock, msg, content, jid, author) {
     `🥠 *${nome}*, seu biscoito diz: "Sucesso é seu destino... mas o GPS tá travado!" 🗺️`,
     `🥠 *${nome}*, seu biscoito diz: "Cuidado com falsas amizades... algumas estão nesse grupo agora!" 👀`,
     `🥠 *${nome}*, seu biscoito diz: "Grande conquista vem aí... mas vai custar caro demais!" 💸`,
+    `🔥 *${nome}*, seu biscoito diz: "Seu sexo hoje será... INEXISTENTE! Boa sorte!" 🤐`,
+    `💀 *${nome}*, seu biscoito diz: "Você vai ser apanhado(a) fazendo coisa MUITO errada em breve!" 😈`,
+    `😳 *${nome}*, seu biscoito diz: "Seu maior segredo será descoberto... e é bem constrangedor!" 🤫`,
+    `🍆 *${nome}*, seu biscoito diz: "O sexo que você vai ter... será MUITO ESTRANHO!" 🔞`,
+    `🤐 *${nome}*, seu biscoito diz: "Uma pessoa aqui quer você... e é alguém que você NUNCA esperaria!" 👀`,
+    `💔 *${nome}*, seu biscoito diz: "Você vai ser traído(a)... e o(a) traidor(a) é alguém perto!" 😈`,
   ];
 
   await sock.sendMessage(jid, {
@@ -1107,23 +1183,36 @@ async function handleCompatibilidade(sock, msg, content, jid, author, contactNam
   const amizade  = (seed * 3 + 7) % 101;
   const trabalho = (seed * 7 + 13) % 101;
   const briga    = (seed * 11 + 5) % 101;
+  const sexo     = (seed * 13 + 11) % 101;
+  const traicao  = (seed * 17 + 19) % 101;
 
   const getBar = (pct) => '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
 
-  const conclusao = amor > 70 && briga < 40
-    ? `🏆 Casal perfeito! Já marca a festa, filhos da puta!`
-    : amor > 50
-    ? `💛 Pode dar certo com paciência. Muito paciência!`
-    : briga > 70
-    ? `💢 Esses dois se matam em 1 semana! ⚔️`
-    : `😐 Meh. Nem como amigos funciona direito!`;
+  let conclusao;
+  if (amor > 70 && briga < 40 && sexo > 60) {
+    conclusao = `🏆 Casal MUITO PICANTE! Já marca a festa com roupa de menos, filhos da puta!`;
+  } else if (amor > 70 && briga < 40) {
+    conclusao = `🏆 Casal perfeito! Já marca a festa, filhos da puta!`;
+  } else if (amor > 50 && sexo > 50) {
+    conclusao = `💛 Pode dar certo! E o sexo vai ser MUITO BOM!`;
+  } else if (amor > 50) {
+    conclusao = `💛 Pode dar certo com paciência. Muito paciência!`;
+  } else if (briga > 70) {
+    conclusao = `💢 Esses dois se matam em 1 semana! Literalmente! ⚔️`;
+  } else if (traicao > 75) {
+    conclusao = `💔 Um vai trair o outro MUITO rapidinho! Já começa errado!`;
+  } else {
+    conclusao = `😐 Meh. Nem como amigos funciona direito!`;
+  }
 
   await sock.sendMessage(jid, {
     text: `💑 *COMPATIBILIDADE: ${author} + @${alvoJid.split('@')[0]}*\n\n` +
       `❤️ Amor:     ${getBar(amor)} ${amor}%\n` +
       `🤝 Amizade:  ${getBar(amizade)} ${amizade}%\n` +
       `💼 Trabalho: ${getBar(trabalho)} ${trabalho}%\n` +
-      `🥊 Briga:    ${getBar(briga)} ${briga}%\n\n` +
+      `🥊 Briga:    ${getBar(briga)} ${briga}%\n` +
+      `🍆 Sexo:     ${getBar(sexo)} ${sexo}%\n` +
+      `💔 Traição:  ${getBar(traicao)} ${traicao}%\n\n` +
       `_${conclusao}_`,
     mentions: [alvoJid],
   }, { quoted: msg });

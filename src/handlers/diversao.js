@@ -5,7 +5,7 @@
  *           !tiro, !morte, !roletarussa, !roletarussa2, !roletarussa3,
  *           !falta, !baterfalta, !eununca, !quiz, !pontos, !rankjogos,
  *           !anagrama, !ppt, !brincadeiras,
- *           [NOVOS] !verdadeoudesafio, !confissao, !julgamento, !podre,
+ *           [NOVOS] !verdadeoudesafio, !confissao, !julgamento, !podre
  *                   !frango, !maldizer, !fortuna, !compatibilidade
  */
 

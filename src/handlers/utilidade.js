@@ -1,10 +1,8 @@
 /**
  * Handler de Utilidade — Piroquinhas Bot
  * Comandos: !qrcode, !encurtar, !cep, !tiktok, !audio, !som, !perfil, !menu,
- *           !save, !saverec, !chatgpt, !chat, !gpt, !gemini, !resumo, !explicar,
- *           !poesia, !historia, !letra, !sentimento, !corrigir,
- *           !clima, !moeda, !calcular, !dado, !piada, !fato, !traduzir,
- *           !morse, !codigomorse, !demorse, !decodificarmorse
+ *           !save, !saverec, !clima, !moeda, !calcular, !dado, !piada, !fato,
+ *           !traduzir, !morse, !codigomorse, !demorse, !decodificarmorse
  */
 
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
@@ -244,8 +242,8 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
 ▸ ${P}alteradores
 
 🔧 UTILIDADES
-▸ ${P}menuutil`;
-
+▸ ${P}menuutil
+╰━━━━━━━⊰ ✧ ⊱━━━━━━━╯`;
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
   console.log('📋 Menu enviado');
 }
@@ -392,36 +390,6 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
 ╰━━━━━━━━⊰ ✧ ⊱━━━━━━━╯`;
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
   console.log('📥 Menu downloads enviado');
-}
-
-// ─── !menuia ─────────────────────────────────────────────────
-async function handleMenuIa(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
-  const menu = `╭━━━━━━━━━━━━━━━━━━╮
-│  🧠 *MENU INTELIGÊNCIA ARTIFICIAL* 🧠
-│
-│ 🤖 *CHAT:*
-│ ▸ ${P}chat _(pergunta)_
-│ ▸ ${P}gpt _(pergunta)_
-│ ▸ ${P}gemini _(pergunta)_
-│
-│ 🎓 *EDUCAÇÃO:*
-│ ▸ ${P}resumo _(texto)_
-│ ▸ ${P}explicar _(tema)_
-│ ▸ ${P}corrigir _(texto)_
-│
-│ ✍️ *CRIAÇÃO:*
-│ ▸ ${P}poesia _(tema)_
-│ ▸ ${P}historia _(tema)_
-│ ▸ ${P}letra _(nome da música)_
-│
-│ 🎯 *ANÁLISE:*
-│ ▸ ${P}sentimento _(texto)_
-│ ▸ ${P}traduzir _(idioma) (texto)_
-│
-╰━━━━━━━⊰ ✧ ⊱━━━━━━━╯`;
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
-  console.log('🧠 Menu IA enviado');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -707,7 +675,7 @@ async function handleSave(sock, msg, jid, caption) {
 
   const dlOk = await new Promise((resolve) => {
     const baseArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m'];
-    if (link.includes('pinterest')) {
+    if (link.includes('pinterest') || link.includes('pin.it')) {
       baseArgs.push('--referer', 'https://www.pinterest.com', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
     }
     baseArgs.push('-o', outTemplate, link);
@@ -814,7 +782,11 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const outTemplate = path.join(tmpdir(), `${tmpId}_raw.%(ext)s`);
 
   const dlOk = await new Promise((resolve) => {
-    const args = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m', '-o', outTemplate, link];
+    const args = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m'];
+    if (link.includes('pinterest') || link.includes('pin.it')) {
+      args.push('--referer', 'https://www.pinterest.com', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    }
+    args.push('-o', outTemplate, link);
     execFile(ytdlp, args, { timeout: 120000 }, (err, _stdout, stderr) => {
       if (err) { console.log('yt-dlp saverec err:', stderr?.slice(-400)); resolve(false); } else resolve(true);
     });
@@ -893,11 +865,14 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 
   let dlStderr = '';
   const dlOk = await new Promise((resolve) => {
-    let args = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4', '--extractor-args', 'tiktok:api_hostname=api22-normal-c-useast2a.tiktokv.com;app_version=26.1.3;manifest_app_version=2613', '-o', rawPath, link];
+    const args = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4'];
     const cookiesPath = path.join(__dirname, '../../tiktok_cookies.txt');
     if (fs.existsSync(cookiesPath)) {
       args.push('--cookies', cookiesPath);
     }
+    args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+    args.push('--referer', 'https://www.tiktok.com/');
+    args.push('-o', rawPath, link);
     execFile(ytdlp, args, { timeout: 60000 }, (err, _stdout, stderr) => {
       dlStderr = stderr || '';
       if (err) { console.log('yt-dlp tiktok err:', stderr?.slice(-400)); resolve(false); } else resolve(true);
@@ -1244,139 +1219,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── IA / CHAT ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
-async function handleChatGPT(sock, msg, jid, caption) {
-  const prompt = caption.replace(/^[!.,\/]chatgpt\s*/i, '').trim();
-  if (!prompt) { await sock.sendMessage(jid, { text: '⚠️ Envie uma pergunta. Exemplo: *!chatgpt O que é IA?*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: prompt }], max_tokens: 500 }),
-    });
-    const text = response?.choices?.[0]?.message?.content?.trim() || 'Sem resposta da API.';
-    await sock.sendMessage(jid, { text: `🤖 *ChatGPT:*\n\n${text}` }, { quoted: msg });
-  } catch (error) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao consultar o ChatGPT: ' + error.message }, { quoted: msg });
-  }
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-}
-
-async function handleChat(sock, msg, jid, caption) {
-  const question = caption.replace(/^[!.,\/]chat\s*/i, '').trim();
-  if (!question) { await sock.sendMessage(jid, { text: '⚠️ Faça uma pergunta. Exemplo: *!chat qual é a capital do Brasil?*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.cohere.ai/v1/chat', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${COHERE_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: question, model: 'command', max_tokens: 200 }),
-    });
-    const text = response?.text || response?.reply || 'Sem resposta da API.';
-    await sock.sendMessage(jid, { text: `🤖 *Resposta:*\n\n${text}` }, { quoted: msg });
-  } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao conectar com IA.' }, { quoted: msg });
-  }
-}
-
-async function handleGpt(sock, msg, jid, caption) {
-  const question = caption.replace(/^[!.,\/]gpt\s*/i, '').trim();
-  if (!question) { await sock.sendMessage(jid, { text: '⚠️ Faça uma pergunta. Exemplo: *!gpt explique relatividade*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: question }], max_tokens: 500 }),
-    });
-    const text = response?.choices?.[0]?.message?.content?.trim() || 'Sem resposta da API.';
-    await sock.sendMessage(jid, { text: `📝 *GPT Resposta:*\n\n${text}` }, { quoted: msg });
-  } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao conectar com GPT.' }, { quoted: msg });
-  }
-}
-
-async function handleGemini(sock, msg, jid, caption) {
-  const question = caption.replace(/^[!.,\/]gemini\s*/i, '').trim();
-  if (!question) { await sock.sendMessage(jid, { text: '⚠️ Faça uma pergunta. Exemplo: *!gemini qual é a maior montanha?*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: question }] }] }),
-    });
-    const text = response?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'Sem resposta da API.';
-    await sock.sendMessage(jid, { text: `✨ *Gemini Resposta:*\n\n${text}` }, { quoted: msg });
-  } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao conectar com Gemini: ' + e.message }, { quoted: msg });
-  }
-}
-
-async function handleResumo(sock, msg, jid, caption) {
-  const text = caption.replace(/^[!.,\/]resumo\s*/i, '').trim();
-  if (!text || text.length < 20) { await sock.sendMessage(jid, { text: '⚠️ Envie um texto longo para resumir.' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: `Resuma o seguinte texto em 3 linhas:\n\n${text}` }], max_tokens: 150 }),
-    });
-    const resumo = response.choices?.[0]?.message?.content || '❌ Sem resposta.';
-    await sock.sendMessage(jid, { text: `📌 *Resumo:*\n\n${resumo}` }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao resumir.' }, { quoted: msg }); }
-}
-
-async function handleExplicar(sock, msg, jid, caption) {
-  const tema = caption.replace(/^[!.,\/]explicar\s*/i, '').trim();
-  if (!tema) { await sock.sendMessage(jid, { text: '⚠️ Especifique o tema. Exemplo: *!explicar fotossíntese*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: `Explique de forma simples e clara: ${tema}` }], max_tokens: 300 }),
-    });
-    const explicacao = response.choices?.[0]?.message?.content || '❌ Sem resposta.';
-    await sock.sendMessage(jid, { text: `📖 *Explicação:*\n\n${explicacao}` }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao explicar.' }, { quoted: msg }); }
-}
-
-async function handlePoesia(sock, msg, jid, caption) {
-  const tema = caption.replace(/^[!.,\/]poesia\s*/i, '').trim();
-  if (!tema) { await sock.sendMessage(jid, { text: '⚠️ Especifique o tema. Exemplo: *!poesia amor*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: `Crie uma poesia bela e criativa sobre: ${tema}` }], max_tokens: 300 }),
-    });
-    const poesia = response.choices?.[0]?.message?.content || '❌ Sem resposta.';
-    await sock.sendMessage(jid, { text: `✨ *Poesia:*\n\n${poesia}` }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao gerar poesia.' }, { quoted: msg }); }
-}
-
-async function handleHistoria(sock, msg, jid, caption) {
-  const tema = caption.replace(/^[!.,\/]historia\s*/i, '').trim();
-  if (!tema) { await sock.sendMessage(jid, { text: '⚠️ Especifique o tema. Exemplo: *!historia um jovem aventureiro*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: `Crie uma história curta e interessante sobre: ${tema}` }], max_tokens: 400 }),
-    });
-    const historia = response.choices?.[0]?.message?.content || '❌ Sem resposta.';
-    await sock.sendMessage(jid, { text: `📚 *História:*\n\n${historia}` }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao gerar história.' }, { quoted: msg }); }
-}
-
 async function tryFetchLyricsFromRandomApi(tema) {
   const queries = [
     tema,
@@ -1451,133 +1293,12 @@ async function handleLetra(sock, msg, jid, caption) {
     }
   } catch (err) {
     console.log(`⚠️ Letra não encontrada para "${tema}":`, err.message);
-    try {
-      const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: [{ role: 'user', content: `Crie uma letra de música criativa sobre: ${tema}. Se possível, inclua o título e o artista.` }],
-          max_tokens: 500,
-        }),
-      });
-
-      if (response?.error) throw new Error(response.error.message || 'Erro na API OpenAI.');
-      const letra = response.choices?.[0]?.message?.content?.trim();
-      if (!letra) throw new Error('Resposta vazia da API OpenAI.');
-
-      await sock.sendMessage(jid, { text: `🎵 *Letra Criada:*\n\n${letra}` }, { quoted: msg });
-    } catch (error) {
-      const message = error?.message || 'Não foi possível obter a letra.';
-      await sock.sendMessage(jid, {
-        text: `❌ Não foi possível obter a letra. Tente usar o formato: *!letra artista - música*\n\n${message}`,
-      }, { quoted: msg });
-    }
+    await sock.sendMessage(jid, {
+      text: '❌ Não foi possível obter a letra. Tente usar o formato: *!letra artista - música*',
+    }, { quoted: msg });
   }
 }
 
-async function handleSentimento(sock, msg, jid, caption) {
-  const texto = caption.replace(/^[!.,\/]sentimento\s*/i, '').trim();
-  if (!texto) { await sock.sendMessage(jid, { text: '⚠️ Envie um texto. Exemplo: *!sentimento estou muito feliz hoje*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: `Analise o sentimento do texto (positivo/negativo/neutro) e explique brevemente:\n\n${texto}` }], max_tokens: 100 }),
-    });
-    const analise = response.choices?.[0]?.message?.content || '❌ Sem resposta.';
-    await sock.sendMessage(jid, { text: `💭 *Análise de Sentimento:*\n\n${analise}` }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao analisar sentimento.' }, { quoted: msg }); }
-}
-
-async function handleCorrigir(sock, msg, jid, caption) {
-  const texto = caption.replace(/^[!.,\/]corrigir\s*/i, '').trim();
-  if (!texto) { await sock.sendMessage(jid, { text: '⚠️ Envie um texto. Exemplo: *!corrigir eu vou la amanha*' }, { quoted: msg }); return; }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  try {
-    const response = await fetchJson('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: `Corrija os erros de português e mostre as correções:\n\n${texto}` }], max_tokens: 200 }),
-    });
-    const corrigido = response.choices?.[0]?.message?.content || '❌ Sem resposta.';
-    await sock.sendMessage(jid, { text: `✅ *Texto Corrigido:*\n\n${corrigido}` }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao corrigir.' }, { quoted: msg }); }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── FUTEBOL & ESPORTES ──────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
-async function handleBrasileirao(sock, msg, jid) {
-  const key = process.env.FOOTBALL_DATA_KEY;
-  if (!key) { await sock.sendMessage(jid, { text: '⚠️ Configure FOOTBALL_DATA_KEY para usar esta função.' }, { quoted: msg }); return; }
-  try {
-    const url = 'https://api.football-data.org/v2/competitions/BR1/matches?status=SCHEDULED&limit=5';
-    const data = await fetchJson(url, { 'X-Auth-Token': key });
-    const matches = data.matches || [];
-    let texto = '⚽ *BRASILEIRÃO* ⚽\n\nPróximas partidas:';
-    for (const m of matches) {
-      const date = new Date(m.utcDate).toLocaleString('pt-BR', { hour: '2-digit', minute:'2-digit' });
-      texto += `\n• ${date} ${m.homeTeam.name} x ${m.awayTeam.name}`;
-    }
-    texto += `\n\n🕒 Atualizado: ${new Date().toLocaleString('pt-BR')}`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao consultar API do Brasileirão.' }, { quoted: msg }); }
-}
-
-async function handleOndePassa(sock, msg, jid) {
-  const texto = `📺 *ONDE PASSA* 📺\n\nAs partidas são geralmente transmitidas em:\n• Premiere / Globoplay (Brasileirão)\n• TNT Sports (Libertadores)\n• ESPN / Star+ (Premier League)\n• SporTV (Copas nacionais)\n\n⁉️ Consulte sua operadora ou serviço de streaming.`;
-  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-}
-
-async function handlePartidas(sock, msg, jid) {
-  const key = process.env.FOOTBALL_DATA_KEY;
-  if (!key) { await sock.sendMessage(jid, { text: '⚠️ Configure FOOTBALL_DATA_KEY.' }, { quoted: msg }); return; }
-  try {
-    const comps = [
-      { id: 'CBD', name: 'Copa do Brasil' },
-      { id: 'LIB', name: 'Copa Libertadores da América' },
-      { id: 'PL',  name: 'Premier League' },
-      { id: 'SUL', name: 'Copa Sulamericana' }
-    ];
-    const now = new Date();
-    const dateStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
-    let texto = `⚽ *JOGOS DE HOJE* ⚽\n📅 *${dateStr}*\n`;
-    let total = 0;
-    for (const comp of comps) {
-      const url = `https://api.football-data.org/v2/competitions/${comp.id}/matches?dateFrom=${dateStr}&dateTo=${dateStr}`;
-      const data = await fetchJson(url, { 'X-Auth-Token': key });
-      const matches = data.matches || [];
-      if (matches.length) {
-        texto += `\n🏆 *${comp.name}*\n`;
-        for (const m of matches) {
-          const time = new Date(m.utcDate).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
-          texto += `🕐 ${time} ${m.homeTeam.name} x ${m.awayTeam.name}\n`;
-          total++;
-        }
-      }
-    }
-    texto += `\n📊 Total: ${total} jogos hoje`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao buscar partidas.' }, { quoted: msg }); }
-}
-
-async function handleEsporteNoticias(sock, msg, jid) {
-  const apiKey = process.env.NEWS_API_KEY;
-  if (!apiKey) { await sock.sendMessage(jid, { text: '⚠️ Configure NEWS_API_KEY para buscar notícias.' }, { quoted: msg }); return; }
-  try {
-    const url = `https://newsapi.org/v2/everything?q=futebol+brasil&language=pt&apiKey=${apiKey}&pageSize=5`;
-    const data = await fetchJson(url);
-    const articles = data.articles || [];
-    let texto = '📰 *NOTÍCIAS DO ESPORTE*\n';
-    for (const a of articles) {
-      texto += `\n• ${a.title} (${a.source.name})\n${a.url}\n`;
-    }
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Erro ao buscar notícias.' }, { quoted: msg }); }
-}
 
 // ═══════════════════════════════════════════════════════════════
 // ─── MODULE.EXPORTS ──────────────────────────────────────────
@@ -1589,7 +1310,6 @@ module.exports = {
   handleMenuUtil,
   handleMenuJogos,
   handleMenuBaixar,
-  handleMenuIa,
   handleMenuRelacionamento,
   handleAlteradores,
   // Utilidades básicas
@@ -1615,23 +1335,6 @@ module.exports = {
   handleDecodificarMorse,
   // Perfil
   handlePerfil,
-  // IA
-  handleChatGPT,
-  handleChat,
-  handleGpt,
-  handleGemini,
-  handleResumo,
-  handleExplicar,
-  handlePoesia,
-  handleHistoria,
-  handleLetra,
-  handleSentimento,
-  handleCorrigir,
-  // Esportes
-  handleBrasileirao,
-  handleOndePassa,
-  handlePartidas,
-  handleEsporteNoticias,
   // Helpers
   setLogger,
   setRemoveBgKey,

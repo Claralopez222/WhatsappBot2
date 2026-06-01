@@ -123,6 +123,9 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   if (isBotJid(targetJid, botJid)) {
     await sock.sendMessage(jid, { text: '🤖 Não é possível banir o bot!' }, { quoted: msg }); return;
   }
+  if (await isAdmin(sock, jid, targetJid)) {
+    await sock.sendMessage(jid, { text: '👑 Não é possível banir um admin.' }, { quoted: msg }); return;
+  }
   try {
     await sock.groupParticipantsUpdate(jid, [targetJid], 'remove');
     const nome = contactNames[targetJid] || targetJid.split('@')[0];
@@ -174,6 +177,9 @@ async function handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNa
   }
   if (isBotJid(targetJid, botJid)) {
     await sock.sendMessage(jid, { text: '🤖 Não é possível mutar o bot.' }, { quoted: msg }); return;
+  }
+  if (await isAdmin(sock, jid, targetJid)) {
+    await sock.sendMessage(jid, { text: '👑 Não é possível mutar um admin.' }, { quoted: msg }); return;
   }
   mutedUsers.set(targetJid, true);
   const nome = contactNames[targetJid] || targetJid.split('@')[0];
@@ -360,6 +366,9 @@ async function handleFecharAbrir(sock, msg, jid, fechar) {
 async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, contactNames) {
   if (!somenteGrupo(jid)) { await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return; }
   if (!await checkAdmin(sock, msg, jid, acao === 'promote' ? 'promover' : 'rebaixar')) return;
+  if (acao === 'demote') {
+    await sock.sendMessage(jid, { text: '⚠️ Não é possível rebaixar o bot ou outros admins.' }, { quoted: msg }); return;
+  }
 
   const textMsg = content.conversation || content.extendedTextMessage?.text || '';
   const isAll   = /@all\b/i.test(textMsg);
@@ -496,7 +505,7 @@ async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, sav
 // ─── !reportar ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleReportar(sock, msg, content, jid, warnings, contactNames, saveData) {
+async function handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid) {
   if (!somenteGrupo(jid)) { await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return; }
   if (!await checkAdmin(sock, msg, jid, 'reportar')) return;
 
@@ -506,8 +515,14 @@ async function handleReportar(sock, msg, content, jid, warnings, contactNames, s
   if (!quotedMsg || !reportedJid) {
     await sock.sendMessage(jid, {
       text: '⚠️ Responda a uma mensagem com *!reportar* para advertir o usuário.',
-    }, { quoted: msg });
-    return;
+    }, { quoted: msg }); return;
+  }
+
+  if (isBotJid(reportedJid, botJid)) {
+    await sock.sendMessage(jid, { text: '🤖 Não é possível reportar o bot.' }, { quoted: msg }); return;
+  }
+  if (await isAdmin(sock, jid, reportedJid)) {
+    await sock.sendMessage(jid, { text: '👑 Não é possível reportar um admin.' }, { quoted: msg }); return;
   }
 
   if (!warnings.has(jid)) warnings.set(jid, new Map());

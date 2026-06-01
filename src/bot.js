@@ -763,4 +763,16 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'caixa'))      { await textoHandler.handleTextoFun(sock, msg, jid, caption, getPrefix, 'caixa');     return; }
 }
 
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.send('Bot Online!');
+});
+
+app.listen(port, () => {
+  console.log(`Servidor web do bot rodando na porta ${port}`);
+});
+
 startBot().catch(console.error);

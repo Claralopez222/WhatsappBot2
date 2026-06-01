@@ -430,8 +430,6 @@ async function handleMessage(sock, msg) {
     { await utilidadeHandler.handleMenuJogos(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menubaixar'))
     { await utilidadeHandler.handleMenuBaixar(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'menuia'))
-    { await utilidadeHandler.handleMenuIa(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menurelacionamento') || matchCmd(cmdWord, 'menurelacionamentos'))
     { await utilidadeHandler.handleMenuRelacionamento(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menuadm'))
@@ -482,30 +480,6 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'decodificarmorse ') || matchCmd(cmdWord, 'decodificarmorse') || matchCmdStart(cmd, 'demorse ') || matchCmd(cmdWord, 'demorse'))
     { await utilidadeHandler.handleDecodificarMorse(sock, msg, jid, caption); return; }
 
-  // ── IA ────────────────────────────────────────────────────────
-  if (matchCmdStart(cmd, 'chatgpt ') || matchCmd(cmdWord, 'chatgpt'))
-    { await utilidadeHandler.handleChatGPT(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'chat ') || matchCmd(cmdWord, 'chat'))
-    { await utilidadeHandler.handleChat(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'gpt ') || matchCmd(cmdWord, 'gpt'))
-    { await utilidadeHandler.handleGpt(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'gemini ') || matchCmd(cmdWord, 'gemini'))
-    { await utilidadeHandler.handleGemini(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'resumo ') || matchCmd(cmdWord, 'resumo'))
-    { await utilidadeHandler.handleResumo(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'explicar ') || matchCmd(cmdWord, 'explicar'))
-    { await utilidadeHandler.handleExplicar(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'poesia ') || matchCmd(cmdWord, 'poesia'))
-    { await utilidadeHandler.handlePoesia(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'historia ') || matchCmd(cmdWord, 'historia'))
-    { await utilidadeHandler.handleHistoria(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'letra ') || matchCmd(cmdWord, 'letra'))
-    { await utilidadeHandler.handleLetra(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'sentimento ') || matchCmd(cmdWord, 'sentimento'))
-    { await utilidadeHandler.handleSentimento(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'corrigir ') || matchCmd(cmdWord, 'corrigir'))
-    { await utilidadeHandler.handleCorrigir(sock, msg, jid, caption); return; }
-
   // ── DOWNLOADS ─────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'tiktok'))
     { await utilidadeHandler.handleTiktok(sock, msg, jid, caption, getPrefix); return; }
@@ -527,12 +501,6 @@ async function handleMessage(sock, msg) {
   // ── PERFIL ────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'perfil'))
     { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
-
-  // ── ESPORTES ──────────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'brasileirao'))   { await utilidadeHandler.handleBrasileirao(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'ondepassa'))     { await utilidadeHandler.handleOndePassa(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'partidas'))      { await utilidadeHandler.handlePartidas(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'esportenoticias')) { await utilidadeHandler.handleEsporteNoticias(sock, msg, jid); return; }
 
   // ── FIGURINHAS ────────────────────────────────────────────────
   if (
@@ -557,15 +525,9 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'emoji'))        { await figurinhaHandler.handleEmoji(sock, msg, jid, caption, getPrefix, stickerCount); return; }
   if (matchCmdStart(cmd, 'toimg'))        { await figurinhaHandler.handleToImg(sock, msg, content, jid); return; }
   if (matchCmdStart(cmd, 'togif'))        { await figurinhaHandler.handleToGif(sock, msg, content, jid); return; }
-  if (matchCmdStart(cmd, 'rename '))      { await figurinhaHandler.handleRename(sock, msg, content, jid, caption, stickerCount); return; }
-  if (matchCmdStart(cmd, 'autorename'))   { await figurinhaHandler.handleAutoRename(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'delrename'))     { await figurinhaHandler.handleDelRename(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'figaleatoria'))  { await figurinhaHandler.handleFigAleatoria(sock, msg, jid, stickerCount, author); return; }
-  if (matchCmdStart(cmd, 'figgatos'))     { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'figgatos',    'cats',            stickerCount, author); return; }
   if (matchCmdStart(cmd, 'figemoji'))     { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'figemoji',    'emoji meme',      stickerCount, author); return; }
   if (matchCmdStart(cmd, 'figroblox'))    { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'figroblox',   'roblox meme',     stickerCount, author); return; }
   if (matchCmdStart(cmd, 'figmeme'))      { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'figmeme',     'funny meme',      stickerCount, author); return; }
-  if (matchCmdStart(cmd, 'figanime'))     { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'figanime',    'anime reaction',  stickerCount, author); return; }
   if (matchCmdStart(cmd, 'figcoreana'))   { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'figcoreana',  'kpop cute',       stickerCount, author); return; }
   if (matchCmdStart(cmd, 'figraiva'))     { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'figraiva',    'angry reaction',  stickerCount, author); return; }
   if (matchCmdStart(cmd, 'figengracada')) { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'figengracada','funny laugh',     stickerCount, author); return; }

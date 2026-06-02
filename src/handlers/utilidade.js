@@ -9,6 +9,7 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 
 const { fetchBuffer, fetchJson } = require('../fetchurl');
 const { convertVideoToSticker } = require('../sticker');
@@ -39,8 +40,42 @@ function decodeMorse(code) {
   }).join('').replace(/ {2,}/g, ' ');
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ─── EXPANSÃO DE URLS ENCURTADAS ────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 
-
+/**
+ * Expande URLs encurtadas (vt.tiktok.com, pin.it, etc)
+ * Segue redirecionamentos até obter a URL final completa
+ * @param {string} urlEncurtada - URL encurtada
+ * @returns {Promise<string>} URL expandida ou original se falhar
+ */
+async function expandirUrl(urlEncurtada) {
+  try {
+    const response = await axios.head(urlEncurtada, {
+      maxRedirects: 5,
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    return response.request.res.responseUrl || urlEncurtada;
+  } catch (error) {
+    try {
+      // Fallback: tentar com GET ao invés de HEAD
+      const response = await axios.get(urlEncurtada, {
+        maxRedirects: 5,
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      return response.request.res.responseUrl || urlEncurtada;
+    } catch {
+      return urlEncurtada; // Se falhar completamente, retorna original
+    }
+  }
+}
 
 function setLogger(newLogger) {
   logger = newLogger;
@@ -647,13 +682,28 @@ async function handleDecodificarMorse(sock, msg, jid, caption) {
 
 // ─── !save ───────────────────────────────────────────────────
 async function handleSave(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.,\/]save\s*/i, '').trim();
+  let link = caption.replace(/^[!.,\/]save\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
     await sock.sendMessage(jid, { text: '⚠️ Envie um link válido para baixar. Exemplo: *!save https://...*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  // Expandir links encurtados
+  const isShortened = /vt\.tiktok\.com|vm\.tiktok\.com|pin\.it|t\.co|bit\.ly|tinyurl\.com/i.test(link);
+  if (isShortened) {
+    try {
+      const expandedLink = await expandirUrl(link);
+      if (expandedLink && expandedLink !== link) {
+        console.log(`🔗 Link expandido: ${link} → ${expandedLink}`);
+        link = expandedLink;
+      }
+    } catch (e) {
+      console.log(`⚠️ Não consegui expandir o link: ${e.message}`);
+      // Continua com o link original mesmo assim
+    }
+  }
 
   const ytdlp = await getYtDlpPath();
   let meta = null;
@@ -767,12 +817,26 @@ async function handleSave(sock, msg, jid, caption) {
 
 // ─── !saverec ────────────────────────────────────────────────
 async function handleSaveRec(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.,\/]saverec\s*/i, '').trim();
+  let link = caption.replace(/^[!.,\/]saverec\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
     await sock.sendMessage(jid, { text: '⚠️ Envie um link válido. Exemplo: *!saverec https://...*' }, { quoted: msg });
     return;
   }
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  // Expandir links encurtados
+  const isShortened = /vt\.tiktok\.com|vm\.tiktok\.com|pin\.it|t\.co|bit\.ly|tinyurl\.com/i.test(link);
+  if (isShortened) {
+    try {
+      const expandedLink = await expandirUrl(link);
+      if (expandedLink && expandedLink !== link) {
+        console.log(`🔗 Link expandido: ${link} → ${expandedLink}`);
+        link = expandedLink;
+      }
+    } catch (e) {
+      console.log(`⚠️ Não consegui expandir o link: ${e.message}`);
+    }
+  }
 
   const ytdlp = await getYtDlpPath();
   const { execFile } = require('child_process');
@@ -829,10 +893,24 @@ async function handleSaveRec(sock, msg, jid, caption) {
 // ─── !tiktok ─────────────────────────────────────────────────
 async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const P = getPrefix(jid);
-  const link = caption.replace(/^[!.,\/]tiktok2?\s*/i, '').trim();
+  let link = caption.replace(/^[!.,\/]tiktok2?\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
     await sock.sendMessage(jid, { text: `⚠️ Envie o link do vídeo.\nExemplo: *${P}tiktok https://vm.tiktok.com/xxx*` }, { quoted: msg });
     return;
+  }
+
+  // Expandir links encurtados (vt.tiktok.com, vm.tiktok.com, etc)
+  const isShortened = /vt\.tiktok\.com|vm\.tiktok\.com/i.test(link);
+  if (isShortened) {
+    try {
+      const expandedLink = await expandirUrl(link);
+      if (expandedLink && expandedLink !== link) {
+        console.log(`🔗 Link TikTok expandido: ${link} → ${expandedLink}`);
+        link = expandedLink;
+      }
+    } catch (e) {
+      console.log(`⚠️ Não consegui expandir link TikTok: ${e.message}`);
+    }
   }
 
   const ytdlp = await getYtDlpPath();

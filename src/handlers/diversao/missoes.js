@@ -94,7 +94,10 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       await Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
         { 
-          $set: { [`dailyMissions.claimed.${mission.id}`]: true },
+          $set: { 
+            [`dailyMissions.completed.${mission.id}`]: true,
+            [`dailyMissions.claimed.${mission.id}`]: true 
+          },
           $inc: { gold: mission.reward } 
         }
       );
@@ -119,7 +122,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
     else if (isCompleted) status = '🎁';
     
     lines.push(`${status} *[ID: ${mission.id}]* ${mission.label} — _${mission.reward}g_`);
-    lines.push(`   └─ Progresso: *${progress}/${mission.target}* | _${mission.desc}_\n`);
+    lines.push(`    └─ Progresso: *${progress}/${mission.target}* | _${mission.desc}_\n`);
   }
 
   await sock.sendMessage(jid, {

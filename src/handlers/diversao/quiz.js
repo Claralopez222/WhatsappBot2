@@ -7,7 +7,7 @@
  */
 
 const path = require('path');
-const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
+const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 
 const quizState = new Map(); // userId → { r: resposta, timeout }
 const pontosMap = new Map(); // userId → pontos (sincroniza com MongoDB)

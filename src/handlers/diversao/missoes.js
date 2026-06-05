@@ -3,7 +3,9 @@
  * Comando: !missao
  */
 
-const dailyMissionData = new Map();
+const path = require('path');
+const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
+
 const dailyMissionDefinitions = [
   { id: 'xp100', label: 'Ganhe 100 XP', target: 100, reward: 50, desc: 'Suba de level' },
   { id: 'msg50', label: 'Mande 50 mensagens', target: 50, reward: 30, desc: 'Seja ativo!' },
@@ -12,84 +14,115 @@ const dailyMissionDefinitions = [
   { id: 'pet10', label: 'Cuide do pet 10x', target: 10, reward: 60, desc: 'Ame seu pet' },
 ];
 
+// Pega o ID de quem mandou de forma 100% segura (Grupo ou Privado)
 function getUserId(msg) {
-  return msg.key.remoteJid.split('@')[0] === msg.key.participant.split('@')[0]
-    ? msg.key.participant
-    : msg.key.remoteJid;
+  return msg.key.participant || msg.key.remoteJid;
 }
 
-function getTodayKey(userId) {
-  const today = new Date().toISOString().split('T')[0];
-  return `${userId}_${today}`;
-}
+// Busca as missões direto do banco de dados (MongoDB) para não resetar no Render
+async function prepareDailyMissionState(userId) {
+  const todayStr = new Date().toISOString().split('T')[0]; // Ex: 2026-06-05
+  
+  try {
+    let user = await Usuario.findOne({ idWhatsApp: userId });
+    
+    // Se o usuário não existir no banco, cria ele
+    if (!user) {
+      user = await Usuario.create({ idWhatsApp: userId, gold: 0, xp: 0, level: 1 });
+    }
 
-function prepareDailyMissionState(userId) {
-  const todayKey = getTodayKey(userId);
-  if (!dailyMissionData.has(todayKey)) {
-    dailyMissionData.set(todayKey, {
-      date: new Date().toISOString().slice(0, 10),
-      progress: {},
-      completed: {},
-      claimed: {},
-    });
+    // Se mudou o dia, reseta as missões diárias dele automaticamente
+    if (!user.dailyMissions || user.dailyMissions.date !== todayStr) {
+      user.dailyMissions = {
+        date: todayStr,
+        progress: {},
+        completed: {},
+        claimed: {}
+      };
+      await Usuario.findOneAndUpdate({ idWhatsApp: userId }, { $set: { dailyMissions: user.dailyMissions } });
+    }
+
+    return user.dailyMissions;
+  } catch (e) {
+    console.error('⚠️ Erro ao carregar missões do banco:', e.message);
+    return { date: todayStr, progress: {}, completed: {}, claimed: {} };
   }
-  return dailyMissionData.get(todayKey);
 }
 
 function findDailyMission(missionKey) {
-  return dailyMissionDefinitions.find(m => m.id === missionKey);
+  return dailyMissionDefinitions.find(m => m.id === missionKey.toLowerCase());
 }
 
 async function handleMissao(sock, msg, jid, caption, getPrefix) {
   const userId = getUserId(msg);
-  const P = getPrefix(jid);
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const args = caption.trim().split(/\s+/).slice(1);
   let missionKey = null;
   
   if (args.length >= 2 && ['resgatar', 'claim', 'pegar', 'receber'].includes(args[0].toLowerCase())) {
-    missionKey = args[1].toLowerCase();
+    missionKey = args[1];
   } else if (args.length >= 1 && args[0].toLowerCase() !== 'listar') {
-    missionKey = args[0].toLowerCase();
+    missionKey = args[0];
   }
 
-  const state = prepareDailyMissionState(userId);
+  // Carrega o estado vindo do Banco de Dados
+  const state = await prepareDailyMissionState(userId);
   
   if (missionKey) {
     const mission = findDailyMission(missionKey);
     if (!mission) {
-      await sock.sendMessage(jid, { text: `⚠️ Missão não encontrada. Use *${P}missao* para listar.` }, { quoted: msg });
+      await sock.sendMessage(jid, { text: `⚠️ Missão não encontrada. Use *${P}missao* para listar as disponíveis.` }, { quoted: msg });
       return;
     }
-    if (!state.completed[mission.id]) {
-      await sock.sendMessage(jid, { text: `⏳ Não pronta. Progresso: ${state.progress[mission.id] || 0}/${mission.target}` }, { quoted: msg });
+    
+    const progress = state.progress[mission.id] || 0;
+    
+    // Verifica se completou (Garante o check caso a outra IA esqueça de setar o .completed como true)
+    if (progress < mission.target && !state.completed[mission.id]) {
+      await sock.sendMessage(jid, { text: `⏳ Missão não concluída ainda!\n\n🎯 *Progresso:* ${progress}/${mission.target} | ${mission.desc}` }, { quoted: msg });
       return;
     }
+    
     if (state.claimed[mission.id]) {
-      await sock.sendMessage(jid, { text: `✅ Já resgatada hoje!` }, { quoted: msg });
+      await sock.sendMessage(jid, { text: `✅ Você já resgatou a recompensa dessa missão hoje!` }, { quoted: msg });
       return;
     }
 
-    state.claimed[mission.id] = true;
-    await sock.sendMessage(jid, { text: `🎉 *+${mission.reward} gold!*` }, { quoted: msg });
+    // Salva o resgate no banco de dados e adiciona a recompensa em Gold
+    try {
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: userId },
+        { 
+          $set: { [`dailyMissions.claimed.${mission.id}`]: true },
+          $inc: { gold: mission.reward } 
+        }
+      );
+      
+      await sock.sendMessage(jid, { text: `🎉 *Missão Concluída!* Você resgatou *+${mission.reward} gold!* 💰` }, { quoted: msg });
+    } catch (e) {
+      console.error('❌ Erro ao dar recompensa da missão:', e.message);
+      await sock.sendMessage(jid, { text: '⚠️ Erro interno ao computar sua recompensa.' }, { quoted: msg });
+    }
     return;
   }
 
+  // Bloco de Listagem das missões
   const lines = [];
   for (const mission of dailyMissionDefinitions) {
     const progress = state.progress[mission.id] || 0;
-    const completed = state.completed[mission.id];
-    const claimed = state.claimed[mission.id];
+    const isCompleted = progress >= mission.target || state.completed[mission.id];
+    const isClaimed = state.claimed[mission.id];
     
     let status = '⏳';
-    if (claimed) status = '✅';
-    else if (completed) status = '🎁';
+    if (isClaimed) status = '✅';
+    else if (isCompleted) status = '🎁';
     
-    lines.push(`${status} *${mission.label}* — ${mission.reward}g`);
-    lines.push(`   ${progress}/${mission.target} | ${mission.desc}`);
+    lines.push(`${status} *[ID: ${mission.id}]* ${mission.label} — _${mission.reward}g_`);
+    lines.push(`   └─ Progresso: *${progress}/${mission.target}* | _${mission.desc}_ \n`);
   }
 
   await sock.sendMessage(jid, {
-    text: `🎯 *MISSÕES DIÁRIAS*\n\n${lines.join('\n')}\n\nUse *${P}missao <id>* para resgatar!`,
+    text: `🎯 *MISSÕES DIÁRIAS PIROQUINHAS* 🎯\n\n${lines.join('\n')}━━━━━━━━━━━━━━━━━━━━\n💡 _Para resgatar sua recompensa use:_\n👉 *${P}missao <id_da_missao>*\nExemplo: *${P}missao xp100*`,
   }, { quoted: msg });
 }
 
@@ -97,6 +130,5 @@ module.exports = {
   handleMissao,
   prepareDailyMissionState,
   findDailyMission,
-  dailyMissionData,
   dailyMissionDefinitions,
 };

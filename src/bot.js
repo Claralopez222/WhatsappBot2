@@ -4,7 +4,7 @@
  */
 
 const {
-  default: makeWASocket,
+  default: makeWASocket, 
   useMultiFileAuthState,
   DisconnectReason,
   downloadMediaMessage,

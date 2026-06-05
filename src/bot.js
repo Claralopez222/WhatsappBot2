@@ -405,10 +405,6 @@ async function startBot() {
     }
   });
 
-} // <--- ESTA CHAVE FECHA A FUNÇÃO startBot() DE FORMA CORRETA
-
-// ─── Executar Inicialização do Bot (Sempre na última linha do arquivo)
-startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));
   // ── Eventos de grupo (entradas/saídas) ─────────────────────
   sock.ev.on('group-participants.update', async ({ id: groupJid, participants, action }) => {
     if (action === 'add') {
@@ -439,6 +435,11 @@ startBot().catch(err => console.error('❌ Erro crítico na inicialização:', e
       console.log(`✅ Bot conectado! JID: ${botJid}\n`);
     }
   });
+
+} // <--- ESTA CHAVE AGORA FECHA A FUNÇÃO startBot() NO LUGAR CORRETO!
+
+// ─── Executar Inicialização do Bot (Sempre na última linha do arquivo)
+startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));
 // ── Mensagens ─────────────────────────────────────────────
 sock.ev.on('messages.upsert', async ({ messages, type }) => {
   if (type !== 'notify' && type !== 'append') return;

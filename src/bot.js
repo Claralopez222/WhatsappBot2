@@ -307,7 +307,55 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  // ── Atualizar nomes de contato ─────────────────────────────
+  // ── Mensagens ─────────────────────────────────────────────
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify' && type !== 'append') return;
+    for (const msg of messages) {
+      if (msg.key.fromMe) continue;
+      if (!msg.message)   continue;
+
+      const _jid       = msg.key.remoteJid || '';
+      const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
+      if (_isPrivate) {
+        const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+        console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
+      }
+
+      try { 
+        // ═══════════════════════════════════════════════════════════════
+        // 📈 SISTEMA DE CONTAGEM DO MONGODB + MISSÃO DIÁRIA DE MENSAGENS
+        // ═══════════════════════════════════════════════════════════════
+        if (!_isPrivate) { // Só conta se for em grupo
+          const remetente = msg.key.participant || msg.key.remoteJid;
+          const nomeDoCara = msg.pushName || 'Usuário do Zap';
+
+          await Usuario.findOneAndUpdate(
+            { idWhatsApp: remetente },
+            { 
+              $inc: { 
+                mensagens: 1,                          // Soma +1 no ranking geral de mensagens
+                'dailyMissions.progress.msg50': 1       // Soma +1 no progresso da missão diária !missao
+              }, 
+              $set: { nome: nomeDoCara }                // Mantém o nome do banco atualizado
+            },
+            { upsert: true }                            // Se o usuário não existir no banco, cria o registro
+          );
+        }
+        // ═══════════════════════════════════════════════════════════════
+
+        // Continua chamando o seu processador de comandos normal
+        await handleMessage(sock, msg); 
+      }
+      catch (err) { 
+        console.error('❌ Erro no processamento da mensagem:', err.message); 
+      }
+    }
+  });
+
+} // <--- Fechamento correto da função async function startBot()
+
+// ─── Executar Inicialização do Bot
+startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));  // ── Atualizar nomes de contato ─────────────────────────────
   sock.ev.on('contacts.upsert', cs => {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
@@ -345,8 +393,7 @@ async function startBot() {
       console.log(`✅ Bot conectado! JID: ${botJid}\n`);
     }
   });
-
-  // ── Mensagens ─────────────────────────────────────────────
+// ── Mensagens ─────────────────────────────────────────────
 sock.ev.on('messages.upsert', async ({ messages, type }) => {
   if (type !== 'notify' && type !== 'append') return;
   for (const msg of messages) {
@@ -362,7 +409,7 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
 
     try { 
       // ═══════════════════════════════════════════════════════════════
-      // 📈 SISTEMA DE CONTAGEM DO MONGODB (ADICIONADO AQUI)
+      // 📈 SISTEMA DE CONTAGEM DO MONGODB + MISSÃO DIÁRIA DE MENSAGENS
       // ═══════════════════════════════════════════════════════════════
       if (!_isPrivate) { // Só conta se for em grupo
         const remetente = msg.key.participant || msg.key.remoteJid;
@@ -371,10 +418,13 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
         await Usuario.findOneAndUpdate(
           { idWhatsApp: remetente },
           { 
-            $inc: { mensagens: 1 }, // Soma +1 na propriedade 'mensagens' do banco
-            $set: { nome: nomeDoCara } // Mantém o nome do banco atualizado
+            $inc: { 
+              mensagens: 1,                          // Soma +1 no ranking geral de mensagens
+              'dailyMissions.progress.msg50': 1       // Soma +1 no progresso da missão diária !missao
+            }, 
+            $set: { nome: nomeDoCara }                // Mantém o nome do banco atualizado
           },
-          { upsert: true } // Se o usuário não existir no banco, ele cria o registro na hora
+          { upsert: true }                            // Se o usuário não existir no banco, ele cria o registro na hora
         );
       }
       // ═══════════════════════════════════════════════════════════════
@@ -671,10 +721,72 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'pinterest') || matchCmd(cmdWord, 'pinterest2'))
     { await downloadsHandler.handlePinterest(sock, msg, jid, caption); return; }
 
-  // ── PERFIL ────────────────────────────────────────────────────
-  if (matchCmdStart(cmd, 'perfil'))
-    { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
+  // Função auxiliar para formatar o número do WhatsApp de forma correta (Coloque no topo do arquivo ou antes do handlePerfil)
+function formatarNumeroBR(jid) {
+  const numeroPuro = jid.split('@')[0]; // Remove o '@s.whatsapp.net'
 
+  // Caso 1: Número BR antigo/internacional que veio sem o 9 (tem 12 dígitos: 55 + DDD + 8 dígitos)
+  if (numeroPuro.startsWith('55') && numeroPuro.length === 12) {
+    const ddd = numeroPuro.slice(2, 4);
+    const parte1 = numeroPuro.slice(4, 8);
+    const parte2 = numeroPuro.slice(8, 12);
+    return `+55 (${ddd}) 9${parte1}-${parte2}`; // Injeta o 9 automaticamente na exibição
+  }
+
+  // Caso 2: Número BR novo que já tem o 9 (tem 13 dígitos: 55 + DDD + 9 + 8 dígitos)
+  if (numeroPuro.startsWith('55') && numeroPuro.length === 13) {
+    const ddd = numeroPuro.slice(2, 4);
+    const parte1 = numeroPuro.slice(4, 9);
+    const parte2 = numeroPuro.slice(9, 13);
+    return `+55 (${ddd}) ${parte1}-${parte2}`;
+  }
+
+  // Caso 3: Número de outro país
+  return `+${numeroPuro}`;
+}
+
+// ─── COMANDO !PERFIL ATUALIZADO ───
+async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
+  const path = require('path');
+  const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario')); // Ajuste o caminho do modelo se necessário
+  
+  // Captura o ID do remetente com segurança
+  const userId = msg.key.participant || msg.key.remoteJid;
+  
+  try {
+    // Busca os dados do cara direto do MongoDB
+    let user = await Usuario.findOne({ idWhatsApp: userId });
+    
+    if (!user) {
+      // Se não achar o usuário por algum motivo, cria um registro rápido
+      user = await Usuario.create({ idWhatsApp: userId, gold: 0, xp: 0, level: 1, mensagens: 0 });
+    }
+
+    const nomeDoCara = msg.pushName || user.nome || 'Usuário';
+    
+    // Aplica a formatação mágica no número para não exibir errado no menu
+    const numeroFormatado = formatarNumeroBR(userId);
+
+    // Montagem do menu de perfil
+    const textoPerfil = `👤 *PERFIL DO USUÁRIO* 👤\n\n` +
+                        `📝 *Nome:* ${nomeDoCara}\n` +
+                        `📱 *Número:* ${numeroFormatado}\n` +
+                        `💰 *Gold:* ${user.gold || 0} 💰\n` +
+                        `📊 *Nível:* ${user.level || 1} | *XP:* ${user.xp || 0}\n` +
+                        `💬 *Mensagens enviadas:* ${user.mensagens || 0}\n\n` +
+                        `🐾 *Pet Ativo:* ${user.pet ? `[Lvl ${user.pet.level}] ${user.pet.name}` : 'Nenhum'}\n` +
+                        `━━━━━━━━━━━━━━━━━━━━`;
+
+    await sock.sendMessage(jid, { text: textoPerfil }, { quoted: msg });
+
+  } catch (e) {
+    console.error('❌ Erro ao carregar perfil do banco:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro interno ao carregar o seu perfil.' }, { quoted: msg });
+  }
+}
+
+// Lembre-se de exportar a função no final do arquivo caso não esteja:
+// module.exports = { handlePerfil, ... };
   // ── FIGURINHAS ────────────────────────────────────────────────
   if (
     (matchCmd(cmd, 's') || matchCmdStart(cmd, 's ')) &&

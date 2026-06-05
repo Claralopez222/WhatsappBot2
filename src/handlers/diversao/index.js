@@ -40,10 +40,10 @@ const {
   handleQuiz, handlePontos, handleRankJogos, handleBanco, handleResgatar, quizState
 } = require('./quiz');
 
-// Missões
-//const {
- // handleMissao, dailyMissionData, dailyMissionDefinitions
-//} = require('./missoes');
+// Missões (ATIVADO E ATUALIZADO PARA O SEU ARQUIVO DE MISSOES)
+const {
+  handleMissao, prepareDailyMissionState, findDailyMission, dailyMissionDefinitions
+} = require('./missao');
 
 // Pets
 const {
@@ -144,9 +144,10 @@ module.exports = {
   handleResgatar,
   quizState,
 
-  // Missões (3 itens)
+  // Missões (Sincronizado com as exportações do seu missao.js)
   handleMissao,
-  dailyMissionData,
+  prepareDailyMissionState,
+  findDailyMission,
   dailyMissionDefinitions,
 
   // Pets (11 itens)

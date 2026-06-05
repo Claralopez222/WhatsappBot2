@@ -13,37 +13,48 @@ const spawnedPets = new Map(); // { groupId: { type, rarity, spawnedAt } }
 
 const petSystem = {
   // COMUNS (40%)
-  cachorro: { emoji: '🐶', nome: 'Cachorro', rarity: 'COMUM', xpMult: 1.5, pontMult: 1.5 },
-  gato: { emoji: '🐱', nome: 'Gato', rarity: 'COMUM', xpMult: 1.4, pontMult: 1.4 },
-  coelho: { emoji: '🐰', nome: 'Coelho', rarity: 'COMUM', xpMult: 1.3, pontMult: 1.3 },
-  pinguim: { emoji: '🐧', nome: 'Pinguim', rarity: 'COMUM', xpMult: 1.4, pontMult: 1.4 },
-  macaco: { emoji: '🐵', nome: 'Macaco', rarity: 'COMUM', xpMult: 1.6, pontMult: 1.6 },
+  cachorro: { emoji: '🐶', nome: 'Cachorro', rarity: 'COMUM', xpMult: 1.5, pontMult: 1.5, desc: 'Fiel e companheiro para todas as horas.' },
+  gato: { emoji: '🐱', nome: 'Gato', rarity: 'COMUM', xpMult: 1.4, pontMult: 1.4, desc: 'Independente e muito caçador.' },
+  coelho: { emoji: '🐰', nome: 'Coelho', rarity: 'COMUM', xpMult: 1.3, pontMult: 1.3, desc: 'Rápido, fofinho e adora cenouras.' },
+  pinguim: { emoji: '🐧', nome: 'Pinguim', rarity: 'COMUM', xpMult: 1.4, pontMult: 1.4, desc: 'Gosta de frio e anda de um jeito engraçado.' },
+  macaco: { emoji: '🐵', nome: 'Macaco', rarity: 'COMUM', xpMult: 1.6, pontMult: 1.6, desc: 'Super inteligente e muito travesso.' },
   
   // RAROS (35%)
-  lobo: { emoji: '🐺', nome: 'Lobo', rarity: 'RARO', xpMult: 1.7, pontMult: 1.7 },
-  raposa: { emoji: '🦊', nome: 'Raposa', rarity: 'RARO', xpMult: 1.7, pontMult: 1.7 },
-  urso: { emoji: '🐻', nome: 'Urso', rarity: 'RARO', xpMult: 1.8, pontMult: 1.8 },
-  coruja: { emoji: '🦉', nome: 'Coruja', rarity: 'RARO', xpMult: 1.8, pontMult: 1.8 },
-  elefante: { emoji: '🐘', nome: 'Elefante', rarity: 'RARO', xpMult: 1.9, pontMult: 1.9 },
-  tigre: { emoji: '🐯', nome: 'Tigre', rarity: 'RARO', xpMult: 1.9, pontMult: 1.9 },
-  girafa: { emoji: '🦒', nome: 'Girafa', rarity: 'RARO', xpMult: 1.5, pontMult: 1.5 },
-  leao_marinho: { emoji: '🦭', nome: 'Leão Marinho', rarity: 'RARO', xpMult: 1.6, pontMult: 1.6 },
+  lobo: { emoji: '🐺', nome: 'Lobo', rarity: 'RARO', xpMult: 1.7, pontMult: 1.7, desc: 'O protetor da alcateia selvagem.' },
+  raposa: { emoji: '🦊', nome: 'Raposa', rarity: 'RARO', xpMult: 1.7, pontMult: 1.7, desc: 'Mágica, astuta e muito traiçoeira.' },
+  urso: { emoji: '🐻', nome: 'Urso', rarity: 'RARO', xpMult: 1.8, pontMult: 1.8, desc: 'Forte, robusto e adora um mel.' },
+  coruja: { emoji: '🦉', nome: 'Coruja', rarity: 'RARO', xpMult: 1.8, pontMult: 1.8, desc: 'Símbolo da sabedoria da noite.' },
+  elefante: { emoji: '🐘', nome: 'Elefante', rarity: 'RARO', xpMult: 1.9, pontMult: 1.9, desc: 'Gigante gentil com memória implacável.' },
+  tigre: { emoji: '🐯', nome: 'Tigre', rarity: 'RARO', xpMult: 1.9, pontMult: 1.9, desc: 'Ágil e com garras afiadíssimas.' },
+  girafa: { emoji: '🦒', nome: 'Girafa', rarity: 'RARO', xpMult: 1.5, pontMult: 1.5, desc: 'Observa tudo do alto com elegância.' },
+  leao_marinho: { emoji: '🦭', nome: 'Leão Marinho', rarity: 'RARO', xpMult: 1.6, pontMult: 1.6, desc: 'Adora fazer acrobacias na água.' },
   
   // ULTRA-RAROS (20%)
-  falcao: { emoji: '🦅', nome: 'Falcão', rarity: 'ULTRA-RARO', xpMult: 1.8, pontMult: 1.8 },
-  leao: { emoji: '🦁', nome: 'Leão', rarity: 'ULTRA-RARO', xpMult: 2.0, pontMult: 2.0 },
-  tubarao: { emoji: '🦈', nome: 'Tubarão', rarity: 'ULTRA-RARO', xpMult: 2.0, pontMult: 2.0 },
+  falcao: { emoji: '🦅', nome: 'Falcão', rarity: 'ULTRA-RARO', xpMult: 1.8, pontMult: 1.8, desc: 'Visão cirúrgica e voo extremamente rápido.' },
+  leao: { emoji: '🦁', nome: 'Leão', rarity: 'ULTRA-RARO', xpMult: 2.0, pontMult: 2.0, desc: 'O imponente rei da selva africana.' },
+  tubarao: { emoji: '🦈', nome: 'Tubarão', rarity: 'ULTRA-RARO', xpMult: 2.0, pontMult: 2.0, desc: 'O maior e mais temido predador dos oceanos.' },
   
   // LENDÁRIOS (5%)
-  dragao: { emoji: '🐉', nome: 'Dragão', rarity: 'LENDÁRIO', xpMult: 2.5, pontMult: 2.5 },
-  fenix: { emoji: '🔥', nome: 'Fênix', rarity: 'LENDÁRIO', xpMult: 3.0, pontMult: 3.0 },
+  dragao: { emoji: '🐉', nome: 'Dragão', rarity: 'LENDÁRIO', xpMult: 2.5, pontMult: 2.5, desc: 'Criatura mítica cuspidora de fogo puro.' },
+  fenix: { emoji: '🔥', nome: 'Fênix', rarity: 'LENDÁRIO', xpMult: 3.0, pontMult: 3.0, desc: 'Pássaro lendário que renasce das próprias cinzas.' },
 };
+
+// Funções auxiliares locais essenciais
+function getUserId(msg) {
+  return msg.key.participant || msg.key.remoteJid;
+}
+
+function getPetRankScore(pet) {
+  if (!pet) return 0;
+  const levelScore = (pet.level || 1) * 100;
+  const statusScore = (pet.happiness || 0) + (pet.energy || 0) + (pet.fullness || 0);
+  return levelScore + statusScore;
+}
 
 function spawnNewPet(groupId) {
   const rnd = Math.random() * 100;
   let rarity, petPool;
   
-  // Nova distribuição mais rara para lendários
   if (rnd < 60) {
     rarity = 'COMUM';
     petPool = Object.entries(petSystem).filter(([_, p]) => p.rarity === 'COMUM');
@@ -59,11 +70,12 @@ function spawnNewPet(groupId) {
   }
   
   const [petType, petDef] = petPool[Math.floor(Math.random() * petPool.length)];
-  spawnedPets.set(groupId, {
+  const petDataObj = {
     type: petType,
     rarity: rarity,
     spawnedAt: new Date().toISOString(),
-  });
+  };
+  spawnedPets.set(groupId, petDataObj);
   return { type: petType, rarity: rarity, ...petDef };
 }
 
@@ -71,12 +83,12 @@ function getOrSpawnPet(groupId) {
   const now = new Date();
   let pet = spawnedPets.get(groupId);
   
-  // Se não tem pet ou passou 1 hora desde o spawn
   if (!pet || (now - new Date(pet.spawnedAt)) > 3600000) {
     pet = spawnNewPet(groupId);
   }
   
-  return pet;
+  const baseDef = petSystem[pet.type];
+  return { ...pet, ...baseDef };
 }
 
 async function savePet(userId, petObj) {
@@ -107,9 +119,9 @@ async function getPet(userId) {
   return null;
 }
 
-// ─── !capturar (Novo sistema)
+// ─── !capturar
 async function handleCapturarPet(sock, msg, jid, caption) {
-  const userId = msg.key.participant;
+  const userId = getUserId(msg);
   const groupId = jid;
   
   const currentPet = getOrSpawnPet(groupId);
@@ -120,13 +132,13 @@ async function handleCapturarPet(sock, msg, jid, caption) {
   
   const userPet = await getPet(userId);
   if (userPet) {
-    await sock.sendMessage(jid, { text: '⚠️ Você já tem um pet! Deixe-o no abrigo primeiro.' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Você já tem um pet! Deixe-o no abrigo primeiro usando *!abrigo deixar*.' }, { quoted: msg });
     return;
   }
   
   const newPet = {
     type: currentPet.type,
-    name: `${currentPet.nome} Selvagem`,
+    name: `${currentPet.nome || currentPet.type} Selvagem`,
     rarity: currentPet.rarity,
     level: 1,
     happiness: 50,
@@ -143,20 +155,20 @@ async function handleCapturarPet(sock, msg, jid, caption) {
   else if (currentPet.rarity === 'ULTRA-RARO') rarityEmoji = '✨';
   else if (currentPet.rarity === 'LENDÁRIO') rarityEmoji = '💎';
   
-  await sock.sendMessage(jid, { text: `${rarityEmoji} *${currentPet.nome}* capturado! (${currentPet.rarity})\n\nUse *!statuspet* para ver detalhes!` }, { quoted: msg });
+  await sock.sendMessage(jid, { text: `${rarityEmoji} *${currentPet.nome || currentPet.type}* capturado! (${currentPet.rarity})\n\nUse *!statuspet* para ver detalhes!` }, { quoted: msg });
 }
 
-// ─── Stub para !adotar (mantém compatibilidade)
+// ─── Stub para !adotar
 async function handleAdoptarPet(sock, msg, jid, caption) {
   await sock.sendMessage(jid, { text: '⚠️ Use *!capturar* para pegar um pet que aparecer no grupo!' }, { quoted: msg });
 }
 
 async function handleAlimentarPet(sock, msg, jid, author) {
-  const userId = msg.key.participant;
+  const userId = getUserId(msg);
   const pet = await getPet(userId);
   
   if (!pet) {
-    await sock.sendMessage(jid, { text: '⚠️ Você ainda não adotou um pet. Use *!adotar <tipo> [nome]*.' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Você ainda não capturou um pet. Use *!capturar* quando um aparecer no grupo.' }, { quoted: msg });
     return;
   }
   
@@ -169,11 +181,11 @@ async function handleAlimentarPet(sock, msg, jid, author) {
 }
 
 async function handleBrincarPet(sock, msg, jid, author) {
-  const userId = msg.key.participant;
+  const userId = getUserId(msg);
   const pet = await getPet(userId);
   
   if (!pet) {
-    await sock.sendMessage(jid, { text: '⚠️ Você ainda não adotou um pet. Use *!adotar <tipo> [nome]*.' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Você ainda não capturou um pet. Use *!capturar* quando um aparecer no grupo.' }, { quoted: msg });
     return;
   }
   
@@ -196,7 +208,7 @@ async function handleStatusPet(sock, msg, jid) {
     return;
   }
   
-  const petDef = petSystem[pet.type];
+  const petDef = petSystem[pet.type] || { emoji: '🐾', nome: pet.type, xpMult: 1.0, pontMult: 1.0 };
   let rarityEmoji = '⭐';
   if (pet.rarity === 'RARO') rarityEmoji = '🌟';
   else if (pet.rarity === 'ULTRA-RARO') rarityEmoji = '✨';
@@ -207,65 +219,57 @@ async function handleStatusPet(sock, msg, jid) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-async function handlePetRank(sock, msg, jid, contactNames) {
-  const ranks = [...petData.entries()]
-    .map(([userId, pet]) => ({ userId, pet, score: getPetRankScore(pet) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+async function handlePetRank(sock, msg, jid, contactNames = {}) {
+  try {
+    // Busca direto no banco todos os usuários que possuem pet ativo
+    const usuariosComPet = await Usuario.find({ pet: { $ne: null } }).lean();
+    
+    const ranks = usuariosComPet
+      .map(u => ({ userId: u.idWhatsApp, pet: u.pet, score: getPetRankScore(u.pet) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
 
-  if (ranks.length === 0) {
-    await sock.sendMessage(jid, { text: '📊 Nenhum pet adotado ainda. Seja o primeiro com *!adotar <tipo>*!' }, { quoted: msg });
-    return;
+    if (ranks.length === 0) {
+      await sock.sendMessage(jid, { text: '📊 Nenhum pet em atividade no momento. Capture o seu usando *!capturar*!' }, { quoted: msg });
+      return;
+    }
+
+    const lines = ranks.map((entry, index) => {
+      const name = contactNames[entry.userId] || entry.userId.split('@')[0];
+      const petDef = petSystem[entry.pet.type] || { emoji: '🐾' };
+      return `${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '▸'} ${name} – ${petDef.emoji} ${entry.pet.name} (Lvl ${entry.pet.level})`;
+    });
+
+    await sock.sendMessage(jid, { text: `🐾 *RANKING DE PETS DO BOT*\n\n${lines.join('\n')}\n\n_Use *!capturar* para conseguir o seu companheiro!_` }, { quoted: msg });
+  } catch (e) {
+    console.error('⚠️ Erro handlePetRank:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao carregar o ranking de pets.' }, { quoted: msg });
   }
-
-  const lines = ranks.map((entry, index) => {
-    const name = contactNames[entry.userId] || entry.userId.split('@')[0];
-    const petDef = petSystem[entry.pet.type] || petSystem.cachorro;
-    return `${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '▸'} ${name} – ${petDef.emoji} ${entry.pet.name} (Lvl ${entry.pet.level})`;
-  });
-
-  await sock.sendMessage(jid, { text: `🐾 *RANKING DE PETS*\n\n${lines.join('\n')}\n\n_Use *!adotar <tipo>* para ter seu pet!_` }, { quoted: msg });
 }
 
 async function handlePets(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
-  let texto = `🐾 *SEUS 20 PETS DISPONÍVEIS* 🐾\n\n`;
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  let texto = `🐾 *PETS DISPONÍVEIS NA NATUREZA* 🐾\n\n`;
   
   let i = 1;
   for (const [key, pet] of Object.entries(petSystem)) {
-    texto += `${i}. ${pet.emoji} *${pet.nome}* — ${pet.desc}\n`;
+    texto += `${i}. ${pet.emoji} *${pet.nome}* (${pet.rarity})\n_${pet.desc}_\n\n`;
     i++;
   }
   
-  texto += `\n💡 _Use *${P}adotar <tipo> [nome]* para adotar um pet_\nExemplo: *${P}adotar dragao Smaug*`;
+  texto += `💡 _Fique de olho nos grupos! Um pet selvagem surge aleatoriamente a cada 1 hora. Quando aparecer, digite rápido *${P}capturar*!_`;
   
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-async function handleAbrigo(sock, msg, jid, caption) {
+async function handleAbrigo(sock, msg, jid, caption = '') {
   const userId = getUserId(msg);
-  const args = caption.trim().split(/\s+/).slice(1); // Pega argumentos após !abrigo
-  const action = args[0]?.toLowerCase();
+  const args = caption.trim().split(/\s+/).slice(1);
+  const action = args[args.length - 1]?.toLowerCase() === 'pegar' ? 'pegar' : args[0]?.toLowerCase();
   
-  // ─── Opção 1: !abrigo (mostra pets no abrigo)
   if (!action) {
     if (shelterData.size === 0) {
-      const texto = `🏥 ═══ ABRIGO DE PETS ═══ 🏥
-
-😔 *Abrigo completamente vazio no momento!*
-
-O abrigo está aguardando por novos hóspedes...
-
-━━━━━━━━━━━━━━━━
-*COMO COLOCAR UM PET?*
-  📝 Use: *!abrigo deixar*
-  
-*NÃO TEM PET?*
-  🎯 Capture um com: *!capturar*
-  🐾 Pets spawnam a cada 1 hora
-
-_Ajude um pet abandonado a encontrar um novo lar!_ 💕`;
-      
+      const texto = `🏥 ═══ ABRIGO DE PETS ═══ 🏥\n\n😔 *Abrigo completamente vazio no momento!*\n\nO abrigo está aguardando por novos hóspedes...\n\n━━━━━━━━━━━━━━━━\n*COMO COLOCAR UM PET?*\n  📝 Use: *!abrigo deixar*\n  \n*NÃO TEM PET?*\n  🎯 Capture um com: *!capturar*\n  🐾 Pets spawnam a cada 1 hora\n\n_Ajude um pet abandonado a encontrar um novo lar!_ 💕`;
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
       return;
     }
@@ -273,49 +277,29 @@ _Ajude um pet abandonado a encontrar um novo lar!_ 💕`;
     let texto = `🏥 ═══ ABRIGO DE PETS ═══ 🏥\n\n✨ *${shelterData.size} pet(s) aguardando resgate* ✨\n\n`;
     let index = 1;
     for (const [_, shelter] of shelterData.entries()) {
-      const petDef = petSystem[shelter.pet.type];
+      const petDef = petSystem[shelter.pet.type] || { emoji: '🐾' };
       const rarityEmoji = shelter.pet.rarity === 'COMUM' ? '⭐' : 
                           shelter.pet.rarity === 'RARO' ? '🌟' : 
                           shelter.pet.rarity === 'ULTRA-RARO' ? '✨' : '💎';
       const rarityName = shelter.pet.rarity.charAt(0) + shelter.pet.rarity.slice(1).toLowerCase();
       
       texto += `${index}️⃣ ${petDef.emoji} *${shelter.pet.name}* ${rarityEmoji}\n`;
-      texto += `   └─ Raridade: ${rarityName}\n`;
-      texto += `   └─ Nível: ${shelter.pet.level}\n`;
-      texto += `   └─ Felicidade: ${shelter.pet.happiness}%\n\n`;
-      
+      texto += `    └─ Raridade: ${rarityName}\n`;
+      texto += `    └─ Nível: ${shelter.pet.level}\n`;
+      texto += `    └─ Felicidade: ${shelter.pet.happiness}%\n\n`;
       index++;
     }
     
-    texto += `━━━━━━━━━━━━━━━━
-*COMO ADOTAR?*
-  Use: *!abrigo <nome> pegar*
-  Exemplo: *!abrigo Fluffy pegar*
-  
-*DICA:* Pets raros são mais difíceis de encontrar!
-Use *!capturar* regularmente para completar sua coleção! 🎯`;
-
+    texto += `━━━━━━━━━━━━━━━━\n*COMO ADOTAR?*\n  Use: *!abrigo <nome> pegar*\n  Exemplo: *!abrigo Selvagem pegar*\n  \n*DICA:* Pets raros são mais difíceis de encontrar!\nUse *!capturar* regularmente para completar sua coleção! 🎯`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
   
-  // ─── Opção 2: !abrigo deixar (deixa pet no abrigo)
   if (action === 'deixar') {
     const pet = await getPet(userId);
     
     if (!pet) {
-      const texto = `⚠️ *ERRO: SEM PET*
-
-Você não possui um pet para deixar no abrigo!
-
-━━━━━━━━━━━━━━━━
-*COMO CONSEGUIR UM PET?*
-  🎯 Capture com: *!capturar*
-  🏥 Adote do abrigo: *!abrigo*
-  🛒 Compre na loja: *!lojapet*
-
-_Primeiro você precisa ter um pet seu!_ 🐾`;
-      
+      const texto = `⚠️ *ERRO: SEM PET*\n\nVocê não possui um pet para deixar no abrigo!\n\n━━━━━━━━━━━━━━━━\n*COMO CONSEGUIR UM PET?*\n  🎯 Capture com: *!capturar*\n  🏥 Adote do abrigo: *!abrigo*\n\n_Primeiro você precisa ter um pet seu!_ 🐾`;
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
       return;
     }
@@ -338,38 +322,25 @@ _Primeiro você precisa ter um pet seu!_ 🐾`;
       console.error('❌ Erro ao deletar pet:', e.message);
     }
     
-    const petDef = petSystem[pet.type];
+    const petDef = petSystem[pet.type] || { emoji: '🐾' };
     const rarityEmoji = pet.rarity === 'COMUM' ? '⭐' : 
                         pet.rarity === 'RARO' ? '🌟' : 
                         pet.rarity === 'ULTRA-RARO' ? '✨' : '💎';
     
-    const texto = `🏥 *PET DEIXADO NO ABRIGO* 🏥
-
-${petDef.emoji} *${pet.name}* ${rarityEmoji}
-
-━━━━━━━━━━━━━━━━
-*DETALHES:*
-  Nível: ${pet.level}
-  Felicidade: ${pet.happiness}%
-  Tipo: ${pet.type}
-  Raridade: ${pet.rarity}
-
-✨ *${pet.name}* está à espera de um novo lar!
-
-_Qualquer pessoa pode adotar com:_
-*!abrigo ${pet.name} pegar*
-
-💔 Esperamos que encontre um novo dono em breve!`;
-    
+    const texto = `🏥 *PET DEIXADO NO ABRIGO* 🏥\n\n${petDef.emoji} *${pet.name}* ${rarityEmoji}\n\n━━━━━━━━━━━━━━━━\n*DETALHES:*\n  Nível: ${pet.level}\n  Felicidade: ${pet.happiness}%\n  Tipo: ${pet.type}\n  Raridade: ${pet.rarity}\n\n✨ *${pet.name}* está à espera de um novo lar!\n\n_Qualquer pessoa pode adotar com:_\n*!abrigo ${pet.name} pegar*\n\n💔 Esperamos que encontre um novo dono em breve!`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
   
-  // ─── Opção 3: !abrigo <nome> pegar (pega pet do abrigo)
-  if (args.length >= 2 && args[1]?.toLowerCase() === 'pegar') {
-    const petName = args[0];
+  if (action === 'pegar') {
+    // Isola o nome composto capturando tudo entre "!abrigo" e a palavra "pegar"
+    const petName = args.slice(0, args.length - 1).join(' ');
     
-    // Procura o pet pelo nome no abrigo
+    if (!petName) {
+      await sock.sendMessage(jid, { text: '⚠️ Especifique o nome do pet! Exemplo: *!abrigo Cachorro Selvagem pegar*' }, { quoted: msg });
+      return;
+    }
+
     let foundShelter = null;
     let foundShelterId = null;
     
@@ -382,102 +353,39 @@ _Qualquer pessoa pode adotar com:_
     }
     
     if (!foundShelter) {
-      const texto = `⚠️ *PET NÃO ENCONTRADO*
-
-"${petName}" não existe no abrigo!
-
-━━━━━━━━━━━━━━━━
-*PETS DISPONÍVEIS:*
-  Use: *!abrigo*
-  Para ver todos os pets
-
-_Verifique o nome e tente novamente!_ 🔍`;
-      
+      const texto = `⚠️ *PET NÃO ENCONTRADO*\n\n"${petName}" não existe no abrigo!\n\n━━━━━━━━━━━━━━━━\n*PETS DISPONÍVEIS:*\n  Use: *!abrigo*\n  Para ver todos os pets\n\n_Verifique o nome e tente novamente!_ 🔍`;
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
       return;
     }
     
     const userCurrentPet = await getPet(userId);
     if (userCurrentPet) {
-      const texto = `⚠️ *JÁ POSSUI PET*
-
-Você já tem um pet! Não pode adotar outro no momento.
-
-━━━━━━━━━━━━━━━━
-*ALTERNATIVAS:*
-  💔 Deixar seu pet: *!abrigo deixar*
-  🏪 Vender seu pet: *!venderpet*
-  🔄 Trocar seu pet: *!trocarpet*
-
-_Libere espaço para um novo companheiro!_ 🐾`;
-      
+      const texto = `⚠️ *JÁ POSSUI PET*\n\nVocê já tem um pet! Não pode adotar outro no momento.\n\n━━━━━━━━━━━━━━━━\n*ALTERNATIVAS:*\n  💔 Deixar seu pet: *!abrigo deixar*\n\n_Libere espaço para um novo companheiro!_ 🐾`;
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
       return;
     }
     
-    // Pega o pet do abrigo
     await savePet(userId, foundShelter.pet);
     shelterData.delete(foundShelterId);
     
-    const petDef = petSystem[foundShelter.pet.type];
+    const petDef = petSystem[foundShelter.pet.type] || { emoji: '🐾' };
     const rarityEmoji = foundShelter.pet.rarity === 'COMUM' ? '⭐' : 
                         foundShelter.pet.rarity === 'RARO' ? '🌟' : 
                         foundShelter.pet.rarity === 'ULTRA-RARO' ? '✨' : '💎';
     
-    const texto = `🎉 ═══ ADOÇÃO BEM-SUCEDIDA! ═══ 🎉
-
-${petDef.emoji} *${foundShelter.pet.name}* ${rarityEmoji}
-
-━━━━━━━━━━━━━━━━
-*DETALHES DO SEU NOVO COMPANHEIRO:*
-  ✅ Nível: ${foundShelter.pet.level}
-  💚 Felicidade: ${foundShelter.pet.happiness}%
-  ⭐ Tipo: ${foundShelter.pet.type}
-  💎 Raridade: ${foundShelter.pet.rarity}
-
-✨ *Parabéns!* Você acaba de salvar uma vida!
-
-━━━━━━━━━━━━━━━━
-*PRÓXIMOS PASSOS:*
-  🍖 Alimentar: *!alimentar*
-  🎾 Brincar: *!brincar*
-  📊 Status: *!statuspet*
-  🏆 Ranking: *!rankpet*
-
-_Cuide bem do ${petDef.emoji} *${foundShelter.pet.name}*!_ 💕`;
-    
+    const texto = `🎉 ═══ ADOÇÃO BEM-SUCEDIDA! ═══ 🎉\n\n${petDef.emoji} *${foundShelter.pet.name}* ${rarityEmoji}\n\n━━━━━━━━━━━━━━━━\n*DETALHES DO SEU NOVO PET:*\n  🏆 Nível: ${foundShelter.pet.level}\n  😊 Felicidade: ${foundShelter.pet.happiness}%\n  🍽️ Fome: ${foundShelter.pet.fullness}%\n\nCuide bem do seu novo amigo! Use *!statuspet* para vê-lo a qualquer momento. ❤️`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
-  
-  // Comando inválido
-  const texto = `ℹ️ *COMANDOS DO ABRIGO*
-
-🏥 *!abrigo*
-   → Lista todos os pets para adoção
-
-💔 *!abrigo deixar*
-   → Deixa seu pet no abrigo para adoção
-
-🎉 *!abrigo <nome> pegar*
-   → Adota um pet específico
-   → Exemplo: *!abrigo Fluffy pegar*
-
-━━━━━━━━━━━━━━━━
-_Use um desses comandos acima!_`;
-  
-  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
 module.exports = {
   handleCapturarPet,
+  handleAdoptarPet,
   handleAlimentarPet,
   handleBrincarPet,
   handleStatusPet,
   handlePetRank,
   handlePets,
-  handleAbrigo,
-  petSystem,
-  petData,
-  shelterData,
+  handleAbrigo
 };

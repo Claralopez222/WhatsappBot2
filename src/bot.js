@@ -352,7 +352,7 @@ async function startBot() {
     }
   });
 
-// ── Atualizar nomes de contato (DENTRO DO STARTBOT) ──────────────────
+// ── 1. Atualizar nomes de contato ─────────────────────────────────────────
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('contacts.upsert', cs => {
@@ -363,7 +363,7 @@ async function startBot() {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
 
-// ── Mensagens e Missões ──────────────────────────────────────────────────
+  // ── 2. Mensagens e Missões ──────────────────────────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify' && type !== 'append') return;
     for (const msg of messages) {
@@ -378,11 +378,13 @@ async function startBot() {
       }
 
       try { 
+        // ═══════════════════════════════════════════════════════════════
+        // 📈 SISTEMA DE CONTAGEM DO MONGODB + MISSÃO DIÁRIA DE MENSAGENS
+        // ═══════════════════════════════════════════════════════════════
         if (!_isPrivate) { 
           const remetente = msg.key.participant || msg.key.remoteJid;
           const nomeDoCara = msg.pushName || 'Usuário do Zap';
 
-          // Incrementa o contador de mensagens e salva no banco do MongoDB
           await Usuario.findOneAndUpdate(
             { idWhatsApp: remetente },
             { 
@@ -395,6 +397,7 @@ async function startBot() {
             { upsert: true }                            
           );
         }
+        // ═══════════════════════════════════════════════════════════════
 
         // Processa os comandos do bot normalmente
         await handleMessage(sock, msg); 
@@ -404,7 +407,8 @@ async function startBot() {
       }
     }
   });
-  // ── Eventos de grupo (entradas/saídas) ─────────────────────
+
+  // ── 3. Eventos de grupo (entradas/saídas) ─────────────────────────────────
   sock.ev.on('group-participants.update', async ({ id: groupJid, participants, action }) => {
     if (action === 'add') {
       for (const userJid of participants) {
@@ -418,7 +422,7 @@ async function startBot() {
     }
   });
 
-  // ── Conexão ────────────────────────────────────────────────
+  // ── 4. Conexão ────────────────────────────────────────────────────────────
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       console.log('\n📱 Escaneie o QR Code:\n');
@@ -435,7 +439,10 @@ async function startBot() {
     }
   });
 
-} // <--- ESTA CHAVE AGORA FECHA A FUNÇÃO startBot() NO LUGAR CORRETO!
+} // <--- FECHAMENTO CORRETO DA FUNÇÃO startBot()
+
+// ─── Executar Inicialização do Bot (Última linha do arquivo)
+startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));
 
 // ─── Executar Inicialização do Bot (Sempre na última linha do arquivo)
 startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));

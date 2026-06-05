@@ -5,7 +5,7 @@
  */
 
 const path = require('path');
-const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
+const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 
 const petData = new Map();
 const shelterData = new Map();

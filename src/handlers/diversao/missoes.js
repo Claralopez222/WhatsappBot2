@@ -4,8 +4,7 @@
  */
 
 const path = require('path');
-const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
-
+const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const dailyMissionDefinitions = [
   { id: 'xp100', label: 'Ganhe 100 XP', target: 100, reward: 50, desc: 'Suba de level' },
   { id: 'msg50', label: 'Mande 50 mensagens', target: 50, reward: 30, desc: 'Seja ativo!' },

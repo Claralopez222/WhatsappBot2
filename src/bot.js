@@ -363,7 +363,7 @@ async function startBot() {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
 
-  // ── Mensagens e Missões ──────────────────────────────────────────────────
+// ── Mensagens e Missões ──────────────────────────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify' && type !== 'append') return;
     for (const msg of messages) {
@@ -404,7 +404,6 @@ async function startBot() {
       }
     }
   });
-
   // ── Eventos de grupo (entradas/saídas) ─────────────────────
   sock.ev.on('group-participants.update', async ({ id: groupJid, participants, action }) => {
     if (action === 'add') {
@@ -440,7 +439,7 @@ async function startBot() {
 
 // ─── Executar Inicialização do Bot (Sempre na última linha do arquivo)
 startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));
-// ── Mensagens ─────────────────────────────────────────────
+// ── Mensagens e Missões ──────────────────────────────────────────────────
 sock.ev.on('messages.upsert', async ({ messages, type }) => {
   if (type !== 'notify' && type !== 'append') return;
   for (const msg of messages) {
@@ -458,7 +457,7 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
       // ═══════════════════════════════════════════════════════════════
       // 📈 SISTEMA DE CONTAGEM DO MONGODB + MISSÃO DIÁRIA DE MENSAGENS
       // ═══════════════════════════════════════════════════════════════
-      if (!_isPrivate) { // Só conta se for em grupo
+      if (!_isPrivate) { // Só conta mensagens enviadas em grupos
         const remetente = msg.key.participant || msg.key.remoteJid;
         const nomeDoCara = msg.pushName || 'Usuário do Zap';
 
@@ -471,12 +470,12 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
             }, 
             $set: { nome: nomeDoCara }                // Mantém o nome do banco atualizado
           },
-          { upsert: true }                            // Se o usuário não existir no banco, ele cria o registro na hora
+          { upsert: true }                            // Se o usuário não existir no banco, cria o registro na hora
         );
       }
       // ═══════════════════════════════════════════════════════════════
 
-      // Continua chamando o seu processador de comandos normal
+      // Processa os comandos do bot normalmente
       await handleMessage(sock, msg); 
     }
     catch (err) { 

@@ -10,7 +10,7 @@ const {
   formatarTempo,
   handleCarinh,
 } = require(path.join(__dirname, 'relacionamento'));
-const path = require('path');
+
 const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils'));
 
 async function handleFlores(sock, msg, jid, author, senderJid, relacionamentos) {

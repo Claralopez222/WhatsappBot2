@@ -43,7 +43,7 @@ const {
 // Missões (ATIVADO E ATUALIZADO PARA O SEU ARQUIVO DE MISSOES)
 const {
   handleMissao, prepareDailyMissionState, findDailyMission, dailyMissionDefinitions
-} = require('./missao');
+} = require('./missoes');
 
 // Pets
 const {

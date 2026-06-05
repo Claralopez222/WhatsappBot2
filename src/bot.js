@@ -347,31 +347,46 @@ async function startBot() {
   });
 
   // ── Mensagens ─────────────────────────────────────────────
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify' && type !== 'append') return;
-    for (const msg of messages) {
-      if (msg.key.fromMe) continue;
-      if (!msg.message)   continue;
+sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  if (type !== 'notify' && type !== 'append') return;
+  for (const msg of messages) {
+    if (msg.key.fromMe) continue;
+    if (!msg.message)   continue;
 
-      const _jid       = msg.key.remoteJid || '';
-      const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
-      if (_isPrivate) {
-        const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-        console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
-      }
-
-      try { await handleMessage(sock, msg); }
-      catch (err) { console.error('❌ Erro no handleMessage:', err.message); }
+    const _jid       = msg.key.remoteJid || '';
+    const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
+    if (_isPrivate) {
+      const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+      console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
     }
-  });
-}
 
-function getSenderName(msg) {
-  if (msg.pushName) return msg.pushName;
-  const jid = msg.key.participant || msg.key.remoteJid || '';
-  return contactNames[jid] || jid.split('@')[0] || 'Anônimo';
-}
+    try { 
+      // ═══════════════════════════════════════════════════════════════
+      // 📈 SISTEMA DE CONTAGEM DO MONGODB (ADICIONADO AQUI)
+      // ═══════════════════════════════════════════════════════════════
+      if (!_isPrivate) { // Só conta se for em grupo
+        const remetente = msg.key.participant || msg.key.remoteJid;
+        const nomeDoCara = msg.pushName || 'Usuário do Zap';
 
+        await Usuario.findOneAndUpdate(
+          { idWhatsApp: remetente },
+          { 
+            $inc: { mensagens: 1 }, // Soma +1 na propriedade 'mensagens' do banco
+            $set: { nome: nomeDoCara } // Mantém o nome do banco atualizado
+          },
+          { upsert: true } // Se o usuário não existir no banco, ele cria o registro na hora
+        );
+      }
+      // ═══════════════════════════════════════════════════════════════
+
+      // Continua chamando o seu processador de comandos normal
+      await handleMessage(sock, msg); 
+    }
+    catch (err) { 
+      console.error('❌ Erro no processamento da mensagem:', err.message); 
+    }
+  }
+});
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

@@ -487,7 +487,7 @@ async function handlePix(sock, msg, jid, caption) {
     return;
   }
   
-  const numero Pura = match[1].replace(/\D/g, ''); // Garante apenas números
+  const numeroPura = match[1].replace(/\D/g, ''); // Garante apenas números
   const targetJid = `${numeroPura}@s.whatsapp.net`; // Monta o JID padrão do WhatsApp
   const quantia = parseInt(match[2]);
   

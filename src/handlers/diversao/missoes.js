@@ -5,6 +5,7 @@
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+
 const dailyMissionDefinitions = [
   { id: 'xp100', label: 'Ganhe 100 XP', target: 100, reward: 50, desc: 'Suba de level' },
   { id: 'msg50', label: 'Mande 50 mensagens', target: 50, reward: 30, desc: 'Seja ativo!' },
@@ -13,32 +14,34 @@ const dailyMissionDefinitions = [
   { id: 'pet10', label: 'Cuide do pet 10x', target: 10, reward: 60, desc: 'Ame seu pet' },
 ];
 
-// Pega o ID de quem mandou de forma 100% segura (Grupo ou Privado)
 function getUserId(msg) {
   return msg.key.participant || msg.key.remoteJid;
 }
 
-// Busca as missões direto do banco de dados (MongoDB) para não resetar no Render
 async function prepareDailyMissionState(userId) {
   const todayStr = new Date().toISOString().split('T')[0]; // Ex: 2026-06-05
   
   try {
     let user = await Usuario.findOne({ idWhatsApp: userId });
     
-    // Se o usuário não existir no banco, cria ele
     if (!user) {
       user = await Usuario.create({ idWhatsApp: userId, gold: 0, xp: 0, level: 1 });
     }
 
-    // Se mudou o dia, reseta as missões diárias dele automaticamente
+    // Se mudou o dia ou não existe a estrutura, inicializa e salva de forma limpa
     if (!user.dailyMissions || user.dailyMissions.date !== todayStr) {
-      user.dailyMissions = {
+      const freshMissions = {
         date: todayStr,
-        progress: {},
-        completed: {},
-        claimed: {}
+        progress: { xp100: 0, msg50: 0, quiz5: 0, gold500: 0, pet10: 0 },
+        completed: { xp100: false, msg50: false, quiz5: false, gold500: false, pet10: false },
+        claimed: { xp100: false, msg50: false, quiz5: false, gold500: false, pet10: false }
       };
-      await Usuario.findOneAndUpdate({ idWhatsApp: userId }, { $set: { dailyMissions: user.dailyMissions } });
+
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: userId },
+        { $set: { dailyMissions: freshMissions } }
+      );
+      return freshMissions;
     }
 
     return user.dailyMissions;
@@ -64,7 +67,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
     missionKey = args[0];
   }
 
-  // Carrega o estado vindo do Banco de Dados
+  // Recarrega o estado atualizado do banco
   const state = await prepareDailyMissionState(userId);
   
   if (missionKey) {
@@ -74,20 +77,19 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       return;
     }
     
-    const progress = state.progress[mission.id] || 0;
+    const progress = state.progress?.[mission.id] || 0;
+    const isCompleted = progress >= mission.target || state.completed?.[mission.id];
     
-    // Verifica se completou (Garante o check caso a outra IA esqueça de setar o .completed como true)
-    if (progress < mission.target && !state.completed[mission.id]) {
+    if (!isCompleted) {
       await sock.sendMessage(jid, { text: `⏳ Missão não concluída ainda!\n\n🎯 *Progresso:* ${progress}/${mission.target} | ${mission.desc}` }, { quoted: msg });
       return;
     }
     
-    if (state.claimed[mission.id]) {
+    if (state.claimed?.[mission.id]) {
       await sock.sendMessage(jid, { text: `✅ Você já resgatou a recompensa dessa missão hoje!` }, { quoted: msg });
       return;
     }
 
-    // Salva o resgate no banco de dados e adiciona a recompensa em Gold
     try {
       await Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
@@ -108,16 +110,16 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
   // Bloco de Listagem das missões
   const lines = [];
   for (const mission of dailyMissionDefinitions) {
-    const progress = state.progress[mission.id] || 0;
-    const isCompleted = progress >= mission.target || state.completed[mission.id];
-    const isClaimed = state.claimed[mission.id];
+    const progress = state.progress?.[mission.id] || 0;
+    const isCompleted = progress >= mission.target || state.completed?.[mission.id];
+    const isClaimed = state.claimed?.[mission.id];
     
     let status = '⏳';
     if (isClaimed) status = '✅';
     else if (isCompleted) status = '🎁';
     
     lines.push(`${status} *[ID: ${mission.id}]* ${mission.label} — _${mission.reward}g_`);
-    lines.push(`   └─ Progresso: *${progress}/${mission.target}* | _${mission.desc}_ \n`);
+    lines.push(`   └─ Progresso: *${progress}/${mission.target}* | _${mission.desc}_\n`);
   }
 
   await sock.sendMessage(jid, {

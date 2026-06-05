@@ -236,31 +236,58 @@ async function handleDesmute(sock, msg, content, jid, botJid, mutedUsers, contac
     mentions: [targetJid],
   });
 }
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !ranking ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
-async function handleRanking(sock, msg, jid, msgCount) {
-  if (!somenteGrupo(jid)) { await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return; }
-  if (msgCount.size === 0) {
-    await sock.sendMessage(jid, { text: 'ℹ️ Ainda não há mensagens registradas!' }, { quoted: msg }); return;
+async function handleRanking(sock, msg, jid) {
+  // Garante que só roda em grupos
+  const isGroup = jid.endsWith('@g.us');
+  if (!isGroup) { 
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só pode ser usado em grupos.' }, { quoted: msg }); 
+    return; 
   }
 
-  const sorted  = [...msgCount.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 10);
-  const medals  = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-  const total   = [...msgCount.values()].reduce((s, v) => s + v.count, 0);
-  const linhas  = sorted.map(([j, d], i) => {
-    const pct = ((d.count / total) * 100).toFixed(1);
-    const bar = '█'.repeat(Math.round(d.count / sorted[0][1].count * 8)) + '░'.repeat(8 - Math.round(d.count / sorted[0][1].count * 8));
-    return `${medals[i]} *${d.nome || j.split('@')[0]}*\n   ${bar} ${d.count} msgs (${pct}%)`;
-  }).join('\n\n');
+  try {
+    const path = require('path');
+    const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
 
-  await sock.sendMessage(jid, {
-    text: `📊 *RANKING DE MENSAGENS*\n\n${linhas}\n\n📨 Total do grupo: *${total} msgs*`,
-  }, { quoted: msg });
+    // Busca no banco os 10 usuários que mais têm mensagens
+    // ATENÇÃO: Se no seu model o campo chamar 'qtdMensagens' ou 'mensagensCount', mude o nome abaixo!
+    const topUsuarios = await Usuario.find({ mensagens: { $gt: 0 } })
+      .sort({ mensagens: -1 })
+      .limit(10)
+      .lean();
+
+    if (!topUsuarios || topUsuarios.length === 0) {
+      await sock.sendMessage(jid, { text: 'ℹ️ Ainda não há mensagens registradas no banco de dados!' }, { quoted: msg });
+      return;
+    }
+
+    // Calcula o total geral de mensagens (desse top 10) para a porcentagem
+    const total = topUsuarios.reduce((s, u) => s + (u.mensagens || 0), 0);
+    const maxMsgs = topUsuarios[0].mensagens || 1;
+    const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+    // Monta o visual do ranking com as barrinhas
+    const linhas = topUsuarios.map((u, i) => {
+      const count = u.mensagens || 0;
+      const pct = ((count / total) * 100).toFixed(1);
+      
+      const numBarras = Math.round((count / maxMsgs) * 8) || 0;
+      const bar = '█'.repeat(numBarras) + '░'.repeat(Math.max(0, 8 - numBarras));
+      
+      // Usa o nome salvo ou mascara o número do WhatsApp
+      const nomeExibicao = u.nome || u.idWhatsApp.split('@')[0];
+
+      return `${medals[i]} *${nomeExibicao}*\n   ${bar} ${count} msgs (${pct}%)`;
+    }).join('\n\n');
+
+    await sock.sendMessage(jid, {
+      text: `📊 *RANKING DE MENSAGENS (MONGODB)*\n\n${linhas}\n\n📨 Total do Top 10: *${total} msgs*`,
+    }, { quoted: msg });
+
+  } catch (error) {
+    console.error('❌ Erro ao gerar ranking pelo Mongo:', error);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao carregar o ranking do banco de dados.' }, { quoted: msg });
+  }
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !sorteio ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

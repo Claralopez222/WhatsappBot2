@@ -41,9 +41,9 @@ const {
 } = require('./quiz');
 
 // Missões
-const {
-  handleMissao, dailyMissionData, dailyMissionDefinitions
-} = require('./missoes');
+//const {
+ // handleMissao, dailyMissionData, dailyMissionDefinitions
+//} = require('./missoes');
 
 // Pets
 const {

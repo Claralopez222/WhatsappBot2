@@ -39,7 +39,6 @@ const petSystem = {
   fenix: { emoji: '🔥', nome: 'Fênix', rarity: 'LENDÁRIO', xpMult: 3.0, pontMult: 3.0, desc: 'Pássaro lendário que renasce das próprias cinzas.' },
 };
 
-// Funções auxiliares locais essenciais
 function getUserId(msg) {
   return msg.key.participant || msg.key.remoteJid;
 }
@@ -163,23 +162,55 @@ async function handleAdoptarPet(sock, msg, jid, caption) {
   await sock.sendMessage(jid, { text: '⚠️ Use *!capturar* para pegar um pet que aparecer no grupo!' }, { quoted: msg });
 }
 
+// ─── !alimentar (Com trava de comida no inventário, status de fome e Missão Diária)
 async function handleAlimentarPet(sock, msg, jid, author) {
   const userId = getUserId(msg);
-  const pet = await getPet(userId);
+  
+  // Busca o usuário completo no banco para checar o inventário
+  const user = await Usuario.findOne({ idWhatsApp: userId });
+  const pet = user?.pet;
   
   if (!pet) {
     await sock.sendMessage(jid, { text: '⚠️ Você ainda não capturou um pet. Use *!capturar* quando um aparecer no grupo.' }, { quoted: msg });
     return;
   }
-  
+
+  // 1. Validação da Fome: Só alimenta se o bicho não estiver cheio
+  if (pet.fullness >= 100) {
+    await sock.sendMessage(jid, { text: `❌ *${pet.name}* está completamente cheio (🍽️ 100%) e recusou a comida!` }, { quoted: msg });
+    return;
+  }
+
+  // 2. Validação do Inventário: Verifica se tem ração/comida guardada
+  const quantidadeComida = user.inventario?.comida || 0;
+  if (quantidadeComida <= 0) {
+    await sock.sendMessage(jid, { text: '❌ Você não possui comida no seu inventário! Compre itens na loja antes de alimentar seu companheiro.' }, { quoted: msg });
+    return;
+  }
+
+  // Executa os ajustes de status do pet
   pet.fullness = Math.min(100, pet.fullness + 30);
   pet.happiness = Math.min(100, pet.happiness + 10);
   
-  await savePet(userId, pet);
+  // Consome uma unidade de comida do inventário e soma +1 na missão diária 'pet10'
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId },
+    { 
+      $set: { pet: pet },
+      $inc: { 
+        'inventario.comida': -1,
+        'dailyMissions.progress.pet10': 1 
+      } 
+    }
+  );
   
-  await sock.sendMessage(jid, { text: `🍖 Você alimentou *${pet.name}*!\n\n😊 Felicidade: ${pet.happiness}%\n🍽️ Fome: ${pet.fullness}%` }, { quoted: msg });
+  // Atualiza o cache local de memória
+  petData.set(userId, pet);
+  
+  await sock.sendMessage(jid, { text: `🍖 Você usou 1x Comida e alimentou *${pet.name}*!\n\n😊 Felicidade: ${pet.happiness}%\n🍽️ Fome: ${pet.fullness}%\n📦 Comidas restantes: ${quantidadeComida - 1}` }, { quoted: msg });
 }
 
+// ─── !brincar (Com trava de felicidade limite e Missão Diária)
 async function handleBrincarPet(sock, msg, jid, author) {
   const userId = getUserId(msg);
   const pet = await getPet(userId);
@@ -188,13 +219,29 @@ async function handleBrincarPet(sock, msg, jid, author) {
     await sock.sendMessage(jid, { text: '⚠️ Você ainda não capturou um pet. Use *!capturar* quando um aparecer no grupo.' }, { quoted: msg });
     return;
   }
+
+  // Validação do humor: Só brinca se a felicidade estiver abaixo de 80% (triste/entediado)
+  if (pet.happiness >= 80) {
+    await sock.sendMessage(jid, { text: `❌ *${pet.name}* já está muito feliz e correndo de um lado para o outro! Deixe ele descansar um pouco antes de brincar de novo (😊 ${pet.happiness}%).` }, { quoted: msg });
+    return;
+  }
   
   pet.happiness = Math.min(100, pet.happiness + 20);
   pet.energy = Math.max(0, pet.energy - 15);
   pet.fullness = Math.max(0, pet.fullness - 10);
   pet.level = Math.min(50, pet.level + 1);
   
-  await savePet(userId, pet);
+  // Salva o pet modificado e adiciona +1 no progresso da missão diária 'pet10'
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId },
+    { 
+      $set: { pet: pet },
+      $inc: { 'dailyMissions.progress.pet10': 1 }
+    }
+  );
+
+  // Atualiza o cache local de memória
+  petData.set(userId, pet);
   
   await sock.sendMessage(jid, { text: `🎾 Você brincou com *${pet.name}*!\n\n😊 Felicidade: ${pet.happiness}%\n⚡ Energia: ${pet.energy}%\n🍽️ Fome: ${pet.fullness}%\n🏆 Nível: ${pet.level}` }, { quoted: msg });
 }
@@ -221,7 +268,6 @@ async function handleStatusPet(sock, msg, jid) {
 
 async function handlePetRank(sock, msg, jid, contactNames = {}) {
   try {
-    // Busca direto no banco todos os usuários que possuem pet ativo
     const usuariosComPet = await Usuario.find({ pet: { $ne: null } }).lean();
     
     const ranks = usuariosComPet
@@ -333,7 +379,6 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
   }
   
   if (action === 'pegar') {
-    // Isola o nome composto capturando tudo entre "!abrigo" e a palavra "pegar"
     const petName = args.slice(0, args.length - 1).join(' ');
     
     if (!petName) {

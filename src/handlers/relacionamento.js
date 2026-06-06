@@ -4,8 +4,8 @@
  *           !cancelarcasamento, !terminar, !flores, !doces, !carta,
  *           !mimo, !beijo, !rankcasais, !fixar, !pinned, !desfixar,
  *           [NOVOS] !abraco, !presente, !jantar, !cinema, !viajar,
- *                   !declarar, !ciumento, !statu, !aniversario_casal,
- *                   !meupar, !xpdobro, !serenata, !duelodecasais
+ *           !declarar, !ciumento, !statu, !aniversario_casal,
+ *           !meupar, !xpdobro, !serenata, !duelodecasais
  */
 
 const path = require('path');
@@ -38,9 +38,10 @@ function isBloqueado(jid) {
   return true;
 }
 
-function diasRestantes(jid) {
+// Retorna os minutos restantes de bloqueio arredondados para cima
+function minutosRestantes(jid) {
   if (!bloqueados.has(jid)) return 0;
-  return Math.ceil((bloqueados.get(jid) - Date.now()) / (1000 * 60 * 60 * 24));
+  return Math.ceil((bloqueados.get(jid) - Date.now()) / (1000 * 60));
 }
 
 function getRelacionamento(a, b, relacionamentos) {
@@ -170,9 +171,9 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
 
   if (isBloqueado(senderJid)) {
     const frases = [
-      `🚫 TÁ CANCELADO(A)! Sua ex bloqueou por *${diasRestantes(senderJid)} dia(s)*! Vai processar! 💔`,
-      `😤 Respira! Você precisa de *${diasRestantes(senderJid)} dia(s)* de terapia antes de casar de novo!`,
-      `💀 Seu histórico de divórcio tá te perseguindo! Volta em *${diasRestantes(senderJid)} dia(s)*!`,
+      `🚫 TÁ CANCELADO(A)! Sua ex te largou! Aguarde *${minutosRestantes(senderJid)} minuto(s)* para a poeira baixar! 💔`,
+      `😤 Respira! Você precisa de *${minutosRestantes(senderJid)} minuto(s)* de terapia antes de tentar de novo!`,
+      `💀 Seu histórico de divórcio rápido tá te perseguindo! Volta em *${minutosRestantes(senderJid)} minuto(s)*!`,
     ];
     await sock.sendMessage(jid, {
       text: frases[Math.floor(Math.random() * frases.length)],
@@ -181,8 +182,8 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   }
   if (isBloqueado(alvoJid)) {
     const frases = [
-      `🚫 *${nomeAlvo}* tá em RECLUSÃO! Divórcio ainda tá fresco! Volta em *${diasRestantes(alvoJid)} dia(s)* seu(ua) insensível! 😤`,
-      `💔 Ué, qual é? *${nomeAlvo}* tá com o coração em pedaços! Espera *${diasRestantes(alvoJid)} dia(s)* pra propor!`,
+      `🚫 *${nomeAlvo}* tá em RECLUSÃO! O término ainda tá fresco! Volta em *${minutosRestantes(alvoJid)} minuto(s)* seu(ua) insensível! 😤`,
+      `💔 Ué, qual é? *${nomeAlvo}* tá recuperando o coração! Espera *${minutosRestantes(alvoJid)} minuto(s)* pra propor!`,
     ];
     await sock.sendMessage(jid, {
       text: frases[Math.floor(Math.random() * frases.length)],
@@ -196,7 +197,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     const frases = [
       `💑 Vocês JÁ são um casal! Quer renovar os votos? 💍 Use *!renovar*!`,
       `😒 Tá querendo propor NOVAMENTE? Já era pra ter pedido em outro lugar!`,
-      `😂 Vocês já tão tão casadinhos que nem precisa más esta!`,
+      `😂 Vocês já tão tão casadinhos que nem precisa mais disso!`,
     ];
     await sock.sendMessage(jid, {
       text: frases[Math.floor(Math.random() * frases.length)],
@@ -244,7 +245,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   const tipoEmoji = tipo === 'casamento' ? '💍' : '💝';
   const tipoVerbo = tipo === 'casamento' ? 'casar' : 'namorar';
   const mensagem =
-    `${tipoEmoji} *${author}* está pedindo *${nomeAlvo}* em ${tipo}!\n\n` +
+    `${tipoEmoji} *${author}* está pedindo *${nomeAlvo}* in ${tipo}!\n\n` +
     `@${alvoJid.split('@')[0]}, você aceita ${tipoVerbo} com *${author}*? 🥺\n\n` +
     `Use *!euaceito* ou *!eurecuso*\n_⏰ Expira em 5 minutos_`;
 
@@ -289,7 +290,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
   await syncCasamentoToDb(jidPedinte, senderJid, tipo);
 
   const frases = [
-    `💍� CARALHOOOOO! *${nomePedinte}* e *${nomeAlvo}* são CASADOS AGORA! Corre gritando que ninguém acreditava! 😂💍`,
+    `💍 CARALHOOOOO! *${nomePedinte}* e *${nomeAlvo}* são CASADOS AGORA! Corre gritando que ninguém acreditava! 😂💍`,
     `💕🏆 É NAMORO! *${nomePedinte}* e *${nomeAlvo}* tão beijando por aí! Que cena constrangedora... bora ver mais! 😏`,
     `🥳 *${nomePedinte}* conseguiu prender *${nomeAlvo}*! Tomara que a corrente segure! 🔐💍`,
     `🌟 UAUUU! Contra todos os prognósticos, *${nomePedinte}* ganhou o coração de *${nomeAlvo}*! Que surpresa! 😱`,
@@ -357,16 +358,17 @@ async function handleCancelarCasamento(sock, msg, jid, author, senderJid, relaci
   xpBonus.delete(key);
   await clearCasamentoDb(rel.jidA, rel.jidB);
 
-  const sete = Date.now() + 7 * 24 * 60 * 60 * 1000;
-  bloqueados.set(rel.jidA, sete);
-  bloqueados.set(rel.jidB, sete);
+  // Define o bloqueio para 30 minutos (30 minutos * 60 segundos * 1000 milissegundos)
+  const trintaMinutos = Date.now() + 30 * 60 * 1000;
+  bloqueados.set(rel.jidA, trintaMinutos);
+  bloqueados.set(rel.jidB, trintaMinutos);
 
   const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
   const frases   = [
-    `💔💔 *${author}* TACOU TUDO PRA CIMA E DIVORCIOU DE *${parceiro}*! GUERRA CIVIL! 🔨\n⚠️ *AMBOS TÁ CANCELADO(A) POR 7 DIAS*! 🚫`,
-    `🤡 O RELACIONAMENTO EXPLODIU! *${author}* e *${parceiro}* não se suportam mais!\n💳 PROCESSO EM ANDAMENTO! Ambos suspensos por *7 dias*! 🚫`,
-    `😭 TRAGÉDIA! *${author}* largou *${parceiro}* feito banana podre!\n💀 *7 DIAS DE RECUSO* para ambos pensarem no que fizeram! 🚫`,
-    `💳🔨 DIVORCIO CONSUMADO! *${author}* e *${parceiro}* se odeiam agora!\n🚫 TÃO BLOQUEADO(A) POR *7 DIAS* pra esfriar essa raiva! 😤`,
+    `💔💔 *${author}* TACOU TUDO PRA CIMA E DIVORCIOU DE *${parceiro}*! GUERRA CIVIL! 🔨\n⚠️ *AMBOS ESTÃO BLOQUEADOS POR 30 MINUTOS*! 🚫`,
+    `🤡 O RELACIONAMENTO EXPLODIU! *${author}* e *${parceiro}* não se suportam mais!\n💳 PROCESSO EM ANDAMENTO! Ambos suspensos por *30 minutos*! 🚫`,
+    `😭 TRAGÉDIA! *${author}* largou *${parceiro}* feito banana podre!\n💀 *30 MINUTOS DE RECLUSÃO* para ambos pensarem no que fizeram! 🚫`,
+    `💳🔨 DIVÓRCIO CONSUMADO! *${author}* e *${parceiro}* se odeiam agora!\n🚫 ESTÃO BLOQUEADOS POR *30 MINUTOS* pra esfriar essa raiva! 😤`,
   ];
   await sock.sendMessage(jid, {
     text: frases[Math.floor(Math.random() * frases.length)],
@@ -399,7 +401,8 @@ module.exports = {
   xpBonus,
   hoje,
   isBloqueado,
-  diasRestantes,
+  diasRestantes: minutosRestantes, // Mantém compatibilidade com o nome antigo caso outros arquivos chamem
+  minutosRestantes,
   getRelacionamento,
   findRelByJid,
   temXpBonus,
@@ -416,4 +419,3 @@ module.exports = {
 const relacionamentoExtra = require(path.join(__dirname, 'relacionamento-extra'));
 const relacionamentoFixar = require(path.join(__dirname, 'relacionamento-fixar'));
 Object.assign(module.exports, relacionamentoExtra, relacionamentoFixar);
-

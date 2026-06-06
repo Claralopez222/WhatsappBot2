@@ -32,23 +32,30 @@ async function prepareDailyMissionState(userId) {
     let user = await Usuario.findOne({ idWhatsApp: userId });
     
     if (!user) {
-      user = await Usuario.create({ idWhatsApp: userId, gold: 0, xp: 0, level: 1 });
+      user = await Usuario.create({ 
+        idWhatsApp: userId, 
+        gold: 0, 
+        xp: 0, 
+        level: 1,
+        dailyMissions: defaultMissions
+      });
+      return user.dailyMissions;
     }
 
     // Se mudou o dia ou não existe a estrutura, inicializa e salva de forma limpa
     if (!user.dailyMissions || user.dailyMissions.date !== todayStr) {
-      const updated = await Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
-        { $set: { dailyMissions: defaultMissions } },
-        { new: true }
-      );
+      // Usar $set para garantir que a estrutura é atualizada
+      user.dailyMissions = defaultMissions;
+      await user.save();
       
-      // Garantir que retorna a estrutura completa
-      if (!updated || !updated.dailyMissions) {
-        console.warn(`⚠️ Falha ao atualizar missões para ${userId}, retornando padrão`);
-        return defaultMissions;
+      // Recarregar para garantir dados corretos
+      const reloaded = await Usuario.findOne({ idWhatsApp: userId });
+      if (reloaded && reloaded.dailyMissions) {
+        return reloaded.dailyMissions;
       }
-      return updated.dailyMissions;
+      
+      console.warn(`⚠️ Falha ao atualizar missões para ${userId}, retornando padrão`);
+      return defaultMissions;
     }
 
     // Sempre recarregar do banco para garantir dados atualizados

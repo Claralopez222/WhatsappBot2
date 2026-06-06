@@ -8,6 +8,7 @@
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const { prepareDailyMissionState } = require('./missoes');
 
 const quizState = new Map(); // userId → { r: resposta, timeout }
 const pontosMap = new Map(); // userId → pontos (sincroniza com MongoDB)
@@ -215,15 +216,19 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       await saveQuizPointsToDB(senderJid, pts);
       const goldReward = 15;
       await changeGold(senderJid, goldReward);
-      // Incrementar progresso da missão quiz5
+      
+      // Garantir que missão está inicializada antes de atualizar
       try {
+        await prepareDailyMissionState(senderJid);
         await Usuario.findOneAndUpdate(
           { idWhatsApp: senderJid },
           { $inc: { 'dailyMissions.progress.quiz5': 1 } }
         );
+        console.log(`✅ Missão quiz5 atualizada para ${senderJid}`);
       } catch (e) {
         console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message);
       }
+      
       await sock.sendMessage(jid, {
         text: `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n💰 *+10 pontos!* Total: *${pts} pts* ☁️\n💵 *+${goldReward} gold!*`,
       }, { quoted: msg });

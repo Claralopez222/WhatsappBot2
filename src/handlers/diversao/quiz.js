@@ -14,10 +14,10 @@ const pontosMap = new Map(); // userId → pontos (sincroniza com MongoDB)
 const quizDailyCount = new Map(); // userId_YYYY-MM-DD → count
 
 const perguntasQuiz = [
-  // FUTEBOL (Novas questões adicionadas)
+  // FUTEBOL
   { p: '⚽ Qual país venceu a primeira Copa do Mundo em 1930?', r: 'uruguai', d: 'Futebol' },
   { p: '⚽ Quem é o maior artilheiro da história das Copas do Mundo?', r: 'miroslav klose', d: 'Futebol' },
-  { p: '⚽ Qual clube brasileiro tem mais títulos da Copa Libertadores da América?', r: 'flamengo', d: 'Futebol' }, // Se houver outro tri empatado, a lógica aceita por aproximação textual, mas mantido o padrão duro
+  { p: '⚽ Qual clube brasileiro tem mais títulos da Copa Libertadores da América?', r: 'flamengo', d: 'Futebol' },
   { p: '⚽ Em que ano o Brasil ganhou sua primeira Copa do Mundo?', r: '1958', d: 'Futebol' },
   { p: '⚽ Qual jogador detém o recorde de mais Bolas de Ouro ganhas?', r: 'lionel messi', d: 'Futebol' },
   { p: '⚽ Qual time venceu a UEFA Champions League na temporada 2022/2023?', r: 'manchester city', d: 'Futebol' },
@@ -26,7 +26,7 @@ const perguntasQuiz = [
   { p: '⚽ Qual estádio brasileiro sediou a final da Copa do Mundo de 1950?', r: 'maracana', d: 'Futebol' },
   { p: '⚽ Qual seleção europeia venceu a Copa do Mundo de 2010?', r: 'espanha', d: 'Futebol' },
 
-  // HISTÓRIA (Mantidas)
+  // HISTÓRIA
   { p: '📜 Em que ano começou a Revolução Francesa?', r: '1789', d: 'História' },
   { p: '🏛️ Qual imperador romano foi assassinado em 44 a.C.?', r: 'julio cesar', d: 'História' },
   { p: '⚔️ Em que ano terminou a Guerra dos Cem Anos?', r: '1453', d: 'História' },
@@ -47,7 +47,7 @@ const perguntasQuiz = [
   { p: '⚔️ Qual era a estratégia de Aníbal na Batalha de Cannas?', r: 'envolvimento duplo', d: 'História' },
   { p: '🌙 Em que ano começou o Califado Omíada?', r: '661', d: 'História' },
   { p: '🎪 Qual civilização construiu Machu Picchu?', r: 'inca', d: 'História' },
-  
+
   // GEOGRAFIA
   { p: '🏔️ Qual é a capital do Nepal?', r: 'katmandu', d: 'Geografia' },
   { p: '🌊 Qual é o segundo maior oceano do mundo?', r: 'atlantico', d: 'Geografia' },
@@ -74,7 +74,7 @@ const perguntasQuiz = [
   { p: '👑 Qual é o país com mais vulcões ativos?', r: 'indonesia', d: 'Geografia' },
   { p: '🌲 Qual país tem a maior floresta boreal?', r: 'russia', d: 'Geografia' },
   { p: '🗿 Em qual país fica o Stonehenge?', r: 'inglaterra', d: 'Geografia' },
-  
+
   // CIÊNCIA & TECNOLOGIA
   { p: '⚛️ Qual é o número atômico do ferro?', r: '26', d: 'Ciência' },
   { p: '🔬 Qual é a partícula elementar mais leve?', r: 'eletron', d: 'Ciência' },
@@ -102,7 +102,7 @@ const perguntasQuiz = [
   { p: '⭐ Quantas estrelas existem no universo observável?', r: '10e24', d: 'Astronomia' },
   { p: '🔭 Qual é a distância do Sol até a Terra em km?', r: '149600000', d: 'Astronomia' },
   { p: '🌙 Qual é a idade da Lua aproximadamente?', r: '4500000000', d: 'Astronomia' },
-  
+
   // MATEMÁTICA
   { p: '🔢 Qual é o resultado de 15² - 8²?', r: '161', d: 'Matemática' },
   { p: '📐 Quantos radianos equivalem a 180 graus?', r: 'pi', d: 'Matemática' },
@@ -125,6 +125,8 @@ const perguntasQuiz = [
   { p: '🧮 Quanto é 2 elevado a 16?', r: '65536', d: 'Matemática' },
   { p: '📊 Qual é a combinação C(10,3)?', r: '120', d: 'Matemática' },
 ];
+
+// ─── UTILITÁRIOS INTERNOS ────────────────────────────────────────────────────
 
 function getTodayKey(senderJid) {
   const today = new Date().toISOString().split('T')[0];
@@ -170,11 +172,12 @@ async function changeGold(userId, amount) {
   }
 }
 
+// ─── !quiz / !quizfut / !quizctec / !quizgeo / !quizmat ─────────────────────
+
 async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
-  // Sincronizar pontos do DB
   await syncQuizPointsFromDB(senderJid);
 
-  // Verificar se está respondendo
+  // Verificar se está respondendo uma pergunta ativa
   if (quizState.has(senderJid)) {
     const state = quizState.get(senderJid);
     const resposta = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '')
@@ -188,12 +191,9 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     if (resposta.includes(correta) || correta.includes(resposta)) {
       const pts = (pontosMap.get(senderJid) || 0) + 10;
       pontosMap.set(senderJid, pts);
-      
       await saveQuizPointsToDB(senderJid, pts);
-      
       const goldReward = 15;
       await changeGold(senderJid, goldReward);
-      
       await sock.sendMessage(jid, {
         text: `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n💰 *+10 pontos!* Total: *${pts} pts* ☁️\n💵 *+${goldReward} gold!*`,
       }, { quoted: msg });
@@ -205,7 +205,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // Verificar limite de 10 quiz por dia
+  // Verificar limite diário de 10 quiz
   const todayKey = getTodayKey(senderJid);
   const quizCount = quizDailyCount.get(todayKey) || 0;
 
@@ -216,18 +216,22 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // Filtrar perguntas por categoria dependendo do comando enviado
+  // Filtrar perguntas por categoria
   const cmd = caption.trim().toLowerCase().split(' ')[0];
   let perguntasFiltradas = perguntasQuiz;
 
   if (cmd === '!quizfut') {
     perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Futebol');
   } else if (cmd === '!quizctec') {
-    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Ciência' || q.d === 'Química' || q.d === 'Física' || q.d === 'Biologia' || q.d === 'Astronomia' || q.d === 'Tecnologia');
+    perguntasFiltradas = perguntasQuiz.filter(q =>
+      ['Ciência', 'Química', 'Física', 'Biologia', 'Astronomia', 'Tecnologia'].includes(q.d)
+    );
   } else if (cmd === '!quizgeo') {
     perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Geografia');
   } else if (cmd === '!quizmat') {
-    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Matemática' || q.d === 'Geometria' || q.d === 'Cálculo' || q.d === 'Estatística');
+    perguntasFiltradas = perguntasQuiz.filter(q =>
+      ['Matemática', 'Geometria', 'Cálculo', 'Estatística'].includes(q.d)
+    );
   }
 
   if (perguntasFiltradas.length === 0) {
@@ -235,7 +239,6 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // Incrementar contador do dia
   quizDailyCount.set(todayKey, quizCount + 1);
 
   // Sortear pergunta sem repetir recentemente
@@ -260,10 +263,13 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   }, 30000);
 
   quizState.set(senderJid, { r: q.r, timeout });
+
   await sock.sendMessage(jid, {
     text: `🧠 *QUIZ — ${q.d.toUpperCase()}*\n\n❓ *${q.p}*\n\n_Você tem 30 segundos!_\n_Quiz ${quizCount + 1}/10 hoje_`,
   }, { quoted: msg });
 }
+
+// ─── !pontos ─────────────────────────────────────────────────────────────────
 
 async function handlePontos(sock, msg, jid, author, senderJid) {
   await syncQuizPointsFromDB(senderJid);
@@ -273,11 +279,13 @@ async function handlePontos(sock, msg, jid, author, senderJid) {
     pts < 80 ? 'Razoável, pode melhorar!' :
     pts < 150 ? 'Bom desempenho! Continua!' :
     pts < 250 ? 'Excelente! Quase lá!' : 'MONSTRO! Que pontuação!';
-  
+
   await sock.sendMessage(jid, {
     text: `🏅 *${author}*, você tem *${pts} pontos* no quiz! ☁️\n\n_${comentario}_`,
   }, { quoted: msg });
 }
+
+// ─── !rankjogos ──────────────────────────────────────────────────────────────
 
 async function handleRankJogos(sock, msg, jid, contactNames) {
   try {
@@ -306,37 +314,29 @@ async function handleRankJogos(sock, msg, jid, contactNames) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-module.exports = {
-  handleQuiz,
-  handlePontos,
-  handleRankJogos
-};
-// Limite diário de depósito global
-const DAILY_DEPOSIT_LIMIT = 10000; 
+// ─── !banco ───────────────────────────────────────────────────────────────────
+
+const DAILY_DEPOSIT_LIMIT = 10000;
 
 async function handleBanco(sock, msg, jid, caption) {
   const userId = msg.key.participant || msg.key.remoteJid;
   const match = caption.match(/banco\s+(\d+)/i);
-  
-  // Busca o usuário no banco de dados
+
   let user = await Usuario.findOne({ idWhatsApp: userId });
   if (!user) {
     user = await Usuario.create({ idWhatsApp: userId, gold: 0 });
   }
 
-  // Inicializa a propriedade bank caso ela não exista no registro do usuário
   if (!user.bank) user.bank = {};
 
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
 
-  // Reseta o limite diário se mudou o dia
   if (user.bank.lastDepositDate !== today) {
     user.bank.depositedToday = 0;
     user.bank.lastDepositDate = today;
   }
 
   if (!match) {
-    // Verificar saldo do banco
     if (!user.bank.amount || user.bank.amount <= 0) {
       const texto = `💼 ═══ BANCO PIROQUINHAS ═══ 💼\n\n` +
                     `💰 *Nenhum investimento ativo no momento!*\n\n` +
@@ -352,18 +352,17 @@ async function handleBanco(sock, msg, jid, caption) {
                     `  💎 Use: *!resgatar*\n` +
                     `  _Após o prazo expirar!_\n\n` +
                     `_Deixe seu dinheiro trabalhar para você!_ 🚀`;
-      
+
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
       return;
     }
-    
+
     const daysLeft = Math.max(0, user.bank.daysRemaining - Math.floor((Date.now() - new Date(user.bank.startDate)) / 86400000));
     const futureAmount = Math.round(user.bank.amount * (1 + (user.bank.interest / 100)));
     const ganho = futureAmount - user.bank.amount;
-    
     let status = daysLeft > 0 ? `⏳ Dias restantes: *${daysLeft}*` : `✅ *PRONTO PARA RESGATAR!*`;
     let emoji = daysLeft > 0 ? '⌛' : '🎯';
-    
+
     const texto = `💼 ═══ SEU INVESTIMENTO ═══ 💼\n\n` +
                   `${emoji} ${status}\n\n` +
                   `━━━━━━━━━━━━━━━━\n` +
@@ -376,37 +375,34 @@ async function handleBanco(sock, msg, jid, caption) {
                   `*AÇÕES:*\n` +
                   `  ${daysLeft > 0 ? `⏳ Aguarde ${daysLeft} dia(s) para resgatar!` : '✅ Use *!resgatar* para sacar seu dinheiro!'}\n\n` +
                   `_Seu investimento está crescendo..._ 📊`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
-  
+
   const amount = parseInt(match[1]);
   if (isNaN(amount) || amount <= 0) {
-    const texto = `⚠️ *QUANTIDADE INVÁLIDA*\n\nA quantia deve ser um número positivo!\n\n*EXEMPLO本地:* \n  *!banco 500*`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `⚠️ *QUANTIDADE INVÁLIDA*\n\nA quantia deve ser um número positivo!\n\n*EXEMPLO:*\n  *!banco 500*` }, { quoted: msg });
     return;
   }
-  
-  // Validar limite diário usando o banco de dados
+
   const depositedToday = user.bank.depositedToday || 0;
   const remainingLimit = DAILY_DEPOSIT_LIMIT - depositedToday;
-  
+
   if (amount > remainingLimit) {
     const texto = `⚠️ *LIMITE DIÁRIO ATINGIDO*\n\nVocê já depositou *${depositedToday}* gold hoje!\n\n` +
                   `━━━━━━━━━━━━━━━━\n` +
-                  `*LIMITES办:* \n` +
+                  `*LIMITES:*\n` +
                   `  📊 Limite diário: *${DAILY_DEPOSIT_LIMIT}* gold\n` +
                   `  ✅ Depositado hoje: *${depositedToday}* gold\n` +
                   `  🔒 Limite restante: *${remainingLimit}* gold\n\n` +
                   `*VOCÊ TENTOU DEPOSITAR:* ${amount} gold\n\n` +
                   `_Tente com uma quantia menor ou volte amanhã!_ ⏰`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
-  
-  // Verificar se já possui investimento ativo
+
   if (user.bank.amount && user.bank.amount > 0) {
     const currentDaysLeft = Math.max(0, user.bank.daysRemaining - Math.floor((Date.now() - new Date(user.bank.startDate)) / 86400000));
     const texto = `⚠️ *INVESTIMENTO ATIVO*\n\nVocê já tem um investimento em andamento!\n\n` +
@@ -419,30 +415,26 @@ async function handleBanco(sock, msg, jid, caption) {
                   `*OPÇÕES:*\n` +
                   `  💎 Use *!banco* para ver seus detalhes\n` +
                   `  🏦 Use *!resgatar* para sacar quando pronto`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
 
-  // Descontar o Gold de forma atômica se houver saldo suficiente
   const updatedUser = await Usuario.findOneAndUpdate(
     { idWhatsApp: userId, gold: { $gte: amount } },
     { $inc: { gold: -amount } },
     { new: true }
   );
-  
+
   if (!updatedUser) {
     const myGold = user.gold || 0;
-    const texto = `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold!\n\n━━━━━━━━━━━━━━━━\n*SEU SALDO:* \n  💰 Disponível: *${myGold}* gold`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold!\n\n━━━━━━━━━━━━━━━━\n*SEU SALDO:*\n  💰 Disponível: *${myGold}* gold` }, { quoted: msg });
     return;
   }
 
-  // Gerar rendimentos aleatórios
   const interest = 5 + Math.floor(Math.random() * 11); // 5-15%
-  const days = 1 + Math.floor(Math.random() * 7); // 1-7 dias
-  
-  // Salva os dados do investimento diretamente no documento do usuário
+  const days = 1 + Math.floor(Math.random() * 7);       // 1-7 dias
+
   await Usuario.updateOne(
     { idWhatsApp: userId },
     {
@@ -452,14 +444,14 @@ async function handleBanco(sock, msg, jid, caption) {
         'bank.daysRemaining': days,
         'bank.startDate': new Date().toISOString(),
         'bank.lastDepositDate': today,
-        'bank.depositedToday': depositedToday + amount
+        'bank.depositedToday': depositedToday + amount,
       }
     }
   );
-  
+
   const futureAmount = Math.round(amount * (1 + (interest / 100)));
   const ganho = futureAmount - amount;
-  
+
   const texto = `✅ ═══ INVESTIMENTO REALIZADO! ═══ ✅\n\n` +
                 `💼 *Seu dinheiro está trabalhando!*\n\n` +
                 `━━━━━━━━━━━━━━━━\n` +
@@ -475,55 +467,56 @@ async function handleBanco(sock, msg, jid, caption) {
                 `*SALDO ATUAL:*\n` +
                 `  💰 Disponível: *${updatedUser.gold}* gold\n` +
                 `  🏦 Investido: *${amount}* gold`;
-  
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-async function handleResgatar(sock, msg, jid, caption) {
+// ─── !resgatar ────────────────────────────────────────────────────────────────
+
+async function handleResgatar(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
   const user = await Usuario.findOne({ idWhatsApp: userId });
-  
+
   if (!user || !user.bank || !user.bank.amount || user.bank.amount <= 0) {
-    const texto = `⚠️ *SEM INVESTIMENTOS ATIVOS*\n\nVocê não possui nenhum investimento ativo no banco!`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `⚠️ *SEM INVESTIMENTOS ATIVOS*\n\nVocê não possui nenhum investimento ativo no banco!` }, { quoted: msg });
     return;
   }
-  
+
   const daysLeft = Math.max(0, user.bank.daysRemaining - Math.floor((Date.now() - new Date(user.bank.startDate)) / 86400000));
-  
+
   if (daysLeft > 0) {
-    const texto = `⏳ ═══ INVESTIMENTO EM ANDAMENTO ═══ ⏳\n\n⌛ *Seu investimento vence em ${daysLeft} dia(s)!*`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `⏳ ═══ INVESTIMENTO EM ANDAMENTO ═══ ⏳\n\n⌛ *Seu investimento vence em ${daysLeft} dia(s)!*` }, { quoted: msg });
     return;
   }
-  
+
   const futureAmount = Math.round(user.bank.amount * (1 + (user.bank.interest / 100)));
   const ganho = futureAmount - user.bank.amount;
-  
-  // Devolve o valor com rendimento e limpa as variáveis de investimento no banco de dados
+
   const finalUser = await Usuario.findOneAndUpdate(
     { idWhatsApp: userId },
-    { 
+    {
       $inc: { gold: futureAmount },
       $set: { 'bank.amount': 0, 'bank.interest': 0, 'bank.daysRemaining': 0, 'bank.startDate': null }
     },
     { new: true }
   );
-  
+
   const texto = `🎉 ═══ RESGATE BEM-SUCEDIDO! ═══ 🎉\n\n` +
                 `💎 *Parabéns! Seu investimento rendeu!*\n\n` +
                 `━━━━━━━━━━━━━━━━\n` +
-                `*RESUMO:* \n` +
+                `*RESUMO:*\n` +
                 `  💵 Investimento inicial: *${user.bank.amount}* gold\n` +
                 `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
                 `  💰 Resgate em: *${futureAmount}* gold\n` +
                 `  💹 Lucro obtido: *+${ganho}* gold\n\n` +
                 `━━━━━━━━━━━━━━━━\n` +
-                `*SALDO FINAL:* \n` +
+                `*SALDO FINAL:*\n` +
                 `  ✅ Total na conta: *${finalUser.gold}* gold`;
-  
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
+
+// ─── EXPORTS ──────────────────────────────────────────────────────────────────
 
 module.exports = {
   handleQuiz,
@@ -532,7 +525,6 @@ module.exports = {
   handleBanco,
   handleResgatar,
   changeGold,
-  bankData,
   quizState,
   perguntasQuiz,
 };

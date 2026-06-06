@@ -77,13 +77,24 @@ async function handleBuy(sock, msg, jid, caption) {
   await changeGold(userId, -custoTotal);
   await changeGold(vendedorId, custoTotal);
   
-  // Adicionar ao inventário do comprador
+  // Adicionar ao inventário do comprador de forma segura
   try {
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      { $inc: { [`inventory.${itemKey}`]: quantidade } },
-      { upsert: true, new: true }
-    );
+    let user = await Usuario.findOne({ idWhatsApp: userId });
+    
+    if (!user) {
+      user = new Usuario({ 
+        idWhatsApp: userId, 
+        inventory: { [itemKey]: quantidade }
+      });
+    } else {
+      if (!user.inventory) {
+        user.inventory = {};
+      }
+      user.inventory[itemKey] = (user.inventory[itemKey] || 0) + quantidade;
+    }
+    
+    await user.save();
+    console.log(`✅ Item adicionado ao inventário (marketplace): ${userId} → ${itemKey} × ${quantidade}`);
   } catch (e) {
     console.error('⚠️ Erro ao adicionar ao inventário:', e.message);
   }

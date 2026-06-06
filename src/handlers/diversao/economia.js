@@ -604,7 +604,7 @@ async function handleGarimpar(sock, msg, jid, getPrefix) {
   }
 }
 
-// ─── !slots (com animação)
+// ─── !slots (com animação editando a mesma mensagem)
 async function handleSlots(sock, msg, jid, senderJid, caption) {
   const args = caption.trim().split(/\s+/);
   const aposta = parseInt(args[1]);
@@ -628,11 +628,11 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const r3 = frutas[Math.floor(Math.random() * frutas.length)];
 
   // Enviar mensagem inicial com animação
-  let mensagem = await sock.sendMessage(jid, {
+  let sentMsg = await sock.sendMessage(jid, {
     text: `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🎲 | 🎲 | 🎲 ]\n\n_Girando..._`
   }, { quoted: msg });
 
-  // Simulação de rotação
+  // Simulação de rotação - frames da animação
   const frameAnimation = [
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍒 | 🎲 | 🎲 ]\n\n_Girando..._`,
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍒 | 🍋 | 🎲 ]\n\n_Girando..._`,
@@ -641,26 +641,18 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍇 | 🍒 | 🍋 ]\n\n_Girando..._`,
   ];
 
-  try {
-    // Animar a rotação
-    for (let i = 0; i < frameAnimation.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 300));
-      try {
-        await sock.chatModify({
-          lastMessages: [{
-            key: mensagem.key,
-            message: { conversation: frameAnimation[i] }
-          }],
-          syncAction: { index: { syncAction: 1 } }
-        }, jid);
-      } catch (e) {
-        // Se editMessage falhar, apenas continua
-      }
+  // Animar a rotação editando a mensagem
+  for (let i = 0; i < frameAnimation.length; i++) {
+    await new Promise(resolve => setTimeout(resolve, 350));
+    try {
+      await sock.editMessage(jid, sentMsg.key, { text: frameAnimation[i] });
+    } catch (e) {
+      // Se edição falhar, continua a animação mesmo assim
+      console.log('⚠️ Erro ao editar frame:', e.message);
     }
-  } catch (e) {
-    // Ignore edit errors, vamos mostrar resultado final mesmo assim
   }
 
+  // Calcular resultado
   let multiplicador = 0;
   let resultadoMsg = '❌ *Você perdeu tudo!* O banco agradece.';
 
@@ -675,13 +667,14 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const ganho = Math.floor(aposta * multiplicador);
   const lucro = ganho - aposta;
 
+  // Atualizar saldo no banco
   await Usuario.findOneAndUpdate(
     { idWhatsApp: senderJid },
     { $inc: { gold: lucro } }
   );
 
-  // Aguardar um pouco e enviar resultado final
-  await new Promise(resolve => setTimeout(resolve, 400));
+  // Aguardar um pouco e mostrar resultado final na mesma mensagem
+  await new Promise(resolve => setTimeout(resolve, 500));
 
   const textoFinal = `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
                      `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
@@ -689,15 +682,10 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
                      `💰 Saldo atualizado: *${userGold + lucro} Gold*`;
 
   try {
-    await sock.chatModify({
-      lastMessages: [{
-        key: mensagem.key,
-        message: { conversation: textoFinal }
-      }],
-      syncAction: { index: { syncAction: 1 } }
-    }, jid);
+    await sock.editMessage(jid, sentMsg.key, { text: textoFinal });
   } catch (e) {
-    // Se falhar, envia como mensagem nova
+    // Se falhar a edição, envia como mensagem nova
+    console.log('⚠️ Erro ao editar resultado:', e.message);
     await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg });
   }
 }

@@ -18,6 +18,7 @@ const path    = require('path');
 const fs      = require('fs');
 const mongoose = require('mongoose');
 const Usuario  = require(path.join(__dirname, 'models', 'Usuario'));
+const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
 
 // ─── Importar Handlers ────────────────────────────────────────
 const figurinhaHandler      = require(path.join(__dirname, 'handlers', 'figurinha'));
@@ -169,6 +170,9 @@ function getPrefix(jid) { return prefixMap.get(jid) || '!'; }
 async function addUserXp(userId, xp = 1, pushName = null) {
   if (!userId) return null;
   try {
+    // Garantir que missão está inicializada antes de atualizar
+    await prepareDailyMissionState(userId);
+    
     const update = {
       $inc: { xp, 'dailyMissions.progress.xp100': xp },
       $setOnInsert: { level: 1, idWhatsApp: userId, createdAt: new Date() },
@@ -412,6 +416,9 @@ async function startBot() {
         if (!_isPrivate) {
           const remetente  = msg.key.participant || msg.key.remoteJid;
           const nomeDoCara = msg.pushName || 'Usuário do Zap';
+
+          // Garantir que missão está inicializada antes de atualizar
+          await prepareDailyMissionState(remetente);
 
           await Usuario.findOneAndUpdate(
             { idWhatsApp: remetente },

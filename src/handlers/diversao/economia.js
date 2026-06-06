@@ -474,22 +474,38 @@ async function handleInventario(sock, msg, jid) {
   }
 }
 
-// ─── !pix (transferência)
+// ─── !pix (transferência corrigida com tratamento de menções)
 async function handlePix(sock, msg, jid, caption) {
-  // Pega o ID de quem enviou com segurança (funciona em grupo e privado)
+  // Pega o ID de quem enviou com segurança
   const userId = msg.key.participant || msg.key.remoteJid;
   
-  // Captura o comando e isola o número puro e a quantia
+  // 1. Tenta pegar o JID do alvo direto pelas menções oficiais do WhatsApp (@Felipe)
+  const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  let targetJid = mentionedJid;
+  let numeroPura = '';
+
+  // 2. Se não houver menção clicável, tenta extrair pelo texto via Regex
   const match = caption.match(/(?:pix|transferir)\s+@?(\d+)\s+(\d+)/i);
-  
-  if (!match) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!pix @numero quantia*\nExemplo: *!pix @5521999999999 500*' }, { quoted: msg });
+  let quantia = 0;
+
+  if (targetJid) {
+    // Se achou por menção, o número puro para exibição é extraído do próprio JID
+    numeroPura = targetJid.split('@')[0];
+    // Captura a quantia (última palavra/número da mensagem)
+    const parts = caption.trim().split(/\s+/);
+    quantia = parseInt(parts[parts.length - 1]);
+  } else if (match) {
+    // Fallback caso tenham digitado o número manualmente sem marcar
+    numeroPura = match[1].replace(/\D/g, ''); 
+    targetJid = `${numeroPura}@s.whatsapp.net`;
+    quantia = parseInt(match[2]);
+  }
+
+  // Se não encontrou alvo ou quantia por nenhum dos métodos, cancela
+  if (!targetJid || isNaN(quantia) || quantia <= 0) {
+    await sock.sendMessage(jid, { text: '⚠️ Use: *!pix @nome quantia* ou *!pix @numero quantia*\nExemplo: *!pix @Felipe 30*' }, { quoted: msg });
     return;
   }
-  
-  const numeroPura = match[1].replace(/\D/g, ''); // Garante apenas números
-  const targetJid = `${numeroPura}@s.whatsapp.net`; // Monta o JID padrão do WhatsApp
-  const quantia = parseInt(match[2]);
   
   // Impede o usuário de fazer um PIX para si mesmo
   if (userId === targetJid) {
@@ -497,12 +513,6 @@ async function handlePix(sock, msg, jid, caption) {
     return;
   }
 
-  // Impede valores inválidos ou negativos
-  if (isNaN(quantia) || quantia <= 0) {
-    await sock.sendMessage(jid, { text: '⚠️ A quantia do PIX deve ser um valor positivo!' }, { quoted: msg });
-    return;
-  }
-  
   const saldoAtual = await getSaldoAtual(userId);
   
   if (saldoAtual < quantia) {
@@ -518,7 +528,7 @@ async function handlePix(sock, msg, jid, caption) {
   
   await sock.sendMessage(jid, { 
     text: `✅ *Transferência realizada!*\n\n💵 *${quantia} gold* enviado com sucesso para *@${numeroPura}*\n📊 Seu novo saldo: *${novoSaldo}* gold`,
-    mentions: [targetJid, userId] // Menciona os dois para o WhatsApp atualizar os perfis visualmente
+    mentions: [targetJid, userId] // Crucial para o WhatsApp atualizar as notificações de saldo dos dois
   }, { quoted: msg });
 }
 // ─── !apostar

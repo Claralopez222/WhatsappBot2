@@ -8,7 +8,6 @@ const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 
 const petData = new Map();
-const shelterData = new Map();
 const spawnedPets = new Map(); // { groupId: { type, rarity, spawnedAt } }
 
 const petSystem = {
@@ -162,37 +161,31 @@ async function handleAdoptarPet(sock, msg, jid, caption) {
   await sock.sendMessage(jid, { text: '⚠️ Use *!capturar* para pegar um pet que aparecer no grupo!' }, { quoted: msg });
 }
 
-// ─── !alimentar (Com trava de comida no inventário, status de fome e Missão Diária)
+// ─── !alimentar
 async function handleAlimentarPet(sock, msg, jid, author) {
   const userId = getUserId(msg);
-  
-  // Busca o usuário completo no banco para checar o inventário
   const user = await Usuario.findOne({ idWhatsApp: userId });
   const pet = user?.pet;
   
-  if (!pet) {
+  if (!pet || !pet.name) {
     await sock.sendMessage(jid, { text: '⚠️ Você ainda não capturou um pet. Use *!capturar* quando um aparecer no grupo.' }, { quoted: msg });
     return;
   }
 
-  // 1. Validação da Fome: Só alimenta se o bicho não estiver cheio
   if (pet.fullness >= 100) {
     await sock.sendMessage(jid, { text: `❌ *${pet.name}* está completamente cheio (🍽️ 100%) e recusou a comida!` }, { quoted: msg });
     return;
   }
 
-  // 2. Validação do Inventário: Verifica se tem ração/comida guardada
   const quantidadeComida = user.inventario?.comida || 0;
   if (quantidadeComida <= 0) {
     await sock.sendMessage(jid, { text: '❌ Você não possui comida no seu inventário! Compre itens na loja antes de alimentar seu companheiro.' }, { quoted: msg });
     return;
   }
 
-  // Executa os ajustes de status do pet
   pet.fullness = Math.min(100, pet.fullness + 30);
   pet.happiness = Math.min(100, pet.happiness + 10);
   
-  // Consome uma unidade de comida do inventário e soma +1 na missão diária 'pet10'
   await Usuario.findOneAndUpdate(
     { idWhatsApp: userId },
     { 
@@ -204,25 +197,22 @@ async function handleAlimentarPet(sock, msg, jid, author) {
     }
   );
   
-  // Atualiza o cache local de memória
   petData.set(userId, pet);
-  
   await sock.sendMessage(jid, { text: `🍖 Você usou 1x Comida e alimentou *${pet.name}*!\n\n😊 Felicidade: ${pet.happiness}%\n🍽️ Fome: ${pet.fullness}%\n📦 Comidas restantes: ${quantidadeComida - 1}` }, { quoted: msg });
 }
 
-// ─── !brincar (Com trava de felicidade limite e Missão Diária)
+// ─── !brincar
 async function handleBrincarPet(sock, msg, jid, author) {
   const userId = getUserId(msg);
   const pet = await getPet(userId);
   
-  if (!pet) {
+  if (!pet || !pet.name) {
     await sock.sendMessage(jid, { text: '⚠️ Você ainda não capturou um pet. Use *!capturar* quando um aparecer no grupo.' }, { quoted: msg });
     return;
   }
 
-  // Validação do humor: Só brinca se a felicidade estiver abaixo de 80% (triste/entediado)
   if (pet.happiness >= 80) {
-    await sock.sendMessage(jid, { text: `❌ *${pet.name}* já está muito feliz e correndo de um lado para o outro! Deixe ele descansar um pouco antes de brincar de novo (😊 ${pet.happiness}%).` }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `❌ *${pet.name}* já está muito feliz! Deixe ele descansar um pouco antes de brincar de novo (😊 ${pet.happiness}%).` }, { quoted: msg });
     return;
   }
   
@@ -231,7 +221,6 @@ async function handleBrincarPet(sock, msg, jid, author) {
   pet.fullness = Math.max(0, pet.fullness - 10);
   pet.level = Math.min(50, pet.level + 1);
   
-  // Salva o pet modificado e adiciona +1 no progresso da missão diária 'pet10'
   await Usuario.findOneAndUpdate(
     { idWhatsApp: userId },
     { 
@@ -240,17 +229,16 @@ async function handleBrincarPet(sock, msg, jid, author) {
     }
   );
 
-  // Atualiza o cache local de memória
   petData.set(userId, pet);
-  
   await sock.sendMessage(jid, { text: `🎾 Você brincou com *${pet.name}*!\n\n😊 Felicidade: ${pet.happiness}%\n⚡ Energia: ${pet.energy}%\n🍽️ Fome: ${pet.fullness}%\n🏆 Nível: ${pet.level}` }, { quoted: msg });
 }
 
+// ─── !statuspet
 async function handleStatusPet(sock, msg, jid) {
   const userId = getUserId(msg);
   const pet = await getPet(userId);
   
-  if (!pet) {
+  if (!pet || !pet.name) {
     await sock.sendMessage(jid, { text: '⚠️ Você ainda não capturou um pet. Use *!capturar* quando um aparecer!' }, { quoted: msg });
     return;
   }
@@ -266,24 +254,36 @@ async function handleStatusPet(sock, msg, jid) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
+// ─── !rankpet (Filtrado e corrigido conforme a image_374eae.png)
 async function handlePetRank(sock, msg, jid, contactNames = {}) {
   try {
-    const usuariosComPet = await Usuario.find({ pet: { $ne: null } }).lean();
+    // Traz apenas registros que não sejam grupos e que tenham o subobjeto de pet e nome válidos
+    const usuariosComPet = await Usuario.find({
+      idWhatsApp: { $not: /@g.us$/ },
+      'pet.name': { $exists: true, $ne: null, $ne: '' }
+    }).lean();
     
     const ranks = usuariosComPet
-      .map(u => ({ userId: u.idWhatsApp, pet: u.pet, score: getPetRankScore(u.pet) }))
+      .map(u => ({ 
+        idWhatsApp: u.idWhatsApp, 
+        nome: u.nome, 
+        pet: u.pet, 
+        score: getPetRankScore(u.pet) 
+      }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
     if (ranks.length === 0) {
-      await sock.sendMessage(jid, { text: '📊 Nenhum pet em atividade no momento. Capture o seu usando *!capturar*!' }, { quoted: msg });
+      await sock.sendMessage(jid, { text: '🐾 *RANKING DE PETS DO BOT*\n\nℹ️ Nenhum pet registrado no momento.\n\n_Use *!capturar* para conseguir o seu companheiro!_' }, { quoted: msg });
       return;
     }
 
     const lines = ranks.map((entry, index) => {
-      const name = contactNames[entry.userId] || entry.userId.split('@')[0];
+      const userId = entry.idWhatsApp;
+      const name = entry.nome || contactNames[userId] || userId.split('@')[0];
       const petDef = petSystem[entry.pet.type] || { emoji: '🐾' };
-      return `${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '▸'} ${name} – ${petDef.emoji} ${entry.pet.name} (Lvl ${entry.pet.level})`;
+      
+      return `${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '▸'} ${name} – ${petDef.emoji} ${entry.pet.name} (Lvl ${entry.pet.level || 1})`;
     });
 
     await sock.sendMessage(jid, { text: `🐾 *RANKING DE PETS DO BOT*\n\n${lines.join('\n')}\n\n_Use *!capturar* para conseguir o seu companheiro!_` }, { quoted: msg });
@@ -293,6 +293,7 @@ async function handlePetRank(sock, msg, jid, contactNames = {}) {
   }
 }
 
+// ─── !pets
 async function handlePets(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   let texto = `🐾 *PETS DISPONÍVEIS NA NATUREZA* 🐾\n\n`;
@@ -304,124 +305,92 @@ async function handlePets(sock, msg, jid, getPrefix) {
   }
   
   texto += `💡 _Fique de olho nos grupos! Um pet selvagem surge aleatoriamente a cada 1 hora. Quando aparecer, digite rápido *${P}capturar*!_`;
-  
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
+// ─── !abrigo (Totalmente reconstruído e persistido no Banco de Dados)
 async function handleAbrigo(sock, msg, jid, caption = '') {
   const userId = getUserId(msg);
-  const args = caption.trim().split(/\s+/).slice(1);
-  const action = args[args.length - 1]?.toLowerCase() === 'pegar' ? 'pegar' : args[0]?.toLowerCase();
-  
-  if (!action) {
-    if (shelterData.size === 0) {
-      const texto = `🏥 ═══ ABRIGO DE PETS ═══ 🏥\n\n😔 *Abrigo completamente vazio no momento!*\n\nO abrigo está aguardando por novos hóspedes...\n\n━━━━━━━━━━━━━━━━\n*COMO COLOCAR UM PET?*\n  📝 Use: *!abrigo deixar*\n  \n*NÃO TEM PET?*\n  🎯 Capture um com: *!capturar*\n  🐾 Pets spawnam a cada 1 hora\n\n_Ajude um pet abandonado a encontrar um novo lar!_ 💕`;
-      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  const parts = caption.trim().split(/\s+/);
+  const commandArg = parts[1]?.toLowerCase();
+
+  // Caso 1: !abrigo deixar
+  if (commandArg === 'deixar') {
+    const user = await Usuario.findOne({ idWhatsApp: userId });
+    const pet = user?.pet;
+    
+    if (!pet || !pet.name) {
+      await sock.sendMessage(jid, { text: `⚠️ *ERRO: SEM PET*\n\nYou não possui um pet ativo para abrigar!\n\n_Capture um com *!capturar* primeiro._` }, { quoted: msg });
       return;
     }
     
-    let texto = `🏥 ═══ ABRIGO DE PETS ═══ 🏥\n\n✨ *${shelterData.size} pet(s) aguardando resgate* ✨\n\n`;
-    let index = 1;
-    for (const [_, shelter] of shelterData.entries()) {
-      const petDef = petSystem[shelter.pet.type] || { emoji: '🐾' };
-      const rarityEmoji = shelter.pet.rarity === 'COMUM' ? '⭐' : 
-                          shelter.pet.rarity === 'RARO' ? '🌟' : 
-                          shelter.pet.rarity === 'ULTRA-RARO' ? '✨' : '💎';
-      const rarityName = shelter.pet.rarity.charAt(0) + shelter.pet.rarity.slice(1).toLowerCase();
-      
-      texto += `${index}️⃣ ${petDef.emoji} *${shelter.pet.name}* ${rarityEmoji}\n`;
-      texto += `    └─ Raridade: ${rarityName}\n`;
-      texto += `    └─ Nível: ${shelter.pet.level}\n`;
-      texto += `    └─ Felicidade: ${shelter.pet.happiness}%\n\n`;
-      index++;
-    }
-    
-    texto += `━━━━━━━━━━━━━━━━\n*COMO ADOTAR?*\n  Use: *!abrigo <nome> pegar*\n  Exemplo: *!abrigo Selvagem pegar*\n  \n*DICA:* Pets raros são mais difíceis de encontrar!\nUse *!capturar* regularmente para completar sua coleção! 🎯`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-    return;
-  }
-  
-  if (action === 'deixar') {
-    const pet = await getPet(userId);
-    
-    if (!pet) {
-      const texto = `⚠️ *ERRO: SEM PET*\n\nVocê não possui um pet para deixar no abrigo!\n\n━━━━━━━━━━━━━━━━\n*COMO CONSEGUIR UM PET?*\n  🎯 Capture com: *!capturar*\n  🏥 Adote do abrigo: *!abrigo*\n\n_Primeiro você precisa ter um pet seu!_ 🐾`;
-      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-      return;
-    }
-    
-    const shelterId = `shelter_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    shelterData.set(shelterId, {
-      pet: pet,
-      owner: userId,
-      leftAt: new Date().toISOString(),
-    });
+    // Aloca o pet no abrigo global do banco de dados (usando uma flag no próprio model do usuário)
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      { $set: { pet: null, 'petShelter.isSheltered': true, 'petShelter.shelteredPet': pet, 'petShelter.leftAt': new Date().toISOString() } }
+    );
     
     petData.delete(userId);
-    try {
-      await Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
-        { $set: { pet: null } },
-        { upsert: true, returnDocument: 'after' }
-      );
-    } catch (e) {
-      console.error('❌ Erro ao deletar pet:', e.message);
-    }
     
     const petDef = petSystem[pet.type] || { emoji: '🐾' };
-    const rarityEmoji = pet.rarity === 'COMUM' ? '⭐' : 
-                        pet.rarity === 'RARO' ? '🌟' : 
-                        pet.rarity === 'ULTRA-RARO' ? '✨' : '💎';
-    
-    const texto = `🏥 *PET DEIXADO NO ABRIGO* 🏥\n\n${petDef.emoji} *${pet.name}* ${rarityEmoji}\n\n━━━━━━━━━━━━━━━━\n*DETALHES:*\n  Nível: ${pet.level}\n  Felicidade: ${pet.happiness}%\n  Tipo: ${pet.type}\n  Raridade: ${pet.rarity}\n\n✨ *${pet.name}* está à espera de um novo lar!\n\n_Qualquer pessoa pode adotar com:_\n*!abrigo ${pet.name} pegar*\n\n💔 Esperamos que encontre um novo dono em breve!`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `🏥 *PET ENVIADO AO ABRIGO* 🏥\n\n${petDef.emoji} *${pet.name}* foi guardado com sucesso!\n\nPara pegá-lo de volta ou listar os animais disponíveis, digite *!abrigo*.` }, { quoted: msg });
     return;
   }
   
-  if (action === 'pegar') {
-    const petName = args.slice(0, args.length - 1).join(' ');
+  // Caso 2: !abrigo <nome> pegar
+  if (parts.length >= 3 && parts[parts.length - 1].toLowerCase() === 'pegar') {
+    const petName = parts.slice(1, parts.length - 1).join(' ');
     
-    if (!petName) {
-      await sock.sendMessage(jid, { text: '⚠️ Especifique o nome do pet! Exemplo: *!abrigo Cachorro Selvagem pegar*' }, { quoted: msg });
-      return;
-    }
-
-    let foundShelter = null;
-    let foundShelterId = null;
+    // Busca no banco algum usuário que deixou o pet especificado no abrigo
+    const shelterTarget = await Usuario.findOne({
+      'petShelter.isSheltered': true,
+      'petShelter.shelteredPet.name': { $regex: new RegExp(petName, 'i') }
+    });
     
-    for (const [shelterId, shelter] of shelterData.entries()) {
-      if (shelter.pet.name.toLowerCase().includes(petName.toLowerCase())) {
-        foundShelter = shelter;
-        foundShelterId = shelterId;
-        break;
-      }
-    }
-    
-    if (!foundShelter) {
-      const texto = `⚠️ *PET NÃO ENCONTRADO*\n\n"${petName}" não existe no abrigo!\n\n━━━━━━━━━━━━━━━━\n*PETS DISPONÍVEIS:*\n  Use: *!abrigo*\n  Para ver todos os pets\n\n_Verifique o nome e tente novamente!_ 🔍`;
-      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    if (!shelterTarget || !shelterTarget.petShelter?.shelteredPet) {
+      await sock.sendMessage(jid, { text: `⚠️ *PET NÃO ENCONTRADO*\n\nNão encontramos nenhum pet no abrigo contendo o nome "${petName}". Digite *!abrigo* para ver a lista.` }, { quoted: msg });
       return;
     }
     
-    const userCurrentPet = await getPet(userId);
-    if (userCurrentPet) {
-      const texto = `⚠️ *JÁ POSSUI PET*\n\nVocê já tem um pet! Não pode adotar outro no momento.\n\n━━━━━━━━━━━━━━━━\n*ALTERNATIVAS:*\n  💔 Deixar seu pet: *!abrigo deixar*\n\n_Libere espaço para um novo companheiro!_ 🐾`;
-      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    const requester = await Usuario.findOne({ idWhatsApp: userId });
+    if (requester?.pet && requester.pet.name) {
+      await sock.sendMessage(jid, { text: `⚠️ *AÇÃO NEGADA*\n\nVocê já possui um pet companheiro ativo! Deixe seu pet atual no abrigo antes de adotar outro.` }, { quoted: msg });
       return;
     }
     
-    await savePet(userId, foundShelter.pet);
-    shelterData.delete(foundShelterId);
+    const petAdotado = shelterTarget.petShelter.shelteredPet;
     
-    const petDef = petSystem[foundShelter.pet.type] || { emoji: '🐾' };
-    const rarityEmoji = foundShelter.pet.rarity === 'COMUM' ? '⭐' : 
-                        foundShelter.pet.rarity === 'RARO' ? '🌟' : 
-                        foundShelter.pet.rarity === 'ULTRA-RARO' ? '✨' : '💎';
+    // Remove o pet do abrigo antigo e injeta no novo dono
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: shelterTarget.idWhatsApp },
+      { $set: { petShelter: { isSheltered: false, shelteredPet: null, leftAt: null } } }
+    );
     
-    const texto = `🎉 ═══ ADOÇÃO BEM-SUCEDIDA! ═══ 🎉\n\n${petDef.emoji} *${foundShelter.pet.name}* ${rarityEmoji}\n\n━━━━━━━━━━━━━━━━\n*DETALHES DO SEU NOVO PET:*\n  🏆 Nível: ${foundShelter.pet.level}\n  😊 Felicidade: ${foundShelter.pet.happiness}%\n  🍽️ Fome: ${foundShelter.pet.fullness}%\n\nCuide bem do seu novo amigo! Use *!statuspet* para vê-lo a qualquer momento. ❤️`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    await savePet(userId, petAdotado);
+    
+    const petDef = petSystem[petAdotado.type] || { emoji: '🐾' };
+    await sock.sendMessage(jid, { text: `🎉 ═══ ADOÇÃO CONCLUÍDA! ═══ 🎉\n\n${petDef.emoji} *${petAdotado.name}* foi adotado e agora é o seu novo companheiro!\n\nUse *!statuspet* para ver os atributos dele.` }, { quoted: msg });
     return;
   }
+  
+  // Caso 3: !abrigo (Listagem Geral)
+  const abrigaLista = await Usuario.find({ 'petShelter.isSheltered': true }).lean();
+  
+  if (abrigaLista.length === 0) {
+    const textoVazio = `🏥 ═══ ABRIGO DE PETS ═══ 🏥\n\n😔 *O abrigo está completamente vazio no momento!*\n\n━━━━━━━━━━━━━━━━\n*COMO DEIXAR SEU PET?*\n📝 Use: *!abrigo deixar*\n\n_Quando houver animais abandonados, eles aparecerão listados aqui!_`;
+    await sock.sendMessage(jid, { text: textoVazio }, { quoted: msg });
+    return;
+  }
+  
+  let textoLista = `🏥 ═══ ABRIGO DE PETS ═══ 🏥\n\n✨ *${abrigaLista.length} pet(s) aguardando resgate:* \n\n`;
+  abrigaLista.forEach((u, index) => {
+    const p = u.petShelter.shelteredPet;
+    const petDef = petSystem[p.type] || { emoji: '🐾' };
+    textoLista += `${index + 1}️⃣ ${petDef.emoji} *${p.name}* (${p.rarity})\n    └─ Nível: ${p.level} | 🎭 Felicidade: ${p.happiness}%\n\n`;
+  });
+  
+  textoLista += `━━━━━━━━━━━━━━━━\n*COMO ADOTAR?*\nUse: *!abrigo <nome-do-pet> pegar*\nExemplo: _!abrigo ${abrigaLista[0].petShelter.shelteredPet.name} pegar_`;
+  await sock.sendMessage(jid, { text: textoLista }, { quoted: msg });
 }
 
 module.exports = {

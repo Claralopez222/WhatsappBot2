@@ -386,6 +386,15 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   else if (interactions > 500) activityLabel = '⚡ ATIVO';
 
   const userData = await Usuario.findOne({ idWhatsApp: alvoJid });
+  
+  // GOLD E BANCO DO USUÁRIO INTEGRADOS DO MONGODB
+  const userGold = userData?.gold ?? 100;
+  let bankText = '🏦 Nao possui investimentos';
+  if (userData?.bank && userData.bank.amount > 0) {
+    const daysLeft = Math.max(0, userData.bank.daysRemaining - Math.floor((Date.now() - new Date(userData.bank.startDate)) / 86400000));
+    bankText = `🏦 Investido: *${userData.bank.amount}* gold (${userData.bank.interest}% juros)\n⏳ Status: ${daysLeft > 0 ? `Faltam ${daysLeft} dia(s)` : 'Pronto para resgatar!'}`;
+  }
+
   const levelXP = userData?.xp ?? msgsRec;
   const level = userData?.level || Math.floor(levelXP / 50) + 1;
   const nextLevelXp = level * 50;
@@ -436,7 +445,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // PET INFO ATUALIZADO VIA BANCO DE DADOS
   let petText = '';
   if (userData?.pet?.name) {
     const petSystem = { 
@@ -486,6 +494,9 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   lines.push(`🏅 Level: ${level}   XP: ${levelXP}/${nextLevelXp} (${levelProgress}%)`);
   lines.push(`📊 Progresso: [${levelBar}]`);
   lines.push(activityLabel);
+  lines.push(`────────────────────────`);
+  lines.push(`💰 Carteira: *${userGold}* gold`);
+  lines.push(`${bankText}`);
   lines.push(`────────────────────────`);
   if (birthdayText) {
     lines.push(`🎂 Aniversário registrado`);

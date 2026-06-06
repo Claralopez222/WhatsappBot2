@@ -20,7 +20,8 @@ const {
 const {
   handleGold, handleLoja, handleLojaFood, handleLojaPet, handleLojaTec,
   handleComprar, handleVender, handleInventario, handlePix, handleApostar,
-  handleExtrato, handleGarimpar, getSaldoAtual, changeGold, ITENS_LOJA
+  handleExtrato, handleGarimpar, handleSlots, handleCorrida,
+  getSaldoAtual, changeGold, ITENS_LOJA
 } = require('./economia');
 
 // Menus
@@ -102,7 +103,7 @@ module.exports = {
   handleFortuna,
   handleCompatibilidade,
 
-  // Economia (15 itens)
+  // Economia (17 itens)
   handleGold,
   handleLoja,
   handleLojaFood,
@@ -115,6 +116,8 @@ module.exports = {
   handleApostar,
   handleExtrato,
   handleGarimpar,
+  handleSlots,
+  handleCorrida,
   getSaldoAtual,
   changeGold,
   ITENS_LOJA,

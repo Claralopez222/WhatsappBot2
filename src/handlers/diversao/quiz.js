@@ -1,6 +1,6 @@
 /**
  * Sistema de Quiz — Piroquinhas Bot
- * Comandos: !quiz, !pontos, !rankjogos
+ * Comandos: !quiz, !quizfut, !quizctec, !quizgeo, !quizmat, !pontos, !rankjogos
  * - 100+ questões muito difíceis
  * - Limite de 10 quiz por dia
  * - Pontos salvos na nuvem (MongoDB)
@@ -14,7 +14,19 @@ const pontosMap = new Map(); // userId → pontos (sincroniza com MongoDB)
 const quizDailyCount = new Map(); // userId_YYYY-MM-DD → count
 
 const perguntasQuiz = [
-  // HISTÓRIA (25 questões difíceis)
+  // FUTEBOL (Novas questões adicionadas)
+  { p: '⚽ Qual país venceu a primeira Copa do Mundo em 1930?', r: 'uruguai', d: 'Futebol' },
+  { p: '⚽ Quem é o maior artilheiro da história das Copas do Mundo?', r: 'miroslav klose', d: 'Futebol' },
+  { p: '⚽ Qual clube brasileiro tem mais títulos da Copa Libertadores da América?', r: 'flamengo', d: 'Futebol' }, // Se houver outro tri empatado, a lógica aceita por aproximação textual, mas mantido o padrão duro
+  { p: '⚽ Em que ano o Brasil ganhou sua primeira Copa do Mundo?', r: '1958', d: 'Futebol' },
+  { p: '⚽ Qual jogador detém o recorde de mais Bolas de Ouro ganhas?', r: 'lionel messi', d: 'Futebol' },
+  { p: '⚽ Qual time venceu a UEFA Champions League na temporada 2022/2023?', r: 'manchester city', d: 'Futebol' },
+  { p: '⚽ Quem é conhecido como o "Rei do Futebol"?', r: 'pele', d: 'Futebol' },
+  { p: '⚽ Qual jogador francês ganhou a Bola de Ouro em 2022?', r: 'karim benzema', d: 'Futebol' },
+  { p: '⚽ Qual estádio brasileiro sediou a final da Copa do Mundo de 1950?', r: 'maracana', d: 'Futebol' },
+  { p: '⚽ Qual seleção europeia venceu a Copa do Mundo de 2010?', r: 'espanha', d: 'Futebol' },
+
+  // HISTÓRIA (Mantidas)
   { p: '📜 Em que ano começou a Revolução Francesa?', r: '1789', d: 'História' },
   { p: '🏛️ Qual imperador romano foi assassinado em 44 a.C.?', r: 'julio cesar', d: 'História' },
   { p: '⚔️ Em que ano terminou a Guerra dos Cem Anos?', r: '1453', d: 'História' },
@@ -36,7 +48,7 @@ const perguntasQuiz = [
   { p: '🌙 Em que ano começou o Califado Omíada?', r: '661', d: 'História' },
   { p: '🎪 Qual civilização construiu Machu Picchu?', r: 'inca', d: 'História' },
   
-  // GEOGRAFIA (30 questões difíceis)
+  // GEOGRAFIA
   { p: '🏔️ Qual é a capital do Nepal?', r: 'katmandu', d: 'Geografia' },
   { p: '🌊 Qual é o segundo maior oceano do mundo?', r: 'atlantico', d: 'Geografia' },
   { p: '🏖️ Qual é a capital de Timor Leste?', r: 'dili', d: 'Geografia' },
@@ -59,11 +71,11 @@ const perguntasQuiz = [
   { p: '🌊 Qual estreito separa a Europa da Ásia?', r: 'bosfor', d: 'Geografia' },
   { p: '🏛️ Qual é a capital mais antiga do mundo ainda habitada?', r: 'damasco', d: 'Geografia' },
   { p: '🏝️ Qual é a maior ilha do Caribe?', r: 'cuba', d: 'Geografia' },
-  { p: '⛩️ Qual é o país com mais vulcões ativos?', r: 'indonesia', d: 'Geografia' },
+  { p: '👑 Qual é o país com mais vulcões ativos?', r: 'indonesia', d: 'Geografia' },
   { p: '🌲 Qual país tem a maior floresta boreal?', r: 'russia', d: 'Geografia' },
   { p: '🗿 Em qual país fica o Stonehenge?', r: 'inglaterra', d: 'Geografia' },
   
-  // CIÊNCIA & TECNOLOGIA (30 questões difíceis)
+  // CIÊNCIA & TECNOLOGIA
   { p: '⚛️ Qual é o número atômico do ferro?', r: '26', d: 'Ciência' },
   { p: '🔬 Qual é a partícula elementar mais leve?', r: 'eletron', d: 'Ciência' },
   { p: '🧪 Qual é o pH de uma solução neutra?', r: '7', d: 'Química' },
@@ -91,7 +103,7 @@ const perguntasQuiz = [
   { p: '🔭 Qual é a distância do Sol até a Terra em km?', r: '149600000', d: 'Astronomia' },
   { p: '🌙 Qual é a idade da Lua aproximadamente?', r: '4500000000', d: 'Astronomia' },
   
-  // MATEMÁTICA (25 questões difíceis)
+  // MATEMÁTICA
   { p: '🔢 Qual é o resultado de 15² - 8²?', r: '161', d: 'Matemática' },
   { p: '📐 Quantos radianos equivalem a 180 graus?', r: 'pi', d: 'Matemática' },
   { p: '∞ Qual é o símbolo matemático para infinito?', r: 'infinito', d: 'Matemática' },
@@ -158,7 +170,7 @@ async function changeGold(userId, amount) {
   }
 }
 
-async function handleQuiz(sock, msg, jid, author, senderJid) {
+async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   // Sincronizar pontos do DB
   await syncQuizPointsFromDB(senderJid);
 
@@ -177,22 +189,17 @@ async function handleQuiz(sock, msg, jid, author, senderJid) {
       const pts = (pontosMap.get(senderJid) || 0) + 10;
       pontosMap.set(senderJid, pts);
       
-      // Salvar pontos na nuvem (MongoDB)
       await saveQuizPointsToDB(senderJid, pts);
       
       const goldReward = 15;
-      // Salvar gold na nuvem (MongoDB)
       await changeGold(senderJid, goldReward);
       
       await sock.sendMessage(jid, {
-        text: `✅ *CORRETO!* Parabéns, *${author}*! 🎉
-
-💰 *+10 pontos!* Total: *${pts} pts* ☁️
-💵 *+${goldReward} gold!*`,
+        text: `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n💰 *+10 pontos!* Total: *${pts} pts* ☁️\n💵 *+${goldReward} gold!*`,
       }, { quoted: msg });
     } else {
       await sock.sendMessage(jid, {
-        text: `❌ *ERROU!* *${author}*!\n\nResposta: *${state.r}* 😬`,
+        text: `❌ *ERROU!* *${author}*!\n\nResposta correta era: *${state.r}* 😬`,
       }, { quoted: msg });
     }
     return;
@@ -209,18 +216,38 @@ async function handleQuiz(sock, msg, jid, author, senderJid) {
     return;
   }
 
+  // Filtrar perguntas por categoria dependendo do comando enviado
+  const cmd = caption.trim().toLowerCase().split(' ')[0];
+  let perguntasFiltradas = perguntasQuiz;
+
+  if (cmd === '!quizfut') {
+    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Futebol');
+  } else if (cmd === '!quizctec') {
+    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Ciência' || q.d === 'Química' || q.d === 'Física' || q.d === 'Biologia' || q.d === 'Astronomia' || q.d === 'Tecnologia');
+  } else if (cmd === '!quizgeo') {
+    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Geografia');
+  } else if (cmd === '!quizmat') {
+    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Matemática' || q.d === 'Geometria' || q.d === 'Cálculo' || q.d === 'Estatística');
+  }
+
+  if (perguntasFiltradas.length === 0) {
+    await sock.sendMessage(jid, { text: '⚠️ Nenhuma pergunta disponível para essa categoria no momento.' }, { quoted: msg });
+    return;
+  }
+
   // Incrementar contador do dia
   quizDailyCount.set(todayKey, quizCount + 1);
 
   // Sortear pergunta sem repetir recentemente
-  const recentKey = `recent_${senderJid}`;
   if (!global.recentQuiz) global.recentQuiz = {};
   if (!global.recentQuiz[senderJid]) global.recentQuiz[senderJid] = [];
 
   let q;
+  let tentativas = 0;
   do {
-    q = perguntasQuiz[Math.floor(Math.random() * perguntasQuiz.length)];
-  } while (global.recentQuiz[senderJid].includes(q.p) && perguntasQuiz.length > 5);
+    q = perguntasFiltradas[Math.floor(Math.random() * perguntasFiltradas.length)];
+    tentativas++;
+  } while (global.recentQuiz[senderJid].includes(q.p) && tentativas < 20 && perguntasFiltradas.length > 2);
 
   global.recentQuiz[senderJid].push(q.p);
   if (global.recentQuiz[senderJid].length > 5) global.recentQuiz[senderJid].shift();
@@ -228,18 +255,13 @@ async function handleQuiz(sock, msg, jid, author, senderJid) {
   const timeout = setTimeout(() => {
     quizState.delete(senderJid);
     sock.sendMessage(jid, {
-      text: `⏰ Tempo esgotado, *${author}*!\n\nResposta: *${q.r}* 😬`,
+      text: `⏰ Tempo esgotado, *${author}*!\n\nResposta correta era: *${q.r}* 😬`,
     });
   }, 30000);
 
   quizState.set(senderJid, { r: q.r, timeout });
   await sock.sendMessage(jid, {
-    text: `🧠 *QUIZ — ${q.d}*
-
-❓ *${q.p}*
-
-_Você tem 30 segundos!_
-_Quiz ${quizCount + 1}/10 hoje_`,
+    text: `🧠 *QUIZ — ${q.d.toUpperCase()}*\n\n❓ *${q.p}*\n\n_Você tem 30 segundos!_\n_Quiz ${quizCount + 1}/10 hoje_`,
   }, { quoted: msg });
 }
 
@@ -284,6 +306,11 @@ async function handleRankJogos(sock, msg, jid, contactNames) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
+module.exports = {
+  handleQuiz,
+  handlePontos,
+  handleRankJogos
+};
 // Limite diário de depósito global
 const DAILY_DEPOSIT_LIMIT = 10000; 
 

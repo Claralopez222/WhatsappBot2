@@ -667,6 +667,10 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'apostar'))
     { await diversaoHandler.handleApostar(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'slots'))
+    { await diversaoHandler.handleSlots(sock, msg, jid, senderJid, caption); return; }
+  if (matchCmd(cmdWord, 'corrida'))
+    { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'extrato'))
     { await diversaoHandler.handleExtrato(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes') || matchCmd(cmdWord, 'missões'))
@@ -873,6 +877,10 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'eununca'))        { await diversaoHandler.handleEuNunca(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'quiz') || matchCmdStart(cmd, 'quiz '))
     { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
+  if (matchCmd(cmdWord, 'quizfut'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
+  if (matchCmd(cmdWord, 'quizctec'))       { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
+  if (matchCmd(cmdWord, 'quizgeo'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
+  if (matchCmd(cmdWord, 'quizmat'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'pontos'))         { await diversaoHandler.handlePontos(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'banco') || matchCmdStart(cmd, 'banco '))

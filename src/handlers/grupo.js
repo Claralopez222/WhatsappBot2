@@ -248,9 +248,11 @@ async function handleRanking(sock, msg, jid) {
     const path = require('path');
     const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
 
-    // Busca no banco os 10 usuários que mais têm mensagens
-    // ATENÇÃO: Se no seu model o campo chamar 'qtdMensagens' ou 'mensagensCount', mude o nome abaixo!
-    const topUsuarios = await Usuario.find({ mensagens: { $gt: 0 } })
+    // Busca no banco os 10 usuários reais que mais têm mensagens (Filtrando grupos fora)
+    const topUsuarios = await Usuario.find({ 
+      idWhatsApp: { $not: /@g.us$/, $not: /@broadcast$/ }, // Ignora IDs de grupo e transmissão
+      mensagens: { $gt: 0 }                               // Apenas quem tem mais de 0 mensagens
+    })
       .sort({ mensagens: -1 })
       .limit(10)
       .lean();
@@ -273,14 +275,15 @@ async function handleRanking(sock, msg, jid) {
       const numBarras = Math.round((count / maxMsgs) * 8) || 0;
       const bar = '█'.repeat(numBarras) + '░'.repeat(Math.max(0, 8 - numBarras));
       
-      // Usa o nome salvo ou mascara o número do WhatsApp
-      const nomeExibicao = u.nome || u.idWhatsApp.split('@')[0];
+      // Validação de segurança: evita quebrar se idWhatsApp não existir por algum motivo
+      const fallbackName = u.idWhatsApp ? u.idWhatsApp.split('@')[0] : 'Usuário';
+      const nomeExibicao = u.nome || fallbackName;
 
       return `${medals[i]} *${nomeExibicao}*\n   ${bar} ${count} msgs (${pct}%)`;
     }).join('\n\n');
 
     await sock.sendMessage(jid, {
-      text: `📊 *RANKING DE MENSAGENS (MONGODB)*\n\n${linhas}\n\n📨 Total do Top 10: *${total} msgs*`,
+      text: `📊 *RANKING DE MENSAGENS*\n\n${linhas}\n\n📨 Total do Top 10: *${total} msgs*`,
     }, { quoted: msg });
 
   } catch (error) {

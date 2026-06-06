@@ -430,7 +430,7 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
 
 // ─── !comprar
 async function handleComprar(sock, msg, jid, caption) {
-  const userId = msg.key.participant;
+  const userId = msg.key.participant || msg.key.remoteJid; // Fallback para evitar undefined
   const match = caption.match(/comprar\s+(.+)/i);
 
   if (!match) {
@@ -463,8 +463,7 @@ async function handleComprar(sock, msg, jid, caption) {
     return;
   }
 
-  const saldoFinal = await changeGold(userId, -preco);
-
+  // PRIMEIRO: Adicionar ao inventário
   try {
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
@@ -473,7 +472,12 @@ async function handleComprar(sock, msg, jid, caption) {
     );
   } catch (e) {
     console.error('⚠️ Erro ao adicionar ao inventário:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar a compra! Tente novamente.' }, { quoted: msg });
+    return;
   }
+
+  // DEPOIS: Tirar o ouro (se inventário foi bem-sucedido)
+  const saldoFinal = await changeGold(userId, -preco);
 
   const texto = `✅ ═══ COMPRA REALIZADA! ═══ ✅\n\n🛒 *Você comprou com sucesso!*\n\n━━━━━━━━━━━━━━━━\n*DETALHES:*\n  📦 Item: *${itemInfo.nome}*\n  💵 Preço: *${preco}* gold\n\n━━━━━━━━━━━━━━━━\n*SALDO ATUALIZADO:*\n  ✅ Novo saldo: *${saldoFinal}* gold`;
 

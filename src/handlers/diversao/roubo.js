@@ -1,85 +1,63 @@
 /**
  * Sistema de Roubo — Piroquinhas Bot
  * Comandos: !menuroubar, !roubar, !menusec, !equiparroubo, !equiparsec
- *           !meusitensroubo, !meussec, !meiosec
+ *           !meusitensroubo, !meussec, !meiosec, !comprarroubo, !comprarsec
  */
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { prepareDailyMissionState, incrementMission } = require('./missoes');
 
-// ─── COOLDOWN DE ROUBO ──────────────────────────────────────────────────────
+// ─── CONFIGURAÇÕES ──────────────────────────────────────────────────────────
 
-const COOLDOWN_ROUBO_MS = 30 * 60 * 1000; // 30 minutos em ms
+const COOLDOWN_ROUBO_MS  = 30 * 60 * 1000; // 30 minutos
+const TAXA_SUCESSO_BASE  = 50;              // 50% sem nenhum item
+const TAXA_MIN           = 5;              // nunca abaixo de 5%
+const TAXA_MAX           = 95;             // nunca acima de 95%
+const ROUBO_MIN_PCT      = 30;             // rouba no mínimo 30% do gold
+const ROUBO_MAX_PCT      = 100;            // rouba no máximo 100% do gold
 
 // ─── ITENS DE ROUBO (ATAQUE) ───────────────────────────────────────────────
 
 const ITENS_ROUBO = {
   mascara:    { nome: '🎭 Máscara',               preco: 100, bonus: 10 },
   chave:      { nome: '🔧 Chave Inglesa',          preco: 150, bonus: 20 },
-  dinamite:   { nome: '💣 Dinamite',               preco: 300, bonus: 40 },
   lockpick:   { nome: '🔓 Kit de Arrombamento',    preco: 200, bonus: 30 },
-  corda:      { nome: '🪢 Corda Ninja',             preco: 250, bonus: 35 },
+  corda:      { nome: '🪢 Corda Ninja',            preco: 250, bonus: 35 },
+  dinamite:   { nome: '💣 Dinamite',               preco: 300, bonus: 40 },
   disfarce:   { nome: '🕵️ Disfarce Premium',       preco: 350, bonus: 45 },
   explorador: { nome: '📡 Detector de Alarmes',    preco: 400, bonus: 50 },
-  cavador:    { nome: '⛏️ Picareta de Diamante',   preco: 500, bonus: 60 }
+  cavador:    { nome: '⛏️ Picareta de Diamante',   preco: 500, bonus: 60 },
 };
 
 // ─── ITENS DE SEGURANÇA (DEFESA) ───────────────────────────────────────────
 
 const ITENS_SEGURANCA = {
-  cofre:      { nome: '🔐 Cofre Forte',            preco: 150, defesa: 15 },
-  alarme:     { nome: '🚨 Sistema de Alarme',       preco: 200, defesa: 25 },
-  camera:     { nome: '📹 Câmera de Vigilância',   preco: 250, defesa: 30 },
-  cachorro:   { nome: '🐕 Cão de Guarda',           preco: 300, defesa: 35 },
-  seguranca:  { nome: '👮 Guarda de Segurança',     preco: 400, defesa: 45 },
-  bunker:     { nome: '🛡️ Bunker Subterrâneo',     preco: 500, defesa: 55 },
-  laser:      { nome: '🔴 Raios Laser',             preco: 600, defesa: 65 },
-  militares:  { nome: '🪖 Segurança Militar',       preco: 800, defesa: 80 }
+  cofre:     { nome: '🔐 Cofre Forte',           preco: 150, defesa: 15 },
+  alarme:    { nome: '🚨 Sistema de Alarme',      preco: 200, defesa: 25 },
+  camera:    { nome: '📹 Câmera de Vigilância',   preco: 250, defesa: 30 },
+  cachorro:  { nome: '🐕 Cão de Guarda',          preco: 300, defesa: 35 },
+  seguranca: { nome: '👮 Guarda de Segurança',    preco: 400, defesa: 45 },
+  bunker:    { nome: '🛡️ Bunker Subterrâneo',    preco: 500, defesa: 55 },
+  laser:     { nome: '🔴 Raios Laser',            preco: 600, defesa: 65 },
+  militares: { nome: '🪖 Segurança Militar',      preco: 800, defesa: 80 },
 };
 
 // ─── UTILITÁRIOS ────────────────────────────────────────────────────────────
 
+/** Retorna o userId de forma consistente */
 function getUserId(msg) {
   return msg.key.participant || msg.key.remoteJid;
 }
 
-async function getSaldoAtual(userId) {
-  try {
-    const user = await Usuario.findOne({ idWhatsApp: userId });
-    return user?.gold || 0;
-  } catch (e) {
-    console.error('⚠️ Erro ao buscar saldo:', e.message);
-    return 0;
-  }
+/** Lê quantidade de item suportando Map (Mongoose) e objeto plain */
+function getItemQtd(mapaOuObj, chave) {
+  if (!mapaOuObj) return 0;
+  if (typeof mapaOuObj.get === 'function') return mapaOuObj.get(chave) || 0;
+  return mapaOuObj[chave] || 0;
 }
 
-async function changeGold(userId, quantidade) {
-  try {
-    if (quantidade > 0) {
-      await prepareDailyMissionState(userId);
-    }
-
-    const update = { $inc: { gold: quantidade } };
-    if (quantidade > 0) {
-      update['$inc']['dailyMissions.progress.gold500'] = quantidade;
-    }
-    const user = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      update,
-      { new: true }
-    );
-    console.log(`✅ Gold alterado: ${userId} → ${quantidade} (novo saldo: ${user?.gold})`);
-    return user?.gold || 0;
-  } catch (e) {
-    console.error('⚠️ Erro ao alterar gold:', e.message);
-    return 0;
-  }
-}
-
-/**
- * Formata milissegundos restantes em "Xmin Ys"
- */
+/** Formata ms restantes em "Xmin Ys" */
 function formatarTempo(ms) {
   const totalSeg = Math.ceil(ms / 1000);
   const min = Math.floor(totalSeg / 60);
@@ -89,16 +67,61 @@ function formatarTempo(ms) {
   return `${seg}s`;
 }
 
-/**
- * FIX: Lê quantidade de um item de forma segura,
- * suportando tanto Map (Mongoose) quanto objeto plain.
- */
-function getItemQtd(mapaOuObj, chave) {
-  if (!mapaOuObj) return 0;
-  if (typeof mapaOuObj.get === 'function') {
-    return mapaOuObj.get(chave) || 0;
+/** Busca saldo atual sem lançar exceção */
+async function getSaldoAtual(userId) {
+  try {
+    const user = await Usuario.findOne({ idWhatsApp: userId });
+    return user?.gold ?? 0;
+  } catch (e) {
+    console.error('⚠️ Erro ao buscar saldo:', e.message);
+    return 0;
   }
-  return mapaOuObj[chave] || 0;
+}
+
+/**
+ * Incrementa ou decrementa gold do usuário.
+ * Atualiza missão de gold se a quantidade for positiva.
+ * Garante que o gold nunca fique negativo ao debitar.
+ */
+async function changeGold(userId, quantidade) {
+  try {
+    if (quantidade > 0) {
+      await prepareDailyMissionState(userId);
+    }
+
+    const query  = { idWhatsApp: userId };
+    const update = { $inc: { gold: quantidade } };
+
+    // Segurança: ao debitar, nunca deixar gold negativo
+    if (quantidade < 0) {
+      query.gold = { $gte: Math.abs(quantidade) };
+    }
+
+    if (quantidade > 0) {
+      update.$inc['dailyMissions.progress.gold500'] = quantidade;
+    }
+
+    const user = await Usuario.findOneAndUpdate(query, update, { new: true });
+    if (!user && quantidade < 0) {
+      console.warn(`⚠️ changeGold: saldo insuficiente para debitar ${quantidade} de ${userId}`);
+      return null; // indica falha no débito
+    }
+
+    console.log(`✅ Gold alterado: ${userId} → ${quantidade >= 0 ? '+' : ''}${quantidade} (saldo: ${user?.gold})`);
+    return user?.gold ?? 0;
+  } catch (e) {
+    console.error('⚠️ Erro ao alterar gold:', e.message);
+    return null;
+  }
+}
+
+/** Busca ou cria usuário garantindo que existe */
+async function getOrCreateUser(userId) {
+  let user = await Usuario.findOne({ idWhatsApp: userId });
+  if (!user) {
+    user = await Usuario.create({ idWhatsApp: userId, gold: 0 });
+  }
+  return user;
 }
 
 // ─── !menuroubar ────────────────────────────────────────────────────────────
@@ -106,22 +129,23 @@ function getItemQtd(mapaOuObj, chave) {
 async function handleMenuRoubo(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
 
-  let texto = `🎭 *LOJA DE ROUBO* 🎭\n\n`;
-  texto += `*EQUIPAMENTOS PARA ROUBAR:*\n`;
+  let texto = `🎭 ═══ LOJA DE ROUBO ═══ 🎭\n\n`;
+  texto += `*EQUIPAMENTOS DISPONÍVEIS:*\n`;
 
   for (const [key, item] of Object.entries(ITENS_ROUBO)) {
-    texto += `  ${item.nome} — ${item.preco} gold (+${item.bonus}% sucesso)\n`;
-    texto += `    └ *chave:* \`${key}\`\n`;
+    texto += `  ${item.nome} — *${item.preco}* gold\n`;
+    texto += `    └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
   }
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
-  texto += `*COMO USAR:*\n`;
+  texto += `*COMANDOS:*\n`;
   texto += `  ${P}comprarroubo <item> — Comprar item\n`;
-  texto += `  ${P}equiparroubo <item> — Equipar item de roubo\n`;
-  texto += `  ${P}roubar @pessoa — Roubar de alguém\n`;
-  texto += `  ${P}meusitensroubo — Ver seus itens de roubo\n`;
-  texto += `\n⚠️ *Você precisa ter um item equipado para roubar!*\n`;
-  texto += `⏱️ *Cooldown:* 30 minutos entre tentativas`;
+  texto += `  ${P}equiparroubo <item> — Equipar item\n`;
+  texto += `  ${P}meusitensroubo — Ver inventário de roubo\n`;
+  texto += `  ${P}roubar @pessoa — Roubar alguém\n\n`;
+  texto += `⚠️ *Item equipado é obrigatório para roubar!*\n`;
+  texto += `⏱️ *Cooldown:* 30 minutos entre tentativas\n`;
+  texto += `🎲 *Taxa base de sucesso:* ${TAXA_SUCESSO_BASE}%`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -131,20 +155,21 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 async function handleMenuSec(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
 
-  let texto = `🔐 *LOJA DE SEGURANÇA* 🔐\n\n`;
+  let texto = `🔐 ═══ LOJA DE SEGURANÇA ═══ 🔐\n\n`;
   texto += `*EQUIPAMENTOS DE DEFESA:*\n`;
 
   for (const [key, item] of Object.entries(ITENS_SEGURANCA)) {
-    texto += `  ${item.nome} — ${item.preco} gold (+${item.defesa}% proteção)\n`;
-    texto += `    └ *chave:* \`${key}\`\n`;
+    texto += `  ${item.nome} — *${item.preco}* gold\n`;
+    texto += `    └ Proteção: *+${item.defesa}%* | chave: \`${key}\`\n`;
   }
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
-  texto += `*COMO USAR:*\n`;
+  texto += `*COMANDOS:*\n`;
   texto += `  ${P}comprarsec <item> — Comprar item\n`;
-  texto += `  ${P}equiparsec <item> — Equipar item de defesa\n`;
-  texto += `  ${P}meussec — Ver seus itens de segurança\n`;
-  texto += `  ${P}meiosec — Ver suas defesas ativas\n`;
+  texto += `  ${P}equiparsec <item> — Equipar defesa\n`;
+  texto += `  ${P}meussec — Ver inventário de segurança\n`;
+  texto += `  ${P}meiosec — Ver defesa ativa\n\n`;
+  texto += `🛡️ *Sem defesa equipada você tem apenas ${TAXA_SUCESSO_BASE}% de chance de resistir!*`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -152,8 +177,8 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 // ─── !comprarroubo ──────────────────────────────────────────────────────────
 
 async function handleComprarRoubo(sock, msg, jid, caption) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-  const match = caption.match(/comprarroubo\s+(\S+)/i);
+  const userId = getUserId(msg);
+  const match  = caption.match(/comprarroubo\s+(\S+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!comprarroubo <item>*\nExemplo: *!comprarroubo dinamite*' }, { quoted: msg });
@@ -164,14 +189,25 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   const itemInfo = ITENS_ROUBO[itemNome];
 
   if (!itemInfo) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe na loja de roubo!\nUse *!menuroubar* para ver os itens disponíveis.` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Item *${itemNome}* não existe na loja de roubo!\nUse *!menuroubar* para ver os itens disponíveis.`
+    }, { quoted: msg });
     return;
   }
 
   const saldoAtual = await getSaldoAtual(userId);
 
   if (saldoAtual < itemInfo.preco) {
-    await sock.sendMessage(jid, { text: `❌ Você não tem *${itemInfo.preco}* gold!\nSeu saldo: *${saldoAtual}* gold` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `❌ *SALDO INSUFICIENTE!*\n\n💵 Preço: *${itemInfo.preco}* gold\n💰 Seu saldo: *${saldoAtual}* gold\n\n_Faltam ${itemInfo.preco - saldoAtual} gold!_`
+    }, { quoted: msg });
+    return;
+  }
+
+  // Debitar gold ANTES de adicionar o item (evita inconsistência)
+  const saldoFinal = await changeGold(userId, -itemInfo.preco);
+  if (saldoFinal === null) {
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar compra! Tente novamente.' }, { quoted: msg });
     return;
   }
 
@@ -181,24 +217,30 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
       { $inc: { [`itensRoubo.${itemNome}`]: 1 } },
       { new: true, upsert: true }
     );
-    console.log(`✅ Item de roubo adicionado: ${userId} → ${itemNome}`);
   } catch (e) {
-    console.error('⚠️ Erro ao adicionar item:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao comprar item!' }, { quoted: msg });
+    console.error('⚠️ Erro ao adicionar item de roubo:', e.message);
+    // Reembolsar se falhar
+    await changeGold(userId, itemInfo.preco);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao comprar item! Gold reembolsado.' }, { quoted: msg });
     return;
   }
 
-  const saldoFinal = await changeGold(userId, -itemInfo.preco);
+  const texto =
+    `✅ *COMPRA REALIZADA!* ✅\n\n` +
+    `🎭 *Item:* ${itemInfo.nome}\n` +
+    `💵 *Preço:* ${itemInfo.preco} gold\n` +
+    `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
+    `💎 *Saldo restante:* ${saldoFinal} gold\n\n` +
+    `💡 Use *!equiparroubo ${itemNome}* para equipar!`;
 
-  const texto = `✅ *COMPRA REALIZADA!* ✅\n\n🎭 *Item:* ${itemInfo.nome}\n💵 *Preço:* ${itemInfo.preco} gold\n💎 *Novo saldo:* ${saldoFinal} gold\n\n💡 Use *!equiparroubo ${itemNome}* para equipar!`;
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
 // ─── !comprarsec ────────────────────────────────────────────────────────────
 
 async function handleComprarSec(sock, msg, jid, caption) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-  const match = caption.match(/comprarsec\s+(\S+)/i);
+  const userId = getUserId(msg);
+  const match  = caption.match(/comprarsec\s+(\S+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!comprarsec <item>*\nExemplo: *!comprarsec cofre*' }, { quoted: msg });
@@ -209,14 +251,25 @@ async function handleComprarSec(sock, msg, jid, caption) {
   const itemInfo = ITENS_SEGURANCA[itemNome];
 
   if (!itemInfo) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe na loja de segurança!\nUse *!menusec* para ver os itens disponíveis.` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Item *${itemNome}* não existe na loja de segurança!\nUse *!menusec* para ver os itens disponíveis.`
+    }, { quoted: msg });
     return;
   }
 
   const saldoAtual = await getSaldoAtual(userId);
 
   if (saldoAtual < itemInfo.preco) {
-    await sock.sendMessage(jid, { text: `❌ Você não tem *${itemInfo.preco}* gold!\nSeu saldo: *${saldoAtual}* gold` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `❌ *SALDO INSUFICIENTE!*\n\n💵 Preço: *${itemInfo.preco}* gold\n💰 Seu saldo: *${saldoAtual}* gold\n\n_Faltam ${itemInfo.preco - saldoAtual} gold!_`
+    }, { quoted: msg });
+    return;
+  }
+
+  // Debitar gold ANTES de adicionar o item
+  const saldoFinal = await changeGold(userId, -itemInfo.preco);
+  if (saldoFinal === null) {
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar compra! Tente novamente.' }, { quoted: msg });
     return;
   }
 
@@ -226,24 +279,29 @@ async function handleComprarSec(sock, msg, jid, caption) {
       { $inc: { [`itensSec.${itemNome}`]: 1 } },
       { new: true, upsert: true }
     );
-    console.log(`✅ Item de segurança adicionado: ${userId} → ${itemNome}`);
   } catch (e) {
-    console.error('⚠️ Erro ao adicionar item:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao comprar item!' }, { quoted: msg });
+    console.error('⚠️ Erro ao adicionar item de segurança:', e.message);
+    await changeGold(userId, itemInfo.preco);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao comprar item! Gold reembolsado.' }, { quoted: msg });
     return;
   }
 
-  const saldoFinal = await changeGold(userId, -itemInfo.preco);
+  const texto =
+    `✅ *COMPRA REALIZADA!* ✅\n\n` +
+    `🔐 *Item:* ${itemInfo.nome}\n` +
+    `💵 *Preço:* ${itemInfo.preco} gold\n` +
+    `🛡️ *Proteção:* +${itemInfo.defesa}%\n` +
+    `💎 *Saldo restante:* ${saldoFinal} gold\n\n` +
+    `💡 Use *!equiparsec ${itemNome}* para ativar!`;
 
-  const texto = `✅ *COMPRA REALIZADA!* ✅\n\n🔐 *Item:* ${itemInfo.nome}\n💵 *Preço:* ${itemInfo.preco} gold\n💎 *Novo saldo:* ${saldoFinal} gold\n\n💡 Use *!equiparsec ${itemNome}* para equipar!`;
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
 // ─── !equiparroubo ──────────────────────────────────────────────────────────
 
 async function handleEquiparRoubo(sock, msg, jid, caption) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-  const match = caption.match(/equiparroubo\s+(\S+)/i);
+  const userId = getUserId(msg);
+  const match  = caption.match(/equiparroubo\s+(\S+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!equiparroubo <item>*\nExemplo: *!equiparroubo dinamite*' }, { quoted: msg });
@@ -253,7 +311,9 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
   const itemNome = match[1].toLowerCase().trim();
 
   if (!ITENS_ROUBO[itemNome]) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe!\nUse *!menuroubar* para ver os itens disponíveis.` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Item *${itemNome}* não existe!\nUse *!menuroubar* para ver os itens disponíveis.`
+    }, { quoted: msg });
     return;
   }
 
@@ -265,7 +325,6 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
       return;
     }
 
-    // FIX: usar getItemQtd para suportar Map e objeto plain
     const qtd = getItemQtd(user.itensRoubo, itemNome);
 
     if (qtd <= 0) {
@@ -280,10 +339,20 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
       { $set: { equiparoubo: itemNome } }
     );
 
-    const texto = `✅ *ITEM EQUIPADO!* ✅\n\n🎭 *Item:* ${ITENS_ROUBO[itemNome].nome}\n📈 *Bônus de sucesso:* +${ITENS_ROUBO[itemNome].bonus}%\n🎒 *Quantidade no inventário:* ${qtd}x\n\n🔫 Agora você pode usar *!roubar @pessoa*!`;
+    const item = ITENS_ROUBO[itemNome];
+    const taxaFinal = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + item.bonus);
+
+    const texto =
+      `✅ *ITEM EQUIPADO!* ✅\n\n` +
+      `🎭 *Item:* ${item.nome}\n` +
+      `📈 *Bônus de sucesso:* +${item.bonus}%\n` +
+      `🎲 *Taxa com este item:* até *${taxaFinal}%*\n` +
+      `🎒 *No inventário:* ${qtd}x\n\n` +
+      `🔫 Agora use *!roubar @pessoa* para atacar!`;
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (e) {
-    console.error('⚠️ Erro ao equipar item:', e.message);
+    console.error('⚠️ Erro ao equipar item de roubo:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao equipar item!' }, { quoted: msg });
   }
 }
@@ -291,8 +360,8 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
 // ─── !equiparsec ────────────────────────────────────────────────────────────
 
 async function handleEquiparSec(sock, msg, jid, caption) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-  const match = caption.match(/equiparsec\s+(\S+)/i);
+  const userId = getUserId(msg);
+  const match  = caption.match(/equiparsec\s+(\S+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!equiparsec <item>*\nExemplo: *!equiparsec cofre*' }, { quoted: msg });
@@ -302,7 +371,9 @@ async function handleEquiparSec(sock, msg, jid, caption) {
   const itemNome = match[1].toLowerCase().trim();
 
   if (!ITENS_SEGURANCA[itemNome]) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe!\nUse *!menusec* para ver os itens disponíveis.` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Item *${itemNome}* não existe!\nUse *!menusec* para ver os itens disponíveis.`
+    }, { quoted: msg });
     return;
   }
 
@@ -314,7 +385,6 @@ async function handleEquiparSec(sock, msg, jid, caption) {
       return;
     }
 
-    // FIX: usar getItemQtd para suportar Map e objeto plain
     const qtd = getItemQtd(user.itensSec, itemNome);
 
     if (qtd <= 0) {
@@ -329,10 +399,19 @@ async function handleEquiparSec(sock, msg, jid, caption) {
       { $set: { equiparsec: itemNome } }
     );
 
-    const texto = `✅ *DEFESA ATIVADA!* ✅\n\n🔐 *Item:* ${ITENS_SEGURANCA[itemNome].nome}\n🛡️ *Proteção:* +${ITENS_SEGURANCA[itemNome].defesa}%\n🎒 *Quantidade no inventário:* ${qtd}x`;
+    const item = ITENS_SEGURANCA[itemNome];
+    const defesaFinal = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + item.defesa);
+
+    const texto =
+      `✅ *DEFESA ATIVADA!* ✅\n\n` +
+      `🔐 *Item:* ${item.nome}\n` +
+      `🛡️ *Proteção:* +${item.defesa}%\n` +
+      `🔒 *Chance de resistir:* até *${defesaFinal}%*\n` +
+      `🎒 *No inventário:* ${qtd}x`;
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (e) {
-    console.error('⚠️ Erro ao equipar item:', e.message);
+    console.error('⚠️ Erro ao equipar item de segurança:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao equipar item!' }, { quoted: msg });
   }
 }
@@ -340,7 +419,7 @@ async function handleEquiparSec(sock, msg, jid, caption) {
 // ─── !meusitensroubo ────────────────────────────────────────────────────────
 
 async function handleMeusItensRoubo(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
+  const userId = getUserId(msg);
 
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId });
@@ -350,8 +429,7 @@ async function handleMeusItensRoubo(sock, msg, jid) {
       return;
     }
 
-    let texto = `🎒 *SEUS ITENS DE ROUBO* 🎒\n\n`;
-
+    let texto  = `🎒 ═══ SEUS ITENS DE ROUBO ═══ 🎒\n\n`;
     let temItem = false;
 
     for (const [key, item] of Object.entries(ITENS_ROUBO)) {
@@ -360,18 +438,19 @@ async function handleMeusItensRoubo(sock, msg, jid) {
         temItem = true;
         const equipado = user.equiparoubo === key ? ' ⚡ *EQUIPADO*' : '';
         texto += `  ${item.nome}${equipado}\n`;
-        texto += `    └ Quantidade: *${qtd}x* | Bônus: *+${item.bonus}%*\n`;
+        texto += `    └ Qtd: *${qtd}x* | Bônus: *+${item.bonus}%*\n`;
       }
     }
 
     if (!temItem) {
-      texto += `😔 Você não possui nenhum item de roubo.\n\n`;
-      texto += `🛒 Compre itens com *!menuroubar*!`;
+      texto += `😔 Você não possui nenhum item de roubo.\n\n🛒 Compre com *!menuroubar*!`;
     } else {
       texto += `\n━━━━━━━━━━━━━━━━\n`;
       if (user.equiparoubo && ITENS_ROUBO[user.equiparoubo]) {
-        texto += `⚡ *Equipado:* ${ITENS_ROUBO[user.equiparoubo].nome}\n`;
-        texto += `📈 *Bônus ativo:* +${ITENS_ROUBO[user.equiparoubo].bonus}% de sucesso`;
+        const eq = ITENS_ROUBO[user.equiparoubo];
+        texto += `⚡ *Equipado:* ${eq.nome}\n`;
+        texto += `📈 *Bônus ativo:* +${eq.bonus}% de sucesso\n`;
+        texto += `🎲 *Taxa atual:* até ${Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.bonus)}%`;
       } else {
         texto += `⚠️ *Nenhum item equipado!*\nUse *!equiparroubo <item>* para equipar.`;
       }
@@ -387,7 +466,7 @@ async function handleMeusItensRoubo(sock, msg, jid) {
 // ─── !meussec ───────────────────────────────────────────────────────────────
 
 async function handleMeusSec(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
+  const userId = getUserId(msg);
 
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId });
@@ -397,8 +476,7 @@ async function handleMeusSec(sock, msg, jid) {
       return;
     }
 
-    let texto = `🔐 *SEUS ITENS DE SEGURANÇA* 🔐\n\n`;
-
+    let texto  = `🔐 ═══ SEUS ITENS DE SEGURANÇA ═══ 🔐\n\n`;
     let temItem = false;
 
     for (const [key, item] of Object.entries(ITENS_SEGURANCA)) {
@@ -407,18 +485,19 @@ async function handleMeusSec(sock, msg, jid) {
         temItem = true;
         const equipado = user.equiparsec === key ? ' ⚡ *ATIVO*' : '';
         texto += `  ${item.nome}${equipado}\n`;
-        texto += `    └ Quantidade: *${qtd}x* | Defesa: *+${item.defesa}%*\n`;
+        texto += `    └ Qtd: *${qtd}x* | Defesa: *+${item.defesa}%*\n`;
       }
     }
 
     if (!temItem) {
-      texto += `😔 Você não possui nenhum item de segurança.\n\n`;
-      texto += `🛒 Compre itens com *!menusec*!`;
+      texto += `😔 Você não possui nenhum item de segurança.\n\n🛒 Compre com *!menusec*!`;
     } else {
       texto += `\n━━━━━━━━━━━━━━━━\n`;
       if (user.equiparsec && ITENS_SEGURANCA[user.equiparsec]) {
-        texto += `⚡ *Ativo:* ${ITENS_SEGURANCA[user.equiparsec].nome}\n`;
-        texto += `🛡️ *Defesa ativa:* +${ITENS_SEGURANCA[user.equiparsec].defesa}% de proteção`;
+        const eq = ITENS_SEGURANCA[user.equiparsec];
+        texto += `⚡ *Ativo:* ${eq.nome}\n`;
+        texto += `🛡️ *Defesa ativa:* +${eq.defesa}% de proteção\n`;
+        texto += `🔒 *Chance de resistir:* até ${Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.defesa)}%`;
       } else {
         texto += `⚠️ *Nenhuma defesa ativa!*\nUse *!equiparsec <item>* para ativar.`;
       }
@@ -434,7 +513,7 @@ async function handleMeusSec(sock, msg, jid) {
 // ─── !meiosec ───────────────────────────────────────────────────────────────
 
 async function handleMeioSec(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
+  const userId = getUserId(msg);
 
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId });
@@ -444,20 +523,24 @@ async function handleMeioSec(sock, msg, jid) {
       return;
     }
 
-    let texto = `🛡️ *SUAS DEFESAS ATIVAS* 🛡️\n\n`;
+    let texto = `🛡️ ═══ SUAS DEFESAS ATIVAS ═══ 🛡️\n\n`;
 
     if (user.equiparsec && ITENS_SEGURANCA[user.equiparsec]) {
-      const item = ITENS_SEGURANCA[user.equiparsec];
+      const item        = ITENS_SEGURANCA[user.equiparsec];
+      const defesaFinal = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + item.defesa);
+
       texto += `✅ *Defesa equipada:* ${item.nome}\n`;
       texto += `🔒 *Proteção:* +${item.defesa}%\n\n`;
       texto += `━━━━━━━━━━━━━━━━\n`;
-      texto += `💡 Sua proteção base é *50%*.\n`;
-      texto += `🛡️ Com este item: *${Math.min(95, 50 + item.defesa)}%* de chance de resistir a um roubo.\n\n`;
+      texto += `📊 *Como funciona:*\n`;
+      texto += `  Base de defesa: *${TAXA_SUCESSO_BASE}%*\n`;
+      texto += `  Bônus do item: *+${item.defesa}%*\n`;
+      texto += `  🛡️ Total: *${defesaFinal}%* de chance de resistir\n\n`;
       texto += `🔄 Troque com *!equiparsec <item>*`;
     } else {
       texto += `❌ *Nenhuma defesa ativa!*\n\n`;
-      texto += `⚠️ Você está *completamente vulnerável* a roubos!\n`;
-      texto += `🛒 Compre um item com *!menusec* e equipe com *!equiparsec <item>*`;
+      texto += `⚠️ Sem defesa você tem apenas *${TAXA_SUCESSO_BASE}%* de chance de resistir!\n`;
+      texto += `🛒 Compre com *!menusec* e equipe com *!equiparsec <item>*`;
     }
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
@@ -469,18 +552,14 @@ async function handleMeioSec(sock, msg, jid) {
 
 // ─── !roubar @pessoa ────────────────────────────────────────────────────────
 
-async function handleRoubar(sock, msg, jid, caption) {
-  const atacante = msg.key.participant || msg.key.remoteJid;
+async function handleRoubar(sock, msg, jid) {
+  const atacante = getUserId(msg);
+  const vitima   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
 
-  // Extrair menção
-  const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-
-  if (!mentioned) {
+  if (!vitima) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!roubar @pessoa*\nMencione quem você quer roubar!' }, { quoted: msg });
     return;
   }
-
-  const vitima = mentioned;
 
   if (atacante === vitima) {
     await sock.sendMessage(jid, { text: '❌ Você não pode se roubar!' }, { quoted: msg });
@@ -488,107 +567,119 @@ async function handleRoubar(sock, msg, jid, caption) {
   }
 
   try {
-    const userAtacante = await Usuario.findOne({ idWhatsApp: atacante });
-    const userVitima   = await Usuario.findOne({ idWhatsApp: vitima });
+    const [userAtacante, userVitima] = await Promise.all([
+      Usuario.findOne({ idWhatsApp: atacante }),
+      Usuario.findOne({ idWhatsApp: vitima }),
+    ]);
 
-    // ── Validação: cadastro
     if (!userAtacante) {
       await sock.sendMessage(jid, { text: '❌ Você não tem cadastro!' }, { quoted: msg });
       return;
     }
     if (!userVitima) {
-      await sock.sendMessage(jid, { text: '❌ Vítima não encontrada!' }, { quoted: msg });
+      await sock.sendMessage(jid, { text: '❌ Vítima não encontrada no sistema!' }, { quoted: msg });
       return;
     }
 
-    // ── Validação: precisa ter item equipado para roubar
-    if (!userAtacante.equiparoubo) {
+    // ── Validar item equipado ─────────────────────────────────────────────
+    if (!userAtacante.equiparoubo || !ITENS_ROUBO[userAtacante.equiparoubo]) {
       await sock.sendMessage(jid, {
-        text: `❌ *Você precisa equipar um item de roubo antes!*\n\n🛒 Compre com *!menuroubar* e equipe com *!equiparroubo <item>*`
+        text: `❌ *Você precisa equipar um item de roubo antes!*\n\n🛒 Compre com *!menuroubar*\n⚡ Equipe com *!equiparroubo <item>*`
       }, { quoted: msg });
       return;
     }
 
-    // ── Validação: cooldown de 30 minutos
-    const agora = Date.now();
-    const ultimoRoubo = userAtacante.ultimoRoubo ? new Date(userAtacante.ultimoRoubo).getTime() : 0;
+    // ── Verificar cooldown ────────────────────────────────────────────────
+    const agora        = Date.now();
+    const ultimoRoubo  = userAtacante.ultimoRoubo ? new Date(userAtacante.ultimoRoubo).getTime() : 0;
     const tempoPassado = agora - ultimoRoubo;
 
     if (tempoPassado < COOLDOWN_ROUBO_MS) {
-      const tempoRestante = COOLDOWN_ROUBO_MS - tempoPassado;
+      const restante = COOLDOWN_ROUBO_MS - tempoPassado;
       await sock.sendMessage(jid, {
-        text: `⏱️ *Você está em cooldown!*\n\nAguarde mais *${formatarTempo(tempoRestante)}* para tentar roubar novamente.`
+        text: `⏱️ *COOLDOWN ATIVO!*\n\nAguarde *${formatarTempo(restante)}* para tentar novamente.`
       }, { quoted: msg });
       return;
     }
 
-    // ── Validação: vítima tem gold
+    // ── Verificar saldo da vítima ─────────────────────────────────────────
     const saldoVitima = userVitima.gold || 0;
     if (saldoVitima <= 0) {
       await sock.sendMessage(jid, { text: '❌ A vítima não tem gold para roubar!' }, { quoted: msg });
       return;
     }
 
-    // ── Registrar timestamp ANTES da tentativa (mesmo que falhe, gasta cooldown)
+    // ── Registrar cooldown ANTES da tentativa ─────────────────────────────
+    // (mesmo que falhe, o atacante gastou o cooldown)
     await Usuario.findOneAndUpdate(
       { idWhatsApp: atacante },
       { $set: { ultimoRoubo: new Date() } }
     );
 
-    // ── Calcular taxa de sucesso
-    let taxaSucesso = 50; // Base 50%
+    // ── Calcular taxa de sucesso ──────────────────────────────────────────
+    let taxaSucesso = TAXA_SUCESSO_BASE;
 
     const itemAtaque = ITENS_ROUBO[userAtacante.equiparoubo];
-    if (itemAtaque) {
-      taxaSucesso += itemAtaque.bonus;
+    taxaSucesso += itemAtaque.bonus;
+
+    if (userVitima.equiparsec && ITENS_SEGURANCA[userVitima.equiparsec]) {
+      taxaSucesso -= ITENS_SEGURANCA[userVitima.equiparsec].defesa;
     }
 
-    if (userVitima.equiparsec) {
-      const itemDefesa = ITENS_SEGURANCA[userVitima.equiparsec];
-      if (itemDefesa) {
-        taxaSucesso -= itemDefesa.defesa;
-      }
-    }
-
-    // Limitar entre 5% e 95%
-    taxaSucesso = Math.max(5, Math.min(95, taxaSucesso));
+    taxaSucesso = Math.max(TAXA_MIN, Math.min(TAXA_MAX, taxaSucesso));
 
     const rolagem = Math.random() * 100;
     const sucesso  = rolagem < taxaSucesso;
 
-    let textoResposta = `🎭 *TENTATIVA DE ROUBO!* 🎭\n\n`;
-    textoResposta += `🔫 *Arma:* ${itemAtaque.nome}\n`;
-    textoResposta += `🎲 *Rolagem:* ${rolagem.toFixed(1)}% vs ${taxaSucesso}% de sucesso\n`;
-    textoResposta += `━━━━━━━━━━━━━━━━\n`;
+    let textoResposta =
+      `🎭 ═══ TENTATIVA DE ROUBO! ═══ 🎭\n\n` +
+      `🔫 *Arma:* ${itemAtaque.nome}\n` +
+      `🎲 *Rolagem:* ${rolagem.toFixed(1)} vs ${taxaSucesso}% necessário\n` +
+      `━━━━━━━━━━━━━━━━\n`;
 
     if (sucesso) {
-      const percentualRoubo = Math.floor(Math.random() * 70) + 30; // 30–100%
-      const ouroRoubado     = Math.floor(saldoVitima * percentualRoubo / 100);
+      // ── Roubo bem-sucedido ────────────────────────────────────────────
+      const percentualRoubo = Math.floor(Math.random() * (ROUBO_MAX_PCT - ROUBO_MIN_PCT + 1)) + ROUBO_MIN_PCT;
+      const ouroRoubado     = Math.max(1, Math.floor(saldoVitima * percentualRoubo / 100));
 
-      await changeGold(atacante, ouroRoubado);
-      await changeGold(vitima, -ouroRoubado);
+      // Debitar da vítima e só então creditar o atacante
+      const novoSaldoVitima = await changeGold(vitima, -ouroRoubado);
 
-      // ── Missão: contar roubo bem-sucedido
+      if (novoSaldoVitima === null) {
+        // Vítima foi roubada por outra pessoa ao mesmo tempo — refazer com saldo atual
+        const saldoAtualVitima = await getSaldoAtual(vitima);
+        if (saldoAtualVitima <= 0) {
+          textoResposta +=
+            `😅 *AZAR!*\n\nA vítima foi roubada por outra pessoa ao mesmo tempo!\n` +
+            `⏱️ *Próxima tentativa em:* 30 minutos`;
+          await sock.sendMessage(jid, { text: textoResposta }, { quoted: msg });
+          return;
+        }
+      }
+
+      const novoSaldoAtacante = await changeGold(atacante, ouroRoubado);
+
+      // Missão: roubo bem-sucedido
       await incrementMission(atacante, 'roubo3');
 
-      const novoSaldoAtacante = (userAtacante.gold || 0) + ouroRoubado;
-      const novoSaldoVitima   = saldoVitima - ouroRoubado;
-
-      textoResposta += `✅ *ROUBO BEM-SUCEDIDO!*\n\n`;
-      textoResposta += `💰 *Ouro roubado:* ${ouroRoubado} gold (${percentualRoubo}%)\n`;
-      textoResposta += `👤 *Seu novo saldo:* ${novoSaldoAtacante} gold\n`;
-      textoResposta += `😢 *Saldo da vítima:* ${novoSaldoVitima} gold`;
+      textoResposta +=
+        `✅ *ROUBO BEM-SUCEDIDO!*\n\n` +
+        `💰 *Ouro roubado:* ${ouroRoubado} gold (${percentualRoubo}% do saldo)\n` +
+        `👤 *Seu novo saldo:* ${novoSaldoAtacante} gold\n` +
+        `😢 *Saldo da vítima:* ${saldoVitima - ouroRoubado} gold`;
     } else {
-      textoResposta += `❌ *ROUBO FRACASSOU!*\n\n`;
-      textoResposta += `🚔 A polícia chegou! Você não conseguiu nada!\n`;
-      textoResposta += `😌 *Saldo da vítima:* ${saldoVitima} gold (intacto)\n`;
-      textoResposta += `⏱️ *Próxima tentativa em:* 30 minutos`;
+      // ── Roubo fracassou ───────────────────────────────────────────────
+      textoResposta +=
+        `❌ *ROUBO FRACASSOU!*\n\n` +
+        `🚔 A polícia chegou! Você não conseguiu nada.\n` +
+        `😌 *Saldo da vítima:* ${saldoVitima} gold (intacto)\n` +
+        `⏱️ *Próxima tentativa em:* 30 minutos`;
     }
 
     await sock.sendMessage(jid, { text: textoResposta }, { quoted: msg });
   } catch (e) {
     console.error('⚠️ Erro ao processar roubo:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar roubo!' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar roubo! Tente novamente.' }, { quoted: msg });
   }
 }
 

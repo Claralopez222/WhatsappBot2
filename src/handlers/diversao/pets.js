@@ -6,6 +6,7 @@
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const { prepareDailyMissionState } = require('./missoes');
 
 const petData = new Map();
 const spawnedPets = new Map(); // { groupId: { type, rarity, spawnedAt } }
@@ -186,6 +187,9 @@ async function handleAlimentarPet(sock, msg, jid, author) {
   pet.fullness = Math.min(100, pet.fullness + 30);
   pet.happiness = Math.min(100, pet.happiness + 10);
   
+  // Garantir que missão está inicializada antes de atualizar
+  await prepareDailyMissionState(userId);
+  
   await Usuario.findOneAndUpdate(
     { idWhatsApp: userId },
     { 
@@ -220,6 +224,9 @@ async function handleBrincarPet(sock, msg, jid, author) {
   pet.energy = Math.max(0, pet.energy - 15);
   pet.fullness = Math.max(0, pet.fullness - 10);
   pet.level = Math.min(50, pet.level + 1);
+  
+  // Garantir que missão está inicializada antes de atualizar
+  await prepareDailyMissionState(userId);
   
   await Usuario.findOneAndUpdate(
     { idWhatsApp: userId },

@@ -283,50 +283,54 @@ function getSenderName(msg) {
 
 // ─── handlePerfil (Atualizado com Foto de Perfil) ─────────────────────────────────────────────
 async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-
   try {
+    // 1. Identifica o alvo: Se houver alguém mencionado (@), pega o ID dele. Caso contrário, pega quem enviou.
+    const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    const userId = mentionedJid || msg.key.participant || msg.key.remoteJid;
+
     let user = await Usuario.findOne({ idWhatsApp: userId });
 
     if (!user) {
       user = await Usuario.create({ idWhatsApp: userId, gold: 0, xp: 0, level: 1, mensagens: 0 });
     }
 
-    // 1. Tenta buscar a foto de perfil do usuário direto do WhatsApp
+    // 2. Busca a foto de perfil do alvo com um fallback seguro
     let picUrl;
     try {
       picUrl = await sock.profilePictureUrl(userId, 'image');
     } catch (err) {
-      // Foto de avatar padrão caso o usuário não tenha foto ou esteja privada
+      // Fallback para imagem padrão se falhar a requisição ou for privada
       picUrl = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png';
     }
 
-    const nomeDoCara      = msg.pushName || user.nome || 'Usuário';
+    // Usar o pushName da mensagem se for o próprio usuário, ou o nome do banco
+    const nomeDoCara = user.nome || (userId === msg.key.participant ? msg.pushName : null) || 'Usuário';
     const numeroFormatado = formatarNumeroBR(userId);
 
-    // 2. Monta o texto do perfil usando as informações do banco
+    // Validação para evitar o 'undefined' caso o pet não exista no registro do banco
+    const petTexto = user.pet && user.pet.name 
+      ? `[Lvl ${user.pet.level || 1}] ${user.pet.name}` 
+      : 'Nenhum';
+
     const textoPerfil =
       `👤 *PERFIL DO USUÁRIO* 👤\n\n` +
       `📝 *Nome:* ${nomeDoCara}\n` +
       `📱 *Número:* ${numeroFormatado}\n` +
       `💰 *Gold:* ${user.gold || 0} 💰\n` +
       `📊 *Nível:* ${user.level || 1} | *XP:* ${user.xp || 0}\n` +
-      `💬 *Mensagens enviadas:* ${user.mensagens || 0}\n\n` +
-      `🐾 *Pet Ativo:* ${user.pet ? `[Lvl ${user.pet.level}] ${user.pet.name}` : 'Nenhum'}\n` +
+      `🐾 *Pet Ativo:* ${petTexto}\n` +
       `━━━━━━━━━━━━━━━━━━━━`;
 
-    // 3. Envia como imagem com o texto no formato de legenda (caption)
     await sock.sendMessage(jid, { 
       image: { url: picUrl }, 
       caption: textoPerfil 
     }, { quoted: msg });
 
   } catch (e) {
-    console.error('❌ Erro ao carregar perfil do banco:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro interno ao carregar o seu perfil.' }, { quoted: msg });
+    console.error('❌ Erro ao carregar perfil:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro interno ao carregar o perfil.' }, { quoted: msg });
   }
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── INICIALIZAR BOT ──────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

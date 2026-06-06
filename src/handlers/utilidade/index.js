@@ -358,162 +358,227 @@ async function handleLetra(sock, msg, jid, caption) {
     }, { quoted: msg });
   }
 }
+/**
+ * Handler de Perfil — Piroquinhas Bot
+ * Comando: !perfil / !perfil @pessoa
+ *
+ * CORREÇÕES:
+ *  - Número real extraído do JID corretamente (remove sufixo de dispositivo)
+ *  - Itens de roubo/segurança exibidos no perfil
+ *  - Missões diárias integradas
+ *  - Layout mais limpo e completo
+ */
 
 async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
-  const mentions = contextInfo?.mentionedJid || [];
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const alvoJid = mentions[0] || contextInfo?.participant || senderJid;
-  const nome = contactNames[alvoJid] || alvoJid.split('@')[0];
+  const mentions    = contextInfo?.mentionedJid || [];
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const alvoJid     = mentions[0] || contextInfo?.participant || senderJid;
+  const nome        = contactNames[alvoJid] || alvoJid.split('@')[0];
 
+  // ── [FIX] Número real ─────────────────────────────────────────────────────
+  // O JID do WhatsApp tem formato: 5511999999999@s.whatsapp.net
+  // Em grupos pode vir com sufixo de dispositivo: 5511999999999:12@s.whatsapp.net
+  // É necessário remover o sufixo ":XX" antes do "@"
+  const rawNumber  = alvoJid.split('@')[0].split(':')[0];
+  const number     = rawNumber; // já é o número limpo, ex: 5511999999999
+
+  // ── Grupo e admin ─────────────────────────────────────────────────────────
   let groupName = '';
+  let isAdmin   = false;
   if (jid.endsWith('@g.us')) {
-    try { const meta = await sock.groupMetadata(jid); groupName = meta.subject || ''; } catch {}
+    try {
+      const meta = await sock.groupMetadata(jid);
+      groupName  = meta.subject || '';
+    } catch {}
+    try {
+      const grupoHandler = require(path.join(__dirname, '..', 'grupo'));
+      isAdmin = await grupoHandler.isAdmin(sock, jid, alvoJid);
+    } catch {}
   }
 
-  const number = alvoJid.split('@')[0];
-  let isAdmin = false;
-  if (jid.endsWith('@g.us')) {
-    try { const grupoHandler = require(path.join(__dirname, '..', 'grupo')); isAdmin = await grupoHandler.isAdmin(sock, jid, alvoJid); } catch {}
-  }
-
-  const msgsRec = (msgCount.get(alvoJid)?.count) || 0;
-  const cmdsRec = cmdCount.get(alvoJid) || 0;
-  const sticks = stickerCount.get(alvoJid) || 0;
+  // ── Atividade ─────────────────────────────────────────────────────────────
+  const msgsRec    = msgCount.get(alvoJid)?.count || 0;
+  const cmdsRec    = cmdCount.get(alvoJid)        || 0;
+  const sticks     = stickerCount.get(alvoJid)    || 0;
   const interactions = msgsRec + cmdsRec + sticks;
-  let activityLabel = '📉 CALMO';
-  if (interactions > 1000) activityLabel = '🔥 HIPERATIVO';
-  else if (interactions > 500) activityLabel = '⚡ ATIVO';
 
-  const userData = await Usuario.findOne({ idWhatsApp: alvoJid });
-  
-  // GOLD E BANCO DO USUÁRIO INTEGRADOS DO MONGODB
-  const userGold = userData?.gold ?? 100;
-  let bankText = '🏦 Nao possui investimentos';
-  if (userData?.bank && userData.bank.amount > 0) {
-    const daysLeft = Math.max(0, userData.bank.daysRemaining - Math.floor((Date.now() - new Date(userData.bank.startDate)) / 86400000));
-    bankText = `🏦 Investido: *${userData.bank.amount}* gold (${userData.bank.interest}% juros)\n⏳ Status: ${daysLeft > 0 ? `Faltam ${daysLeft} dia(s)` : 'Pronto para resgatar!'}`;
-  }
+  let activityLabel = '📉 Calmo';
+  if (interactions > 1000)     activityLabel = '🔥 Hiperativo';
+  else if (interactions > 500) activityLabel = '⚡ Ativo';
+  else if (interactions > 100) activityLabel = '😊 Participativo';
 
-  const levelXP = userData?.xp ?? msgsRec;
-  const level = userData?.level || Math.floor(levelXP / 50) + 1;
-  const nextLevelXp = level * 50;
-  const levelProgress = Math.min(100, Math.floor((levelXP / nextLevelXp) * 100));
-  const levelBar = '█'.repeat(Math.floor(levelProgress / 10)) + '░'.repeat(10 - Math.floor(levelProgress / 10));
-
+  // Rank no grupo
   let rankText = '';
   try {
-    const ranks = [...msgCount.entries()].sort((a,b)=> (b[1]?.count||0) - (a[1]?.count||0));
-    const idx = ranks.findIndex(([k])=>k === alvoJid);
-    if (idx >= 0) rankText = ` (#${idx+1})`;
+    const ranks = [...msgCount.entries()].sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0));
+    const idx   = ranks.findIndex(([k]) => k === alvoJid);
+    if (idx >= 0) rankText = ` · #${idx + 1} no grupo`;
   } catch {}
 
-  let relStatus = 'Solteiro(a)';
-  if (relacionamentos) {
-    for (const [k,v] of relacionamentos) {
-      if (k.includes(alvoJid.split('@')[0])) {
-        const partner = v.nomeA === nome ? v.nomeB : v.nomeA;
-        relStatus = v.tipo === 'casamento' ? `Casado(a) com ${partner}` : `Namorando com ${partner}`;
-        break;
-      }
-    }
-  }
-  if (relStatus === 'Solteiro(a)' && userData?.casadoCom) {
-    const partnerName = contactNames[userData.casadoCom] || userData.casadoCom.split('@')[0];
-    relStatus = userData.casadoTipo === 'namoro'
-      ? `Namorando com ${partnerName}`
-      : `Casado(a) com ${partnerName}`;
+  // ── Dados do banco ────────────────────────────────────────────────────────
+  const userData = await Usuario.findOne({ idWhatsApp: alvoJid });
+
+  // Gold
+  const userGold = userData?.gold ?? 100;
+
+  // Level e XP
+  const levelXP      = userData?.xp ?? msgsRec;
+  const level        = userData?.level || Math.floor(levelXP / 50) + 1;
+  const nextLevelXp  = level * 50;
+  const levelProgress = Math.min(100, Math.floor((levelXP / nextLevelXp) * 100));
+  const barsF = Math.floor(levelProgress / 10);
+  const levelBar = '█'.repeat(barsF) + '░'.repeat(10 - barsF);
+
+  // Banco / investimento
+  let bankText = '🏦 Sem investimentos ativos';
+  if (userData?.bank?.amount > 0) {
+    const elapsed  = Math.floor((Date.now() - new Date(userData.bank.startDate)) / 86400000);
+    const daysLeft = Math.max(0, userData.bank.daysRemaining - elapsed);
+    const statusBanco = daysLeft > 0 ? `⏳ Faltam ${daysLeft} dia(s)` : '✅ Pronto para resgatar!';
+    bankText = `💳 ${userData.bank.amount}g investido (${userData.bank.interest}% juros) · ${statusBanco}`;
   }
 
+  // Missões diárias
+  let missaoText = '';
+  try {
+    const { dailyMissionDefinitions } = require('./missoes');
+    const dm = userData?.dailyMissions;
+    if (dm && dm.date === new Date().toISOString().split('T')[0]) {
+      const total     = dailyMissionDefinitions.length;
+      const concluidas = dailyMissionDefinitions.filter(m =>
+        (dm.progress?.[m.id] || 0) >= m.target || dm.completed?.[m.id]
+      ).length;
+      const resgatadas = dailyMissionDefinitions.filter(m => dm.claimed?.[m.id]).length;
+      missaoText = `🎯 Missões: ${concluidas}/${total} concluídas · ${resgatadas} resgatadas`;
+    }
+  } catch {}
+
+  // Itens equipados
+  let equipText = '';
+  try {
+    const itemRoubo = userData?.equiparoubo;
+    const itemSec   = userData?.equiparsec;
+    const partes    = [];
+    if (itemRoubo) partes.push(`🎭 Roubo: ${itemRoubo}`);
+    if (itemSec)   partes.push(`🔐 Defesa: ${itemSec}`);
+    if (partes.length) equipText = partes.join(' · ');
+  } catch {}
+
+  // Pet
+  let petText = '';
+  if (userData?.pet?.name) {
+    const petSystem = {
+      tubarao:    { emoji: '🦈' }, dragao:    { emoji: '🐉' }, falcao:  { emoji: '🦅' },
+      leao:       { emoji: '🦁' }, tigre:     { emoji: '🐯' }, lobo:    { emoji: '🐺' },
+      urso:       { emoji: '🐻' }, macaco:    { emoji: '🐵' }, raposa:  { emoji: '🦊' },
+      coelho:     { emoji: '🐰' }, gato:      { emoji: '🐱' }, cachorro:{ emoji: '🐶' },
+      elefante:   { emoji: '🐘' }, girafa:    { emoji: '🦒' }, pinguim: { emoji: '🐧' },
+      coruja:     { emoji: '🦉' }, fenix:     { emoji: '🔥' }, feneco:  { emoji: '🦝' },
+      leao_marinho: { emoji: '🦭' },
+    };
+    const petType = userData.pet.type || 'cachorro';
+    const petEmoji = petSystem[petType]?.emoji ?? '🐾';
+    const hap = userData.pet.happiness ?? 60;
+    const hapBar = hap >= 80 ? '😄' : hap >= 50 ? '😊' : '😔';
+    petText = `${petEmoji} *${userData.pet.name}* · Lvl ${userData.pet.level || 1} · Humor ${hapBar} ${hap}%`;
+  }
+
+  // Aniversário
   let birthdayText = '';
   try {
     const dataPath = path.resolve(__dirname, '../../../data.json');
     if (fs.existsSync(dataPath)) {
-      const raw = fs.readFileSync(dataPath, 'utf8');
-      const dataFile = JSON.parse(raw || '{}');
+      const dataFile  = JSON.parse(fs.readFileSync(dataPath, 'utf8') || '{}');
       const birthdays = dataFile.birthdays || {};
       if (birthdays[alvoJid]?.date) {
         const [day, month, year] = birthdays[alvoJid].date.split('/');
-        const today = new Date();
-        const currentYear = today.getFullYear();
+        const today        = new Date();
+        const currentYear  = today.getFullYear();
         const nextBirthday = new Date(currentYear, Number(month) - 1, Number(day));
         if (nextBirthday < today) nextBirthday.setFullYear(currentYear + 1);
-        const age = nextBirthday.getFullYear() - Number(year);
-        const daysUntil = Math.ceil((nextBirthday - today) / (1000 * 60 * 60 * 24));
-        birthdayText = `🎂 Aniversário: ${day}/${month}/${year} (${age} anos) ${daysUntil === 0 ? '— Hoje!' : `— em ${daysUntil} dia(s)`}`;
+        const age      = nextBirthday.getFullYear() - Number(year);
+        const daysUntil = Math.ceil((nextBirthday - today) / 86400000);
+        birthdayText = `🎂 ${day}/${month}/${year} · ${age} anos · ${daysUntil === 0 ? '🥳 Hoje!' : `em ${daysUntil} dia(s)`}`;
       }
     }
   } catch {}
 
-  let petText = '';
-  if (userData?.pet?.name) {
-    const petSystem = { 
-      tubarao: { emoji: '🦈', nome: 'Tubarão' },
-      dragao: { emoji: '🐉', nome: 'Dragão' },
-      falcao: { emoji: '🦅', nome: 'Falcão' },
-      leao: { emoji: '🦁', nome: 'Leão' },
-      tigre: { emoji: '🐯', nome: 'Tigre' },
-      lobo: { emoji: '🐺', nome: 'Lobo' },
-      urso: { emoji: '🐻', nome: 'Urso' },
-      macaco: { emoji: '🐵', nome: 'Macaco' },
-      raposa: { emoji: '🦊', nome: 'Raposa' },
-      coelho: { emoji: '🐰', nome: 'Coelho' },
-      gato: { emoji: '🐱', nome: 'Gato' },
-      cachorro: { emoji: '🐶', nome: 'Cachorro' },
-      elefante: { emoji: '🐘', nome: 'Elefante' },
-      girafa: { emoji: '🦒', nome: 'Girafa' },
-      pinguim: { emoji: '🐧', nome: 'Pinguim' },
-      coruja: { emoji: '🦉', nome: 'Coruja' },
-      fenix: { emoji: '🔥', nome: 'Fênix' },
-      feneco: { emoji: '🦝', nome: 'Feneco' },
-      leao_marinho: { emoji: '🦭', nome: 'Leão Marinho' },
-    };
-    const petType = userData.pet.type || 'cachorro';
-    const petDef = petSystem[petType] || { emoji: '🐾', nome: 'Pet' };
-    petText = `${petDef.emoji} Pet: ${petDef.nome} *${userData.pet.name}* (Lvl ${userData.pet.level || 1})`;
+  // Relacionamento
+  let relStatus = '💔 Solteiro(a)';
+  if (relacionamentos) {
+    for (const [k, v] of relacionamentos) {
+      if (k.includes(alvoJid.split('@')[0])) {
+        const partner = v.nomeA === nome ? v.nomeB : v.nomeA;
+        relStatus = v.tipo === 'casamento'
+          ? `💍 Casado(a) com ${partner}`
+          : `❤️ Namorando com ${partner}`;
+        break;
+      }
+    }
+  }
+  if (relStatus === '💔 Solteiro(a)' && userData?.casadoCom) {
+    const partnerName = contactNames[userData.casadoCom] || userData.casadoCom.split('@')[0].split(':')[0];
+    relStatus = userData.casadoTipo === 'namoro'
+      ? `❤️ Namorando com ${partnerName}`
+      : `💍 Casado(a) com ${partnerName}`;
   }
 
+  // Foto de perfil
   let picBuffer = null;
   try {
     const url = await sock.profilePictureUrl(alvoJid, 'image');
     if (url) picBuffer = await fetchBuffer(url);
   } catch {}
 
+  // ── Montar texto do perfil ────────────────────────────────────────────────
+  const sep = `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`;
+
   const lines = [];
-  lines.push(`╭─[ 📊 ATIVIDADE DO MEMBRO 📊 ]─`);
-  lines.push(`👤 Usuário: ${nome}`);
-  if (groupName) lines.push(`🏠 Grupo: ${groupName}`);
-  lines.push(`📞 Número: +${number}`);
-  if (jid.endsWith('@g.us')) lines.push(`👑 Admin: ${isAdmin ? 'Sim' : 'Não'}`);
-  lines.push(`────────────────────────`);
-  lines.push(`📝 Mensagens: ${msgsRec}${rankText}`);
-  lines.push(`🤖 Comandos: ${cmdsRec}`);
-  lines.push(`😄 Figurinhas: ${sticks}`);
-  lines.push(`────────────────────────`);
-  lines.push(`📈 Total de Interações: ${interactions}`);
-  lines.push(`🏅 Level: ${level}   XP: ${levelXP}/${nextLevelXp} (${levelProgress}%)`);
-  lines.push(`📊 Progresso: [${levelBar}]`);
-  lines.push(activityLabel);
-  lines.push(`────────────────────────`);
-  lines.push(`💰 Carteira: *${userGold}* gold`);
-  lines.push(`${bankText}`);
-  lines.push(`────────────────────────`);
-  if (birthdayText) {
-    lines.push(`🎂 Aniversário registrado`);
-    lines.push(birthdayText);
-    lines.push(`────────────────────────`);
+  lines.push(`╭━━[ 👤 PERFIL ]━━╮`);
+  lines.push(`│`);
+  lines.push(`│  *${nome}*`);
+  lines.push(`│  📞 +${number}`);
+  if (groupName) lines.push(`│  🏠 ${groupName}`);
+  if (jid.endsWith('@g.us')) lines.push(`│  👑 Admin: ${isAdmin ? '✅ Sim' : '❌ Não'}`);
+  lines.push(`│`);
+  lines.push(`├─[ 📊 ATIVIDADE ]`);
+  lines.push(`│  💬 Mensagens: *${msgsRec}*${rankText}`);
+  lines.push(`│  🤖 Comandos:  *${cmdsRec}*`);
+  lines.push(`│  😄 Figurinhas: *${sticks}*`);
+  lines.push(`│  🔁 Total: *${interactions}* · ${activityLabel}`);
+  lines.push(`│`);
+  lines.push(`├─[ ⭐ PROGRESSO ]`);
+  lines.push(`│  🏅 Level *${level}* · XP ${levelXP}/${nextLevelXp} (${levelProgress}%)`);
+  lines.push(`│  [${levelBar}]`);
+  if (missaoText) lines.push(`│  ${missaoText}`);
+  lines.push(`│`);
+  lines.push(`├─[ 💰 ECONOMIA ]`);
+  lines.push(`│  👛 Carteira: *${userGold}g*`);
+  lines.push(`│  ${bankText}`);
+  if (equipText) {
+    lines.push(`│`);
+    lines.push(`├─[ ⚔️ EQUIPAMENTO ]`);
+    lines.push(`│  ${equipText}`);
   }
   if (petText) {
-    lines.push(`[🐾 PET]`);
-    lines.push(petText);
-    lines.push(`────────────────────────`);
+    lines.push(`│`);
+    lines.push(`├─[ 🐾 PET ]`);
+    lines.push(`│  ${petText}`);
   }
-  lines.push(`[💑 RELACIONAMENTO]`);
-  lines.push(`💔 Status: ${relStatus}`);
-  lines.push(`────────────────────────`);
-  lines.push(`[🤖 Piroquinhas]`);
+  if (birthdayText) {
+    lines.push(`│`);
+    lines.push(`├─[ 🎂 ANIVERSÁRIO ]`);
+    lines.push(`│  ${birthdayText}`);
+  }
+  lines.push(`│`);
+  lines.push(`├─[ 💑 RELACIONAMENTO ]`);
+  lines.push(`│  ${relStatus}`);
+  lines.push(`│`);
+  lines.push(`╰━━[ 🤖 Piroquinhas Bot ]━━╯`);
 
   const texto = lines.join('\n');
+
   if (picBuffer) {
     await sock.sendMessage(jid, { image: picBuffer, caption: texto }, { quoted: msg });
   } else {

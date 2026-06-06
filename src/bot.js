@@ -182,7 +182,7 @@ async function addUserXp(userId, xp = 1, pushName = null) {
     const updated = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       update,
-      { returnDocument: 'after', upsert: true }
+      { new: true, upsert: true }
     );
 
     const computedLevel = Math.floor((updated.xp || 0) / 50) + 1;

@@ -40,7 +40,7 @@ async function prepareDailyMissionState(userId) {
       const updated = await Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
         { $set: { dailyMissions: defaultMissions } },
-        { returnDocument: 'after' }
+        { new: true }
       );
       
       // Garantir que retorna a estrutura completa

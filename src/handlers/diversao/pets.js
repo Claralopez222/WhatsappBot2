@@ -96,7 +96,7 @@ async function savePet(userId, petObj) {
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       { $set: { pet: petObj } },
-      { upsert: true, returnDocument: 'after' }
+      { upsert: true, new: true }
     );
   } catch (e) {
     console.error('⚠️ Erro ao salvar pet:', e.message);

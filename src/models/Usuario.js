@@ -30,7 +30,7 @@ const usuarioSchema = new mongoose.Schema({
     lastFed: { type: Date, default: null },
     lastPlayed: { type: Date, default: null },
   },
-  // ─── NOVO CAMPO: SISTEMA DE INVESTIMENTO BANCO ───
+  // ─── SISTEMA DE INVESTIMENTO BANCO ───────────────────────────────────────
   bank: {
     amount: { type: Number, default: 0 },
     interest: { type: Number, default: 0 },
@@ -39,7 +39,35 @@ const usuarioSchema = new mongoose.Schema({
     lastDepositDate: { type: String, default: null },
     depositedToday: { type: Number, default: 0 }
   },
-  // ─── NOVO CAMPO: SISTEMA DE ROUBO ───
+  // ─── SISTEMA DE MISSÕES DIÁRIAS ──────────────────────────────────────────
+  dailyMissions: {
+    date: { type: String, default: null },
+    progress: {
+      xp100:  { type: Number, default: 0 },
+      msg50:  { type: Number, default: 0 },
+      quiz5:  { type: Number, default: 0 },
+      gold500:{ type: Number, default: 0 },
+      pet10:  { type: Number, default: 0 },
+      roubo3: { type: Number, default: 0 },
+    },
+    completed: {
+      xp100:  { type: Boolean, default: false },
+      msg50:  { type: Boolean, default: false },
+      quiz5:  { type: Boolean, default: false },
+      gold500:{ type: Boolean, default: false },
+      pet10:  { type: Boolean, default: false },
+      roubo3: { type: Boolean, default: false },
+    },
+    claimed: {
+      xp100:  { type: Boolean, default: false },
+      msg50:  { type: Boolean, default: false },
+      quiz5:  { type: Boolean, default: false },
+      gold500:{ type: Boolean, default: false },
+      pet10:  { type: Boolean, default: false },
+      roubo3: { type: Boolean, default: false },
+    },
+  },
+  // ─── SISTEMA DE ROUBO ────────────────────────────────────────────────────
   itensRoubo: {
     type: Map,
     of: Number,
@@ -50,8 +78,10 @@ const usuarioSchema = new mongoose.Schema({
     of: Number,
     default: {},
   },
-  equiparroubo: { type: String, default: null },
-  equiparsec: { type: String, default: null },
+  // ATENÇÃO: nomes sem "r" duplo — equiparoubo / equiparsec
+  equiparoubo: { type: String, default: null },  // era "equiparroubo" — corrigido
+  equiparsec:  { type: String, default: null },
+  ultimoRoubo: { type: Date,   default: null },  // NOVO — cooldown de 30min
 }, {
   timestamps: true,
 });

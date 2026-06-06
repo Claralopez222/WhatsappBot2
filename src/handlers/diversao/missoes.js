@@ -37,14 +37,17 @@ async function prepareDailyMissionState(userId) {
         claimed: { xp100: false, msg50: false, quiz5: false, gold500: false, pet10: false }
       };
 
-      await Usuario.findOneAndUpdate(
+      const updated = await Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
-        { $set: { dailyMissions: freshMissions } }
+        { $set: { dailyMissions: freshMissions } },
+        { returnDocument: 'after' }
       );
-      return freshMissions;
+      return updated.dailyMissions;
     }
 
-    return user.dailyMissions;
+    // Sempre recarregar do banco para garantir dados atualizados
+    const latestUser = await Usuario.findOne({ idWhatsApp: userId });
+    return latestUser?.dailyMissions || user.dailyMissions;
   } catch (e) {
     console.error('⚠️ Erro ao carregar missões do banco:', e.message);
     return { date: todayStr, progress: {}, completed: {}, claimed: {} };

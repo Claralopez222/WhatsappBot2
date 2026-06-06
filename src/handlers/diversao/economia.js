@@ -37,7 +37,7 @@ const ITENS_LOJA = {
   suco: { nome: 'Suco Natural', preco: 12, categoria: 'comida' },
   vinho: { nome: 'Vinho', preco: 100, categoria: 'comida' },
   cerveja: { nome: 'Cerveja', preco: 80, categoria: 'comida' },
-  
+
   // COMIDA PARA PETS
   racao: { nome: 'Ração Normal', preco: 20, categoria: 'petcomida' },
   racaopremium: { nome: 'Ração Premium', preco: 45, categoria: 'petcomida' },
@@ -49,7 +49,7 @@ const ITENS_LOJA = {
   leite: { nome: 'Leite', preco: 15, categoria: 'petcomida' },
   cenoura: { nome: 'Cenoura', preco: 12, categoria: 'petcomida' },
   maca: { nome: 'Maçã', preco: 18, categoria: 'petcomida' },
-  
+
   // BRINQUEDOS
   bolinha: { nome: 'Bolinha de Tênis', preco: 35, categoria: 'petbrinquedo' },
   pelucia: { nome: 'Pelúcia', preco: 50, categoria: 'petbrinquedo' },
@@ -58,7 +58,7 @@ const ITENS_LOJA = {
   bolacrocante: { nome: 'Bola Crocante', preco: 45, categoria: 'petbrinquedo' },
   pena: { nome: 'Pena Interativa', preco: 30, categoria: 'petbrinquedo' },
   casabrinquedo: { nome: 'Casa de Brinquedo', preco: 150, categoria: 'petbrinquedo' },
-  
+
   // CUIDADOS
   remedio: { nome: 'Remédio Geral', preco: 80, categoria: 'petcuidado' },
   bandagem: { nome: 'Bandagem', preco: 50, categoria: 'petcuidado' },
@@ -66,7 +66,7 @@ const ITENS_LOJA = {
   shampoo: { nome: 'Shampoo Especial', preco: 70, categoria: 'petcuidado' },
   sabonete: { nome: 'Sabonete Pet', preco: 40, categoria: 'petcuidado' },
   escova: { nome: 'Escova de Dentes', preco: 35, categoria: 'petcuidado' },
-  
+
   // ACESSÓRIOS PET
   coleira: { nome: 'Coleira Colorida', preco: 55, categoria: 'petacessorio' },
   coleiraouro: { nome: 'Coleira de Ouro', preco: 200, categoria: 'petacessorio' },
@@ -74,13 +74,13 @@ const ITENS_LOJA = {
   bandana: { nome: 'Bandana', preco: 45, categoria: 'petacessorio' },
   coroa: { nome: 'Coroa Pet', preco: 100, categoria: 'petacessorio' },
   placaid: { nome: 'Placa de ID', preco: 75, categoria: 'petacessorio' },
-  
+
   // ITEMS ESPECIAIS
   trofeu: { nome: 'Troféu Miniatura', preco: 250, categoria: 'especial' },
   pocaoenergia: { nome: 'Poção de Energia', preco: 180, categoria: 'especial' },
   gema: { nome: 'Gema Brilhante', preco: 300, categoria: 'especial' },
   cristal: { nome: 'Cristal Mágico', preco: 400, categoria: 'especial' },
-  
+
   // ANTIGOS (compatibilidade)
   cachorro: { nome: 'Cachorro', preco: 100, categoria: 'pet' },
   gato: { nome: 'Gato', preco: 100, categoria: 'pet' },
@@ -94,7 +94,7 @@ const ITENS_LOJA = {
   celular: { nome: 'Celular', preco: 200, categoria: 'tec' },
   usb: { nome: 'Memória USB', preco: 150, categoria: 'tec' },
   computador: { nome: 'Computador', preco: 500, categoria: 'tec' },
-  
+
   // LOJA DE TECNOLOGIA
   notebook: { nome: 'Notebook Gamer', preco: 5000, categoria: 'tec' },
   notebooki5: { nome: 'Notebook i5', preco: 3500, categoria: 'tec' },
@@ -175,17 +175,17 @@ async function changeGold(userId, quantidade) {
 // ─── !gold
 async function handleGold(sock, msg, jid, getPrefix) {
   const userId = msg.key.participant;
-  
+
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId });
     const gold = user?.gold || 0;
     const userName = userId.split('@')[0];
-    
+
     let status = '💰 POBRE';
     if (gold >= 1000) status = '💰 RICO';
     else if (gold >= 500) status = '💵 ABASTADO';
     else if (gold >= 100) status = '💴 CONFORTÁVEL';
-    
+
     const texto = `💰 *SALDO DE GOLD* 💰
 
 👤 *${userName}*
@@ -214,7 +214,7 @@ async function handleGold(sock, msg, jid, getPrefix) {
 // ─── !loja
 async function handleLoja(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
-  
+
   let texto = `🛒 *LOJA PIROQUINHAS* 🛒\n\n`;
   texto += `🍔 *COMIDA*
 🍕 Pizza — 50 gold
@@ -355,39 +355,39 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
 async function handleComprar(sock, msg, jid, caption) {
   const userId = msg.key.participant;
   const match = caption.match(/comprar\s+(.+)/i);
-  
+
   if (!match) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!comprar <nome_do_item>*\nExemplo: *!comprar pizza*' }, { quoted: msg });
     return;
   }
-  
+
   const itemNome = match[1].toLowerCase().trim();
   const itemInfo = ITENS_LOJA[itemNome];
-  
+
   if (!itemInfo) {
     const listaItens = Object.entries(ITENS_LOJA)
       .slice(0, 15)
       .map(([key, val]) => `  • ${val.nome} (${val.preco} gold)`)
       .join('\n');
-    
+
     const texto = `⚠️ *ITEM NÃO ENCONTRADO*\n\nO item *${itemNome}* não existe!\n\n━━━━━━━━━━━━━━━━\n*ITENS DISPONÍVEIS:*\n${listaItens}\n\n*USE:*\n  !comprar <item>\n  Exemplo: !comprar pizza`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
-  
+
   const preco = itemInfo.preco;
   const saldoAtual = await getSaldoAtual(userId);
-  
+
   if (saldoAtual < preco) {
     const texto = `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${preco}* gold!\n\n━━━━━━━━━━━━━━━━\n*SEU SALDO:*\n  💰 Disponível: *${saldoAtual}* gold\n  💎 Precisa de: *${preco}* gold`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
-  
+
   const saldoFinal = await changeGold(userId, -preco);
-  
+
   try {
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
@@ -397,9 +397,9 @@ async function handleComprar(sock, msg, jid, caption) {
   } catch (e) {
     console.error('⚠️ Erro ao adicionar ao inventário:', e.message);
   }
-  
+
   const texto = `✅ ═══ COMPRA REALIZADA! ═══ ✅\n\n🛒 *Você comprou com sucesso!*\n\n━━━━━━━━━━━━━━━━\n*DETALHES:*\n  📦 Item: *${itemInfo.nome}*\n  💵 Preço: *${preco}* gold\n\n━━━━━━━━━━━━━━━━\n*SALDO ATUALIZADO:*\n  ✅ Novo saldo: *${saldoFinal}* gold`;
-  
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
@@ -407,50 +407,50 @@ async function handleComprar(sock, msg, jid, caption) {
 async function handleVender(sock, msg, jid, caption) {
   const userId = msg.key.participant;
   const match = caption.match(/vender\s+(\S+)\s+(\d+)\s+(\d+)/i);
-  
+
   if (!match) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!vender <item> <preco> <quantidade>*\nExemplo: *!vender pizza 50 3*' }, { quoted: msg });
     return;
   }
-  
+
   const itemKey = match[1].toLowerCase().trim();
   const preco = parseInt(match[2]);
   const quantidade = parseInt(match[3]);
   const itemInfo = ITENS_LOJA[itemKey];
-  
+
   if (!itemInfo) {
     await sock.sendMessage(jid, { text: `⚠️ Item *${itemKey}* não existe!` }, { quoted: msg });
     return;
   }
-  
+
   if (preco <= 0 || quantidade <= 0) {
     await sock.sendMessage(jid, { text: '⚠️ Preço e quantidade devem ser maiores que 0!' }, { quoted: msg });
     return;
   }
-  
+
   const sellerName = userId.split('@')[0];
   const texto = `✅ *OFERTA CRIADA!* ✅\n\n📦 *Item:* ${itemInfo.nome}\n💵 *Preço:* ${preco} gold cada\n📊 *Quantidade:* ${quantidade}\n👤 *Vendedor:* ${sellerName}\n\n━━━━━━━━━━━━━━━━\n*PRÓXIMOS PASSOS:*\n  Ver ofertas: *!avenda*`;
-  
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
 // ─── !inventario
 async function handleInventario(sock, msg, jid) {
   const userId = msg.key.participant;
-  
+
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId });
-    
+
     if (!user || !user.inventory) {
       const texto = `📦 *SEU INVENTÁRIO* 📦\n\nVocê não possui itens no momento!\n\n*COMO GANHAR ITENS?*\n  🛒 Comprar na loja: !loja\n  📋 Completar missões: !missao\n\nUse *!comprar <item>* para começar!`;
-      
+
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
       return;
     }
-    
+
     let texto = `📦 *SEU INVENTÁRIO* 📦\n\n`;
     let totalItens = 0;
-    
+
     for (const [itemKey, quantidade] of Object.entries(user.inventory || {})) {
       const itemInfo = ITENS_LOJA[itemKey];
       if (itemInfo && quantidade > 0) {
@@ -458,15 +458,15 @@ async function handleInventario(sock, msg, jid) {
         totalItens += quantidade;
       }
     }
-    
+
     if (totalItens === 0) {
       const texto = `📦 *SEU INVENTÁRIO* 📦\n\nVocê não possui itens no momento!`;
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
       return;
     }
-    
+
     texto += `\n━━━━━━━━━━━━━━━━\n*TOTAL:* ${totalItens} item(ns)\n\n💰 *SEU SALDO:*\n  Gold: *${user.gold || 0}* gold`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (e) {
     console.error('⚠️ Erro handleInventario:', e.message);
@@ -476,100 +476,92 @@ async function handleInventario(sock, msg, jid) {
 
 // ─── !pix (transferência corrigida com tratamento de menções)
 async function handlePix(sock, msg, jid, caption) {
-  // Pega o ID de quem enviou com segurança
   const userId = msg.key.participant || msg.key.remoteJid;
-  
-  // 1. Tenta pegar o JID do alvo direto pelas menções oficiais do WhatsApp (@Felipe)
+
   const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
   let targetJid = mentionedJid;
   let numeroPura = '';
 
-  // 2. Se não houver menção clicável, tenta extrair pelo texto via Regex
   const match = caption.match(/(?:pix|transferir)\s+@?(\d+)\s+(\d+)/i);
   let quantia = 0;
 
   if (targetJid) {
-    // Se achou por menção, o número puro para exibição é extraído do próprio JID
     numeroPura = targetJid.split('@')[0];
-    // Captura a quantia (última palavra/número da mensagem)
     const parts = caption.trim().split(/\s+/);
     quantia = parseInt(parts[parts.length - 1]);
   } else if (match) {
-    // Fallback caso tenham digitado o número manualmente sem marcar
-    numeroPura = match[1].replace(/\D/g, ''); 
+    numeroPura = match[1].replace(/\D/g, '');
     targetJid = `${numeroPura}@s.whatsapp.net`;
     quantia = parseInt(match[2]);
   }
 
-  // Se não encontrou alvo ou quantia por nenhum dos métodos, cancela
   if (!targetJid || isNaN(quantia) || quantia <= 0) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!pix @nome quantia* ou *!pix @numero quantia*\nExemplo: *!pix @Felipe 30*' }, { quoted: msg });
     return;
   }
-  
-  // Impede o usuário de fazer um PIX para si mesmo
+
   if (userId === targetJid) {
     await sock.sendMessage(jid, { text: '⚠️ Você não pode fazer um PIX para você mesmo!' }, { quoted: msg });
     return;
   }
 
   const saldoAtual = await getSaldoAtual(userId);
-  
+
   if (saldoAtual < quantia) {
     await sock.sendMessage(jid, { text: `⚠️ Saldo insuficiente!\n\n💰 Você tem: *${saldoAtual}* gold\n💸 Precisa de: *${quantia}* gold` }, { quoted: msg });
     return;
   }
-  
-  // Executa a transferência no Banco de Dados
+
   await changeGold(userId, -quantia);
   await changeGold(targetJid, quantia);
-  
+
   const novoSaldo = await getSaldoAtual(userId);
-  
-  await sock.sendMessage(jid, { 
+
+  await sock.sendMessage(jid, {
     text: `✅ *Transferência realizada!*\n\n💵 *${quantia} gold* enviado com sucesso para *@${numeroPura}*\n📊 Seu novo saldo: *${novoSaldo}* gold`,
-    mentions: [targetJid, userId] // Crucial para o WhatsApp atualizar as notificações de saldo dos dois
+    mentions: [targetJid, userId]
   }, { quoted: msg });
 }
+
 // ─── !apostar
 async function handleApostar(sock, msg, jid, caption) {
   const userId = msg.key.participant;
   const match = caption.match(/apostar\s+(\d+)/i);
-  
+
   if (!match) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!apostar <quantia>*\nExemplo: *!apostar 100*' }, { quoted: msg });
     return;
   }
-  
+
   const aposta = parseInt(match[1]);
-  
+
   if (isNaN(aposta) || aposta <= 0) {
     await sock.sendMessage(jid, { text: '⚠️ *QUANTIA INVÁLIDA*\n\nA aposta deve ser um número positivo!' }, { quoted: msg });
     return;
   }
-  
+
   const saldoAtual = await getSaldoAtual(userId);
-  
+
   if (saldoAtual < aposta) {
     const texto = `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${aposta}* gold para apostar!`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     return;
   }
-  
+
   const resultado = Math.random() > 0.5;
-  
+
   if (resultado) {
     const ganho = Math.floor(aposta * 1.5);
     const saldoFinal = await changeGold(userId, ganho);
-    
+
     const texto = `🎉 ═══ VOCÊ GANHOU! ═══ 🎉\n\n🎲 *Parabéns, sua sorte foi boa!*\n\n━━━━━━━━━━━━━━━━\n*RESULTADO:*\n  🎲 Aposta: *${aposta}* gold\n  💰 Ganho: *+${ganho}* gold\n\n*SALDO:* *${saldoFinal}* gold`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } else {
     const saldoFinal = await changeGold(userId, -aposta);
-    
+
     const texto = `😢 ═══ VOCÊ PERDEU! ═══ 😢\n\n🎲 *Que azar...*\n\n━━━━━━━━━━━━━━━━\n*RESULTADO:*\n  🎲 Aposta: *${aposta}* gold\n\n*SALDO:* *${saldoFinal}* gold`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   }
 }
@@ -577,7 +569,7 @@ async function handleApostar(sock, msg, jid, caption) {
 // ─── !extrato
 async function handleExtrato(sock, msg, jid) {
   const texto = `📊 *EXTRATO DE TRANSAÇÕES* 📊\n\n*ÚLTIMAS TRANSAÇÕES:*\n  💵 +500 gold | Missão\n  💸 -100 gold | Compra\n  💰 +200 gold | Garimpo\n\n━━━━━━━━━━━━━━━━\n*RESUMO:*\n  ✅ Entrada: 700 gold\n  ❌ Saída: 100 gold\n  💰 Saldo atual: 600 gold\n\nUse *!gold* para ver seu saldo!`;
-  
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
@@ -586,30 +578,141 @@ async function handleGarimpar(sock, msg, jid, getPrefix) {
   const userId = msg.key.participant;
   const agora = Date.now();
   const UM_HORA = 3600000;
-  
+
   if (lastGarimpTime[userId]) {
     const tempoDecorrido = agora - lastGarimpTime[userId];
     if (tempoDecorrido < UM_HORA) {
       const tempoRestante = Math.ceil((UM_HORA - tempoDecorrido) / 60000);
       const texto = `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n⛏️ Você já garimpou!\n\n📊 Tempo restante: *${tempoRestante} minutos*`;
-      
+
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
       return;
     }
   }
-  
+
   try {
     const ouro = Math.floor(Math.random() * 100) + 30;
     const novoSaldo = await changeGold(userId, ouro);
     lastGarimpTime[userId] = agora;
-    
+
     const texto = `⛏️ *GARIMPO* ⛏️\n\n⛏️ Você está garimpando...\n\n💎 Você encontrou *${ouro} gold*!\n\n━━━━━━━━━━━━━━━━\n📊 Novo saldo: *${novoSaldo}* gold\n⏰ Próximo garimpo em: *1 hora*`;
-    
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (e) {
     console.error('⚠️ Erro handleGarimpar:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao garimpar!' }, { quoted: msg });
   }
+}
+
+// ─── !slots
+async function handleSlots(sock, msg, jid, senderJid, caption) {
+  const args = caption.trim().split(/\s+/);
+  const aposta = parseInt(args[1]);
+
+  if (!aposta || isNaN(aposta) || aposta <= 0) {
+    await sock.sendMessage(jid, { text: '⚠️ Uso correto: *!slots [valor]*\nExemplo: *!slots 50*' }, { quoted: msg });
+    return;
+  }
+
+  const user = await Usuario.findOne({ idWhatsApp: senderJid });
+  const userGold = user?.gold || 0;
+
+  if (userGold < aposta) {
+    await sock.sendMessage(jid, { text: `❌ Você não tem Gold suficiente! Seu saldo é de *${userGold} Gold*.` }, { quoted: msg });
+    return;
+  }
+
+  const frutas = ['🍒', '🍋', '🍇', '🍉', '🔔'];
+  const r1 = frutas[Math.floor(Math.random() * frutas.length)];
+  const r2 = frutas[Math.floor(Math.random() * frutas.length)];
+  const r3 = frutas[Math.floor(Math.random() * frutas.length)];
+
+  let multiplicador = 0;
+  let resultadoMsg = '❌ *Você perdeu tudo!* O banco agradece.';
+
+  if (r1 === r2 && r2 === r3) {
+    multiplicador = 3;
+    resultadoMsg = '🎉 *JACKPOT!* Três iguais! Seu Gold foi triplicado!';
+  } else if (r1 === r2 || r2 === r3 || r1 === r3) {
+    multiplicador = 1.5;
+    resultadoMsg = '✨ *Quase!* Duas iguais. Você teve lucro!';
+  }
+
+  const ganho = Math.floor(aposta * multiplicador);
+  const lucro = ganho - aposta;
+
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: senderJid },
+    { $inc: { gold: lucro } }
+  );
+
+  const texto = `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+                `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
+                `${resultadoMsg}\n` +
+                `💰 Saldo atualizado: *${userGold + lucro} Gold*`;
+
+  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+}
+
+// ─── !corrida
+async function handleCorrida(sock, msg, jid, senderJid, caption) {
+  const args = caption.trim().split(/\s+/);
+  const escolha = parseInt(args[1]);
+  const aposta = parseInt(args[2]);
+
+  if (!escolha || !aposta || isNaN(escolha) || isNaN(aposta) || escolha < 1 || escolha > 4 || aposta <= 0) {
+    const tutorial = `⚠️ Uso correto: *!corrida [numero do bicho] [valor]*\n\n` +
+                     `*Escolha seu corredor:*\n` +
+                     `1️⃣ 🐎 Cavalo\n` +
+                     `2️⃣ 🐅 Tigre\n` +
+                     `3️⃣ 🐢 Tartaruga\n` +
+                     `4️⃣ 🐕 Cachorro\n\n` +
+                     `Exemplo: *!corrida 1 50* (Aposta 50 no Cavalo)`;
+    await sock.sendMessage(jid, { text: tutorial }, { quoted: msg });
+    return;
+  }
+
+  const user = await Usuario.findOne({ idWhatsApp: senderJid });
+  const userGold = user?.gold || 0;
+
+  if (userGold < aposta) {
+    await sock.sendMessage(jid, { text: `❌ Saldo insuficiente para correr! Você tem *${userGold} Gold*.` }, { quoted: msg });
+    return;
+  }
+
+  const bichos = ['🐎 Cavalo', '🐅 Tigre', '🐢 Tartaruga', '🐕 Cachorro'];
+  const emojis = ['🐎', '🐅', '🐢', '🐕'];
+
+  const vencedorIdx = Math.floor(Math.random() * 4);
+  const ganhou = (escolha - 1) === vencedorIdx;
+  const lucro = ganhou ? aposta * 3 : -aposta;
+
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: senderJid },
+    { $inc: { gold: lucro } }
+  );
+
+  let pista = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
+  for (let i = 0; i < 4; i++) {
+    if (i === vencedorIdx) {
+      pista += `${emojis[i]} ================== 💨 🏆\n`;
+    } else {
+      const espaco = '='.repeat(Math.floor(Math.random() * 10) + 2);
+      pista += `${emojis[i]} ${espaco} \n`;
+    }
+  }
+
+  pista += `\nVocê apostou no *${bichos[escolha - 1]}*.\n\n`;
+
+  if (ganhou) {
+    pista += `🎉 *VITÓRIA!* Seu bicho voou baixo! Você ganhou *${aposta * 3} Gold*!`;
+  } else {
+    pista += `❌ *DERROTA!* O vencedor foi o *${bichos[vencedorIdx]}*. Você perdeu a aposta.`;
+  }
+
+  pista += `\n💰 Saldo: *${userGold + lucro} Gold*`;
+
+  await sock.sendMessage(jid, { text: pista }, { quoted: msg });
 }
 
 module.exports = {
@@ -625,6 +728,8 @@ module.exports = {
   handleApostar,
   handleExtrato,
   handleGarimpar,
+  handleSlots,
+  handleCorrida,
   getSaldoAtual,
   changeGold,
   ITENS_LOJA,

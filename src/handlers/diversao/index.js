@@ -18,7 +18,7 @@ const {
 
 // Economia
 const {
-  handleGold, handleLoja, handleLojaFood, handleLojaPet, handleLojaTec,
+  handleGold, handleLoja, handleLojaFood, handleLojaPet, handleLojaTec, handleLojaCasal,
   handleComprar, handleVender, handleInventario, handlePix, handleApostar,
   handleExtrato, handleGarimpar, handleSlots, handleCorrida,
   getSaldoAtual, changeGold, ITENS_LOJA

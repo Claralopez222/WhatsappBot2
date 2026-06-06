@@ -5,6 +5,7 @@
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const { prepareDailyMissionState } = require('./missoes');
 
 // ─── CONSTANTES E DADOS GLOBAIS ───────────────────────────────────────────
 const ITENS_LOJA = {
@@ -183,6 +184,11 @@ async function getSaldoAtual(userId) {
 
 async function changeGold(userId, quantidade) {
   try {
+    // Garantir que missão está inicializada antes de atualizar
+    if (quantidade > 0) {
+      await prepareDailyMissionState(userId);
+    }
+    
     const update = { $inc: { gold: quantidade } };
     // Incrementa progresso da missão de ganhar 500 gold apenas se for ganho positivo
     if (quantidade > 0) {
@@ -731,6 +737,11 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const ganho = Math.floor(aposta * multiplicador);
   const lucro = ganho - aposta;
 
+  // Garantir que missão está inicializada antes de atualizar
+  if (lucro > 0) {
+    await prepareDailyMissionState(senderJid);
+  }
+
   // Atualizar saldo no banco
   const updateSlots = { $inc: { gold: lucro } };
   if (lucro > 0) {
@@ -783,6 +794,11 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   const vencedorIdx = Math.floor(Math.random() * 4);
   const ganhou = (escolha - 1) === vencedorIdx;
   const lucro = ganhou ? aposta * 3 : -aposta;
+
+  // Garantir que missão está inicializada antes de atualizar
+  if (lucro > 0) {
+    await prepareDailyMissionState(senderJid);
+  }
 
   const updateCorrida = { $inc: { gold: lucro } };
   if (lucro > 0) {

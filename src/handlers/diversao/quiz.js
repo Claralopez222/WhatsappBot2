@@ -176,6 +176,11 @@ async function saveQuizPointsToDB(userId, pontos) {
 
 async function changeGold(userId, amount) {
   try {
+    // Garantir que missão está inicializada antes de atualizar
+    if (amount > 0) {
+      await prepareDailyMissionState(userId);
+    }
+    
     const update = { $inc: { gold: amount } };
     // Incrementa progresso da missão de ganhar 500 gold apenas se for ganho positivo
     if (amount > 0) {
@@ -538,6 +543,11 @@ async function handleResgatar(sock, msg, jid) {
 
   const futureAmount = Math.round(user.bank.amount * (1 + (user.bank.interest / 100)));
   const ganho = futureAmount - user.bank.amount;
+
+  // Garantir que missão está inicializada antes de atualizar
+  if (ganho > 0) {
+    await prepareDailyMissionState(userId);
+  }
 
   const updateResgate = {
     $inc: { gold: futureAmount },

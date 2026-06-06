@@ -109,6 +109,7 @@ module.exports = {
   handleLojaFood,
   handleLojaPet,
   handleLojaTec,
+  handleLojaCasal,
   handleComprar,
   handleVender,
   handleInventario,

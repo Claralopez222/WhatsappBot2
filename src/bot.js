@@ -170,7 +170,7 @@ async function addUserXp(userId, xp = 1, pushName = null) {
   if (!userId) return null;
   try {
     const update = {
-      $inc: { xp },
+      $inc: { xp, 'dailyMissions.progress.xp100': xp },
       $setOnInsert: { level: 1, idWhatsApp: userId, createdAt: new Date() },
     };
     if (pushName) update.$set = { nome: pushName };
@@ -651,6 +651,8 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleLojaPet(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'lojatec'))
     { await diversaoHandler.handleLojaTec(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'lojacasal'))
+    { await diversaoHandler.handleLojaCasal(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'comprar'))
     { await diversaoHandler.handleComprar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'vender'))
@@ -815,7 +817,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'mimo'))      { await relacionamentoHandler.handleMimo(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'beijo'))     { await relacionamentoHandler.handleBeijo(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'abraco'))    { await relacionamentoHandler.handleAbraco(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'presente'))  { await relacionamentoHandler.handlePresente(sock, msg, jid, author, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'presente'))  { await relacionamentoHandler.handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption); return; }
   if (matchCmd(cmdWord, 'jantar'))    { await relacionamentoHandler.handleJantar(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'cinematel')) { await relacionamentoHandler.handleCinemaRel(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'viajar'))    { await relacionamentoHandler.handleViajar(sock, msg, jid, author, senderJid, relacionamentos); return; }
@@ -881,6 +883,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'quizctec'))       { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'quizgeo'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'quizmat'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
+  if (matchCmd(cmdWord, 'quizhis'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'pontos'))         { await diversaoHandler.handlePontos(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'banco') || matchCmdStart(cmd, 'banco '))

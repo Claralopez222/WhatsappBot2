@@ -308,26 +308,46 @@ async function handlePets(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-// ─── !abrigo (Totalmente reconstruído e persistido no Banco de Dados)
+// ─── !abrigo (Corrigido, completo e sem erros de fechamento)
 async function handleAbrigo(sock, msg, jid, caption = '') {
   const userId = getUserId(msg);
+  
+  // Limpa espaços extras e separa as palavras digitadas
   const parts = caption.trim().split(/\s+/);
-  const commandArg = parts[1]?.toLowerCase();
+  
+  // Pega a primeira e a segunda palavra para descobrir a ação
+  const p1 = parts[0]?.toLowerCase();
+  const p2 = parts[1]?.toLowerCase();
+  
+  // Verifica se "deixar" está em qualquer uma das posições (ajuda se o comando vier com ou sem o prefixo)
+  const isDeixar = p1 === 'deixar' || p2 === 'deixar';
+  
+  // Verifica se o usuário quer pegar um pet
+  const isPegar = parts[parts.length - 1]?.toLowerCase() === 'pegar';
 
+  // =========================================================================
   // Caso 1: !abrigo deixar
-  if (commandArg === 'deixar') {
-    const user = await Usuario.findOne({ idWhatsApp: userId });
+  // =========================================================================
+  if (isDeixar) {
+    const user = await Usuario.findOne({ idWhatsApp: userId }).lean();
     const pet = user?.pet;
     
     if (!pet || !pet.name) {
-      await sock.sendMessage(jid, { text: `⚠️ *ERRO: SEM PET*\n\nYou não possui um pet ativo para abrigar!\n\n_Capture um com *!capturar* primeiro._` }, { quoted: msg });
+      await sock.sendMessage(jid, { text: `⚠️ *ERRO: SEM PET*\n\nVocê não possui um pet ativo para abrigar!\n\n_Capture um com *!capturar* primeiro._` }, { quoted: msg });
       return;
     }
     
-    // Aloca o pet no abrigo global do banco de dados (usando uma flag no próprio model do usuário)
+    // Aloca o pet no abrigo global do banco de dados
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      { $set: { pet: null, 'petShelter.isSheltered': true, 'petShelter.shelteredPet': pet, 'petShelter.leftAt': new Date().toISOString() } }
+      { 
+        $set: { 
+          pet: null, 
+          'petShelter.isSheltered': true, 
+          'petShelter.shelteredPet': pet, 
+          'petShelter.leftAt': new Date().toISOString() 
+        } 
+      }
     );
     
     petData.delete(userId);
@@ -337,10 +357,19 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     return;
   }
   
+  // =========================================================================
   // Caso 2: !abrigo <nome> pegar
-  if (parts.length >= 3 && parts[parts.length - 1].toLowerCase() === 'pegar') {
-    const petName = parts.slice(1, parts.length - 1).join(' ');
+  // =========================================================================
+  if (isPegar && parts.length >= 2) {
+    // Se a primeira palavra for o comando (ex: abrigo ou !abrigo), remove ela.
+    const startIdx = (p1 === 'abrigo' || p1 === '.abrigo' || p1 === '!abrigo') ? 1 : 0;
+    const petName = parts.slice(startIdx, parts.length - 1).join(' ');
     
+    if (!petName) {
+      await sock.sendMessage(jid, { text: `⚠️ *NOME INVÁLIDO*\n\nEspecifique o nome do pet que deseja adotar.\nExemplo: *!abrigo Elefante Selvagem pegar*` }, { quoted: msg });
+      return;
+    }
+
     // Busca no banco algum usuário que deixou o pet especificado no abrigo
     const shelterTarget = await Usuario.findOne({
       'petShelter.isSheltered': true,
@@ -352,7 +381,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       return;
     }
     
-    const requester = await Usuario.findOne({ idWhatsApp: userId });
+    const requester = await Usuario.findOne({ idWhatsApp: userId }).lean();
     if (requester?.pet && requester.pet.name) {
       await sock.sendMessage(jid, { text: `⚠️ *AÇÃO NEGADA*\n\nVocê já possui um pet companheiro ativo! Deixe seu pet atual no abrigo antes de adotar outro.` }, { quoted: msg });
       return;
@@ -360,12 +389,13 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     
     const petAdotado = shelterTarget.petShelter.shelteredPet;
     
-    // Remove o pet do abrigo antigo e injeta no novo dono
+    // Remove o pet do abrigo antigo
     await Usuario.findOneAndUpdate(
       { idWhatsApp: shelterTarget.idWhatsApp },
       { $set: { petShelter: { isSheltered: false, shelteredPet: null, leftAt: null } } }
     );
     
+    // Injeta o pet no novo dono (Salva no banco e atualiza cache)
     await savePet(userId, petAdotado);
     
     const petDef = petSystem[petAdotado.type] || { emoji: '🐾' };
@@ -373,7 +403,9 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     return;
   }
   
+  // =========================================================================
   // Caso 3: !abrigo (Listagem Geral)
+  // =========================================================================
   const abrigaLista = await Usuario.find({ 'petShelter.isSheltered': true }).lean();
   
   if (abrigaLista.length === 0) {

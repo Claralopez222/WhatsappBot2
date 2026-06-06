@@ -1,6 +1,7 @@
 /**
  * Sistema de Roubo — Piroquinhas Bot
  * Comandos: !menuroubar, !roubar, !menusec, !equiparroubo, !equiparsec
+ *           !meusitensroubo, !meussec, !meiosec
  */
 
 const path = require('path');
@@ -29,9 +30,9 @@ const ITENS_ROUBO = {
 const ITENS_SEGURANCA = {
   cofre:      { nome: '🔐 Cofre Forte',            preco: 150, defesa: 15 },
   alarme:     { nome: '🚨 Sistema de Alarme',       preco: 200, defesa: 25 },
-  câmera:     { nome: '📹 Câmera de Vigilância',   preco: 250, defesa: 30 },
+  camera:     { nome: '📹 Câmera de Vigilância',   preco: 250, defesa: 30 },
   cachorro:   { nome: '🐕 Cão de Guarda',           preco: 300, defesa: 35 },
-  segurança:  { nome: '👮 Guarda de Segurança',     preco: 400, defesa: 45 },
+  seguranca:  { nome: '👮 Guarda de Segurança',     preco: 400, defesa: 45 },
   bunker:     { nome: '🛡️ Bunker Subterrâneo',     preco: 500, defesa: 55 },
   laser:      { nome: '🔴 Raios Laser',             preco: 600, defesa: 65 },
   militares:  { nome: '🪖 Segurança Militar',       preco: 800, defesa: 80 }
@@ -88,6 +89,18 @@ function formatarTempo(ms) {
   return `${seg}s`;
 }
 
+/**
+ * FIX: Lê quantidade de um item de forma segura,
+ * suportando tanto Map (Mongoose) quanto objeto plain.
+ */
+function getItemQtd(mapaOuObj, chave) {
+  if (!mapaOuObj) return 0;
+  if (typeof mapaOuObj.get === 'function') {
+    return mapaOuObj.get(chave) || 0;
+  }
+  return mapaOuObj[chave] || 0;
+}
+
 // ─── !menuroubar ────────────────────────────────────────────────────────────
 
 async function handleMenuRoubo(sock, msg, jid, getPrefix) {
@@ -98,6 +111,7 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 
   for (const [key, item] of Object.entries(ITENS_ROUBO)) {
     texto += `  ${item.nome} — ${item.preco} gold (+${item.bonus}% sucesso)\n`;
+    texto += `    └ *chave:* \`${key}\`\n`;
   }
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
@@ -122,6 +136,7 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 
   for (const [key, item] of Object.entries(ITENS_SEGURANCA)) {
     texto += `  ${item.nome} — ${item.preco} gold (+${item.defesa}% proteção)\n`;
+    texto += `    └ *chave:* \`${key}\`\n`;
   }
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
@@ -149,19 +164,18 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   const itemInfo = ITENS_ROUBO[itemNome];
 
   if (!itemInfo) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe na loja de roubo!` }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe na loja de roubo!\nUse *!menuroubar* para ver os itens disponíveis.` }, { quoted: msg });
     return;
   }
 
   const saldoAtual = await getSaldoAtual(userId);
 
   if (saldoAtual < itemInfo.preco) {
-    await sock.sendMessage(jid, { text: `❌ Você não tem *${itemInfo.preco}* gold! Seu saldo: *${saldoAtual}* gold` }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `❌ Você não tem *${itemInfo.preco}* gold!\nSeu saldo: *${saldoAtual}* gold` }, { quoted: msg });
     return;
   }
 
   try {
-    // ── FIX: usar $set com notação de ponto para garantir persistência no MongoDB
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       { $inc: { [`itensRoubo.${itemNome}`]: 1 } },
@@ -195,19 +209,18 @@ async function handleComprarSec(sock, msg, jid, caption) {
   const itemInfo = ITENS_SEGURANCA[itemNome];
 
   if (!itemInfo) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe na loja de segurança!` }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe na loja de segurança!\nUse *!menusec* para ver os itens disponíveis.` }, { quoted: msg });
     return;
   }
 
   const saldoAtual = await getSaldoAtual(userId);
 
   if (saldoAtual < itemInfo.preco) {
-    await sock.sendMessage(jid, { text: `❌ Você não tem *${itemInfo.preco}* gold! Seu saldo: *${saldoAtual}* gold` }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `❌ Você não tem *${itemInfo.preco}* gold!\nSeu saldo: *${saldoAtual}* gold` }, { quoted: msg });
     return;
   }
 
   try {
-    // ── FIX: usar $inc com notação de ponto para garantir persistência no MongoDB
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       { $inc: { [`itensSec.${itemNome}`]: 1 } },
@@ -233,22 +246,32 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
   const match = caption.match(/equiparroubo\s+(\S+)/i);
 
   if (!match) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!equiparroubo <item>*' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Use: *!equiparroubo <item>*\nExemplo: *!equiparroubo dinamite*' }, { quoted: msg });
     return;
   }
 
   const itemNome = match[1].toLowerCase().trim();
 
   if (!ITENS_ROUBO[itemNome]) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe!` }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe!\nUse *!menuroubar* para ver os itens disponíveis.` }, { quoted: msg });
     return;
   }
 
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId });
 
-    if (!user || !user.itensRoubo?.get(itemNome) || user.itensRoubo.get(itemNome) <= 0) {
-      await sock.sendMessage(jid, { text: `❌ Você não possui *${ITENS_ROUBO[itemNome].nome}*!\nCompre com *!comprarroubo ${itemNome}*` }, { quoted: msg });
+    if (!user) {
+      await sock.sendMessage(jid, { text: '❌ Você não tem cadastro!' }, { quoted: msg });
+      return;
+    }
+
+    // FIX: usar getItemQtd para suportar Map e objeto plain
+    const qtd = getItemQtd(user.itensRoubo, itemNome);
+
+    if (qtd <= 0) {
+      await sock.sendMessage(jid, {
+        text: `❌ Você não possui *${ITENS_ROUBO[itemNome].nome}*!\n\n🛒 Compre com *!comprarroubo ${itemNome}*`
+      }, { quoted: msg });
       return;
     }
 
@@ -257,7 +280,7 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
       { $set: { equiparoubo: itemNome } }
     );
 
-    const texto = `✅ *ITEM EQUIPADO!* ✅\n\n🎭 *Item:* ${ITENS_ROUBO[itemNome].nome}\n📈 *Bônus de sucesso:* +${ITENS_ROUBO[itemNome].bonus}%\n\n🔫 Agora você pode usar *!roubar @pessoa*!`;
+    const texto = `✅ *ITEM EQUIPADO!* ✅\n\n🎭 *Item:* ${ITENS_ROUBO[itemNome].nome}\n📈 *Bônus de sucesso:* +${ITENS_ROUBO[itemNome].bonus}%\n🎒 *Quantidade no inventário:* ${qtd}x\n\n🔫 Agora você pode usar *!roubar @pessoa*!`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (e) {
     console.error('⚠️ Erro ao equipar item:', e.message);
@@ -272,22 +295,32 @@ async function handleEquiparSec(sock, msg, jid, caption) {
   const match = caption.match(/equiparsec\s+(\S+)/i);
 
   if (!match) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!equiparsec <item>*' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Use: *!equiparsec <item>*\nExemplo: *!equiparsec cofre*' }, { quoted: msg });
     return;
   }
 
   const itemNome = match[1].toLowerCase().trim();
 
   if (!ITENS_SEGURANCA[itemNome]) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe!` }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `⚠️ Item *${itemNome}* não existe!\nUse *!menusec* para ver os itens disponíveis.` }, { quoted: msg });
     return;
   }
 
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId });
 
-    if (!user || !user.itensSec?.get(itemNome) || user.itensSec.get(itemNome) <= 0) {
-      await sock.sendMessage(jid, { text: `❌ Você não possui *${ITENS_SEGURANCA[itemNome].nome}*!\nCompre com *!comprarsec ${itemNome}*` }, { quoted: msg });
+    if (!user) {
+      await sock.sendMessage(jid, { text: '❌ Você não tem cadastro!' }, { quoted: msg });
+      return;
+    }
+
+    // FIX: usar getItemQtd para suportar Map e objeto plain
+    const qtd = getItemQtd(user.itensSec, itemNome);
+
+    if (qtd <= 0) {
+      await sock.sendMessage(jid, {
+        text: `❌ Você não possui *${ITENS_SEGURANCA[itemNome].nome}*!\n\n🛒 Compre com *!comprarsec ${itemNome}*`
+      }, { quoted: msg });
       return;
     }
 
@@ -296,11 +329,141 @@ async function handleEquiparSec(sock, msg, jid, caption) {
       { $set: { equiparsec: itemNome } }
     );
 
-    const texto = `✅ *DEFESA ATIVADA!* ✅\n\n🔐 *Item:* ${ITENS_SEGURANCA[itemNome].nome}\n📈 *Proteção:* +${ITENS_SEGURANCA[itemNome].defesa}%`;
+    const texto = `✅ *DEFESA ATIVADA!* ✅\n\n🔐 *Item:* ${ITENS_SEGURANCA[itemNome].nome}\n🛡️ *Proteção:* +${ITENS_SEGURANCA[itemNome].defesa}%\n🎒 *Quantidade no inventário:* ${qtd}x`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (e) {
     console.error('⚠️ Erro ao equipar item:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao equipar item!' }, { quoted: msg });
+  }
+}
+
+// ─── !meusitensroubo ────────────────────────────────────────────────────────
+
+async function handleMeusItensRoubo(sock, msg, jid) {
+  const userId = msg.key.participant || msg.key.remoteJid;
+
+  try {
+    const user = await Usuario.findOne({ idWhatsApp: userId });
+
+    if (!user) {
+      await sock.sendMessage(jid, { text: '❌ Você não tem cadastro!' }, { quoted: msg });
+      return;
+    }
+
+    let texto = `🎒 *SEUS ITENS DE ROUBO* 🎒\n\n`;
+
+    let temItem = false;
+
+    for (const [key, item] of Object.entries(ITENS_ROUBO)) {
+      const qtd = getItemQtd(user.itensRoubo, key);
+      if (qtd > 0) {
+        temItem = true;
+        const equipado = user.equiparoubo === key ? ' ⚡ *EQUIPADO*' : '';
+        texto += `  ${item.nome}${equipado}\n`;
+        texto += `    └ Quantidade: *${qtd}x* | Bônus: *+${item.bonus}%*\n`;
+      }
+    }
+
+    if (!temItem) {
+      texto += `😔 Você não possui nenhum item de roubo.\n\n`;
+      texto += `🛒 Compre itens com *!menuroubar*!`;
+    } else {
+      texto += `\n━━━━━━━━━━━━━━━━\n`;
+      if (user.equiparoubo && ITENS_ROUBO[user.equiparoubo]) {
+        texto += `⚡ *Equipado:* ${ITENS_ROUBO[user.equiparoubo].nome}\n`;
+        texto += `📈 *Bônus ativo:* +${ITENS_ROUBO[user.equiparoubo].bonus}% de sucesso`;
+      } else {
+        texto += `⚠️ *Nenhum item equipado!*\nUse *!equiparroubo <item>* para equipar.`;
+      }
+    }
+
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  } catch (e) {
+    console.error('⚠️ Erro ao buscar itens de roubo:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao buscar seus itens!' }, { quoted: msg });
+  }
+}
+
+// ─── !meussec ───────────────────────────────────────────────────────────────
+
+async function handleMeusSec(sock, msg, jid) {
+  const userId = msg.key.participant || msg.key.remoteJid;
+
+  try {
+    const user = await Usuario.findOne({ idWhatsApp: userId });
+
+    if (!user) {
+      await sock.sendMessage(jid, { text: '❌ Você não tem cadastro!' }, { quoted: msg });
+      return;
+    }
+
+    let texto = `🔐 *SEUS ITENS DE SEGURANÇA* 🔐\n\n`;
+
+    let temItem = false;
+
+    for (const [key, item] of Object.entries(ITENS_SEGURANCA)) {
+      const qtd = getItemQtd(user.itensSec, key);
+      if (qtd > 0) {
+        temItem = true;
+        const equipado = user.equiparsec === key ? ' ⚡ *ATIVO*' : '';
+        texto += `  ${item.nome}${equipado}\n`;
+        texto += `    └ Quantidade: *${qtd}x* | Defesa: *+${item.defesa}%*\n`;
+      }
+    }
+
+    if (!temItem) {
+      texto += `😔 Você não possui nenhum item de segurança.\n\n`;
+      texto += `🛒 Compre itens com *!menusec*!`;
+    } else {
+      texto += `\n━━━━━━━━━━━━━━━━\n`;
+      if (user.equiparsec && ITENS_SEGURANCA[user.equiparsec]) {
+        texto += `⚡ *Ativo:* ${ITENS_SEGURANCA[user.equiparsec].nome}\n`;
+        texto += `🛡️ *Defesa ativa:* +${ITENS_SEGURANCA[user.equiparsec].defesa}% de proteção`;
+      } else {
+        texto += `⚠️ *Nenhuma defesa ativa!*\nUse *!equiparsec <item>* para ativar.`;
+      }
+    }
+
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  } catch (e) {
+    console.error('⚠️ Erro ao buscar itens de segurança:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao buscar seus itens!' }, { quoted: msg });
+  }
+}
+
+// ─── !meiosec ───────────────────────────────────────────────────────────────
+
+async function handleMeioSec(sock, msg, jid) {
+  const userId = msg.key.participant || msg.key.remoteJid;
+
+  try {
+    const user = await Usuario.findOne({ idWhatsApp: userId });
+
+    if (!user) {
+      await sock.sendMessage(jid, { text: '❌ Você não tem cadastro!' }, { quoted: msg });
+      return;
+    }
+
+    let texto = `🛡️ *SUAS DEFESAS ATIVAS* 🛡️\n\n`;
+
+    if (user.equiparsec && ITENS_SEGURANCA[user.equiparsec]) {
+      const item = ITENS_SEGURANCA[user.equiparsec];
+      texto += `✅ *Defesa equipada:* ${item.nome}\n`;
+      texto += `🔒 *Proteção:* +${item.defesa}%\n\n`;
+      texto += `━━━━━━━━━━━━━━━━\n`;
+      texto += `💡 Sua proteção base é *50%*.\n`;
+      texto += `🛡️ Com este item: *${Math.min(95, 50 + item.defesa)}%* de chance de resistir a um roubo.\n\n`;
+      texto += `🔄 Troque com *!equiparsec <item>*`;
+    } else {
+      texto += `❌ *Nenhuma defesa ativa!*\n\n`;
+      texto += `⚠️ Você está *completamente vulnerável* a roubos!\n`;
+      texto += `🛒 Compre um item com *!menusec* e equipe com *!equiparsec <item>*`;
+    }
+
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  } catch (e) {
+    console.error('⚠️ Erro ao buscar defesas:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao buscar suas defesas!' }, { quoted: msg });
   }
 }
 
@@ -338,15 +501,15 @@ async function handleRoubar(sock, msg, jid, caption) {
       return;
     }
 
-    // ── [NOVO] Validação: precisa ter item equipado para roubar
+    // ── Validação: precisa ter item equipado para roubar
     if (!userAtacante.equiparoubo) {
       await sock.sendMessage(jid, {
-        text: `❌ *Você precisa equipar um item de roubo antes!*\n\n🛒 Compre um item com *!menuroubar* e equipe com *!equiparroubo <item>*`
+        text: `❌ *Você precisa equipar um item de roubo antes!*\n\n🛒 Compre com *!menuroubar* e equipe com *!equiparroubo <item>*`
       }, { quoted: msg });
       return;
     }
 
-    // ── [NOVO] Validação: cooldown de 30 minutos
+    // ── Validação: cooldown de 30 minutos
     const agora = Date.now();
     const ultimoRoubo = userAtacante.ultimoRoubo ? new Date(userAtacante.ultimoRoubo).getTime() : 0;
     const tempoPassado = agora - ultimoRoubo;
@@ -366,7 +529,7 @@ async function handleRoubar(sock, msg, jid, caption) {
       return;
     }
 
-    // ── [NOVO] Registrar timestamp ANTES da tentativa (mesmo que falhe, gasta cooldown)
+    // ── Registrar timestamp ANTES da tentativa (mesmo que falhe, gasta cooldown)
     await Usuario.findOneAndUpdate(
       { idWhatsApp: atacante },
       { $set: { ultimoRoubo: new Date() } }
@@ -440,5 +603,8 @@ module.exports = {
   handleComprarSec,
   handleEquiparRoubo,
   handleEquiparSec,
+  handleMeusItensRoubo,
+  handleMeusSec,
+  handleMeioSec,
   handleRoubar,
 };

@@ -54,12 +54,12 @@ async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento') {
       Usuario.findOneAndUpdate(
         { idWhatsApp: jidA },
         { $set: { casadoCom: jidB, casadoTipo: tipo, idWhatsApp: jidA } },
-        { upsert: true, returnDocument: 'after' }
+        { upsert: true, new: true }
       ),
       Usuario.findOneAndUpdate(
         { idWhatsApp: jidB },
         { $set: { casadoCom: jidA, casadoTipo: tipo, idWhatsApp: jidB } },
-        { upsert: true, returnDocument: 'after' }
+        { upsert: true, new: true }
       ),
     ]);
   } catch (e) {

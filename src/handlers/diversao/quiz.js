@@ -166,7 +166,7 @@ async function saveQuizPointsToDB(userId, pontos) {
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       { $set: { quizPoints: pontos } },
-      { upsert: true, returnDocument: 'after' }
+      { upsert: true, new: true }
     );
     console.log(`✅ Pontos salvos: ${userId} → ${pontos} pts`);
   } catch (e) {
@@ -189,7 +189,7 @@ async function changeGold(userId, amount) {
     const user = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       update,
-      { upsert: true, returnDocument: 'after' }
+      { upsert: true, new: true }
     );
     console.log(`✅ Gold alterado: ${userId} → ${amount} (novo saldo: ${user?.gold})`);
     return user?.gold || 0;

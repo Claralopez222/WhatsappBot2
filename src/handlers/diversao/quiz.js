@@ -210,6 +210,14 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     clearTimeout(state.timeout);
     quizState.delete(senderJid);
 
+    // Validar se a resposta não está vazia
+    if (!resposta) {
+      await sock.sendMessage(jid, {
+        text: `❌ Você deve enviar uma *resposta em texto*, não figurinha! 😅`,
+      }, { quoted: msg });
+      return;
+    }
+
     if (resposta.includes(correta) || correta.includes(resposta)) {
       const pts = (pontosMap.get(senderJid) || 0) + 10;
       pontosMap.set(senderJid, pts);

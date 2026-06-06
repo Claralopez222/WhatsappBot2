@@ -178,7 +178,7 @@ async function handleAlimentarPet(sock, msg, jid, author) {
     return;
   }
 
-  const quantidadeComida = user.inventario?.comida || 0;
+  const quantidadeComida = user.inventory?.comida || 0;
   if (quantidadeComida <= 0) {
     await sock.sendMessage(jid, { text: '❌ Você não possui comida no seu inventário! Compre itens na loja antes de alimentar seu companheiro.' }, { quoted: msg });
     return;
@@ -195,7 +195,7 @@ async function handleAlimentarPet(sock, msg, jid, author) {
     { 
       $set: { pet: pet },
       $inc: { 
-        'inventario.comida': -1,
+        'inventory.comida': -1,
         'dailyMissions.progress.pet10': 1 
       } 
     }

@@ -471,11 +471,24 @@ async function handleComprar(sock, msg, jid, caption) {
 
   // PRIMEIRO: Adicionar ao inventário
   try {
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      { $inc: { [`inventory.${itemNome}`]: 1 } },
-      { upsert: true, new: true }
-    );
+    // Garantir que o usuário existe e tem a estrutura de inventário
+    let user = await Usuario.findOne({ idWhatsApp: userId });
+    
+    if (!user) {
+      user = new Usuario({ 
+        idWhatsApp: userId, 
+        gold: saldoAtual,
+        inventory: { [itemNome]: 1 }
+      });
+    } else {
+      if (!user.inventory) {
+        user.inventory = {};
+      }
+      user.inventory[itemNome] = (user.inventory[itemNome] || 0) + 1;
+    }
+    
+    await user.save();
+    console.log(`✅ Item adicionado ao inventário: ${userId} → ${itemNome} × 1`);
   } catch (e) {
     console.error('⚠️ Erro ao adicionar ao inventário:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao processar a compra! Tente novamente.' }, { quoted: msg });
@@ -523,12 +536,12 @@ async function handleVender(sock, msg, jid, caption) {
 
 // ─── !inventario
 async function handleInventario(sock, msg, jid) {
-  const userId = msg.key.participant;
+  const userId = msg.key.participant || msg.key.remoteJid;
 
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId });
 
-    if (!user || !user.inventory) {
+    if (!user || !user.inventory || Object.keys(user.inventory).length === 0) {
       const texto = `📦 *SEU INVENTÁRIO* 📦\n\nVocê não possui itens no momento!\n\n*COMO GANHAR ITENS?*\n  🛒 Comprar na loja: !loja\n  📋 Completar missões: !missao\n\nUse *!comprar <item>* para começar!`;
 
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
@@ -746,11 +759,11 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   let resultadoMsg = '❌ *Você perdeu tudo!* O banco agradece.';
 
   if (r1 === r2 && r2 === r3) {
-    multiplicador = 3;
-    resultadoMsg = '🎉 *JACKPOT!* Três iguais! Seu Gold foi triplicado!';
+    multiplicador = 10;
+    resultadoMsg = '🎉 *JACKPOT MÁXIMO!* Três iguais! Seu Gold foi multiplicado por 10!';
   } else if (r1 === r2 || r2 === r3 || r1 === r3) {
-    multiplicador = 1.5;
-    resultadoMsg = '✨ *Quase!* Duas iguais. Você teve lucro!';
+    multiplicador = 2.5;
+    resultadoMsg = '✨ *QUASE JACKPOT!* Duas iguais. Seu Gold foi multiplicado por 2.5!';
   }
 
   const ganho = Math.floor(aposta * multiplicador);
@@ -774,7 +787,12 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const textoFinal = `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
                      `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
                      `${resultadoMsg}\n` +
-                     `💰 Saldo atualizado: *${userGold + lucro} Gold*`;
+                     `━━━━━━━━━━━━━━━━\n` +
+                     `*DETALHES:*\n` +
+                     `  💵 Aposta: *${aposta}* gold\n` +
+                     (multiplicador > 0 ? `  ✖️ Multiplicador: *${multiplicador}x*\n  💰 Ganho: *${ganho}* gold\n` : '') +
+                     `  ${lucro >= 0 ? '✅' : '❌'} Resultado: *${lucro >= 0 ? '+' : ''}${lucro}* gold\n` +
+                     `  💎 Saldo: *${userGold + lucro}* gold`;
 
   // Editar a mensagem com o resultado final
   try {

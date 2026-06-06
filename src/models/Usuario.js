@@ -39,6 +39,19 @@ const usuarioSchema = new mongoose.Schema({
     lastDepositDate: { type: String, default: null },
     depositedToday: { type: Number, default: 0 }
   },
+  // ─── NOVO CAMPO: SISTEMA DE ROUBO ───
+  itensRoubo: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
+  itensSec: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
+  equiparroubo: { type: String, default: null },
+  equiparsec: { type: String, default: null },
 }, {
   timestamps: true,
 });

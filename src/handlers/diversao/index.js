@@ -53,6 +53,12 @@ const {
   petSystem, petData, shelterData, handleAdoptarPet
 } = require('./pets');
 
+// Roubo (Sistema de assaltos)
+const {
+  handleMenuRoubo, handleMenuSec, handleComprarRoubo, handleComprarSec,
+  handleEquiparRoubo, handleEquiparSec, handleRoubar
+} = require('./roubo');
+
 // ─── Utilitários ────────────────────────────────────────────────────────────
 
 function getUserId(msg) {
@@ -166,6 +172,15 @@ module.exports = {
   petSystem,
   petData,
   shelterData,
+
+  // Roubo (7 itens - Sistema de assaltos)
+  handleMenuRoubo,
+  handleMenuSec,
+  handleComprarRoubo,
+  handleComprarSec,
+  handleEquiparRoubo,
+  handleEquiparSec,
+  handleRoubar,
 
   // Utilitários (2 funções)
   getUserId,

@@ -708,6 +708,22 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleAceitarOfferta(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'comprarofferta'))
     { await diversaoHandler.handleOfertar(sock, msg, jid, caption); return; }
+
+  // ─── Sistema de Roubo ───────────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'menuroubar'))
+    { await diversaoHandler.handleMenuRoubo(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'menusec'))
+    { await diversaoHandler.handleMenuSec(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'comprarroubo'))
+    { await diversaoHandler.handleComprarRoubo(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'comprarsec'))
+    { await diversaoHandler.handleComprarSec(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'equiparroubo'))
+    { await diversaoHandler.handleEquiparRoubo(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'equiparsec'))
+    { await diversaoHandler.handleEquiparSec(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'roubar'))
+    { await diversaoHandler.handleRoubar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'alteradores'))
     { await utilidadeHandler.handleAlteradores(sock, msg, jid); return; }
 

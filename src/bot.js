@@ -285,56 +285,7 @@ function getSenderName(msg) {
   return msg.pushName || msg.key.remoteJid?.split('@')[0] || 'Usuário';
 }
 
-// ─── handlePerfil (Atualizado com Foto de Perfil) ─────────────────────────────────────────────
-async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
-  try {
-    // 1. Identifica o alvo: Se houver alguém mencionado (@), pega o ID dele. Caso contrário, pega quem enviou.
-    const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-    const userId = mentionedJid || msg.key.participant || msg.key.remoteJid;
 
-    let user = await Usuario.findOne({ idWhatsApp: userId });
-
-    if (!user) {
-      user = await Usuario.create({ idWhatsApp: userId, gold: 0, xp: 0, level: 1, mensagens: 0 });
-    }
-
-    // 2. Busca a foto de perfil do alvo com um fallback seguro
-    let picUrl;
-    try {
-      picUrl = await sock.profilePictureUrl(userId, 'image');
-    } catch (err) {
-      // Fallback para imagem padrão se falhar a requisição ou for privada
-      picUrl = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png';
-    }
-
-    // Usar o pushName da mensagem se for o próprio usuário, ou o nome do banco
-    const nomeDoCara = user.nome || (userId === msg.key.participant ? msg.pushName : null) || 'Usuário';
-    const numeroFormatado = formatarNumeroBR(userId);
-
-    // Validação para evitar o 'undefined' caso o pet não exista no registro do banco
-    const petTexto = user.pet && user.pet.name 
-      ? `[Lvl ${user.pet.level || 1}] ${user.pet.name}` 
-      : 'Nenhum';
-
-    const textoPerfil =
-      `👤 *PERFIL DO USUÁRIO* 👤\n\n` +
-      `📝 *Nome:* ${nomeDoCara}\n` +
-      `📱 *Número:* ${numeroFormatado}\n` +
-      `💰 *Gold:* ${user.gold || 0} 💰\n` +
-      `📊 *Nível:* ${user.level || 1} | *XP:* ${user.xp || 0}\n` +
-      `🐾 *Pet Ativo:* ${petTexto}\n` +
-      `━━━━━━━━━━━━━━━━━━━━`;
-
-    await sock.sendMessage(jid, { 
-      image: { url: picUrl }, 
-      caption: textoPerfil 
-    }, { quoted: msg });
-
-  } catch (e) {
-    console.error('❌ Erro ao carregar perfil:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro interno ao carregar o perfil.' }, { quoted: msg });
-  }
-}
 // ═══════════════════════════════════════════════════════════════
 // ─── INICIALIZAR BOT ──────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -617,8 +568,7 @@ async function handleMessage(sock, msg) {
 
   // ── PERFIL ────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'perfil'))
-    { await handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
-
+    { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
   // ── MENUS ─────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'menu') || matchCmdStart(cmd, 'menu '))
     { await utilidadeHandler.handleMenu(sock, msg, jid, caption, getPrefix, author); return; }

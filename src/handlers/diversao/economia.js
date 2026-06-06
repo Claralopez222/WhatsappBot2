@@ -714,13 +714,32 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const r2 = frutas[Math.floor(Math.random() * frutas.length)];
   const r3 = frutas[Math.floor(Math.random() * frutas.length)];
 
-  // Enviar mensagem inicial
-  await sock.sendMessage(jid, {
+  // Enviar mensagem inicial e capturar para editar depois
+  const msgInicial = await sock.sendMessage(jid, {
     text: `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🎲 | 🎲 | 🎲 ]\n\n_Girando..._`
   }, { quoted: msg });
 
-  // Aguardar a animação (simular o tempo de giro)
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  // Animação: editar 5 frames diferentes
+  const frames = [
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🎲 | 🍒 | 🎲 ]\n\n_Girando..._`,
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍋 | 🎲 | 🍇 ]\n\n_Girando..._`,
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍉 | 🍒 | 🔔 ]\n\n_Girando..._`,
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🔔 | 🍋 | 🍒 ]\n\n_Girando..._`,
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍇 | 🍉 | 🍋 ]\n\n_Girando..._`
+  ];
+
+  // Animar frames (300ms cada)
+  for (const frame of frames) {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      await sock.chatModify({ text: frame }, msgInicial.key);
+    } catch (e) {
+      console.error('⚠️ Erro ao animar frame:', e.message);
+    }
+  }
+
+  // Aguardar antes de mostrar resultado final
+  await new Promise(resolve => setTimeout(resolve, 300));
 
   // Calcular resultado
   let multiplicador = 0;
@@ -757,9 +776,13 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
                      `${resultadoMsg}\n` +
                      `💰 Saldo atualizado: *${userGold + lucro} Gold*`;
 
-  await sock.sendMessage(jid, {
-    text: textoFinal
-  }, { quoted: msg });
+  // Editar a mensagem com o resultado final
+  try {
+    await sock.chatModify({ text: textoFinal }, msgInicial.key);
+  } catch (e) {
+    console.error('⚠️ Erro ao mostrar resultado final:', e.message);
+    await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg });
+  }
 }
 
 // ─── !corrida

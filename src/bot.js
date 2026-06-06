@@ -868,8 +868,7 @@ async function handleMessage(sock, msg) {
     await aniversarioHandler.handleSistemaAniversario(sock, msg, jid, isAdm);
     return;
   }
-
-  // ── DIVERSÃO ──────────────────────────────────────────────────
+// ── DIVERSÃO ──────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'gay'))           { await diversaoHandler.handleGay(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'sexo'))          { await diversaoHandler.handleSexo(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'nazista'))       { await diversaoHandler.handleNazista(sock, msg, content, jid, author, contactNames); return; }
@@ -907,6 +906,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'quizgeo'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'quizmat'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'quizhis'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
+  if (matchCmd(cmdWord, 'quizbsq'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'pontos'))         { await diversaoHandler.handlePontos(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'banco') || matchCmdStart(cmd, 'banco '))
@@ -918,7 +918,6 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'anagrama') || matchCmdStart(cmd, 'anagrama '))
     { await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid); return; }
   if (matchCmdStart(cmd, 'ppt'))           { await diversaoHandler.handlePpt(sock, msg, jid, caption, author, senderJid); return; }
-
   // ── GRUPO ─────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'ban'))          { await grupoHandler.handleBan(sock, msg, content, jid, botJid, contactNames); return; }
   if (matchCmdStart(cmd, 'mute'))         { await grupoHandler.handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }

@@ -21,6 +21,13 @@ function getUserId(msg) {
 async function prepareDailyMissionState(userId) {
   const todayStr = new Date().toISOString().split('T')[0]; // Ex: 2026-06-05
   
+  const defaultMissions = {
+    date: todayStr,
+    progress: { xp100: 0, msg50: 0, quiz5: 0, gold500: 0, pet10: 0 },
+    completed: { xp100: false, msg50: false, quiz5: false, gold500: false, pet10: false },
+    claimed: { xp100: false, msg50: false, quiz5: false, gold500: false, pet10: false }
+  };
+
   try {
     let user = await Usuario.findOne({ idWhatsApp: userId });
     
@@ -30,27 +37,33 @@ async function prepareDailyMissionState(userId) {
 
     // Se mudou o dia ou não existe a estrutura, inicializa e salva de forma limpa
     if (!user.dailyMissions || user.dailyMissions.date !== todayStr) {
-      const freshMissions = {
-        date: todayStr,
-        progress: { xp100: 0, msg50: 0, quiz5: 0, gold500: 0, pet10: 0 },
-        completed: { xp100: false, msg50: false, quiz5: false, gold500: false, pet10: false },
-        claimed: { xp100: false, msg50: false, quiz5: false, gold500: false, pet10: false }
-      };
-
       const updated = await Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
-        { $set: { dailyMissions: freshMissions } },
+        { $set: { dailyMissions: defaultMissions } },
         { returnDocument: 'after' }
       );
+      
+      // Garantir que retorna a estrutura completa
+      if (!updated || !updated.dailyMissions) {
+        console.warn(`⚠️ Falha ao atualizar missões para ${userId}, retornando padrão`);
+        return defaultMissions;
+      }
       return updated.dailyMissions;
     }
 
     // Sempre recarregar do banco para garantir dados atualizados
     const latestUser = await Usuario.findOne({ idWhatsApp: userId });
-    return latestUser?.dailyMissions || user.dailyMissions;
+    
+    // Garantir que retorna a estrutura completa
+    if (!latestUser || !latestUser.dailyMissions) {
+      console.warn(`⚠️ Missões não encontradas para ${userId}, retornando padrão`);
+      return defaultMissions;
+    }
+    
+    return latestUser.dailyMissions;
   } catch (e) {
     console.error('⚠️ Erro ao carregar missões do banco:', e.message);
-    return { date: todayStr, progress: {}, completed: {}, claimed: {} };
+    return defaultMissions;
   }
 }
 
@@ -72,6 +85,12 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
 
   // Recarrega o estado atualizado do banco
   const state = await prepareDailyMissionState(userId);
+  
+  // Validar se state foi carregado corretamente
+  if (!state || !state.progress || !state.completed || !state.claimed) {
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao carregar suas missões! Tente novamente.' }, { quoted: msg });
+    return;
+  }
   
   if (missionKey) {
     const mission = findDailyMission(missionKey);

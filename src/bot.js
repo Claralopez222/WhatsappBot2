@@ -579,7 +579,7 @@ async function handleMessage(sock, msg) {
 
   // ── Quiz ativo ────────────────────────────────────────────────
   if (diversaoHandler.quizState?.has(senderJid)) {
-    await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid);
+    await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption);
     return;
   }
 
@@ -876,11 +876,11 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'baterfalta'))     { await diversaoHandler.handleBaterFalta(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'eununca'))        { await diversaoHandler.handleEuNunca(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'quiz') || matchCmdStart(cmd, 'quiz '))
-    { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
-  if (matchCmd(cmdWord, 'quizfut'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
-  if (matchCmd(cmdWord, 'quizctec'))       { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
-  if (matchCmd(cmdWord, 'quizgeo'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
-  if (matchCmd(cmdWord, 'quizmat'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid); return; }
+    { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
+  if (matchCmd(cmdWord, 'quizfut'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
+  if (matchCmd(cmdWord, 'quizctec'))       { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
+  if (matchCmd(cmdWord, 'quizgeo'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
+  if (matchCmd(cmdWord, 'quizmat'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'pontos'))         { await diversaoHandler.handlePontos(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'banco') || matchCmdStart(cmd, 'banco '))

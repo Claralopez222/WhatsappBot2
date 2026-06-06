@@ -704,30 +704,13 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const r2 = frutas[Math.floor(Math.random() * frutas.length)];
   const r3 = frutas[Math.floor(Math.random() * frutas.length)];
 
-  // Enviar mensagem inicial com animação
-  let sentMsg = await sock.sendMessage(jid, {
+  // Enviar mensagem inicial
+  await sock.sendMessage(jid, {
     text: `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🎲 | 🎲 | 🎲 ]\n\n_Girando..._`
   }, { quoted: msg });
 
-  // Simulação de rotação - frames da animação
-  const frameAnimation = [
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍒 | 🎲 | 🎲 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍒 | 🍋 | 🎲 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍒 | 🍋 | 🍇 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍋 | 🍉 | 🔔 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍇 | 🍒 | 🍋 ]\n\n_Girando..._`,
-  ];
-
-  // Animar a rotação editando a mensagem
-  for (let i = 0; i < frameAnimation.length; i++) {
-    await new Promise(resolve => setTimeout(resolve, 350));
-    try {
-      await sock.editMessage(jid, sentMsg.key, { text: frameAnimation[i] });
-    } catch (e) {
-      // Se edição falhar, continua a animação mesmo assim
-      console.log('⚠️ Erro ao editar frame:', e.message);
-    }
-  }
+  // Aguardar a animação (simular o tempo de giro)
+  await new Promise(resolve => setTimeout(resolve, 1500));
 
   // Calcular resultado
   let multiplicador = 0;
@@ -754,21 +737,14 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
     updateSlots
   );
 
-  // Aguardar um pouco e mostrar resultado final na mesma mensagem
-  await new Promise(resolve => setTimeout(resolve, 500));
-
   const textoFinal = `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
                      `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
                      `${resultadoMsg}\n` +
                      `💰 Saldo atualizado: *${userGold + lucro} Gold*`;
 
-  try {
-    await sock.editMessage(jid, sentMsg.key, { text: textoFinal });
-  } catch (e) {
-    // Se falhar a edição, envia como mensagem nova
-    console.log('⚠️ Erro ao editar resultado:', e.message);
-    await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg });
-  }
+  await sock.sendMessage(jid, {
+    text: textoFinal
+  }, { quoted: msg });
 }
 
 // ─── !corrida

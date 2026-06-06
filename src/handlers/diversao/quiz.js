@@ -248,21 +248,23 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
   // Filtrar perguntas por categoria
   const cmd = caption.trim().toLowerCase().split(' ')[0];
+  // Remove o prefixo (!, ., /) para comparar apenas o nome do comando
+  const cmdClean = cmd.replace(/^[!.,\/@]/, '');
   let perguntasFiltradas = perguntasQuiz;
 
-  if (cmd === '!quizfut') {
+  if (cmdClean === 'quizfut') {
     perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Futebol');
-  } else if (cmd === '!quizctec') {
+  } else if (cmdClean === 'quizctec') {
     perguntasFiltradas = perguntasQuiz.filter(q =>
       ['Ciência', 'Química', 'Física', 'Biologia', 'Astronomia', 'Tecnologia'].includes(q.d)
     );
-  } else if (cmd === '!quizgeo') {
+  } else if (cmdClean === 'quizgeo') {
     perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Geografia');
-  } else if (cmd === '!quizmat') {
+  } else if (cmdClean === 'quizmat') {
     perguntasFiltradas = perguntasQuiz.filter(q =>
       ['Matemática', 'Geometria', 'Cálculo', 'Estatística'].includes(q.d)
     );
-  } else if (cmd === '!quizhis') {
+  } else if (cmdClean === 'quizhis') {
     perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'História');
   }
 

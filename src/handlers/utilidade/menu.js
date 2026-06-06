@@ -70,10 +70,7 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 │ ▸ ${P}pets — Ver os 20 tipos
 │ ▸ ${P}missao
 │ ▸ ${P}garimpar
-│ ▸ ${P}iniciar_forca
-│ ▸ ${P}jogodavelha _(@)_
 │ ▸ ${P}eununca
-│ ▸ ${P}levelon
 │ ▸ ${P}ranklevel
 │ ▸ ${P}level
 │ ▸ ${P}morte
@@ -86,7 +83,6 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 │ ▸ ${P}quiz
 │ ▸ ${P}pontos
 │ ▸ ${P}rankjogos
-│ ▸ ${P}anagrama
 │
 ╰━━━━━━━⊰ ✧ ⊱━━━━━━━╯`;
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });

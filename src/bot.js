@@ -26,7 +26,7 @@ const relacionamentoHandler = require(path.join(__dirname, 'handlers', 'relacion
 const grupoHandler          = require(path.join(__dirname, 'handlers', 'grupo'));
 const imagemHandler         = require(path.join(__dirname, 'handlers', 'imagem'));
 const textoHandler          = require(path.join(__dirname, 'handlers', 'texto'));
-let utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js'));
+let utilidadeHandler        = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js'));
 const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversario'));
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
@@ -256,6 +256,62 @@ imagemHandler.setLogger(logger);
 alteradoresHandler.setLogger(logger);
 downloadsHandler.setLogger(logger);
 
+// ─── Helpers de formatação ────────────────────────────────────
+function formatarNumeroBR(jid) {
+  const numeroPuro = jid.split('@')[0];
+
+  if (numeroPuro.startsWith('55') && numeroPuro.length === 12) {
+    const ddd   = numeroPuro.slice(2, 4);
+    const parte1 = numeroPuro.slice(4, 8);
+    const parte2 = numeroPuro.slice(8, 12);
+    return `+55 (${ddd}) 9${parte1}-${parte2}`;
+  }
+
+  if (numeroPuro.startsWith('55') && numeroPuro.length === 13) {
+    const ddd   = numeroPuro.slice(2, 4);
+    const parte1 = numeroPuro.slice(4, 9);
+    const parte2 = numeroPuro.slice(9, 13);
+    return `+55 (${ddd}) ${parte1}-${parte2}`;
+  }
+
+  return `+${numeroPuro}`;
+}
+
+function getSenderName(msg) {
+  return msg.pushName || msg.key.remoteJid?.split('@')[0] || 'Usuário';
+}
+
+// ─── handlePerfil ─────────────────────────────────────────────
+async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
+  const userId = msg.key.participant || msg.key.remoteJid;
+
+  try {
+    let user = await Usuario.findOne({ idWhatsApp: userId });
+
+    if (!user) {
+      user = await Usuario.create({ idWhatsApp: userId, gold: 0, xp: 0, level: 1, mensagens: 0 });
+    }
+
+    const nomeDoCara      = msg.pushName || user.nome || 'Usuário';
+    const numeroFormatado = formatarNumeroBR(userId);
+
+    const textoPerfil =
+      `👤 *PERFIL DO USUÁRIO* 👤\n\n` +
+      `📝 *Nome:* ${nomeDoCara}\n` +
+      `📱 *Número:* ${numeroFormatado}\n` +
+      `💰 *Gold:* ${user.gold || 0} 💰\n` +
+      `📊 *Nível:* ${user.level || 1} | *XP:* ${user.xp || 0}\n` +
+      `💬 *Mensagens enviadas:* ${user.mensagens || 0}\n\n` +
+      `🐾 *Pet Ativo:* ${user.pet ? `[Lvl ${user.pet.level}] ${user.pet.name}` : 'Nenhum'}\n` +
+      `━━━━━━━━━━━━━━━━━━━━`;
+
+    await sock.sendMessage(jid, { text: textoPerfil }, { quoted: msg });
+  } catch (e) {
+    console.error('❌ Erro ao carregar perfil do banco:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro interno ao carregar o seu perfil.' }, { quoted: msg });
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ─── INICIALIZAR BOT ──────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -305,56 +361,10 @@ async function startBot() {
     },
   });
 
+  // ── Credenciais ───────────────────────────────────────────────
   sock.ev.on('creds.update', saveCreds);
 
-  // ── Mensagens ─────────────────────────────────────────────
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify' && type !== 'append') return;
-    for (const msg of messages) {
-      if (msg.key.fromMe) continue;
-      if (!msg.message)   continue;
-
-      const _jid       = msg.key.remoteJid || '';
-      const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
-      if (_isPrivate) {
-        const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-        console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
-      }
-
-      try { 
-        // ═══════════════════════════════════════════════════════════════
-        // 📈 SISTEMA DE CONTAGEM DO MONGODB + MISSÃO DIÁRIA DE MENSAGENS
-        // ═══════════════════════════════════════════════════════════════
-        if (!_isPrivate) { // Só conta se for em grupo
-          const remetente = msg.key.participant || msg.key.remoteJid;
-          const nomeDoCara = msg.pushName || 'Usuário do Zap';
-
-          await Usuario.findOneAndUpdate(
-            { idWhatsApp: remetente },
-            { 
-              $inc: { 
-                mensagens: 1,                          // Soma +1 no ranking geral de mensagens
-                'dailyMissions.progress.msg50': 1       // Soma +1 no progresso da missão diária !missao
-              }, 
-              $set: { nome: nomeDoCara }                // Mantém o nome do banco atualizado
-            },
-            { upsert: true }                            // Se o usuário não existir no banco, cria o registro
-          );
-        }
-        // ═══════════════════════════════════════════════════════════════
-
-        // Continua chamando o seu processador de comandos normal
-        await handleMessage(sock, msg); 
-      }
-      catch (err) { 
-        console.error('❌ Erro no processamento da mensagem:', err.message); 
-      }
-    }
-  });
-
-// ── 1. Atualizar nomes de contato ─────────────────────────────────────────
-  sock.ev.on('creds.update', saveCreds);
-
+  // ── Atualizar nomes de contato ────────────────────────────────
   sock.ev.on('contacts.upsert', cs => {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
@@ -363,7 +373,7 @@ async function startBot() {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
 
-  // ── 2. Mensagens e Missões ──────────────────────────────────────────────────
+  // ── Mensagens ─────────────────────────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify' && type !== 'append') return;
     for (const msg of messages) {
@@ -372,43 +382,36 @@ async function startBot() {
 
       const _jid       = msg.key.remoteJid || '';
       const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
+
       if (_isPrivate) {
         const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
         console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
       }
 
-      try { 
-        // ═══════════════════════════════════════════════════════════════
-        // 📈 SISTEMA DE CONTAGEM DO MONGODB + MISSÃO DIÁRIA DE MENSAGENS
-        // ═══════════════════════════════════════════════════════════════
-        if (!_isPrivate) { 
-          const remetente = msg.key.participant || msg.key.remoteJid;
+      try {
+        // ── Contagem MongoDB + Missão diária ──────────────────
+        if (!_isPrivate) {
+          const remetente  = msg.key.participant || msg.key.remoteJid;
           const nomeDoCara = msg.pushName || 'Usuário do Zap';
 
           await Usuario.findOneAndUpdate(
             { idWhatsApp: remetente },
-            { 
-              $inc: { 
-                mensagens: 1,                          
-                'dailyMissions.progress.msg50': 1       
-              }, 
-              $set: { nome: nomeDoCara }                
+            {
+              $inc: { mensagens: 1, 'dailyMissions.progress.msg50': 1 },
+              $set: { nome: nomeDoCara },
             },
-            { upsert: true }                            
+            { upsert: true }
           );
         }
-        // ═══════════════════════════════════════════════════════════════
 
-        // Processa os comandos do bot normalmente
-        await handleMessage(sock, msg); 
-      }
-      catch (err) { 
-        console.error('❌ Erro no processamento da mensagem:', err.message); 
+        await handleMessage(sock, msg);
+      } catch (err) {
+        console.error('❌ Erro no processamento da mensagem:', err.message);
       }
     }
   });
 
-  // ── 3. Eventos de grupo (entradas/saídas) ─────────────────────────────────
+  // ── Eventos de grupo (entradas/saídas) ───────────────────────
   sock.ev.on('group-participants.update', async ({ id: groupJid, participants, action }) => {
     if (action === 'add') {
       for (const userJid of participants) {
@@ -422,7 +425,7 @@ async function startBot() {
     }
   });
 
-  // ── 4. Conexão ────────────────────────────────────────────────────────────
+  // ── Conexão ───────────────────────────────────────────────────
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       console.log('\n📱 Escaneie o QR Code:\n');
@@ -439,57 +442,8 @@ async function startBot() {
     }
   });
 
-} // <--- FECHAMENTO CORRETO DA FUNÇÃO startBot()
+} // ← fim de startBot()
 
-// ─── Executar Inicialização do Bot (Última linha do arquivo)
-startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));
-
-// ─── Executar Inicialização do Bot (Sempre na última linha do arquivo)
-startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));
-// ── Mensagens e Missões ──────────────────────────────────────────────────
-sock.ev.on('messages.upsert', async ({ messages, type }) => {
-  if (type !== 'notify' && type !== 'append') return;
-  for (const msg of messages) {
-    if (msg.key.fromMe) continue;
-    if (!msg.message)   continue;
-
-    const _jid       = msg.key.remoteJid || '';
-    const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
-    if (_isPrivate) {
-      const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-      console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
-    }
-
-    try { 
-      // ═══════════════════════════════════════════════════════════════
-      // 📈 SISTEMA DE CONTAGEM DO MONGODB + MISSÃO DIÁRIA DE MENSAGENS
-      // ═══════════════════════════════════════════════════════════════
-      if (!_isPrivate) { // Só conta mensagens enviadas em grupos
-        const remetente = msg.key.participant || msg.key.remoteJid;
-        const nomeDoCara = msg.pushName || 'Usuário do Zap';
-
-        await Usuario.findOneAndUpdate(
-          { idWhatsApp: remetente },
-          { 
-            $inc: { 
-              mensagens: 1,                          // Soma +1 no ranking geral de mensagens
-              'dailyMissions.progress.msg50': 1       // Soma +1 no progresso da missão diária !missao
-            }, 
-            $set: { nome: nomeDoCara }                // Mantém o nome do banco atualizado
-          },
-          { upsert: true }                            // Se o usuário não existir no banco, cria o registro na hora
-        );
-      }
-      // ═══════════════════════════════════════════════════════════════
-
-      // Processa os comandos do bot normalmente
-      await handleMessage(sock, msg); 
-    }
-    catch (err) { 
-      console.error('❌ Erro no processamento da mensagem:', err.message); 
-    }
-  }
-});
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -522,13 +476,13 @@ async function handleMessage(sock, msg) {
   const isPrivate = jid && !jid.endsWith('@g.us') && !jid.endsWith('@broadcast');
   const isGroup   = jid && jid.endsWith('@g.us');
 
-  // ── Slow Mode ────────────────────────────────────────────────
+  // ── Slow Mode ─────────────────────────────────────────────────
   if (isGroup && !isAnyCmd(raw)) {
     const permitido = grupoHandler.verificarSlowMode(jid, senderJid);
     if (!permitido) return;
   }
 
-  // ── Anti-Flood ───────────────────────────────────────────────
+  // ── Anti-Flood ────────────────────────────────────────────────
   if (isGroup) {
     try {
       const flood = await grupoHandler.verificarAntiFlood(sock, jid, senderJid, botJid);
@@ -569,7 +523,7 @@ async function handleMessage(sock, msg) {
   // Guardar última msg de texto no PV
   if (isPrivate && textMsg && !isAnyCmd(raw)) lastTexts.set(jid, textMsg);
 
-  // ── Anti-Link ────────────────────────────────────────────────
+  // ── Anti-Link ─────────────────────────────────────────────────
   if (isGroup && antiLinkGroups.has(jid) && !isAnyCmd(raw)) {
     const hasLink = /(https?:\/\/|wa\.me\/|chat\.whatsapp\.com)/i.test(caption);
     if (hasLink) {
@@ -634,6 +588,10 @@ async function handleMessage(sock, msg) {
   // ═══════════════════════════════════════════════════════════════
   // ─── ROTEADOR
   // ═══════════════════════════════════════════════════════════════
+
+  // ── PERFIL ────────────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'perfil'))
+    { await handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
 
   // ── MENUS ─────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'menu') || matchCmdStart(cmd, 'menu '))
@@ -774,72 +732,6 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'pinterest') || matchCmd(cmdWord, 'pinterest2'))
     { await downloadsHandler.handlePinterest(sock, msg, jid, caption); return; }
 
-  // Função auxiliar para formatar o número do WhatsApp de forma correta (Coloque no topo do arquivo ou antes do handlePerfil)
-function formatarNumeroBR(jid) {
-  const numeroPuro = jid.split('@')[0]; // Remove o '@s.whatsapp.net'
-
-  // Caso 1: Número BR antigo/internacional que veio sem o 9 (tem 12 dígitos: 55 + DDD + 8 dígitos)
-  if (numeroPuro.startsWith('55') && numeroPuro.length === 12) {
-    const ddd = numeroPuro.slice(2, 4);
-    const parte1 = numeroPuro.slice(4, 8);
-    const parte2 = numeroPuro.slice(8, 12);
-    return `+55 (${ddd}) 9${parte1}-${parte2}`; // Injeta o 9 automaticamente na exibição
-  }
-
-  // Caso 2: Número BR novo que já tem o 9 (tem 13 dígitos: 55 + DDD + 9 + 8 dígitos)
-  if (numeroPuro.startsWith('55') && numeroPuro.length === 13) {
-    const ddd = numeroPuro.slice(2, 4);
-    const parte1 = numeroPuro.slice(4, 9);
-    const parte2 = numeroPuro.slice(9, 13);
-    return `+55 (${ddd}) ${parte1}-${parte2}`;
-  }
-
-  // Caso 3: Número de outro país
-  return `+${numeroPuro}`;
-}
-
-// ─── COMANDO !PERFIL ATUALIZADO ───
-async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
-  const path = require('path');
-  const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario')); // Ajuste o caminho do modelo se necessário
-  
-  // Captura o ID do remetente com segurança
-  const userId = msg.key.participant || msg.key.remoteJid;
-  
-  try {
-    // Busca os dados do cara direto do MongoDB
-    let user = await Usuario.findOne({ idWhatsApp: userId });
-    
-    if (!user) {
-      // Se não achar o usuário por algum motivo, cria um registro rápido
-      user = await Usuario.create({ idWhatsApp: userId, gold: 0, xp: 0, level: 1, mensagens: 0 });
-    }
-
-    const nomeDoCara = msg.pushName || user.nome || 'Usuário';
-    
-    // Aplica a formatação mágica no número para não exibir errado no menu
-    const numeroFormatado = formatarNumeroBR(userId);
-
-    // Montagem do menu de perfil
-    const textoPerfil = `👤 *PERFIL DO USUÁRIO* 👤\n\n` +
-                        `📝 *Nome:* ${nomeDoCara}\n` +
-                        `📱 *Número:* ${numeroFormatado}\n` +
-                        `💰 *Gold:* ${user.gold || 0} 💰\n` +
-                        `📊 *Nível:* ${user.level || 1} | *XP:* ${user.xp || 0}\n` +
-                        `💬 *Mensagens enviadas:* ${user.mensagens || 0}\n\n` +
-                        `🐾 *Pet Ativo:* ${user.pet ? `[Lvl ${user.pet.level}] ${user.pet.name}` : 'Nenhum'}\n` +
-                        `━━━━━━━━━━━━━━━━━━━━`;
-
-    await sock.sendMessage(jid, { text: textoPerfil }, { quoted: msg });
-
-  } catch (e) {
-    console.error('❌ Erro ao carregar perfil do banco:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro interno ao carregar o seu perfil.' }, { quoted: msg });
-  }
-}
-
-// Lembre-se de exportar a função no final do arquivo caso não esteja:
-// module.exports = { handlePerfil, ... };
   // ── FIGURINHAS ────────────────────────────────────────────────
   if (
     (matchCmd(cmd, 's') || matchCmdStart(cmd, 's ')) &&
@@ -894,20 +786,17 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     { await relacionamentoHandler.handleCancelarPedido(sock, msg, jid, senderJid, pedidosPendentes, contactNames); return; }
   if (matchCmd(cmdWord, 'cancelarcasamento'))
     { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  // Diários originais
   if (matchCmd(cmdWord, 'flores'))    { await relacionamentoHandler.handleFlores(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'doces'))     { await relacionamentoHandler.handleDoces(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'carta'))     { await relacionamentoHandler.handleCarta(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'mimo'))      { await relacionamentoHandler.handleMimo(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'beijo'))     { await relacionamentoHandler.handleBeijo(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  // Diários novos
   if (matchCmd(cmdWord, 'abraco'))    { await relacionamentoHandler.handleAbraco(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'presente'))  { await relacionamentoHandler.handlePresente(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'jantar'))    { await relacionamentoHandler.handleJantar(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'cinematel')) { await relacionamentoHandler.handleCinemaRel(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'viajar'))    { await relacionamentoHandler.handleViajar(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'serenata'))  { await relacionamentoHandler.handleSerenata(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  // Especiais de relacionamento
   if (matchCmd(cmdWord, 'declarar'))           { await relacionamentoHandler.handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmdStart(cmd, 'ciumento'))          { await relacionamentoHandler.handleCiumento(sock, msg, content, jid, author, senderJid, relacionamentos, contactNames); return; }
   if (matchCmd(cmdWord, 'statu'))              { await relacionamentoHandler.handleStatu(sock, msg, jid, author, senderJid, relacionamentos); return; }
@@ -993,7 +882,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   if (matchCmdStart(cmd, 'antilink'))     { await grupoHandler.handleAntiLink(sock, msg, content, jid, antiLinkGroups, saveData); return; }
   if (matchCmdStart(cmd, 'autosticker'))  { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
   if (matchCmdStart(cmd, 'reportar'))     { await grupoHandler.handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid); return; }
-  // Novos de grupo
   if (matchCmd(cmdWord, 'grupinfo'))      { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'listaadm'))      { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'listamembros'))  { await grupoHandler.handleListaMembros(sock, msg, jid, contactNames); return; }
@@ -1005,7 +893,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   if (matchCmdStart(cmd, 'avisar'))       { await grupoHandler.handleAvisar(sock, msg, jid, caption, contactNames); return; }
   if (matchCmdStart(cmd, 'fixargrupo'))   { await grupoHandler.handleFixarGrupo(sock, msg, content, jid, caption); return; }
 
-  // ── FILTROS DE IMAGEM (específicos antes dos genéricos) ───────
+  // ── FILTROS DE IMAGEM ─────────────────────────────────────────
   if (matchCmdStart(cmd, 'pbiphone'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'pbiphone',  getPrefix(jid)); return; }
   if (matchCmdStart(cmd, 'pb'))         { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'pb',        getPrefix(jid)); return; }
   if (matchCmdStart(cmd, 'girar180'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'girar180',  getPrefix(jid)); return; }
@@ -1026,7 +914,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   if (matchCmdStart(cmd, 'corecore'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'corecore',  getPrefix(jid)); return; }
   if (matchCmdStart(cmd, 'desfazer'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'desfazer',  getPrefix(jid)); return; }
   if (matchCmdStart(cmd, 'sfundo'))     { await imagemHandler.handleSfundo(sock, msg, content, jid); return; }
-  // Novos filtros
   if (matchCmdStart(cmd, 'cartoon'))    { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'cartoon',   getPrefix(jid)); return; }
   if (matchCmdStart(cmd, 'glitch'))     { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'glitch',    getPrefix(jid)); return; }
   if (matchCmdStart(cmd, 'vinheta'))    { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'vinheta',   getPrefix(jid)); return; }
@@ -1075,16 +962,14 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   if (matchCmdStart(cmd, 'caixa'))      { await textoHandler.handleTextoFun(sock, msg, jid, caption, getPrefix(jid), 'caixa');     return; }
 }
 
+// ─── Servidor Web ─────────────────────────────────────────────
 const express = require('express');
-const app = express();
+const app  = express();
 const port = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-  res.send('Bot Online!');
-});
+app.get('/', (req, res) => res.send('Bot Online!'));
 
-app.listen(port, () => {
-  console.log(`Servidor web do bot rodando na porta ${port}`);
-});
+app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));
 
-startBot().catch(console.error);
+// ─── Iniciar (apenas uma vez) ─────────────────────────────────
+startBot().catch(err => console.error('❌ Erro crítico na inicialização:', err));

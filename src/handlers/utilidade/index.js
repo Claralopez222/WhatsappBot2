@@ -282,8 +282,8 @@ async function handleDecodificarMorse(sock, msg, jid, caption) {
 async function tryFetchLyricsFromRandomApi(tema) {
   const queries = [
     tema,
-    tema.replace(/[’‘]/g, "'"),
-    tema.replace(/[’‘']/g, ''),
+    tema.replace(/['']/g, "'"),
+    tema.replace(/[''']/g, ''),
     tema.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim(),
   ].filter(Boolean);
 
@@ -292,7 +292,6 @@ async function tryFetchLyricsFromRandomApi(tema) {
     const normalized = q.trim();
     if (!normalized || tried.has(normalized)) continue;
     tried.add(normalized);
-
     try {
       const result = await fetchJson(`https://some-random-api.ml/lyrics?title=${encodeURIComponent(normalized)}`);
       const lyrics = result?.lyrics?.trim();
@@ -301,7 +300,6 @@ async function tryFetchLyricsFromRandomApi(tema) {
       continue;
     }
   }
-
   return null;
 }
 
@@ -310,7 +308,6 @@ async function tryFetchLyricsFromOvh(tema) {
   if (!separator) return null;
   const [artist, title] = tema.split(separator).map(s => s.trim());
   if (!artist || !title) return null;
-
   try {
     const result = await fetchJson(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
     const lyrics = result?.lyrics?.trim();
@@ -318,7 +315,6 @@ async function tryFetchLyricsFromOvh(tema) {
   } catch {
     return null;
   }
-
   return null;
 }
 
@@ -328,64 +324,31 @@ async function handleLetra(sock, msg, jid, caption) {
     await sock.sendMessage(jid, { text: '⚠️ Especifique o nome da música. Exemplo: *!letra bohemian rhapsody*' }, { quoted: msg });
     return;
   }
-
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
   try {
     const lyricsSource = await tryFetchLyricsFromOvh(tema) || await tryFetchLyricsFromRandomApi(tema);
     if (!lyricsSource) throw new Error('Não encontrei a letra.');
-
     const result = lyricsSource.result;
     const title = result.title || tema;
     const author = result.author || result.artist || '';
     const genius = result.links?.genius || '';
     const lyrics = result.lyrics?.trim();
-
     const infoLines = [`🎵 *${title}*`];
     if (author) infoLines.push(`👤 *Artista:* ${author}`);
     if (genius) infoLines.push(`🔗 *Link:* ${genius}`);
-
     const fullText = `${infoLines.join('\n')}\n\n${lyrics}`;
     const chunks = chunkLongText(fullText);
-
     for (let i = 0; i < chunks.length; i++) {
       await sock.sendMessage(jid, { text: chunks[i] }, i === 0 ? { quoted: msg } : {});
     }
   } catch (err) {
     console.log(`⚠️ Letra não encontrada para "${tema}":`, err.message);
-    await sock.sendMessage(jid, {
-      text: '❌ Não foi possível obter a letra. Tente usar o formato: *!letra artista - música*',
-    }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '❌ Não foi possível obter a letra. Tente usar o formato: *!letra artista - música*' }, { quoted: msg });
   }
 }
-/**
- * Handler de Perfil — Piroquinhas Bot
- * Comando: !perfil / !perfil @pessoa
- */
 
-const path = require('path');
-const fs   = require('fs');
+// ─── !perfil ─────────────────────────────────────────────────────────────────
 
-// Importar modelo — ajuste o caminho se necessário
-let Usuario;
-try { Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario')); } catch {}
-
-// Utilitário para baixar buffer de URL
-async function fetchBuffer(url) {
-  const https = require('https');
-  const http  = require('http');
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith('https') ? https : http;
-    client.get(url, res => {
-      const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end',  () => resolve(Buffer.concat(chunks)));
-      res.on('error', reject);
-    }).on('error', reject);
-  });
-}
-
-// ── Mapa de pets ────────────────────────────────────────────────────────────
 const PET_EMOJIS = {
   tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',
   lobo: '🐺', urso: '🐻', macaco: '🐵', raposa: '🦊', coelho: '🐰',
@@ -393,70 +356,50 @@ const PET_EMOJIS = {
   coruja: '🦉', fenix: '🔥', feneco: '🦝', leao_marinho: '🦭',
 };
 
-// ── Itens de roubo / segurança (espelha o roubo.js) ─────────────────────────
-const ITENS_ROUBO = {
+const ITENS_ROUBO_NOMES = {
   mascara: '🎭 Máscara', chave: '🔧 Chave Inglesa', dinamite: '💣 Dinamite',
   lockpick: '🔓 Kit de Arrombamento', corda: '🪢 Corda Ninja',
   disfarce: '🕵️ Disfarce Premium', explorador: '📡 Detector de Alarmes',
   cavador: '⛏️ Picareta de Diamante',
 };
-const ITENS_SEGURANCA = {
+
+const ITENS_SEGURANCA_NOMES = {
   cofre: '🔐 Cofre Forte', alarme: '🚨 Sistema de Alarme',
   camera: '📹 Câmera de Vigilância', cachorro: '🐕 Cão de Guarda',
   seguranca: '👮 Guarda de Segurança', bunker: '🛡️ Bunker Subterrâneo',
   laser: '🔴 Raios Laser', militares: '🪖 Segurança Militar',
 };
 
-// ── Extrai número de telefone real a partir de qualquer formato de JID ───────
-// Formatos possíveis no Baileys:
-//   5511999999999@s.whatsapp.net          → direto
-//   5511999999999:12@s.whatsapp.net       → com sufixo de dispositivo
-//   5511999999999@lid                     → LID (novo formato Meta)
-//   173396520337564@lid                   → LID numérico interno (NÃO é telefone)
-//
-// Quando o JID é @lid, precisamos buscar o número real via sock.onWhatsApp()
-// ou cair no contactNames para exibir ao menos o nome correto.
 function extractNumber(jidStr) {
   if (!jidStr) return '';
-  // Remove domínio
   const raw = jidStr.split('@')[0];
-  // Remove sufixo de dispositivo (:XX)
-  const clean = raw.split(':')[0];
-  return clean;
+  return raw.split(':')[0];
 }
 
 function isLidJid(jidStr) {
   return jidStr?.endsWith('@lid');
 }
 
-// ── Handler principal ────────────────────────────────────────────────────────
 async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
-
   const contextInfo = content?.extendedTextMessage?.contextInfo
                    || msg?.message?.extendedTextMessage?.contextInfo;
-  const mentions    = contextInfo?.mentionedJid || [];
-  const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const alvoJid     = mentions[0] || contextInfo?.participant || senderJid;
+  const mentions  = contextInfo?.mentionedJid || [];
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const alvoJid   = mentions[0] || contextInfo?.participant || senderJid;
 
-  // ── Número real ───────────────────────────────────────────────────────────
-  // Se for @lid (formato interno do Meta), o número extraído não é o telefone.
-  // Tentamos resolver via sock.onWhatsApp() para obter o JID real com @s.whatsapp.net
+  // ── Resolver número real (suporte a @lid) ─────────────────────────────────
   let resolvedJid = alvoJid;
   let number      = extractNumber(alvoJid);
 
   if (isLidJid(alvoJid)) {
-    // @lid não expõe o número diretamente — tenta resolver
     try {
       const results = await sock.onWhatsApp(number);
-      if (results && results.length > 0 && results[0].jid) {
+      if (results?.length > 0 && results[0].jid) {
         resolvedJid = results[0].jid;
         number      = extractNumber(resolvedJid);
       }
     } catch {}
-    // Se ainda não resolveu, exibe "N/D" em vez de um número LID interno errado
-    if (isLidJid(resolvedJid)) {
-      number = 'N/D';
-    }
+    if (isLidJid(resolvedJid)) number = 'N/D';
   }
 
   const nome = contactNames?.[alvoJid] || contactNames?.[resolvedJid] || number;
@@ -470,28 +413,26 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // ── Gold ──────────────────────────────────────────────────────────────────
   const userGold = userData?.gold ?? 0;
 
   // ── Level / XP ────────────────────────────────────────────────────────────
-  const msgsRec  = msgCount?.get?.(alvoJid)?.count ?? 0;
-  const xp       = userData?.xp ?? msgsRec;
-  const level    = userData?.level ?? (Math.floor(xp / 50) + 1);
-  const xpNext   = level * 50;
-  const xpPct    = Math.min(100, Math.floor((xp / xpNext) * 100));
-  const barsOn   = Math.floor(xpPct / 10);
-  const xpBar    = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
+  const msgsRec = msgCount?.get?.(alvoJid)?.count ?? 0;
+  const xp      = userData?.xp ?? msgsRec;
+  const level   = userData?.level ?? (Math.floor(xp / 50) + 1);
+  const xpNext  = level * 50;
+  const xpPct   = Math.min(100, Math.floor((xp / xpNext) * 100));
+  const barsOn  = Math.floor(xpPct / 10);
+  const xpBar   = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
 
   // ── Atividade ─────────────────────────────────────────────────────────────
-  const cmdsRec  = cmdCount?.get?.(alvoJid) ?? 0;
-  const sticks   = stickerCount?.get?.(alvoJid) ?? 0;
-  const total    = msgsRec + cmdsRec + sticks;
-  let activity   = '📉 Calmo';
+  const cmdsRec = cmdCount?.get?.(alvoJid) ?? 0;
+  const sticks  = stickerCount?.get?.(alvoJid) ?? 0;
+  const total   = msgsRec + cmdsRec + sticks;
+  let activity  = '📉 Calmo';
   if      (total > 1000) activity = '🔥 Hiperativo';
   else if (total > 500)  activity = '⚡ Ativo';
   else if (total > 100)  activity = '😊 Participativo';
 
-  // Rank no grupo
   let rankText = '';
   try {
     const ranks = [...(msgCount?.entries?.() ?? [])].sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0));
@@ -525,8 +466,8 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   let missaoText = '';
   try {
     const { dailyMissionDefinitions } = require('./missoes');
-    const dm      = userData?.dailyMissions;
-    const today   = new Date().toISOString().split('T')[0];
+    const dm    = userData?.dailyMissions;
+    const today = new Date().toISOString().split('T')[0];
     if (dm && dm.date === today) {
       const concluidas = dailyMissionDefinitions.filter(m =>
         (dm.progress?.[m.id] || 0) >= m.target || dm.completed?.[m.id]
@@ -540,8 +481,8 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   let equipRouboText = '❌ Nenhum';
   let equipSecText   = '❌ Nenhum';
   try {
-    if (userData?.equiparoubo) equipRouboText = ITENS_ROUBO[userData.equiparoubo] || userData.equiparoubo;
-    if (userData?.equiparsec)  equipSecText   = ITENS_SEGURANCA[userData.equiparsec] || userData.equiparsec;
+    if (userData?.equiparoubo) equipRouboText = ITENS_ROUBO_NOMES[userData.equiparoubo] || userData.equiparoubo;
+    if (userData?.equiparsec)  equipSecText   = ITENS_SEGURANCA_NOMES[userData.equiparsec] || userData.equiparsec;
   } catch {}
 
   // ── Pet ───────────────────────────────────────────────────────────────────
@@ -560,13 +501,13 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   try {
     const dataPath = path.resolve(__dirname, '../../../data.json');
     if (fs.existsSync(dataPath)) {
-      const dataFile  = JSON.parse(fs.readFileSync(dataPath, 'utf8') || '{}');
-      const bday      = dataFile?.birthdays?.[alvoJid]?.date;
+      const dataFile = JSON.parse(fs.readFileSync(dataPath, 'utf8') || '{}');
+      const bday     = dataFile?.birthdays?.[alvoJid]?.date;
       if (bday) {
         const [day, month, year] = bday.split('/');
-        const today        = new Date();
-        const currentYear  = today.getFullYear();
-        const next         = new Date(currentYear, Number(month) - 1, Number(day));
+        const today       = new Date();
+        const currentYear = today.getFullYear();
+        const next        = new Date(currentYear, Number(month) - 1, Number(day));
         if (next < today) next.setFullYear(currentYear + 1);
         const age      = next.getFullYear() - Number(year);
         const daysUntil = Math.ceil((next - today) / 86400000);
@@ -607,63 +548,40 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   const L = [];
   L.push(`🔎 *PERFIL DO USUÁRIO* 🔎`);
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-
-  // Identificação
   L.push(`👤 *Nome:* ${nome}`);
   L.push(`📞 *Número:* +${number}`);
   if (groupName) L.push(`🏠 *Grupo:* ${groupName}`);
   if (jid.endsWith('@g.us')) L.push(`👑 *Admin:* ${isAdmin ? '✅ Sim' : '❌ Não'}`);
-
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-
-  // Atividade
   L.push(`📊 *ATIVIDADE*`);
   L.push(`💬 Mensagens: *${msgsRec}*${rankText}`);
   L.push(`🤖 Comandos:  *${cmdsRec}*`);
   L.push(`😄 Figurinhas: *${sticks}*`);
   L.push(`🔁 Total: *${total}*  ${activity}`);
-
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-
-  // Progresso
   L.push(`⭐ *PROGRESSO*`);
   L.push(`🏅 Level *${level}*  ·  XP ${xp}/${xpNext} (${xpPct}%)`);
   L.push(`[${xpBar}]`);
   if (missaoText) L.push(`🎯 Missões: ${missaoText}`);
-
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-
-  // Economia
   L.push(`💰 *ECONOMIA*`);
   L.push(`👛 Carteira: *${userGold}g*`);
   L.push(`🏦 Banco: ${bankText}`);
-
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-
-  // Equipamento
   L.push(`⚔️ *EQUIPAMENTO*`);
   L.push(`🎭 Roubo:  ${equipRouboText}`);
   L.push(`🔐 Defesa: ${equipSecText}`);
-
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-
-  // Pet
   L.push(`🐾 *PET ATIVO*`);
   L.push(petText);
-
-  // Aniversário (só se existir)
   if (birthdayText) {
     L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
     L.push(`🎂 *ANIVERSÁRIO*`);
     L.push(birthdayText);
   }
-
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-
-  // Relacionamento
   L.push(`💑 *RELACIONAMENTO*`);
   L.push(relStatus);
-
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
   L.push(`🤖 _Piroquinhas Bot_`);
 
@@ -678,14 +596,11 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch (e) {
     console.error('⚠️ Erro ao enviar perfil:', e.message);
-    // fallback sem imagem
     try { await sock.sendMessage(jid, { text: texto }, { quoted: msg }); } catch {}
   }
 }
 
-module.exports = { handlePerfil };
-
-module.exports = { handlePerfil };
+// ─── Exportar ─────────────────────────────────────────────────────────────────
 
 module.exports = {
   handleMenu,

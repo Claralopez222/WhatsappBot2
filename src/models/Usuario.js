@@ -30,6 +30,15 @@ const usuarioSchema = new mongoose.Schema({
     lastFed: { type: Date, default: null },
     lastPlayed: { type: Date, default: null },
   },
+  // ─── NOVO CAMPO: SISTEMA DE INVESTIMENTO BANCO ───
+  bank: {
+    amount: { type: Number, default: 0 },
+    interest: { type: Number, default: 0 },
+    daysRemaining: { type: Number, default: 0 },
+    startDate: { type: String, default: null },
+    lastDepositDate: { type: String, default: null },
+    depositedToday: { type: Number, default: 0 }
+  },
 }, {
   timestamps: true,
 });

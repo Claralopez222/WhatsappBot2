@@ -1,5 +1,7 @@
 const path = require('path');
 
+const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
+
 const {
   xpCasais,
   xpBonus,
@@ -32,10 +34,96 @@ async function handleBeijo(sock, msg, jid, author, senderJid, relacionamentos) {
 async function handleAbraco(sock, msg, jid, author, senderJid, relacionamentos) {
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'abraco', '🤗', 'deu um abraço apertado');
 }
-async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos) {
-  const presentes = ['um anel de ouro 💍', 'um perfume importado 🌸', 'um ursinho de pelúcia 🧸', 'chocolates Ferrero 🍫', 'um colar lindo 📿'];
-  const p = presentes[Math.floor(Math.random() * presentes.length)];
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'presente', '🎀', `presenteou com ${p}`);
+async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption = '') {
+  // Se não houver caption com item específico, usar comportamento aleatório antigo
+  const temCaption = caption.toLowerCase().trim();
+  if (!temCaption.includes('presente') || temCaption.split(/\s+/).length < 2) {
+    const presentes = ['um anel de ouro 💍', 'um perfume importado 🌸', 'um ursinho de pelúcia 🧸', 'chocolates Ferrero 🍫', 'um colar lindo 📿'];
+    const p = presentes[Math.floor(Math.random() * presentes.length)];
+    await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'presente', '🎀', `presenteou com ${p}`);
+    return;
+  }
+
+  // Verificar se está em relacionamento
+  const found = findRelByJid(senderJid, relacionamentos);
+  if (!found) {
+    await sock.sendMessage(jid, { text: '💔 Você não está em um relacionamento! Não pode presentear ninguém agora! 😒' }, { quoted: msg });
+    return;
+  }
+
+  // Parse: !presente <item> @pessoa
+  const parts = temCaption.split(/\s+/).filter(p => p.trim());
+  const itemNome = parts[1]?.toLowerCase() || '';
+  
+  // Verificar @mention
+  const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  if (mentions.length === 0) {
+    await sock.sendMessage(jid, { text: '⚠️ Você precisa mencionar a pessoa! Use: *!presente <item> @pessoa*\nExemplo: *!presente flores @esposa*' }, { quoted: msg });
+    return;
+  }
+
+  const pessoaJid = mentions[0];
+  const { rel } = found;
+  const parceiroJid = rel.jidA === senderJid ? rel.jidB : rel.jidA;
+  
+  // Validar se a pessoa mencionada é o parceiro
+  if (pessoaJid !== parceiroJid) {
+    await sock.sendMessage(jid, { text: '😂 Ué! Você tá tentando presentear outra pessoa? Que história é essa?!' }, { quoted: msg });
+    return;
+  }
+
+  // Buscar usuário e verificar inventário
+  try {
+    const user = await Usuario.findOne({ idWhatsApp: senderJid });
+    if (!user) {
+      await sock.sendMessage(jid, { text: '⚠️ Perfil não encontrado!' }, { quoted: msg });
+      return;
+    }
+
+    const inventorio = user.inventory || new Map();
+    const quantidadeItem = inventorio.get(itemNome) || 0;
+
+    if (quantidadeItem === 0) {
+      await sock.sendMessage(jid, { 
+        text: `❌ Você não tem *${itemNome}* no inventário!\n\nUse *!inventario* para ver seus itens.` 
+      }, { quoted: msg });
+      return;
+    }
+
+    // Remover item do inventário
+    const novaQuantidade = quantidadeItem - 1;
+    if (novaQuantidade === 0) {
+      inventorio.delete(itemNome);
+    } else {
+      inventorio.set(itemNome, novaQuantidade);
+    }
+
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: senderJid },
+      { inventory: inventorio }
+    );
+
+    // Pegar nome do item na loja para mensagem bonitinha
+    const { ITENS_LOJA } = require('./diversao/economia');
+    const nomeAmigavel = ITENS_LOJA[itemNome]?.nome || itemNome;
+
+    const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
+    const mensagem = `🎁 *${author}* presenteou *${parceiro}* com *${nomeAmigavel}*! 💕\n\n_"É pra você, meu amor!"_ 🥰`;
+
+    await sock.sendMessage(jid, {
+      text: mensagem,
+      mentions: pessoaJid ? [pessoaJid] : [],
+    }, { quoted: msg });
+
+    // Adicionar XP ao casal
+    const key = rel.jidA < rel.jidB ? `${rel.jidA}_${rel.jidB}` : `${rel.jidB}_${rel.jidA}`;
+    const xpAtual = (xpCasais.get(key) || 0) + 5;
+    xpCasais.set(key, xpAtual);
+
+  } catch (e) {
+    console.error('⚠️ Erro ao presentear:', e.message);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar o presente!' }, { quoted: msg });
+  }
 }
 async function handleJantar(sock, msg, jid, author, senderJid, relacionamentos) {
   const restaurantes = ['num restaurante chique 🍷', 'num jantar a luz de vela 🕯️', 'num rodízio japonês 🍣', 'numa churrascaria premium 🥩', 'numa pizzaria italiana 🍕'];

@@ -25,6 +25,22 @@ const perguntasQuiz = [
   { p: '⚽ Qual jogador francês ganhou a Bola de Ouro em 2022?', r: 'karim benzema', d: 'Futebol' },
   { p: '⚽ Qual estádio brasileiro sediou a final da Copa do Mundo de 1950?', r: 'maracana', d: 'Futebol' },
   { p: '⚽ Qual seleção europeia venceu a Copa do Mundo de 2010?', r: 'espanha', d: 'Futebol' },
+  { p: '⚽ Quantas vezes o Brasil ganhou a Copa do Mundo?', r: '5', d: 'Futebol' },
+  { p: '⚽ Qual jogador argentino ganhou a Bola de Ouro em 2021?', r: 'lionel messi', d: 'Futebol' },
+  { p: '⚽ Em que ano Cristiano Ronaldo ganhou sua primeira Bola de Ouro?', r: '2008', d: 'Futebol' },
+  { p: '⚽ Qual seleção venceu a Copa do Mundo de 2014?', r: 'alemanha', d: 'Futebol' },
+  { p: '⚽ Qual clube venceu a Champions League em 2021?', r: 'chelsea', d: 'Futebol' },
+  { p: '⚽ Quem ganhou a Bola de Ouro em 2023?', r: 'lionel messi', d: 'Futebol' },
+  { p: '⚽ Qual jogador brasileiro é o maior artilheiro da seleção?', r: 'pele', d: 'Futebol' },
+  { p: '⚽ Em quantos anos o Real Madrid venceu a Champions League?', r: '14', d: 'Futebol' },
+  { p: '⚽ Qual seleção venceu a Eurocopa de 2020?', r: 'italia', d: 'Futebol' },
+  { p: '⚽ Qual time brasileiro tem mais Libertadores?', r: 'flamengo', d: 'Futebol' },
+  { p: '⚽ Quantos gols Pelé fez na carreira?', r: '1000', d: 'Futebol' },
+  { p: '⚽ Em que ano foi a primeira Champions League?', r: '1955', d: 'Futebol' },
+  { p: '⚽ Qual seleção venceu a Copa América de 2021?', r: 'argentina', d: 'Futebol' },
+  { p: '⚽ Quantas Copas do Mundo o Brasil participou?', r: '22', d: 'Futebol' },
+  { p: '⚽ Qual jogador tem o recorde de assistências em Copas?', r: 'diego maradona', d: 'Futebol' },
+  { p: '⚽ Em que ano Ronaldo Fenômeno ganhou sua primeira Bola de Ouro?', r: '1997', d: 'Futebol' },
 
   // HISTÓRIA
   { p: '📜 Em que ano começou a Revolução Francesa?', r: '1789', d: 'História' },
@@ -159,9 +175,14 @@ async function saveQuizPointsToDB(userId, pontos) {
 
 async function changeGold(userId, amount) {
   try {
+    const update = { $inc: { gold: amount } };
+    // Incrementa progresso da missão de ganhar 500 gold apenas se for ganho positivo
+    if (amount > 0) {
+      update['$inc']['dailyMissions.progress.gold500'] = amount;
+    }
     const user = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      { $inc: { gold: amount } },
+      update,
       { upsert: true, returnDocument: 'after' }
     );
     console.log(`✅ Gold alterado: ${userId} → ${amount} (novo saldo: ${user?.gold})`);
@@ -194,6 +215,15 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       await saveQuizPointsToDB(senderJid, pts);
       const goldReward = 15;
       await changeGold(senderJid, goldReward);
+      // Incrementar progresso da missão quiz5
+      try {
+        await Usuario.findOneAndUpdate(
+          { idWhatsApp: senderJid },
+          { $inc: { 'dailyMissions.progress.quiz5': 1 } }
+        );
+      } catch (e) {
+        console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message);
+      }
       await sock.sendMessage(jid, {
         text: `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n💰 *+10 pontos!* Total: *${pts} pts* ☁️\n💵 *+${goldReward} gold!*`,
       }, { quoted: msg });
@@ -232,6 +262,8 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     perguntasFiltradas = perguntasQuiz.filter(q =>
       ['Matemática', 'Geometria', 'Cálculo', 'Estatística'].includes(q.d)
     );
+  } else if (cmd === '!quizhis') {
+    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'História');
   }
 
   if (perguntasFiltradas.length === 0) {
@@ -492,12 +524,17 @@ async function handleResgatar(sock, msg, jid) {
   const futureAmount = Math.round(user.bank.amount * (1 + (user.bank.interest / 100)));
   const ganho = futureAmount - user.bank.amount;
 
+  const updateResgate = {
+    $inc: { gold: futureAmount },
+    $set: { 'bank.amount': 0, 'bank.interest': 0, 'bank.daysRemaining': 0, 'bank.startDate': null }
+  };
+  // Atualizar progresso da missão ao resgatar banco
+  if (ganho > 0) {
+    updateResgate['$inc']['dailyMissions.progress.gold500'] = ganho;
+  }
   const finalUser = await Usuario.findOneAndUpdate(
     { idWhatsApp: userId },
-    {
-      $inc: { gold: futureAmount },
-      $set: { 'bank.amount': 0, 'bank.interest': 0, 'bank.daysRemaining': 0, 'bank.startDate': null }
-    },
+    updateResgate,
     { new: true }
   );
 

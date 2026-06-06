@@ -85,9 +85,32 @@ const ITENS_LOJA = {
   cachorro: { nome: 'Cachorro', preco: 100, categoria: 'pet' },
   gato: { nome: 'Gato', preco: 100, categoria: 'pet' },
   coelho: { nome: 'Coelho', preco: 80, categoria: 'pet' },
+  
+  // CASAL - PRESENTES E ITENS ROMÂNTICOS
   flores: { nome: 'Flores', preco: 60, categoria: 'casal' },
   carta: { nome: 'Carta de Amor', preco: 80, categoria: 'casal' },
   anel: { nome: 'Anel', preco: 500, categoria: 'casal' },
+  chocolate: { nome: 'Caixa de Chocolate', preco: 75, categoria: 'casal' },
+  morango: { nome: 'Morango com Chocolate', preco: 55, categoria: 'casal' },
+  vela: { nome: 'Vela Aromática', preco: 90, categoria: 'casal' },
+  perfume: { nome: 'Perfume Premium', preco: 150, categoria: 'casal' },
+  colar: { nome: 'Colar Casal', preco: 200, categoria: 'casal' },
+  pulseira: { nome: 'Pulseira Casal', preco: 120, categoria: 'casal' },
+  camisetacasal: { nome: 'Camiseta Casal', preco: 110, categoria: 'casal' },
+  gorro: { nome: 'Gorro Casal', preco: 85, categoria: 'casal' },
+  chinelo: { nome: 'Chinelo de Casal', preco: 95, categoria: 'casal' },
+  urso: { nome: 'Ursinho de Pelúcia', preco: 130, categoria: 'casal' },
+  caixa: { nome: 'Caixa Presente Luxo', preco: 50, categoria: 'casal' },
+  coração: { nome: 'Coração Decorativo', preco: 140, categoria: 'casal' },
+  foto: { nome: 'Moldura Foto Casal', preco: 110, categoria: 'casal' },
+  chá: { nome: 'Chá Especial Casal', preco: 70, categoria: 'casal' },
+  taça: { nome: 'Taça para Vinho', preco: 160, categoria: 'casal' },
+  garrafa: { nome: 'Garrafa Vinho Tinto', preco: 250, categoria: 'casal' },
+  espelho: { nome: 'Espelho com LED', preco: 180, categoria: 'casal' },
+  almofada: { nome: 'Almofada Casal', preco: 100, categoria: 'casal' },
+  cortina: { nome: 'Cortina Elegante', preco: 220, categoria: 'casal' },
+  luminaria: { nome: 'Luminária Romântica', preco: 140, categoria: 'casal' },
+  
   camiseta: { nome: 'Camiseta', preco: 50, categoria: 'estilo' },
   calcas: { nome: 'Calças', preco: 60, categoria: 'estilo' },
   sapato: { nome: 'Sapato', preco: 70, categoria: 'estilo' },
@@ -160,9 +183,14 @@ async function getSaldoAtual(userId) {
 
 async function changeGold(userId, quantidade) {
   try {
+    const update = { $inc: { gold: quantidade } };
+    // Incrementa progresso da missão de ganhar 500 gold apenas se for ganho positivo
+    if (quantidade > 0) {
+      update['$inc']['dailyMissions.progress.gold500'] = quantidade;
+    }
     const user = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      { $inc: { gold: quantidade } },
+      update,
       { upsert: true, new: true }
     );
     return user?.gold || 0;
@@ -347,6 +375,55 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
 ━━━━━━━━━━━━━━━━
 *COMO COMPRAR?*
   ${P}comprar <nome_item>`;
+
+  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+}
+
+// ─── !lojacasal
+async function handleLojaCasal(sock, msg, jid, getPrefix) {
+  const P = getPrefix(jid);
+  const texto = `💕 *LOJA DE CASAL* 💕
+
+🎁 *PRESENTES ROMÂNTICOS*
+  🌹 Flores — 60 gold
+  💌 Carta de Amor — 80 gold
+  🍫 Caixa de Chocolate — 75 gold
+  🍓 Morango com Chocolate — 55 gold
+  🧸 Ursinho de Pelúcia — 130 gold
+
+💎 *JOIAS E ACESSÓRIOS*
+  💍 Anel — 500 gold
+  📿 Colar Casal — 200 gold
+  💪 Pulseira Casal — 120 gold
+
+🎽 *VESTUÁRIO*
+  👕 Camiseta Casal — 110 gold
+  🧢 Gorro Casal — 85 gold
+  🩴 Chinelo de Casal — 95 gold
+
+🏠 *DECORAÇÃO*
+  💡 Luminária Romântica — 140 gold
+  🕯️ Vela Aromática — 90 gold
+  🪞 Espelho com LED — 180 gold
+  ❤️ Coração Decorativo — 140 gold
+  🖼️ Moldura Foto Casal — 110 gold
+  🛏️ Almofada Casal — 100 gold
+  🪟 Cortina Elegante — 220 gold
+
+🍷 *BEBIDAS E GOURMET*
+  ☕ Chá Especial Casal — 70 gold
+  🍷 Taça para Vinho — 160 gold
+  🍾 Garrafa Vinho Tinto — 250 gold
+  💐 Caixa Presente Luxo — 50 gold
+
+🌹 *FRAGRÂNCIA*
+  🌸 Perfume Premium — 150 gold
+
+━━━━━━━━━━━━━━━━
+*COMO COMPRAR?*
+  ${P}comprar <nome_item>
+
+💑 _Mostre seu amor com presentes incríveis!_`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -668,9 +745,13 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const lucro = ganho - aposta;
 
   // Atualizar saldo no banco
+  const updateSlots = { $inc: { gold: lucro } };
+  if (lucro > 0) {
+    updateSlots['$inc']['dailyMissions.progress.gold500'] = lucro;
+  }
   await Usuario.findOneAndUpdate(
     { idWhatsApp: senderJid },
-    { $inc: { gold: lucro } }
+    updateSlots
   );
 
   // Aguardar um pouco e mostrar resultado final na mesma mensagem
@@ -723,9 +804,13 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   const ganhou = (escolha - 1) === vencedorIdx;
   const lucro = ganhou ? aposta * 3 : -aposta;
 
+  const updateCorrida = { $inc: { gold: lucro } };
+  if (lucro > 0) {
+    updateCorrida['$inc']['dailyMissions.progress.gold500'] = lucro;
+  }
   await Usuario.findOneAndUpdate(
     { idWhatsApp: senderJid },
-    { $inc: { gold: lucro } }
+    updateCorrida
   );
 
   let pista = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
@@ -757,6 +842,7 @@ module.exports = {
   handleLojaFood,
   handleLojaPet,
   handleLojaTec,
+  handleLojaCasal,
   handleComprar,
   handleVender,
   handleInventario,

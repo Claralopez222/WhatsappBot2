@@ -677,7 +677,7 @@ async function handleApostar(sock, msg, jid, caption) {
     return;
   }
 
-  const aposta = parseInt(match[1]);
+  const aposta = parseInt(match[1], 10);
 
   if (isNaN(aposta) || aposta <= 0) {
     await sock.sendMessage(jid, { text: '⚠️ *QUANTIA INVÁLIDA*\n\nA aposta deve ser um número positivo!' }, { quoted: msg });
@@ -699,11 +699,12 @@ async function handleApostar(sock, msg, jid, caption) {
     return;
   }
 
-  const ganhou = Math.random() > 0.5;
+  const ganhou = Math.random() < 0.5; // 50% de chance
 
   if (ganhou) {
-    const premio     = Math.floor(aposta * 1.5); // recebe 1.5x de volta
-    const lucroLiq   = premio - aposta;           // lucro líquido = 0.5x
+    // ✅ CORRIGIDO: retorna 2x a aposta (lucro líquido = aposta inteira)
+    const premio   = aposta * 2;   // recebe 2x de volta
+    const lucroLiq = aposta;       // lucro líquido = 1x (a aposta já foi debitada)
 
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
@@ -718,6 +719,8 @@ async function handleApostar(sock, msg, jid, caption) {
       }
     );
 
+    // ✅ CORRIGIDO: userDebited.gold já está com o valor pós-débito
+    // então saldo final = (saldo após débito) + prêmio
     const saldoFinal = userDebited.gold + premio;
 
     await sock.sendMessage(jid, {
@@ -730,6 +733,7 @@ async function handleApostar(sock, msg, jid, caption) {
         `  💰 Ganho líquido: *+${lucroLiq}* gold\n\n` +
         `💎 *Saldo:* ${saldoFinal} gold`
     }, { quoted: msg });
+
   } else {
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
@@ -743,6 +747,7 @@ async function handleApostar(sock, msg, jid, caption) {
       }
     );
 
+    // ✅ CORRIGIDO: saldo já foi debitado em userDebited.gold
     const saldoFinal = userDebited.gold;
 
     await sock.sendMessage(jid, {
@@ -756,7 +761,6 @@ async function handleApostar(sock, msg, jid, caption) {
     }, { quoted: msg });
   }
 }
-
 // ─── !extrato ────────────────────────────────────────────────────────────────
 
 async function handleExtrato(sock, msg, jid) {

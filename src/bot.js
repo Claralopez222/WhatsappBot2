@@ -2,33 +2,38 @@
  * WhatsApp Sticker Bot — Piroquinhas
  * bot.js principal — roteador completo
  */
-const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
 
+// ─── Core Node.js (SEMPRE PRIMEIRO) ──────────────────────────
+const path     = require('path');
+const fs       = require('fs');
+
+// ─── Dependências externas ────────────────────────────────────
 const {
-  default: makeWASocket, 
+  default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
 
-const { Boom } = require('@hapi/boom');
-const pino    = require('pino');
-const QRCode  = require('qrcode');
-const path    = require('path');
-const fs      = require('fs');
-const mongoose = require('mongoose');
-const Usuario  = require(path.join(__dirname, 'models', 'Usuario'));
-const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
+const { Boom }  = require('@hapi/boom');
+const pino      = require('pino');
+const QRCode    = require('qrcode');
+const mongoose  = require('mongoose');
 
-// ─── Importar Handlers ────────────────────────────────────────
+// ─── Models ───────────────────────────────────────────────────
+const Usuario       = require(path.join(__dirname, 'models', 'Usuario'));
+const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
+
+// ─── Handlers ─────────────────────────────────────────────────
+const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
 const figurinhaHandler      = require(path.join(__dirname, 'handlers', 'figurinha'));
 const diversaoHandler       = require(path.join(__dirname, 'handlers', 'diversao'));
 const relacionamentoHandler = require(path.join(__dirname, 'handlers', 'relacionamento'));
 const grupoHandler          = require(path.join(__dirname, 'handlers', 'grupo'));
 const imagemHandler         = require(path.join(__dirname, 'handlers', 'imagem'));
 const textoHandler          = require(path.join(__dirname, 'handlers', 'texto'));
-let utilidadeHandler        = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js'));
+const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js')); // era let, sem motivo
 const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversario'));
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
@@ -37,15 +42,15 @@ const downloadsHandler      = require(path.join(__dirname, 'handlers', 'download
 const _log = console.log.bind(console);
 const _err = console.error.bind(console);
 const NOISE = [
-  'Closing open session','Closing session:','SessionEntry','_chains',
-  'registrationId','currentRatchet','indexInfo','ephemeralKeyPair',
-  'lastRemoteEphemeralKey','previousCounter','rootKey','baseKey',
-  'remoteIdentityKey','Bad MAC','MessageCounterError','Failed to decrypt',
-  'chainKey','chainType','messageKeys','pubKey','privKey',
+  'Closing open session', 'Closing session:', 'SessionEntry', '_chains',
+  'registrationId', 'currentRatchet', 'indexInfo', 'ephemeralKeyPair',
+  'lastRemoteEphemeralKey', 'previousCounter', 'rootKey', 'baseKey',
+  'remoteIdentityKey', 'Bad MAC', 'MessageCounterError', 'Failed to decrypt',
+  'chainKey', 'chainType', 'messageKeys', 'pubKey', 'privKey',
 ];
-const isNoise = a => {
+const isNoise = (...args) => {
   try {
-    for (const x of a) {
+    for (const x of args) {
       if (x && typeof x === 'object') {
         const keys = Object.keys(x);
         if (keys.some(k => NOISE.includes(k))) return true;
@@ -53,12 +58,14 @@ const isNoise = a => {
         if (name === 'SessionEntry' || NOISE.some(p => name.includes(p))) return true;
       }
     }
-    const s = a.map(x => { try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch { return ''; } }).join(' ');
+    const s = args
+      .map(x => { try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch { return ''; } })
+      .join(' ');
     return NOISE.some(p => s.includes(p));
   } catch { return false; }
 };
-console.log   = (...a) => { if (!isNoise(a)) _log(...a); };
-console.error = (...a) => { if (!isNoise(a)) _err(...a); };
+console.log   = (...a) => { if (!isNoise(...a)) _log(...a); };
+console.error = (...a) => { if (!isNoise(...a)) _err(...a); };
 
 // ─── Diretórios ───────────────────────────────────────────────
 const SESSION_DIR = path.resolve(__dirname, '../session');
@@ -71,7 +78,14 @@ function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   } catch (e) { console.log('⚠️ Erro ao carregar data.json:', e.message); }
-  return { msgCount: {}, stickerCount: {}, cmdCount: {}, pinnedMessages: {}, groupConfig: {}, warnings: {} };
+  return {
+    msgCount:       {},
+    stickerCount:   {},
+    cmdCount:       {},
+    pinnedMessages: {},
+    groupConfig:    {},
+    warnings:       {},
+  };
 }
 
 const _savedData   = loadData();
@@ -110,11 +124,11 @@ function saveData() {
         autoSticker: [...autoStickerGroups],
         prefixos:    Object.fromEntries([...prefixMap.entries()]),
       },
-      relacionamentos: Object.fromEntries([...relacionamentos.entries()]),
-      relacionamentoXp: Object.fromEntries([...relacionamentoHandler.xpCasais.entries()]),
-      relacionamentoBloqueados: Object.fromEntries([...relacionamentoHandler.bloqueados.entries()]),
-      relacionamentoDiarios: Object.fromEntries([...relacionamentoHandler.diariosUsados.entries()]),
-      relacionamentoXpBonus: Object.fromEntries([...relacionamentoHandler.xpBonus.entries()]),
+      relacionamentos:              Object.fromEntries([...relacionamentos.entries()]),
+      relacionamentoXp:             Object.fromEntries([...relacionamentoHandler.xpCasais.entries()]),
+      relacionamentoBloqueados:     Object.fromEntries([...relacionamentoHandler.bloqueados.entries()]),
+      relacionamentoDiarios:        Object.fromEntries([...relacionamentoHandler.diariosUsados.entries()]),
+      relacionamentoXpBonus:        Object.fromEntries([...relacionamentoHandler.xpBonus.entries()]),
     };
 
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');

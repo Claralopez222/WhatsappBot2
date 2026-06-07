@@ -413,7 +413,12 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  const userGold = userData?.gold ?? 0;
+let userGold = 0;
+try {
+  const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+  const carteira = await CarteiraGrupo.findOne({ idWhatsApp: resolvedJid, idGrupo: jid });
+  userGold = carteira?.gold ?? 0;
+} catch {}
 
   // ── Level / XP ────────────────────────────────────────────────────────────
   const msgsRec = msgCount?.get?.(alvoJid)?.count ?? 0;

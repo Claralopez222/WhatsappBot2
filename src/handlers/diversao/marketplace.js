@@ -2,18 +2,20 @@
  * Handler de Marketplace — Bot
  * Sistema de compra/venda entre usuários
  *
- * v3.0 — Melhorias:
- *  - Transação atômica real com session do MongoDB (evita race condition)
+ * v3.1 — Correções e melhorias:
+ *  - CORRIGIDO: dependência de './handlePescar' removida (arquivo inexistente)
+ *  - Catálogo agora usa sistema de registro dinâmico (registerCatalog)
+ *  - Transação atômica com session do MongoDB (evita race condition)
  *  - Taxa de mercado configurável (ex: 5% vai para o "banco")
  *  - Limite de ofertas por usuário configurável
  *  - Preço mínimo e máximo configuráveis
  *  - Pagination no !avenda (evita mensagens gigantes)
  *  - !buscaroferta <item> para filtrar marketplace
  *  - Histórico de transações (coleção MarketLog)
- *  - Sanitização de inputs mais robusta
- *  - Mensagens de erro mais amigáveis
+ *  - Sanitização de inputs robusta
  *  - Notificação direta ao vendedor via DM (não polui o grupo)
  *  - Timeout de oferta (expira em X dias)
+ *  - Melhor tratamento de sessão Mongo (finally garantido)
  */
 
 'use strict';
@@ -23,18 +25,50 @@ const mongoose = require('mongoose');
 const Usuario  = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 
 // ─── CATÁLOGO ─────────────────────────────────────────────────────────────────
+// Importações opcionais: se o módulo não existir, usa objeto vazio com aviso.
 
-const { ITENS_LOJA }                   = require('./economia');
-const { ITENS_ROUBO, ITENS_SEGURANCA } = require('./roubo');
-const { VARAS_PESCA, ISCAS }           = require('./handlePescar'); // itens de pesca também!
+function tryRequire(modPath, label) {
+  try {
+    return require(modPath);
+  } catch (e) {
+    if (e.code === 'MODULE_NOT_FOUND') {
+      console.warn(`[Market] Módulo opcional não encontrado: ${label} (${modPath}). Ignorando.`);
+      return {};
+    }
+    throw e; // relança erros inesperados (ex: sintaxe)
+  }
+}
 
-const CATALOGO_COMPLETO = {
+const { ITENS_LOJA }                   = tryRequire('./economia',    'economia');
+const { ITENS_ROUBO, ITENS_SEGURANCA } = tryRequire('./roubo',       'roubo');
+
+// Itens de pesca: carregados dinamicamente se o módulo existir.
+// Para adicionar suporte completo, crie handlePescar.js e exporte VARAS_PESCA e ISCAS.
+const { VARAS_PESCA, ISCAS }           = tryRequire('./handlePescar', 'handlePescar');
+
+/**
+ * Catálogo base compilado na inicialização.
+ * Use registerCatalog() para adicionar itens de outros módulos em runtime.
+ */
+let CATALOGO_COMPLETO = {
   ...(ITENS_LOJA       || {}),
   ...(ITENS_ROUBO      || {}),
   ...(ITENS_SEGURANCA  || {}),
   ...(VARAS_PESCA      || {}),
   ...(ISCAS            || {}),
 };
+
+/**
+ * Permite que outros módulos registrem itens no catálogo do marketplace
+ * sem precisar modificar este arquivo.
+ *
+ * @example
+ *   const { registerCatalog } = require('./marketplace');
+ *   registerCatalog({ cana_de_bambu: { nome: 'Cana de Bambu' } });
+ */
+function registerCatalog(itens = {}) {
+  CATALOGO_COMPLETO = { ...CATALOGO_COMPLETO, ...itens };
+}
 
 function getNomeItem(itemKey) {
   return CATALOGO_COMPLETO[itemKey]?.nome ?? itemKey;
@@ -43,14 +77,14 @@ function getNomeItem(itemKey) {
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
 
 const CONFIG = {
-  TAXA_MERCADO_PCT:    5,      // % deduzido do vendedor em cada venda
-  MAX_OFERTAS_USER:    10,     // máximo de ofertas ativas por usuário
-  PRECO_MINIMO:        1,      // gold mínimo por unidade
-  PRECO_MAXIMO:        999999, // gold máximo por unidade
-  QTD_MINIMA:          1,
-  QTD_MAXIMA:          999,
-  OFERTA_EXPIRA_DIAS:  7,      // ofertas expiram em 7 dias (0 = sem expiração)
-  ITENS_POR_PAGINA:    10,     // !avenda com paginação
+  TAXA_MERCADO_PCT:   5,       // % deduzido do vendedor em cada venda
+  MAX_OFERTAS_USER:   10,      // máximo de ofertas ativas por usuário
+  PRECO_MINIMO:       1,       // gold mínimo por unidade
+  PRECO_MAXIMO:       999_999, // gold máximo por unidade
+  QTD_MINIMA:         1,
+  QTD_MAXIMA:         999,
+  OFERTA_EXPIRA_DIAS: 7,       // 0 = sem expiração
+  ITENS_POR_PAGINA:   10,
 };
 
 // ─── SCHEMAS ──────────────────────────────────────────────────────────────────
@@ -62,20 +96,19 @@ const ofertaSchema = new mongoose.Schema({
   itemNome:   { type: String, required: true },
   preco:      { type: Number, required: true, min: CONFIG.PRECO_MINIMO },
   quantidade: { type: Number, required: true, min: 1 },
-  expiresAt:  {
+  expiresAt: {
     type:    Date,
     default: CONFIG.OFERTA_EXPIRA_DIAS > 0
-      ? () => new Date(Date.now() + CONFIG.OFERTA_EXPIRA_DIAS * 86400000)
+      ? () => new Date(Date.now() + CONFIG.OFERTA_EXPIRA_DIAS * 86_400_000)
       : null,
-    index:   CONFIG.OFERTA_EXPIRA_DIAS > 0,
   },
   createdAt: { type: Date, default: Date.now },
 });
 
 ofertaSchema.index({ sellerId: 1, itemKey: 1 }, { unique: true });
 
-// TTL automático: o MongoDB remove sozinho após expiresAt (se habilitado)
 if (CONFIG.OFERTA_EXPIRA_DIAS > 0) {
+  // TTL automático: MongoDB remove ofertas expiradas sozinho
   ofertaSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 }
 
@@ -110,9 +143,6 @@ function toJid(numero) {
   return limpo.includes('@') ? limpo : `${limpo}@s.whatsapp.net`;
 }
 
-/**
- * Resposta padrão — sempre com quoted para facilitar leitura em grupos.
- */
 async function reply(sock, jid, msg, texto) {
   return sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -127,10 +157,6 @@ async function getSaldo(userId) {
   }
 }
 
-/**
- * Altera o gold de um usuário.
- * @returns {number} novo saldo
- */
 async function changeGold(userId, delta, session = null) {
   try {
     const opts = session ? { session, new: true } : { new: true };
@@ -142,7 +168,7 @@ async function changeGold(userId, delta, session = null) {
     return user?.gold ?? 0;
   } catch (e) {
     console.error('[Market] changeGold:', e.message);
-    throw e; // propaga para o caller poder fazer rollback
+    throw e;
   }
 }
 
@@ -151,10 +177,10 @@ async function getQuantidadeInventario(userId, itemKey) {
     const user = await Usuario.findOne({ idWhatsApp: userId }).lean();
     if (!user) return 0;
     return (
-      (user.inventory?.[itemKey]    ?? 0) +
-      (user.itensRoubo?.[itemKey]   ?? 0) +
-      (user.itensSec?.[itemKey]     ?? 0) +
-      (user.itensPesca?.[itemKey]   ?? 0)   // suporte ao novo sistema de pesca
+      (user.inventory?.[itemKey]  ?? 0) +
+      (user.itensRoubo?.[itemKey] ?? 0) +
+      (user.itensSec?.[itemKey]   ?? 0) +
+      (user.itensPesca?.[itemKey] ?? 0)
     );
   } catch (e) {
     console.error('[Market] getQuantidadeInventario:', e.message);
@@ -163,16 +189,20 @@ async function getQuantidadeInventario(userId, itemKey) {
 }
 
 /**
- * Remove itens do inventário (tenta todos os campos em ordem de prioridade).
- * Retorna true se conseguiu remover a quantidade total.
+ * Remove itens do inventário distribuídos entre múltiplos campos.
+ * Retorna true se conseguiu remover a quantidade total solicitada.
  */
 async function removerInventario(userId, itemKey, quantidade, session = null) {
   try {
-    const user = await Usuario.findOne({ idWhatsApp: userId });
+    const user = await Usuario.findOne(
+      { idWhatsApp: userId },
+      session ? { session } : {}
+    );
     if (!user) return false;
 
-    const campos = ['inventory', 'itensRoubo', 'itensSec', 'itensPesca'];
-    let restante = quantidade;
+    const campos   = ['inventory', 'itensRoubo', 'itensSec', 'itensPesca'];
+    let restante   = quantidade;
+    const updates  = [];
 
     for (const campo of campos) {
       if (restante <= 0) break;
@@ -180,15 +210,17 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
       if (disponivel <= 0) continue;
 
       const descontar = Math.min(disponivel, restante);
-      const opts = session ? { session } : {};
-      await Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
-        { $inc: { [`${campo}.${itemKey}`]: -descontar } },
-        opts
+      updates.push(
+        Usuario.findOneAndUpdate(
+          { idWhatsApp: userId },
+          { $inc: { [`${campo}.${itemKey}`]: -descontar } },
+          session ? { session } : {}
+        )
       );
       restante -= descontar;
     }
 
+    await Promise.all(updates);
     return restante === 0;
   } catch (e) {
     console.error('[Market] removerInventario:', e.message);
@@ -198,7 +230,7 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
 
 async function adicionarInventario(userId, itemKey, quantidade, session = null) {
   try {
-    const opts = session ? { session, upsert: true } : { upsert: true };
+    const opts = { upsert: true, ...(session ? { session } : {}) };
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       { $inc: { [`inventory.${itemKey}`]: quantidade } },
@@ -211,22 +243,43 @@ async function adicionarInventario(userId, itemKey, quantidade, session = null) 
   }
 }
 
+// ─── HELPER: executar com session Mongo ───────────────────────────────────────
+
+/**
+ * Executa um callback dentro de uma session/transaction Mongo.
+ * Garante abort + endSession mesmo em caso de erro.
+ */
+async function withTransaction(callback) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const result = await callback(session);
+    await session.commitTransaction();
+    return result;
+  } catch (e) {
+    await session.abortTransaction();
+    throw e;
+  } finally {
+    session.endSession();
+  }
+}
+
 // ─── !avenda ──────────────────────────────────────────────────────────────────
 
 async function handleAvenda(sock, msg, jid, caption = '') {
   try {
-    // Paginação: !avenda 2
     const pageArg = parseInt(caption.match(/avenda\s+(\d+)/i)?.[1] ?? '1');
     const page    = Math.max(1, pageArg);
     const skip    = (page - 1) * CONFIG.ITENS_POR_PAGINA;
 
-    const total   = await Oferta.countDocuments({ quantidade: { $gt: 0 } });
-    const ofertas = await Oferta
-      .find({ quantidade: { $gt: 0 } })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(CONFIG.ITENS_POR_PAGINA)
-      .lean();
+    const [total, ofertas] = await Promise.all([
+      Oferta.countDocuments({ quantidade: { $gt: 0 } }),
+      Oferta.find({ quantidade: { $gt: 0 } })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(CONFIG.ITENS_POR_PAGINA)
+        .lean(),
+    ]);
 
     if (total === 0) {
       return reply(sock, jid, msg,
@@ -235,21 +288,19 @@ async function handleAvenda(sock, msg, jid, caption = '') {
       );
     }
 
-    const totalPags = Math.ceil(total / CONFIG.ITENS_POR_PAGINA);
-    let texto = `🛒 *MARKETPLACE* — Página ${page}/${totalPags}\n`;
-    texto += `📊 _${total} oferta(s) ativa(s)_\n`;
-    texto += `━━━━━━━━━━━━━━━━\n`;
-
-    // Agrupar por vendedor para exibição mais limpa
+    const totalPags  = Math.ceil(total / CONFIG.ITENS_POR_PAGINA);
     const porVendedor = {};
     for (const o of ofertas) {
-      if (!porVendedor[o.sellerId]) porVendedor[o.sellerId] = [];
-      porVendedor[o.sellerId].push(o);
+      (porVendedor[o.sellerId] ??= []).push(o);
     }
+
+    let texto = `🛒 *MARKETPLACE* — Página ${page}/${totalPags}\n`;
+    texto    += `📊 _${total} oferta(s) ativa(s)_\n`;
+    texto    += `━━━━━━━━━━━━━━━━\n`;
 
     for (const [sellerId, lista] of Object.entries(porVendedor)) {
       const num = formatarNumero(sellerId);
-      texto += `\n👤 *${lista[0].sellerName}* (${num})\n`;
+      texto    += `\n👤 *${lista[0].sellerName}* (${num})\n`;
       for (const o of lista) {
         const totalVal = o.preco * o.quantidade;
         const expira   = o.expiresAt
@@ -263,7 +314,7 @@ async function handleAvenda(sock, msg, jid, caption = '') {
     }
 
     texto += `\n━━━━━━━━━━━━━━━━\n`;
-    if (totalPags > 1) texto += `📄 Próxima página: *!avenda ${page + 1}*\n`;
+    if (page < totalPags) texto += `📄 Próxima página: *!avenda ${page + 1}*\n`;
     texto += `🔍 Buscar item: *!buscaroferta <item>*\n`;
     texto += `❌ Cancelar oferta: *!cancelaroferta <item>*`;
 
@@ -279,7 +330,9 @@ async function handleAvenda(sock, msg, jid, caption = '') {
 async function handleBuscarOferta(sock, msg, jid, caption) {
   const match = caption.match(/buscaroferta\s+(\S+)/i);
   if (!match) {
-    return reply(sock, jid, msg, '⚠️ Use: *!buscaroferta <item>*\nExemplo: *!buscaroferta dinamite*');
+    return reply(sock, jid, msg,
+      '⚠️ Use: *!buscaroferta <item>*\nExemplo: *!buscaroferta dinamite*'
+    );
   }
 
   const itemKey = match[1].toLowerCase().trim();
@@ -287,7 +340,7 @@ async function handleBuscarOferta(sock, msg, jid, caption) {
   try {
     const ofertas = await Oferta
       .find({ itemKey, quantidade: { $gt: 0 } })
-      .sort({ preco: 1 }) // ordena pelo mais barato primeiro
+      .sort({ preco: 1 })
       .lean();
 
     if (ofertas.length === 0) {
@@ -299,8 +352,8 @@ async function handleBuscarOferta(sock, msg, jid, caption) {
 
     const itemNome = getNomeItem(itemKey);
     let texto = `🔍 *OFERTAS: ${itemNome}*\n`;
-    texto += `📊 _${ofertas.length} oferta(s) encontrada(s)_\n`;
-    texto += `━━━━━━━━━━━━━━━━\n\n`;
+    texto    += `📊 _${ofertas.length} oferta(s) encontrada(s)_\n`;
+    texto    += `━━━━━━━━━━━━━━━━\n\n`;
 
     for (const o of ofertas) {
       const num = formatarNumero(o.sellerId);
@@ -338,8 +391,6 @@ async function handleOfertar(sock, msg, jid, caption) {
   const preco      = parseInt(match[2]);
   const quantidade = parseInt(match[3]);
 
-  // ── Validações ────────────────────────────────────────────────────────────
-
   if (!CATALOGO_COMPLETO[itemKey]) {
     const exemplos = Object.keys(CATALOGO_COMPLETO).slice(0, 6).join(', ');
     return reply(sock, jid, msg,
@@ -359,8 +410,6 @@ async function handleOfertar(sock, msg, jid, caption) {
     );
   }
 
-  // ── Limite de ofertas ativas ───────────────────────────────────────────────
-
   const qtdOfertas = await Oferta.countDocuments({ sellerId: userId });
   if (qtdOfertas >= CONFIG.MAX_OFERTAS_USER) {
     return reply(sock, jid, msg,
@@ -368,8 +417,6 @@ async function handleOfertar(sock, msg, jid, caption) {
       `Cancele uma com *!cancelaroferta <item>* antes de criar outra.`
     );
   }
-
-  // ── Verificar inventário ───────────────────────────────────────────────────
 
   const disponivel = await getQuantidadeInventario(userId, itemKey);
   if (disponivel < quantidade) {
@@ -380,8 +427,6 @@ async function handleOfertar(sock, msg, jid, caption) {
       `💡 Compre mais na loja com *!loja*`
     );
   }
-
-  // ── Remover do inventário ──────────────────────────────────────────────────
 
   const removido = await removerInventario(userId, itemKey, quantidade);
   if (!removido) {
@@ -395,9 +440,9 @@ async function handleOfertar(sock, msg, jid, caption) {
     const oferta = await Oferta.findOneAndUpdate(
       { sellerId: userId, itemKey },
       {
-        $set:        { sellerName, itemNome, preco },
-        $inc:        { quantidade },
-        $setOnInsert:{ createdAt: new Date() },
+        $set:         { sellerName, itemNome, preco },
+        $inc:         { quantidade },
+        $setOnInsert: { createdAt: new Date() },
       },
       { upsert: true, new: true }
     );
@@ -417,7 +462,7 @@ async function handleOfertar(sock, msg, jid, caption) {
       `❌ Cancelar: *!cancelaroferta ${itemKey}*`
     );
   } catch (e) {
-    // Rollback: devolve o item ao inventário
+    // Rollback: devolve os itens ao inventário
     await adicionarInventario(userId, itemKey, quantidade);
     console.error('[Market] handleOfertar:', e.message);
     return reply(sock, jid, msg, '⚠️ Erro ao criar oferta. Seus itens foram devolvidos.');
@@ -451,74 +496,76 @@ async function handleBuy(sock, msg, jid, caption) {
     return reply(sock, jid, msg, '⚠️ Quantidade deve ser pelo menos 1.');
   }
 
-  // ── Transação com session (atomicidade real) ───────────────────────────────
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
-    const oferta = await Oferta.findOne({ sellerId: vendedorId, itemKey }).session(session);
+    const { mensagem, novoSaldoComprador, oferta, totalBruto, taxa, totalLiquido } =
+      await withTransaction(async (session) => {
+        const oferta = await Oferta.findOne({ sellerId: vendedorId, itemKey }).session(session);
 
-    if (!oferta || oferta.quantidade <= 0) {
-      await session.abortTransaction();
-      return reply(sock, jid, msg,
-        `❌ Oferta não encontrada!\n\nVer ofertas disponíveis: *!avenda*`
-      );
-    }
+        if (!oferta || oferta.quantidade <= 0) {
+          const err    = new Error('OFERTA_NAO_ENCONTRADA');
+          err.userMsg  = `❌ Oferta não encontrada!\n\nVer ofertas disponíveis: *!avenda*`;
+          throw err;
+        }
 
-    if (quantidade > oferta.quantidade) {
-      await session.abortTransaction();
-      return reply(sock, jid, msg,
-        `⚠️ *Quantidade indisponível!*\n\n` +
-        `📦 Disponível: *${oferta.quantidade}x ${oferta.itemNome}*\n` +
-        `📊 Você pediu: *${quantidade}*`
-      );
-    }
+        if (quantidade > oferta.quantidade) {
+          const err    = new Error('QUANTIDADE_INSUFICIENTE');
+          err.userMsg  =
+            `⚠️ *Quantidade indisponível!*\n\n` +
+            `📦 Disponível: *${oferta.quantidade}x ${oferta.itemNome}*\n` +
+            `📊 Você pediu: *${quantidade}*`;
+          throw err;
+        }
 
-    const totalBruto   = oferta.preco * quantidade;
-    const taxa         = Math.floor(totalBruto * CONFIG.TAXA_MERCADO_PCT / 100);
-    const totalLiquido = totalBruto - taxa; // vendedor recebe isso
-    const saldo        = await getSaldo(compradorId);
+        const totalBruto   = oferta.preco * quantidade;
+        const taxa         = Math.floor(totalBruto * CONFIG.TAXA_MERCADO_PCT / 100);
+        const totalLiquido = totalBruto - taxa;
+        const saldo        = await getSaldo(compradorId);
 
-    if (saldo < totalBruto) {
-      await session.abortTransaction();
-      return reply(sock, jid, msg,
-        `❌ *SALDO INSUFICIENTE*\n\n` +
-        `💰 Você tem: *${saldo}g*\n` +
-        `💸 Precisa: *${totalBruto}g*\n` +
-        `📊 Faltam: *${totalBruto - saldo}g*`
-      );
-    }
+        if (saldo < totalBruto) {
+          const err    = new Error('SALDO_INSUFICIENTE');
+          err.userMsg  =
+            `❌ *SALDO INSUFICIENTE*\n\n` +
+            `💰 Você tem: *${saldo}g*\n` +
+            `💸 Precisa: *${totalBruto}g*\n` +
+            `📊 Faltam: *${totalBruto - saldo}g*`;
+          throw err;
+        }
 
-    // 1. Atualizar/remover oferta
-    if (oferta.quantidade - quantidade === 0) {
-      await Oferta.deleteOne({ _id: oferta._id }, { session });
-    } else {
-      await Oferta.findByIdAndUpdate(oferta._id, { $inc: { quantidade: -quantidade } }, { session });
-    }
+        // 1. Atualizar/remover oferta
+        if (oferta.quantidade - quantidade === 0) {
+          await Oferta.deleteOne({ _id: oferta._id }, { session });
+        } else {
+          await Oferta.findByIdAndUpdate(
+            oferta._id,
+            { $inc: { quantidade: -quantidade } },
+            { session }
+          );
+        }
 
-    // 2. Transferir gold
-    const novoSaldoComprador = await changeGold(compradorId, -totalBruto, session);
-    await changeGold(vendedorId, totalLiquido, session);
+        // 2. Transferir gold
+        const novoSaldoComprador = await changeGold(compradorId, -totalBruto, session);
+        await changeGold(vendedorId, totalLiquido, session);
 
-    // 3. Entregar item ao comprador
-    await adicionarInventario(compradorId, itemKey, quantidade, session);
+        // 3. Entregar item ao comprador
+        await adicionarInventario(compradorId, itemKey, quantidade, session);
 
-    // 4. Registrar no log
-    await MarketLog.create([{
-      compradorId,
-      vendedorId,
-      itemKey,
-      itemNome:     oferta.itemNome,
-      quantidade,
-      precoUnit:    oferta.preco,
-      totalBruto,
-      taxa,
-      totalLiquido,
-    }], { session });
+        // 4. Registrar no log
+        await MarketLog.create([{
+          compradorId,
+          vendedorId,
+          itemKey,
+          itemNome:     oferta.itemNome,
+          quantidade,
+          precoUnit:    oferta.preco,
+          totalBruto,
+          taxa,
+          totalLiquido,
+        }], { session });
 
-    await session.commitTransaction();
+        return { novoSaldoComprador, oferta, totalBruto, taxa, totalLiquido };
+      });
 
-    // ── Resposta ao comprador ────────────────────────────────────────────────
+    // ── Resposta ao comprador ──────────────────────────────────────────────
     await reply(sock, jid, msg,
       `✅ *COMPRA REALIZADA!*\n\n` +
       `📦 *Item:* ${oferta.itemNome}\n` +
@@ -531,28 +578,21 @@ async function handleBuy(sock, msg, jid, caption) {
       `💰 *Seu novo saldo:* ${novoSaldoComprador}g`
     );
 
-    // ── Notificar o vendedor no privado (não polui o grupo) ────────────────
-    try {
-      const vendedorJid = vendedorId;
-      await sock.sendMessage(vendedorJid, {
-        text:
-          `🛒 *VENDA REALIZADA!*\n\n` +
-          `📦 ${oferta.itemNome} × ${quantidade}\n` +
-          `💰 Você recebeu: *+${totalLiquido}g*\n` +
-          `🏦 Taxa de mercado: *-${taxa}g*\n` +
-          `👤 Comprador: @${formatarNumero(compradorId)}`,
-        mentions: [compradorId],
-      });
-    } catch (_) {
-      // Notificação é best-effort; falha silenciosa
-    }
+    // ── Notificar vendedor no privado (best-effort) ────────────────────────
+    sock.sendMessage(vendedorId, {
+      text:
+        `🛒 *VENDA REALIZADA!*\n\n` +
+        `📦 ${oferta.itemNome} × ${quantidade}\n` +
+        `💰 Você recebeu: *+${totalLiquido}g*\n` +
+        `🏦 Taxa de mercado: *-${taxa}g*\n` +
+        `👤 Comprador: @${formatarNumero(compradorId)}`,
+      mentions: [compradorId],
+    }).catch(() => { /* notificação é best-effort */ });
 
   } catch (e) {
-    await session.abortTransaction();
+    if (e.userMsg) return reply(sock, jid, msg, e.userMsg);
     console.error('[Market] handleBuy:', e.message);
     return reply(sock, jid, msg, '⚠️ Erro ao processar a compra! Tente novamente.');
-  } finally {
-    session.endSession();
   }
 }
 
@@ -610,7 +650,7 @@ async function handleMinhasOfertas(sock, msg, jid) {
       );
     }
 
-    let texto = `📊 *SUAS OFERTAS ATIVAS* (${ofertas.length}/${CONFIG.MAX_OFERTAS_USER})\n\n`;
+    let texto          = `📊 *SUAS OFERTAS ATIVAS* (${ofertas.length}/${CONFIG.MAX_OFERTAS_USER})\n\n`;
     let totalPotencial = 0;
 
     for (const o of ofertas) {
@@ -660,8 +700,12 @@ async function handleHistoricoMarket(sock, msg, jid) {
     for (const log of logs) {
       const ehComprador = log.compradorId === userId;
       const data        = new Date(log.createdAt).toLocaleDateString('pt-BR');
-      const hora        = new Date(log.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const contraparte = ehComprador ? formatarNumero(log.vendedorId) : formatarNumero(log.compradorId);
+      const hora        = new Date(log.createdAt).toLocaleTimeString('pt-BR', {
+        hour: '2-digit', minute: '2-digit',
+      });
+      const contraparte = ehComprador
+        ? formatarNumero(log.vendedorId)
+        : formatarNumero(log.compradorId);
 
       texto += ehComprador
         ? `🛒 *COMPRA* — ${data} ${hora}\n`
@@ -700,6 +744,7 @@ async function handleAceitarOfferta(sock, msg, jid) {
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 
 module.exports = {
+  // Handlers de comandos
   handleAvenda,
   handleBuscarOferta,
   handleOfertar,
@@ -707,9 +752,14 @@ module.exports = {
   handleCancelarOferta,
   handleMinhasOfertas,
   handleHistoricoMarket,
-  handleOfertasRecebidas, // compatibilidade
-  handleAceitarOfferta,   // compatibilidade
+  handleOfertasRecebidas, // compatibilidade retroativa
+  handleAceitarOfferta,   // compatibilidade retroativa
+
+  // Modelos Mongoose
   Oferta,
   MarketLog,
+
+  // Configuração e catálogo
   CONFIG,
+  registerCatalog, // permite que outros módulos adicionem itens
 };

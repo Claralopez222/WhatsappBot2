@@ -1,6 +1,6 @@
 /**
  * Handler de Diversão — Piroquinhas Bot
- * Arquivo principal que coordena brincadeiras, economia, menus, pets, missões e marketplace
+ * Arquivo principal que coordena brincadeiras, economia, menus, pets, missões, marketplace e pesca
  */
 
 // ─── Importar módulos específicos (mesma pasta) ───────────────────────────
@@ -30,18 +30,29 @@ const {
   handleSistemaGold, handleSistemaPet, handleMenuAuxiliar
 } = require('./menus');
 
-// Marketplace
+// Marketplace (v3.1 — sem dependência de handlePescar no require direto)
 const {
-  handleAvenda, handleBuy, handleOfertar, handleOfertasRecebidas,
-  handleAceitarOfferta, sellerOffers, playerOffers
+  handleAvenda, handleBuscarOferta, handleOfertar, handleBuy,
+  handleCancelarOferta, handleMinhasOfertas, handleHistoricoMarket,
+  handleOfertasRecebidas, handleAceitarOfferta,
+  Oferta, MarketLog, CONFIG: CONFIG_MARKET, registerCatalog
 } = require('./marketplace');
 
-// Quiz (Corrigido para a pasta atual)
+// Pesca
+const {
+  handlePescar, handleVaras, handleIscas, handleInventarioPesca,
+  VARAS_PESCA, ISCAS, CATALOGO_PESCA, PEIXES_E_ITENS
+} = require('./handlePescar');
+
+// Registrar itens de pesca no catálogo do marketplace
+registerCatalog({ ...VARAS_PESCA, ...ISCAS, ...PEIXES_E_ITENS });
+
+// Quiz
 const {
   handleQuiz, handlePontos, handleRankJogos, handleBanco, handleResgatar, quizState
 } = require('./quiz');
 
-// Missões (ATIVADO E ATUALIZADO PARA O SEU ARQUIVO DE MISSOES)
+// Missões
 const {
   handleMissao, prepareDailyMissionState, findDailyMission, dailyMissionDefinitions
 } = require('./missoes');
@@ -62,7 +73,7 @@ const {
 // ─── Utilitários ────────────────────────────────────────────────────────────
 
 function getUserId(msg) {
-  return msg.key.remoteJid.split('@')[0] === msg.key.participant.split('@')[0]
+  return msg.key.remoteJid.split('@')[0] === msg.key.participant?.split('@')[0]
     ? msg.key.participant
     : msg.key.remoteJid;
 }
@@ -74,7 +85,7 @@ async function initializePersistedData() {
 // ─── EXPORTS COMPLETO ───────────────────────────────────────────────────────
 
 module.exports = {
-  // Brincadeiras (33 funções)
+  // ── Brincadeiras (33 funções) ──────────────────────────────────────────────
   handleGay,
   handleSexo,
   handleNazista,
@@ -109,7 +120,7 @@ module.exports = {
   handleFortuna,
   handleCompatibilidade,
 
-  // Economia (17 itens)
+  // ── Economia (17 itens) ────────────────────────────────────────────────────
   handleGold,
   handleLoja,
   handleLojaFood,
@@ -129,7 +140,7 @@ module.exports = {
   changeGold,
   ITENS_LOJA,
 
-  // Menus (6 funções)
+  // ── Menus (6 funções) ──────────────────────────────────────────────────────
   handleBrincadeiras,
   handleMenuGold,
   handleMenuPet,
@@ -137,16 +148,32 @@ module.exports = {
   handleSistemaPet,
   handleMenuAuxiliar,
 
-  // Marketplace (7 itens)
+  // ── Marketplace v3.1 (11 itens) ────────────────────────────────────────────
   handleAvenda,
-  handleBuy,
+  handleBuscarOferta,
   handleOfertar,
-  handleOfertasRecebidas,
-  handleAceitarOfferta,
-  sellerOffers,
-  playerOffers,
+  handleBuy,
+  handleCancelarOferta,
+  handleMinhasOfertas,
+  handleHistoricoMarket,
+  handleOfertasRecebidas,   // compatibilidade retroativa
+  handleAceitarOfferta,     // compatibilidade retroativa
+  Oferta,
+  MarketLog,
+  CONFIG_MARKET,
+  registerCatalog,
 
-  // Quiz (6 itens)
+  // ── Pesca (8 itens) ────────────────────────────────────────────────────────
+  handlePescar,
+  handleVaras,
+  handleIscas,
+  handleInventarioPesca,
+  VARAS_PESCA,
+  ISCAS,
+  CATALOGO_PESCA,
+  PEIXES_E_ITENS,
+
+  // ── Quiz (6 itens) ────────────────────────────────────────────────────────
   handleQuiz,
   handlePontos,
   handleRankJogos,
@@ -154,13 +181,13 @@ module.exports = {
   handleResgatar,
   quizState,
 
-  // Missões (Sincronizado com as exportações do seu missao.js)
+  // ── Missões (4 itens) ─────────────────────────────────────────────────────
   handleMissao,
   prepareDailyMissionState,
   findDailyMission,
   dailyMissionDefinitions,
 
-  // Pets (11 itens)
+  // ── Pets (11 itens) ───────────────────────────────────────────────────────
   handleCapturarPet,
   handleAdoptarPet,
   handleAlimentarPet,
@@ -173,7 +200,7 @@ module.exports = {
   petData,
   shelterData,
 
-  // Roubo (7 itens - Sistema de assaltos)
+  // ── Roubo (7 itens) ───────────────────────────────────────────────────────
   handleMenuRoubo,
   handleMenuSec,
   handleComprarRoubo,
@@ -182,7 +209,7 @@ module.exports = {
   handleEquiparSec,
   handleRoubar,
 
-  // Utilitários (2 funções)
+  // ── Utilitários (2 funções) ───────────────────────────────────────────────
   getUserId,
   initializePersistedData,
 };

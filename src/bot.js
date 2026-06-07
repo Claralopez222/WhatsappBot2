@@ -598,6 +598,8 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleMenuGold(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menupet'))
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
+
+  // ── ECONOMIA ──────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'gold'))
     { await diversaoHandler.handleGold(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'loja'))
@@ -614,10 +616,6 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleComprar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'vender'))
     { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'avenda'))
-    { await diversaoHandler.handleAvenda(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'buy'))
-    { await diversaoHandler.handleBuy(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'inventario') || matchCmd(cmdWord, 'inv'))
     { await diversaoHandler.handleInventario(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'usar'))
@@ -632,10 +630,14 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'extrato'))
     { await diversaoHandler.handleExtrato(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes') || matchCmd(cmdWord, 'missões'))
-    { await diversaoHandler.handleMissao(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
     { await diversaoHandler.handleGarimpar(sock, msg, jid, getPrefix); return; }
+
+  // ── MISSÕES ───────────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes') || matchCmd(cmdWord, 'missões'))
+    { await diversaoHandler.handleMissao(sock, msg, jid, caption); return; }
+
+  // ── PETS ──────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'capturar'))
     { await diversaoHandler.handleCapturarPet(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'alimentar') || matchCmd(cmdWord, 'alimentarpet'))
@@ -650,14 +652,39 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handlePets(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'abrigo') || matchCmd(cmdWord, 'shelter'))
     { await diversaoHandler.handleAbrigo(sock, msg, jid, caption, getPrefix); return; }
+
+  // ── MARKETPLACE ───────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'avenda'))
+    { await diversaoHandler.handleAvenda(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'buscaroferta') || matchCmd(cmdWord, 'buscaoferta'))
+    { await diversaoHandler.handleBuscarOferta(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'ofertar'))
     { await diversaoHandler.handleOfertar(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'buy'))
+    { await diversaoHandler.handleBuy(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'cancelaroferta') || matchCmd(cmdWord, 'canceloferta'))
+    { await diversaoHandler.handleCancelarOferta(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'minhasofertas') || matchCmd(cmdWord, 'mesofertas'))
+    { await diversaoHandler.handleMinhasOfertas(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'historicomarket') || matchCmd(cmdWord, 'mercadohistorico'))
+    { await diversaoHandler.handleHistoricoMarket(sock, msg, jid); return; }
+  // Aliases retroativos
   if (matchCmd(cmdWord, 'ofertasrecebidas') || matchCmd(cmdWord, 'ofertas'))
     { await diversaoHandler.handleOfertasRecebidas(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'aceitarofferta') || matchCmd(cmdWord, 'aceitaroferta'))
     { await diversaoHandler.handleAceitarOfferta(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'comprarofferta'))
     { await diversaoHandler.handleOfertar(sock, msg, jid, caption); return; }
+
+  // ── PESCA ─────────────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'pescar') || matchCmd(cmdWord, 'pesca'))
+    { await diversaoHandler.handlePescar(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'varas') || matchCmd(cmdWord, 'lojavara') || matchCmd(cmdWord, 'varapesca'))
+    { await diversaoHandler.handleVaras(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'iscas') || matchCmd(cmdWord, 'lojaisca') || matchCmd(cmdWord, 'isca'))
+    { await diversaoHandler.handleIscas(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'inventariopesca') || matchCmd(cmdWord, 'invpesca') || matchCmd(cmdWord, 'minhapesca'))
+    { await diversaoHandler.handleInventarioPesca(sock, msg, jid); return; }
 
   // ─── Sistema de Roubo ───────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'menuroubar'))

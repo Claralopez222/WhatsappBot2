@@ -33,7 +33,7 @@ const relacionamentoHandler = require(path.join(__dirname, 'handlers', 'relacion
 const grupoHandler          = require(path.join(__dirname, 'handlers', 'grupo'));
 const imagemHandler         = require(path.join(__dirname, 'handlers', 'imagem'));
 const textoHandler          = require(path.join(__dirname, 'handlers', 'texto'));
-const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js')); // era let, sem motivo
+const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js'));
 const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversario'));
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
@@ -185,9 +185,8 @@ function getPrefix(jid) { return prefixMap.get(jid) || '!'; }
 async function addUserXp(userId, xp = 1, pushName = null) {
   if (!userId) return null;
   try {
-    // Garantir que missão está inicializada antes de atualizar
     await prepareDailyMissionState(userId);
-    
+
     const update = {
       $inc: { xp, 'dailyMissions.progress.xp100': xp },
       $setOnInsert: { level: 1, idWhatsApp: userId, createdAt: new Date() },
@@ -280,14 +279,14 @@ function formatarNumeroBR(jid) {
   const numeroPuro = jid.split('@')[0];
 
   if (numeroPuro.startsWith('55') && numeroPuro.length === 12) {
-    const ddd   = numeroPuro.slice(2, 4);
+    const ddd    = numeroPuro.slice(2, 4);
     const parte1 = numeroPuro.slice(4, 8);
     const parte2 = numeroPuro.slice(8, 12);
     return `+55 (${ddd}) 9${parte1}-${parte2}`;
   }
 
   if (numeroPuro.startsWith('55') && numeroPuro.length === 13) {
-    const ddd   = numeroPuro.slice(2, 4);
+    const ddd    = numeroPuro.slice(2, 4);
     const parte1 = numeroPuro.slice(4, 9);
     const parte2 = numeroPuro.slice(9, 13);
     return `+55 (${ddd}) ${parte1}-${parte2}`;
@@ -368,15 +367,8 @@ async function startBot() {
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
       if (!msg.message)   continue;
-      await CarteiraGrupo.findOneAndUpdate(
-  { idWhatsApp: remetente, idGrupo: _jid },
-  {
-    $inc: { mensagens: 1, 'dailyMissions.progress.msg50': 1 },
-    $set: { nome: nomeDoCara },
-  },
-  { upsert: true }
-);
 
+      // ✅ CORRIGIDO: variáveis declaradas ANTES de serem usadas
       const _jid       = msg.key.remoteJid || '';
       const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
 
@@ -391,8 +383,17 @@ async function startBot() {
           const remetente  = msg.key.participant || msg.key.remoteJid;
           const nomeDoCara = msg.pushName || 'Usuário do Zap';
 
-          // Garantir que missão está inicializada antes de atualizar
           await prepareDailyMissionState(remetente);
+
+          // ✅ CORRIGIDO: CarteiraGrupo agora vem APÓS as variáveis serem definidas
+          await CarteiraGrupo.findOneAndUpdate(
+            { idWhatsApp: remetente, idGrupo: _jid },
+            {
+              $inc: { mensagens: 1, 'dailyMissions.progress.msg50': 1 },
+              $set: { nome: nomeDoCara },
+            },
+            { upsert: true }
+          );
 
           await Usuario.findOneAndUpdate(
             { idWhatsApp: remetente },
@@ -691,7 +692,6 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleMinhasOfertas(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'historicomarket') || matchCmd(cmdWord, 'mercadohistorico'))
     { await diversaoHandler.handleHistoricoMarket(sock, msg, jid); return; }
-  // Aliases retroativos
   if (matchCmd(cmdWord, 'ofertasrecebidas') || matchCmd(cmdWord, 'ofertas'))
     { await diversaoHandler.handleOfertasRecebidas(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'aceitarofferta') || matchCmd(cmdWord, 'aceitaroferta'))
@@ -709,7 +709,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'inventariopesca') || matchCmd(cmdWord, 'invpesca') || matchCmd(cmdWord, 'minhapesca'))
     { await diversaoHandler.handleInventarioPesca(sock, msg, jid); return; }
 
-  // ─── Sistema de Roubo ───────────────────────────────────────────────────
+  // ─── Sistema de Roubo ─────────────────────────────────────────
   if (matchCmd(cmdWord, 'menuroubar'))
     { await diversaoHandler.handleMenuRoubo(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menusec'))
@@ -868,7 +868,8 @@ async function handleMessage(sock, msg) {
     await aniversarioHandler.handleSistemaAniversario(sock, msg, jid, isAdm);
     return;
   }
-// ── DIVERSÃO ──────────────────────────────────────────────────
+
+  // ── DIVERSÃO ──────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'gay'))           { await diversaoHandler.handleGay(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'sexo'))          { await diversaoHandler.handleSexo(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'nazista'))       { await diversaoHandler.handleNazista(sock, msg, content, jid, author, contactNames); return; }
@@ -918,6 +919,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'anagrama') || matchCmdStart(cmd, 'anagrama '))
     { await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid); return; }
   if (matchCmdStart(cmd, 'ppt'))           { await diversaoHandler.handlePpt(sock, msg, jid, caption, author, senderJid); return; }
+
   // ── GRUPO ─────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'ban'))          { await grupoHandler.handleBan(sock, msg, content, jid, botJid, contactNames); return; }
   if (matchCmdStart(cmd, 'mute'))         { await grupoHandler.handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
@@ -1018,6 +1020,7 @@ async function handleMessage(sock, msg) {
 const express = require('express');
 const app  = express();
 const port = process.env.PORT || 3000;
+
 
 app.get('/', (req, res) => res.send('Bot Online!'));
 

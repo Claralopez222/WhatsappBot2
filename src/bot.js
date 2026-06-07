@@ -2,6 +2,7 @@
  * WhatsApp Sticker Bot — Piroquinhas
  * bot.js principal — roteador completo
  */
+const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
 
 const {
   default: makeWASocket, 
@@ -353,6 +354,14 @@ async function startBot() {
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
       if (!msg.message)   continue;
+      await CarteiraGrupo.findOneAndUpdate(
+  { idWhatsApp: remetente, idGrupo: _jid },
+  {
+    $inc: { mensagens: 1, 'dailyMissions.progress.msg50': 1 },
+    $set: { nome: nomeDoCara },
+  },
+  { upsert: true }
+);
 
       const _jid       = msg.key.remoteJid || '';
       const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');

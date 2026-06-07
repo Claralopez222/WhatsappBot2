@@ -513,7 +513,9 @@ async function handleCrush(sock, msg, content, jid, author, contactNames) {
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
   if (mentionedJid.split('@')[0] === senderJid.split('@')[0]) {
-    await sock.sendMessage(jid, { text: '😂 Narcisista! Você não pode ser seu próprio crush! 💀' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '😂 Narcisista! Você não pode ser seu próprio crush! 💀',
+    }, { quoted: msg });
     return;
   }
 
@@ -545,7 +547,20 @@ async function handleCantada(sock, msg, content, jid, author, contactNames) {
     'Sabe que você me lembra minha conta bancária? Sempre no meu pensamento. 💭',
     'Posso te seguir no Instagram? Minha mãe sempre me disse pra seguir meus sonhos. 😏',
     'Você tem GPS? Porque me perdi nos seus olhos. 👀',
-    'Você é chef? Porque tá cozinhando algo no meu coração. 🍳',
+    'Você é chef? Porque tá destruindo meu coração igual a um prato gourmet. 👨‍🍳',
+    'Se beleza fosse crime, você estaria preso(a) há anos. 🔒',
+    'Você é Google? Porque tem tudo que eu tava procurando. 🔍',
+    'Seu pai é ladrão? Porque você roubou meu coração. 💔',
+  ];
+
+  const cantada = cantadas[Math.floor(Math.random() * cantadas.length)];
+  const destino = nomeAlvo ? ` para *${nomeAlvo}*` : '';
+
+  await sock.sendMessage(jid, {
+    text: `💋 *CANTADA${destino ? ` DE ${author.toUpperCase()}` : ''}*${destino}\n\n_"${cantada}"_\n\n😏 Achou que funcionaria?`,
+    mentions: mentionedJid ? [mentionedJid] : [],
+  }, { quoted: msg });
+}
 
 module.exports = {
   handleGay,

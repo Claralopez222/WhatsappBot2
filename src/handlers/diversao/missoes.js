@@ -9,12 +9,12 @@ const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 // ─── DEFINIÇÃO DAS MISSÕES ──────────────────────────────────────────────────
 
 const dailyMissionDefinitions = [
-  { id: 'xp100',  label: 'Ganhe 100 XP',         target: 100, reward: 50,  emoji: '⭐', desc: 'Suba de level' },
-  { id: 'msg50',  label: 'Mande 50 mensagens',    target: 50,  reward: 30,  emoji: '💬', desc: 'Seja ativo!' },
-  { id: 'quiz5',  label: 'Acerte 5 quiz',         target: 5,   reward: 75,  emoji: '🧠', desc: 'Mostre inteligência' },
-  { id: 'gold500',label: 'Ganhe 500 gold',        target: 500, reward: 100, emoji: '💰', desc: 'Fique rico' },
-  { id: 'pet10',  label: 'Cuide do pet 10x',      target: 10,  reward: 60,  emoji: '🐾', desc: 'Ame seu pet' },
-  { id: 'roubo3', label: 'Faça 3 roubos',         target: 3,   reward: 80,  emoji: '🎭', desc: 'Seja um ladrão!' },
+  { id: 'xp100',   label: 'Ganhe 100 XP',       target: 100, reward: 50,  emoji: '⭐', desc: 'Suba de level' },
+  { id: 'msg50',   label: 'Mande 50 mensagens',  target: 50,  reward: 30,  emoji: '💬', desc: 'Seja ativo!' },
+  { id: 'quiz5',   label: 'Acerte 5 quiz',       target: 5,   reward: 75,  emoji: '🧠', desc: 'Mostre inteligência' },
+  { id: 'gold500', label: 'Ganhe 500 gold',      target: 500, reward: 100, emoji: '💰', desc: 'Fique rico' },
+  { id: 'pet10',   label: 'Cuide do pet 10x',    target: 10,  reward: 60,  emoji: '🐾', desc: 'Ame seu pet' },
+  { id: 'roubo3',  label: 'Faça 3 roubos',       target: 3,   reward: 80,  emoji: '🎭', desc: 'Seja um ladrão!' },
 ];
 
 // IDs válidos para validação rápida
@@ -27,7 +27,7 @@ function getUserId(msg) {
 }
 
 function getTodayStr() {
-  return new Date().toISOString().split('T')[0]; // Ex: 2026-06-05
+  return new Date().toISOString().split('T')[0];
 }
 
 function buildDefaultMissions() {
@@ -45,8 +45,6 @@ function buildProgressBar(current, target, length = 10) {
 }
 
 // ─── prepareDailyMissionState ────────────────────────────────────────────────
-// Garante que o usuário existe e que as missões do dia estão inicializadas.
-// Retorna o subdocumento dailyMissions atualizado.
 
 async function prepareDailyMissionState(userId) {
   const todayStr = getTodayStr();
@@ -54,7 +52,6 @@ async function prepareDailyMissionState(userId) {
   try {
     let user = await Usuario.findOne({ idWhatsApp: userId });
 
-    // Usuário não existe — cria com tudo zerado
     if (!user) {
       user = await Usuario.create({
         idWhatsApp: userId,
@@ -66,12 +63,10 @@ async function prepareDailyMissionState(userId) {
       return user.dailyMissions;
     }
 
-    // Missões do dia ainda válidas — retorna sem tocar no banco
     if (user.dailyMissions?.date === todayStr) {
       return user.dailyMissions;
     }
 
-    // Novo dia (ou missões nunca inicializadas) — reseta via $set atômico
     const fresh = buildDefaultMissions();
     const updated = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
@@ -87,26 +82,22 @@ async function prepareDailyMissionState(userId) {
 }
 
 // ─── incrementMission ────────────────────────────────────────────────────────
-// Incrementa o progresso de UMA missão específica para um usuário.
-// Chamado por outros sistemas (roubo, quiz, pet, etc.)
 
 async function incrementMission(userId, missionId, amount = 1) {
   if (!MISSION_IDS.has(missionId)) return;
 
   try {
-    await prepareDailyMissionState(userId); // garante que o dia está certo
+    await prepareDailyMissionState(userId);
 
     const todayStr = getTodayStr();
     const mission  = dailyMissionDefinitions.find(m => m.id === missionId);
     if (!mission) return;
 
-    // Só incrementa se ainda não completou
     const user = await Usuario.findOne({ idWhatsApp: userId });
     if (!user?.dailyMissions || user.dailyMissions.date !== todayStr) return;
 
     const currentProgress = user.dailyMissions.progress?.[missionId] || 0;
-    const isAlreadyDone   = currentProgress >= mission.target;
-    if (isAlreadyDone) return;
+    if (currentProgress >= mission.target) return;
 
     const newProgress  = Math.min(currentProgress + amount, mission.target);
     const nowCompleted = newProgress >= mission.target;
@@ -136,7 +127,6 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
   const P      = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const args   = caption.trim().split(/\s+/).slice(1);
 
-  // Detectar se quer resgatar: "!missao xp100" ou "!missao resgatar xp100"
   let missionKey = null;
   if (args.length >= 2 && ['resgatar', 'claim', 'pegar', 'receber'].includes(args[0].toLowerCase())) {
     missionKey = args[1];
@@ -144,7 +134,6 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
     missionKey = args[0];
   }
 
-  // ── Carregar estado do dia ──────────────────────────────────────────────
   const state = await prepareDailyMissionState(userId);
 
   if (!state?.progress || !state?.completed || !state?.claimed) {
@@ -164,7 +153,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       return;
     }
 
-    const progress    = state.progress?.[mission.id]  || 0;
+    const progress    = state.progress?.[mission.id] || 0;
     const isCompleted = progress >= mission.target || state.completed?.[mission.id];
     const isClaimed   = state.claimed?.[mission.id];
 
@@ -176,10 +165,16 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
     }
 
     if (!isCompleted) {
-      const bar     = buildProgressBar(progress, mission.target);
-      const pct     = Math.floor((progress / mission.target) * 100);
+      const bar = buildProgressBar(progress, mission.target);
+      const pct = Math.floor((progress / mission.target) * 100);
       await sock.sendMessage(jid, {
-        text: `⏳ *Missão em andamento!*\n\n${mission.emoji} *${mission.label}*\n[${bar}] ${pct}%\n📊 Progresso: *${progress}/${mission.target}*\n\n_${mission.desc}_`
+        text:
+          `⏳ *Missão em andamento!*\n\n` +
+          `${mission.emoji} *${mission.label}*\n` +
+          `    └ ID: \`${mission.id}\`\n` +
+          `[${bar}] ${pct}%\n` +
+          `📊 Progresso: *${progress}/${mission.target}*\n\n` +
+          `_${mission.desc}_`
       }, { quoted: msg });
       return;
     }
@@ -198,7 +193,11 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       );
 
       await sock.sendMessage(jid, {
-        text: `🎉 *MISSÃO CONCLUÍDA!* 🎉\n\n${mission.emoji} *${mission.label}*\n💰 Recompensa: *+${mission.reward} gold* adicionado!\n\n_${mission.desc}_`
+        text:
+          `🎉 *MISSÃO CONCLUÍDA!* 🎉\n\n` +
+          `${mission.emoji} *${mission.label}*\n` +
+          `💰 Recompensa: *+${mission.reward} gold* adicionado!\n\n` +
+          `_${mission.desc}_`
       }, { quoted: msg });
     } catch (e) {
       console.error('❌ Erro ao dar recompensa da missão:', e.message);
@@ -212,7 +211,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
   const lines = [];
 
   for (const mission of dailyMissionDefinitions) {
-    const progress    = state.progress?.[mission.id]  || 0;
+    const progress    = state.progress?.[mission.id] || 0;
     const isCompleted = progress >= mission.target || state.completed?.[mission.id];
     const isClaimed   = state.claimed?.[mission.id];
 
@@ -225,12 +224,13 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
 
     lines.push(
       `${statusEmoji} ${mission.emoji} *${mission.label}* — _+${mission.reward}g_\n` +
+      `    └ ID: \`${mission.id}\`\n` +
       `    [${bar}] ${pct}% | ${progress}/${mission.target} | _${mission.desc}_`
     );
   }
 
-  const allClaimed  = dailyMissionDefinitions.every(m => state.claimed?.[m.id]);
-  const rodape      = allClaimed
+  const allClaimed = dailyMissionDefinitions.every(m => state.claimed?.[m.id]);
+  const rodape     = allClaimed
     ? `🏆 *Parabéns! Você completou todas as missões de hoje!*`
     : totalGoldDisponivel > 0
       ? `🎁 *Você tem ${totalGoldDisponivel}g para resgatar!*`

@@ -574,59 +574,103 @@ async function handleInventario(sock, msg, jid) {
   }
 }
 
-// ─── !pix (transferência corrigida com tratamento de menções)
+// ─── !pix ────────────────────────────────────────────────────────────────────
+
 async function handlePix(sock, msg, jid, caption) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-
+  const userId      = msg.key.participant || msg.key.remoteJid;
   const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-  let targetJid = mentionedJid;
-  let numeroPura = '';
 
-  const match = caption.match(/(?:pix|transferir)\s+@?(\d+)\s+(\d+)/i);
-  let quantia = 0;
+  let targetJid  = mentionedJid;
+  let numeroPura = '';
+  let quantia    = 0;
 
   if (targetJid) {
-    numeroPura = targetJid.split('@')[0];
+    numeroPura = targetJid.split('@')[0].split(':')[0];
     const parts = caption.trim().split(/\s+/);
     quantia = parseInt(parts[parts.length - 1]);
-  } else if (match) {
-    numeroPura = match[1].replace(/\D/g, '');
-    targetJid = `${numeroPura}@s.whatsapp.net`;
-    quantia = parseInt(match[2]);
+  } else {
+    const match = caption.match(/(?:pix|transferir)\s+\S+\s+(\d+)/i);
+    const numMatch = caption.match(/(?:pix|transferir)\s+@?(\d+)\s+(\d+)/i);
+    if (numMatch) {
+      numeroPura = numMatch[1].replace(/\D/g, '');
+      targetJid  = `${numeroPura}@s.whatsapp.net`;
+      quantia    = parseInt(numMatch[2]);
+    } else if (match) {
+      quantia = parseInt(match[1]);
+    }
   }
 
   if (!targetJid || isNaN(quantia) || quantia <= 0) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!pix @nome quantia* ou *!pix @numero quantia*\nExemplo: *!pix @Felipe 30*' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '⚠️ Use: *!pix @pessoa quantia*\nExemplo: *!pix @Felipe 30*'
+    }, { quoted: msg });
     return;
   }
 
   if (userId === targetJid) {
-    await sock.sendMessage(jid, { text: '⚠️ Você não pode fazer um PIX para você mesmo!' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Você não pode fazer PIX para si mesmo!' }, { quoted: msg });
     return;
   }
 
-  const saldoAtual = await getSaldoAtual(userId);
-
-  if (saldoAtual < quantia) {
-    await sock.sendMessage(jid, { text: `⚠️ Saldo insuficiente!\n\n💰 Você tem: *${saldoAtual}* gold\n💸 Precisa de: *${quantia}* gold` }, { quoted: msg });
+  // Verificar se destinatário existe
+  const destUser = await Usuario.findOne({ idWhatsApp: targetJid });
+  if (!destUser) {
+    await sock.sendMessage(jid, { text: '❌ Destinatário não encontrado no sistema!' }, { quoted: msg });
     return;
   }
 
-  await changeGold(userId, -quantia);
-  await changeGold(targetJid, quantia);
+  // Debitar remetente atomicamente
+  const remetente = await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId, gold: { $gte: quantia } },
+    {
+      $inc: { gold: -quantia },
+      $push: {
+        goldHistory: {
+          $each: [{ type: 'gasto', item: `PIX para @${numeroPura}`, amount: quantia }],
+          $slice: -50,
+        },
+      },
+    },
+    { new: true }
+  );
 
-  const novoSaldo = await getSaldoAtual(userId);
+  if (!remetente) {
+    const saldo = await getSaldoAtual(userId);
+    await sock.sendMessage(jid, {
+      text: `⚠️ *SALDO INSUFICIENTE!*\n\n💰 Você tem: *${saldo}* gold\n💸 Precisa de: *${quantia}* gold`
+    }, { quoted: msg });
+    return;
+  }
+
+  // Creditar destinatário
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: targetJid },
+    {
+      $inc: { gold: quantia },
+      $push: {
+        goldHistory: {
+          $each: [{ type: 'recebido', item: `PIX de @${userId.split('@')[0].split(':')[0]}`, amount: quantia }],
+          $slice: -50,
+        },
+      },
+    }
+  );
 
   await sock.sendMessage(jid, {
-    text: `✅ *Transferência realizada!*\n\n💵 *${quantia} gold* enviado com sucesso para *@${numeroPura}*\n📊 Seu novo saldo: *${novoSaldo}* gold`,
-    mentions: [targetJid, userId]
+    text:
+      `✅ *TRANSFERÊNCIA REALIZADA!* ✅\n\n` +
+      `💸 *${quantia} gold* enviado para *@${numeroPura}*\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `💰 Seu novo saldo: *${remetente.gold}* gold`,
+    mentions: [targetJid, userId],
   }, { quoted: msg });
 }
 
-// ─── !apostar
+// ─── !apostar ────────────────────────────────────────────────────────────────
+
 async function handleApostar(sock, msg, jid, caption) {
-  const userId = msg.key.participant;
-  const match = caption.match(/apostar\s+(\d+)/i);
+  const userId = msg.key.participant || msg.key.remoteJid;
+  const match  = caption.match(/apostar\s+(\d+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, { text: '⚠️ Use: *!apostar <quantia>*\nExemplo: *!apostar 100*' }, { quoted: msg });
@@ -640,73 +684,210 @@ async function handleApostar(sock, msg, jid, caption) {
     return;
   }
 
-  const saldoAtual = await getSaldoAtual(userId);
+  // Debitar atomicamente antes de revelar resultado
+  const userDebited = await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId, gold: { $gte: aposta } },
+    { $inc: { gold: -aposta } },
+    { new: true }
+  );
 
-  if (saldoAtual < aposta) {
-    const texto = `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${aposta}* gold para apostar!`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  if (!userDebited) {
+    const saldo = await getSaldoAtual(userId);
+    await sock.sendMessage(jid, {
+      text: `⚠️ *SALDO INSUFICIENTE*\n\n💰 Você tem: *${saldo}* gold\n💸 Precisa de: *${aposta}* gold`
+    }, { quoted: msg });
     return;
   }
 
-  const resultado = Math.random() > 0.5;
+  const ganhou = Math.random() > 0.5;
 
-  if (resultado) {
-    const ganho = Math.floor(aposta * 1.5);
-    const saldoFinal = await changeGold(userId, ganho);
+  if (ganhou) {
+    const premio     = Math.floor(aposta * 1.5); // recebe 1.5x de volta
+    const lucroLiq   = premio - aposta;           // lucro líquido = 0.5x
 
-    const texto = `🎉 ═══ VOCÊ GANHOU! ═══ 🎉\n\n🎲 *Parabéns, sua sorte foi boa!*\n\n━━━━━━━━━━━━━━━━\n*RESULTADO:*\n  🎲 Aposta: *${aposta}* gold\n  💰 Ganho: *+${ganho}* gold\n\n*SALDO:* *${saldoFinal}* gold`;
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      {
+        $inc: { gold: premio },
+        $push: {
+          goldHistory: {
+            $each: [{ type: 'recebido', item: 'Aposta (vitória)', amount: lucroLiq }],
+            $slice: -50,
+          },
+        },
+      }
+    );
 
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    const saldoFinal = userDebited.gold + premio;
+
+    await sock.sendMessage(jid, {
+      text:
+        `🎉 ═══ VOCÊ GANHOU! ═══ 🎉\n\n` +
+        `🎲 *Parabéns, sua sorte foi boa!*\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `*RESULTADO:*\n` +
+        `  💵 Aposta: *${aposta}* gold\n` +
+        `  💰 Ganho líquido: *+${lucroLiq}* gold\n\n` +
+        `💎 *Saldo:* ${saldoFinal} gold`
+    }, { quoted: msg });
   } else {
-    const saldoFinal = await changeGold(userId, -aposta);
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      {
+        $push: {
+          goldHistory: {
+            $each: [{ type: 'gasto', item: 'Aposta (derrota)', amount: aposta }],
+            $slice: -50,
+          },
+        },
+      }
+    );
 
-    const texto = `😢 ═══ VOCÊ PERDEU! ═══ 😢\n\n🎲 *Que azar...*\n\n━━━━━━━━━━━━━━━━\n*RESULTADO:*\n  🎲 Aposta: *${aposta}* gold\n\n*SALDO:* *${saldoFinal}* gold`;
+    const saldoFinal = userDebited.gold;
 
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text:
+        `😢 ═══ VOCÊ PERDEU! ═══ 😢\n\n` +
+        `🎲 *Que azar...*\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `*RESULTADO:*\n` +
+        `  💵 Aposta perdida: *${aposta}* gold\n\n` +
+        `💎 *Saldo:* ${saldoFinal} gold`
+    }, { quoted: msg });
   }
 }
 
-// ─── !extrato
+// ─── !extrato ────────────────────────────────────────────────────────────────
+
 async function handleExtrato(sock, msg, jid) {
-  const texto = `📊 *EXTRATO DE TRANSAÇÕES* 📊\n\n*ÚLTIMAS TRANSAÇÕES:*\n  💵 +500 gold | Missão\n  💸 -100 gold | Compra\n  💰 +200 gold | Garimpo\n\n━━━━━━━━━━━━━━━━\n*RESUMO:*\n  ✅ Entrada: 700 gold\n  ❌ Saída: 100 gold\n  💰 Saldo atual: 600 gold\n\nUse *!gold* para ver seu saldo!`;
+  const userId = msg.key.participant || msg.key.remoteJid;
+
+  const user = await Usuario.findOne({ idWhatsApp: userId });
+
+  if (!user) {
+    await sock.sendMessage(jid, { text: '❌ Você não tem cadastro!' }, { quoted: msg });
+    return;
+  }
+
+  const historico = user.goldHistory || [];
+
+  if (historico.length === 0) {
+    await sock.sendMessage(jid, {
+      text:
+        `📊 *EXTRATO DE TRANSAÇÕES* 📊\n\n` +
+        `😔 Nenhuma transação registrada ainda.\n\n` +
+        `💰 *Saldo atual:* ${user.gold} gold`
+    }, { quoted: msg });
+    return;
+  }
+
+  // Pegar as últimas 10 transações em ordem cronológica reversa
+  const ultimas = [...historico].reverse().slice(0, 10);
+
+  let totalEntrada = 0;
+  let totalSaida   = 0;
+  const linhas     = [];
+
+  for (const t of ultimas) {
+    const data   = t.date ? new Date(t.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '??/??';
+    const hora   = t.date ? new Date(t.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '??:??';
+
+    if (t.type === 'recebido') {
+      totalEntrada += t.amount;
+      linhas.push(`  ✅ *+${t.amount}g* | ${t.item} | ${data} ${hora}`);
+    } else {
+      totalSaida += t.amount;
+      linhas.push(`  ❌ *-${t.amount}g* | ${t.item} | ${data} ${hora}`);
+    }
+  }
+
+  const texto =
+    `📊 ═══ EXTRATO DE TRANSAÇÕES ═══ 📊\n\n` +
+    `*ÚLTIMAS ${ultimas.length} TRANSAÇÕES:*\n` +
+    linhas.join('\n') +
+    `\n\n━━━━━━━━━━━━━━━━\n` +
+    `*RESUMO DO PERÍODO:*\n` +
+    `  📈 Entradas: *+${totalEntrada}* gold\n` +
+    `  📉 Saídas: *-${totalSaida}* gold\n` +
+    `  💰 Saldo atual: *${user.gold}* gold`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-// ─── !garimpar
-async function handleGarimpar(sock, msg, jid, getPrefix) {
-  const userId = msg.key.participant;
-  const agora = Date.now();
-  const UM_HORA = 3600000;
+// ─── !garimpar ───────────────────────────────────────────────────────────────
 
-  if (lastGarimpTime[userId]) {
-    const tempoDecorrido = agora - lastGarimpTime[userId];
-    if (tempoDecorrido < UM_HORA) {
-      const tempoRestante = Math.ceil((UM_HORA - tempoDecorrido) / 60000);
-      const texto = `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n⛏️ Você já garimpou!\n\n📊 Tempo restante: *${tempoRestante} minutos*`;
+const GARIMPO_COOLDOWN_MS = 60 * 60 * 1000; // 1 hora
 
-      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-      return;
-    }
+function formatarTempoGarimpo(ms) {
+  const totalSec = Math.ceil(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m > 0) return `${m}min ${s}s`;
+  return `${s}s`;
+}
+
+async function handleGarimpar(sock, msg, jid) {
+  const userId = msg.key.participant || msg.key.remoteJid;
+  const agora  = Date.now();
+
+  // Cooldown persistente no banco
+  const user = await Usuario.findOne({ idWhatsApp: userId });
+  const ultimoGarimpo = user?.ultimoGarimpo ? new Date(user.ultimoGarimpo).getTime() : 0;
+  const tempoPassado  = agora - ultimoGarimpo;
+
+  if (tempoPassado < GARIMPO_COOLDOWN_MS) {
+    const restante = GARIMPO_COOLDOWN_MS - tempoPassado;
+    await sock.sendMessage(jid, {
+      text:
+        `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n` +
+        `⛏️ Você já garimpou recentemente!\n\n` +
+        `⏰ Próximo garimpo em: *${formatarTempoGarimpo(restante)}*`
+    }, { quoted: msg });
+    return;
   }
 
   try {
-    const ouro = Math.floor(Math.random() * 100) + 30;
-    const novoSaldo = await changeGold(userId, ouro);
-    lastGarimpTime[userId] = agora;
+    const ouro = Math.floor(Math.random() * 100) + 30; // 30–129 gold
 
-    const texto = `⛏️ *GARIMPO* ⛏️\n\n⛏️ Você está garimpando...\n\n💎 Você encontrou *${ouro} gold*!\n\n━━━━━━━━━━━━━━━━\n📊 Novo saldo: *${novoSaldo}* gold\n⏰ Próximo garimpo em: *1 hora*`;
+    await prepareDailyMissionState(userId);
 
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    const updatedUser = await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      {
+        $inc: {
+          gold: ouro,
+          'dailyMissions.progress.gold500': ouro,
+        },
+        $set: { ultimoGarimpo: new Date() },
+        $push: {
+          goldHistory: {
+            $each: [{ type: 'recebido', item: 'Garimpo', amount: ouro }],
+            $slice: -50,
+          },
+        },
+      },
+      { new: true, upsert: true }
+    );
+
+    await sock.sendMessage(jid, {
+      text:
+        `⛏️ ═══ GARIMPO ═══ ⛏️\n\n` +
+        `🪨 Você cavou fundo e encontrou ouro!\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `💎 Encontrado: *+${ouro} gold*\n` +
+        `💰 Novo saldo: *${updatedUser.gold}* gold\n\n` +
+        `⏰ Próximo garimpo em: *1 hora*`
+    }, { quoted: msg });
   } catch (e) {
     console.error('⚠️ Erro handleGarimpar:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao garimpar!' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao garimpar! Tente novamente.' }, { quoted: msg });
   }
 }
 
-// ─── !slots (com animação editando a mesma mensagem)
+// ─── !slots ──────────────────────────────────────────────────────────────────
+
 async function handleSlots(sock, msg, jid, senderJid, caption) {
-  const args = caption.trim().split(/\s+/);
+  const args   = caption.trim().split(/\s+/);
   const aposta = parseInt(args[1]);
 
   if (!aposta || isNaN(aposta) || aposta <= 0) {
@@ -714,11 +895,18 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
     return;
   }
 
-  const user = await Usuario.findOne({ idWhatsApp: senderJid });
-  const userGold = user?.gold || 0;
+  // Debitar atomicamente antes de qualquer animação
+  const userDebited = await Usuario.findOneAndUpdate(
+    { idWhatsApp: senderJid, gold: { $gte: aposta } },
+    { $inc: { gold: -aposta } },
+    { new: true }
+  );
 
-  if (userGold < aposta) {
-    await sock.sendMessage(jid, { text: `❌ Você não tem Gold suficiente! Seu saldo é de *${userGold} Gold*.` }, { quoted: msg });
+  if (!userDebited) {
+    const saldo = await getSaldoAtual(senderJid);
+    await sock.sendMessage(jid, {
+      text: `❌ Saldo insuficiente!\n\n💰 Seu saldo: *${saldo}* gold\n💸 Aposta: *${aposta}* gold`
+    }, { quoted: msg });
     return;
   }
 
@@ -727,105 +915,115 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const r2 = frutas[Math.floor(Math.random() * frutas.length)];
   const r3 = frutas[Math.floor(Math.random() * frutas.length)];
 
-  // Enviar mensagem inicial e capturar para editar depois
+  // Animação
   const msgInicial = await sock.sendMessage(jid, {
     text: `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🎲 | 🎲 | 🎲 ]\n\n_Girando..._`
   }, { quoted: msg });
 
-  // Animação: editar 5 frames diferentes
   const frames = [
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🎲 | 🍒 | 🎲 ]\n\n_Girando..._`,
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍋 | 🎲 | 🍇 ]\n\n_Girando..._`,
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍉 | 🍒 | 🔔 ]\n\n_Girando..._`,
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🔔 | 🍋 | 🍒 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍇 | 🍉 | 🍋 ]\n\n_Girando..._`
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍇 | 🍉 | 🍋 ]\n\n_Girando..._`,
   ];
 
-  // Animar frames (300ms cada)
   for (const frame of frames) {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    try {
-      await sock.chatModify({ text: frame }, msgInicial.key);
-    } catch (e) {
-      console.error('⚠️ Erro ao animar frame:', e.message);
-    }
+    await new Promise(r => setTimeout(r, 300));
+    try { await sock.chatModify({ text: frame }, msgInicial.key); } catch {}
   }
-
-  // Aguardar antes de mostrar resultado final
-  await new Promise(resolve => setTimeout(resolve, 300));
+  await new Promise(r => setTimeout(r, 300));
 
   // Calcular resultado
   let multiplicador = 0;
-  let resultadoMsg = '❌ *Você perdeu tudo!* O banco agradece.';
+  let resultadoMsg  = '❌ *Você perdeu!* O banco agradece.';
 
   if (r1 === r2 && r2 === r3) {
     multiplicador = 10;
-    resultadoMsg = '🎉 *JACKPOT MÁXIMO!* Três iguais! Seu Gold foi multiplicado por 10!';
+    resultadoMsg  = '🎉 *JACKPOT MÁXIMO!* Três iguais! Multiplicado por 10!';
   } else if (r1 === r2 || r2 === r3 || r1 === r3) {
     multiplicador = 2.5;
-    resultadoMsg = '✨ *QUASE JACKPOT!* Duas iguais. Seu Gold foi multiplicado por 2.5!';
+    resultadoMsg  = '✨ *QUASE JACKPOT!* Duas iguais! Multiplicado por 2.5!';
   }
 
-  const ganho = Math.floor(aposta * multiplicador);
-  const lucro = ganho - aposta;
+  const premio   = Math.floor(aposta * multiplicador);
+  const lucroLiq = premio - aposta; // pode ser negativo (perdeu)
 
-  // Garantir que missão está inicializada antes de atualizar
-  if (lucro > 0) {
-    await prepareDailyMissionState(senderJid);
+  // Creditar prêmio e registrar histórico
+  await prepareDailyMissionState(senderJid);
+
+  const updateSlots = {
+    $inc: { gold: premio },
+    $push: {
+      goldHistory: {
+        $each: [{
+          type: lucroLiq >= 0 ? 'recebido' : 'gasto',
+          item: `Slots (${multiplicador > 0 ? `${multiplicador}x` : 'derrota'})`,
+          amount: Math.abs(lucroLiq),
+        }],
+        $slice: -50,
+      },
+    },
+  };
+  if (lucroLiq > 0) {
+    updateSlots.$inc['dailyMissions.progress.gold500'] = lucroLiq;
   }
 
-  // Atualizar saldo no banco
-  const updateSlots = { $inc: { gold: lucro } };
-  if (lucro > 0) {
-    updateSlots['$inc']['dailyMissions.progress.gold500'] = lucro;
-  }
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: senderJid },
-    updateSlots
-  );
+  await Usuario.findOneAndUpdate({ idWhatsApp: senderJid }, updateSlots);
 
-  const textoFinal = `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
-                     `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
-                     `${resultadoMsg}\n` +
-                     `━━━━━━━━━━━━━━━━\n` +
-                     `*DETALHES:*\n` +
-                     `  💵 Aposta: *${aposta}* gold\n` +
-                     (multiplicador > 0 ? `  ✖️ Multiplicador: *${multiplicador}x*\n  💰 Ganho: *${ganho}* gold\n` : '') +
-                     `  ${lucro >= 0 ? '✅' : '❌'} Resultado: *${lucro >= 0 ? '+' : ''}${lucro}* gold\n` +
-                     `  💎 Saldo: *${userGold + lucro}* gold`;
+  const saldoFinal = userDebited.gold + lucroLiq;
 
-  // Editar a mensagem com o resultado final
+  const textoFinal =
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+    `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
+    `${resultadoMsg}\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `*DETALHES:*\n` +
+    `  💵 Aposta: *${aposta}* gold\n` +
+    (multiplicador > 0 ? `  ✖️ Multiplicador: *${multiplicador}x*\n  💰 Prêmio: *${premio}* gold\n` : '') +
+    `  ${lucroLiq >= 0 ? '✅' : '❌'} Resultado: *${lucroLiq >= 0 ? '+' : ''}${lucroLiq}* gold\n` +
+    `  💎 Saldo: *${saldoFinal}* gold`;
+
   try {
     await sock.chatModify({ text: textoFinal }, msgInicial.key);
-  } catch (e) {
-    console.error('⚠️ Erro ao mostrar resultado final:', e.message);
+  } catch {
     await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg });
   }
 }
 
-// ─── !corrida
+// ─── !corrida ────────────────────────────────────────────────────────────────
+
 async function handleCorrida(sock, msg, jid, senderJid, caption) {
-  const args = caption.trim().split(/\s+/);
+  const args   = caption.trim().split(/\s+/);
   const escolha = parseInt(args[1]);
-  const aposta = parseInt(args[2]);
+  const aposta  = parseInt(args[2]);
 
   if (!escolha || !aposta || isNaN(escolha) || isNaN(aposta) || escolha < 1 || escolha > 4 || aposta <= 0) {
-    const tutorial = `⚠️ Uso correto: *!corrida [numero do bicho] [valor]*\n\n` +
-                     `*Escolha seu corredor:*\n` +
-                     `1️⃣ 🐎 Cavalo\n` +
-                     `2️⃣ 🐅 Tigre\n` +
-                     `3️⃣ 🐢 Tartaruga\n` +
-                     `4️⃣ 🐕 Cachorro\n\n` +
-                     `Exemplo: *!corrida 1 50* (Aposta 50 no Cavalo)`;
-    await sock.sendMessage(jid, { text: tutorial }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text:
+        `⚠️ Uso correto: *!corrida [bicho] [valor]*\n\n` +
+        `*Escolha seu corredor:*\n` +
+        `1️⃣ 🐎 Cavalo\n` +
+        `2️⃣ 🐅 Tigre\n` +
+        `3️⃣ 🐢 Tartaruga\n` +
+        `4️⃣ 🐕 Cachorro\n\n` +
+        `Exemplo: *!corrida 1 50* (Aposta 50 no Cavalo)`
+    }, { quoted: msg });
     return;
   }
 
-  const user = await Usuario.findOne({ idWhatsApp: senderJid });
-  const userGold = user?.gold || 0;
+  // Debitar atomicamente antes de revelar resultado
+  const userDebited = await Usuario.findOneAndUpdate(
+    { idWhatsApp: senderJid, gold: { $gte: aposta } },
+    { $inc: { gold: -aposta } },
+    { new: true }
+  );
 
-  if (userGold < aposta) {
-    await sock.sendMessage(jid, { text: `❌ Saldo insuficiente para correr! Você tem *${userGold} Gold*.` }, { quoted: msg });
+  if (!userDebited) {
+    const saldo = await getSaldoAtual(senderJid);
+    await sock.sendMessage(jid, {
+      text: `❌ Saldo insuficiente!\n\n💰 Seu saldo: *${saldo}* gold\n💸 Aposta: *${aposta}* gold`
+    }, { quoted: msg });
     return;
   }
 
@@ -833,42 +1031,56 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   const emojis = ['🐎', '🐅', '🐢', '🐕'];
 
   const vencedorIdx = Math.floor(Math.random() * 4);
-  const ganhou = (escolha - 1) === vencedorIdx;
-  const lucro = ganhou ? aposta * 3 : -aposta;
+  const ganhou      = (escolha - 1) === vencedorIdx;
+  const premio      = ganhou ? aposta * 3 : 0;
+  const lucroLiq    = premio - aposta;
 
-  // Garantir que missão está inicializada antes de atualizar
-  if (lucro > 0) {
-    await prepareDailyMissionState(senderJid);
+  // Creditar prêmio e registrar histórico
+  await prepareDailyMissionState(senderJid);
+
+  const updateCorrida = {
+    $inc: { gold: premio },
+    $push: {
+      goldHistory: {
+        $each: [{
+          type: ganhou ? 'recebido' : 'gasto',
+          item: `Corrida (${bichos[escolha - 1]})`,
+          amount: Math.abs(lucroLiq),
+        }],
+        $slice: -50,
+      },
+    },
+  };
+  if (lucroLiq > 0) {
+    updateCorrida.$inc['dailyMissions.progress.gold500'] = lucroLiq;
   }
 
-  const updateCorrida = { $inc: { gold: lucro } };
-  if (lucro > 0) {
-    updateCorrida['$inc']['dailyMissions.progress.gold500'] = lucro;
-  }
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: senderJid },
-    updateCorrida
-  );
+  await Usuario.findOneAndUpdate({ idWhatsApp: senderJid }, updateCorrida);
 
+  const saldoFinal = userDebited.gold + lucroLiq;
+
+  // Montar pista visual
   let pista = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
   for (let i = 0; i < 4; i++) {
     if (i === vencedorIdx) {
-      pista += `${emojis[i]} ================== 💨 🏆\n`;
+      pista += `${emojis[i]} ══════════════ 💨 🏆\n`;
     } else {
-      const espaco = '='.repeat(Math.floor(Math.random() * 10) + 2);
-      pista += `${emojis[i]} ${espaco} \n`;
+      const espaco = '═'.repeat(Math.floor(Math.random() * 8) + 2);
+      pista += `${emojis[i]} ${espaco}\n`;
     }
   }
 
-  pista += `\nVocê apostou no *${bichos[escolha - 1]}*.\n\n`;
+  pista += `\n━━━━━━━━━━━━━━━━\n`;
+  pista += `🎯 Você apostou no *${bichos[escolha - 1]}*\n`;
+  pista += `🏆 Vencedor: *${bichos[vencedorIdx]}*\n\n`;
 
   if (ganhou) {
-    pista += `🎉 *VITÓRIA!* Seu bicho voou baixo! Você ganhou *${aposta * 3} Gold*!`;
+    pista += `🎉 *VITÓRIA!* Você ganhou *+${aposta * 3}* gold!\n`;
   } else {
-    pista += `❌ *DERROTA!* O vencedor foi o *${bichos[vencedorIdx]}*. Você perdeu a aposta.`;
+    pista += `❌ *DERROTA!* Você perdeu *${aposta}* gold.\n`;
   }
 
-  pista += `\n💰 Saldo: *${userGold + lucro} Gold*`;
+  pista += `💰 Saldo: *${saldoFinal}* gold`;
 
   await sock.sendMessage(jid, { text: pista }, { quoted: msg });
 }

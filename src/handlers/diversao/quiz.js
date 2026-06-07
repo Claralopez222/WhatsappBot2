@@ -458,11 +458,32 @@ async function handleRankJogos(sock, msg, jid, contactNames) {
 
 // ─── !banco ───────────────────────────────────────────────────────────────────
 
-const DAILY_DEPOSIT_LIMIT = 10000;
+const DAILY_DEPOSIT_LIMIT   = 10000;
+const INVESTMENT_DURATION_MS = 3 * 60 * 60 * 1000; // 3 horas em ms
+
+// ─── Helpers de tempo ────────────────────────────────────────────────────────
+
+function getMsLeft(startDate) {
+  const elapsed = Date.now() - new Date(startDate).getTime();
+  return Math.max(0, INVESTMENT_DURATION_MS - elapsed);
+}
+
+function formatTimeLeft(ms) {
+  if (ms <= 0) return '0s';
+  const totalSec = Math.ceil(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}min`;
+  if (m > 0) return `${m}min ${s}s`;
+  return `${s}s`;
+}
+
+// ─── !banco ───────────────────────────────────────────────────────────────────
 
 async function handleBanco(sock, msg, jid, caption) {
   const userId = msg.key.participant || msg.key.remoteJid;
-  const match = caption.match(/banco\s+(\d+)/i);
+  const match  = caption.match(/banco\s+(\d+)/i);
 
   let user = await Usuario.findOne({ idWhatsApp: userId });
   if (!user) {
@@ -475,7 +496,7 @@ async function handleBanco(sock, msg, jid, caption) {
 
   // Resetar limite diário se necessário
   if (user.bank.lastDepositDate !== today) {
-    user.bank.depositedToday = 0;
+    user.bank.depositedToday  = 0;
     user.bank.lastDepositDate = today;
   }
 
@@ -496,11 +517,11 @@ async function handleBanco(sock, msg, jid, caption) {
         `  📊 Use: *!banco <quantia>*\n` +
         `  💵 Exemplo: *!banco 500*\n\n` +
         `*RENDIMENTOS:*\n` +
-        `  📈 Juros: 5-15% ao dia\n` +
-        `  ⏰ Prazo: 1-7 dias aleatórios\n\n` +
+        `  📈 Juros: 5-15%\n` +
+        `  ⏰ Prazo: *3 horas*\n\n` +
         `*RESGATE:*\n` +
         `  💎 Use: *!resgatar*\n` +
-        `  _Após o prazo expirar!_\n\n` +
+        `  _Após as 3 horas expirarem!_\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*LIMITE DIÁRIO:*\n` +
         `  📊 Depositado hoje: *${depositedToday}* gold\n` +
@@ -511,12 +532,11 @@ async function handleBanco(sock, msg, jid, caption) {
       return;
     }
 
-    const elapsed = Math.floor((Date.now() - new Date(user.bank.startDate)) / 86400000);
-    const daysLeft = Math.max(0, user.bank.daysRemaining - elapsed);
+    const msLeft       = getMsLeft(user.bank.startDate);
     const futureAmount = Math.round(user.bank.amount * (1 + user.bank.interest / 100));
-    const ganho = futureAmount - user.bank.amount;
-    const status = daysLeft > 0 ? `⏳ Dias restantes: *${daysLeft}*` : `✅ *PRONTO PARA RESGATAR!*`;
-    const emoji = daysLeft > 0 ? '⌛' : '🎯';
+    const ganho        = futureAmount - user.bank.amount;
+    const status       = msLeft > 0 ? `⏳ Tempo restante: *${formatTimeLeft(msLeft)}*` : `✅ *PRONTO PARA RESGATAR!*`;
+    const emoji        = msLeft > 0 ? '⌛' : '🎯';
 
     const texto =
       `💼 ═══ SEU INVESTIMENTO ═══ 💼\n\n` +
@@ -533,8 +553,8 @@ async function handleBanco(sock, msg, jid, caption) {
       `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*AÇÕES:*\n` +
-      (daysLeft > 0
-        ? `  ⏳ Aguarde ${daysLeft} dia(s) para resgatar!\n  💵 Ou deposite mais: *!banco <quantia>*`
+      (msLeft > 0
+        ? `  ⏳ Aguarde *${formatTimeLeft(msLeft)}* para resgatar!\n  💵 Ou deposite mais: *!banco <quantia>*`
         : `  ✅ Use *!resgatar* para sacar seu dinheiro!\n  💵 Ou deposite mais: *!banco <quantia>*`) +
       `\n\n_Seu investimento está crescendo..._ 📊`;
 
@@ -554,7 +574,6 @@ async function handleBanco(sock, msg, jid, caption) {
     return;
   }
 
-  // Verificar limite diário
   if (remainingLimit <= 0) {
     const texto =
       `⚠️ *LIMITE DIÁRIO ATINGIDO*\n\nVocê já depositou *${depositedToday}* gold hoje!\n\n` +
@@ -584,7 +603,7 @@ async function handleBanco(sock, msg, jid, caption) {
     return;
   }
 
-  // Debitar gold do usuário
+  // Debitar gold do usuário atomicamente
   const updatedUser = await Usuario.findOneAndUpdate(
     { idWhatsApp: userId, gold: { $gte: amount } },
     { $inc: { gold: -amount } },
@@ -610,15 +629,14 @@ async function handleBanco(sock, msg, jid, caption) {
 
   if (hasActiveInvestment) {
     // ─── Adicionar ao investimento existente ─────────────────────────────────
-    // Mantém a taxa e prazo originais, apenas soma o valor
-    const newTotal = user.bank.amount + amount;
+    const newTotal         = user.bank.amount + amount;
     const newDepositedToday = depositedToday + amount;
 
     await Usuario.updateOne(
       { idWhatsApp: userId },
       {
         $set: {
-          'bank.amount': newTotal,
+          'bank.amount':         newTotal,
           'bank.depositedToday': newDepositedToday,
           'bank.lastDepositDate': today,
         },
@@ -626,9 +644,8 @@ async function handleBanco(sock, msg, jid, caption) {
     );
 
     const futureAmount = Math.round(newTotal * (1 + user.bank.interest / 100));
-    const ganho = futureAmount - newTotal;
-    const elapsed = Math.floor((Date.now() - new Date(user.bank.startDate)) / 86400000);
-    const daysLeft = Math.max(0, user.bank.daysRemaining - elapsed);
+    const ganho        = futureAmount - newTotal;
+    const msLeft       = getMsLeft(user.bank.startDate);
 
     const texto =
       `✅ ═══ DEPÓSITO ADICIONADO! ═══ ✅\n\n` +
@@ -638,7 +655,7 @@ async function handleBanco(sock, msg, jid, caption) {
       `  💵 Adicionado agora: *+${amount}* gold\n` +
       `  🏦 Total investido: *${newTotal}* gold\n` +
       `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
-      `  ⏰ Dias restantes: *${daysLeft}*\n\n` +
+      `  ⏰ Tempo restante: *${formatTimeLeft(msLeft)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*RETORNO ESPERADO:*\n` +
       `  💎 Resgate em: *${futureAmount}* gold\n` +
@@ -650,20 +667,19 @@ async function handleBanco(sock, msg, jid, caption) {
       `  🔓 Limite restante hoje: *${DAILY_DEPOSIT_LIMIT - newDepositedToday}* gold`;
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+
   } else {
     // ─── Criar novo investimento ──────────────────────────────────────────────
-    const interest = 5 + Math.floor(Math.random() * 11); // 5–15%
-    const days = 1 + Math.floor(Math.random() * 7);       // 1–7 dias
+    const interest         = 5 + Math.floor(Math.random() * 11); // 5–15%
     const newDepositedToday = depositedToday + amount;
 
     await Usuario.updateOne(
       { idWhatsApp: userId },
       {
         $set: {
-          'bank.amount': amount,
-          'bank.interest': interest,
-          'bank.daysRemaining': days,
-          'bank.startDate': new Date().toISOString(),
+          'bank.amount':         amount,
+          'bank.interest':       interest,
+          'bank.startDate':      new Date().toISOString(),
           'bank.lastDepositDate': today,
           'bank.depositedToday': newDepositedToday,
         },
@@ -671,7 +687,7 @@ async function handleBanco(sock, msg, jid, caption) {
     );
 
     const futureAmount = Math.round(amount * (1 + interest / 100));
-    const ganho = futureAmount - amount;
+    const ganho        = futureAmount - amount;
 
     const texto =
       `✅ ═══ INVESTIMENTO REALIZADO! ═══ ✅\n\n` +
@@ -679,8 +695,8 @@ async function handleBanco(sock, msg, jid, caption) {
       `━━━━━━━━━━━━━━━━\n` +
       `*RESUMO DO INVESTIMENTO:*\n` +
       `  💵 Valor investido: *${amount}* gold\n` +
-      `  📈 Taxa de juros: *${interest}%* ao dia\n` +
-      `  ⏰ Prazo: *${days} dia(s)*\n\n` +
+      `  📈 Taxa de juros: *${interest}%*\n` +
+      `  ⏰ Prazo: *3 horas*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*RETORNO ESPERADO:*\n` +
       `  💎 Resgate em: *${futureAmount}* gold\n` +
@@ -699,7 +715,7 @@ async function handleBanco(sock, msg, jid, caption) {
 
 async function handleResgatar(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
-  const user = await Usuario.findOne({ idWhatsApp: userId });
+  const user   = await Usuario.findOne({ idWhatsApp: userId });
 
   if (!user || !user.bank || !user.bank.amount || user.bank.amount <= 0) {
     await sock.sendMessage(
@@ -710,19 +726,18 @@ async function handleResgatar(sock, msg, jid) {
     return;
   }
 
-  const elapsed = Math.floor((Date.now() - new Date(user.bank.startDate)) / 86400000);
-  const daysLeft = Math.max(0, user.bank.daysRemaining - elapsed);
+  const msLeft = getMsLeft(user.bank.startDate);
 
-  if (daysLeft > 0) {
+  if (msLeft > 0) {
     const futureAmount = Math.round(user.bank.amount * (1 + user.bank.interest / 100));
-    const ganho = futureAmount - user.bank.amount;
+    const ganho        = futureAmount - user.bank.amount;
 
     await sock.sendMessage(
       jid,
       {
         text:
           `⏳ ═══ INVESTIMENTO EM ANDAMENTO ═══ ⏳\n\n` +
-          `⌛ *Seu investimento vence em ${daysLeft} dia(s)!*\n\n` +
+          `⌛ *Seu investimento vence em ${formatTimeLeft(msLeft)}!*\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
           `*DETALHES:*\n` +
           `  💵 Investido: *${user.bank.amount}* gold\n` +
@@ -737,9 +752,8 @@ async function handleResgatar(sock, msg, jid) {
   }
 
   const futureAmount = Math.round(user.bank.amount * (1 + user.bank.interest / 100));
-  const ganho = futureAmount - user.bank.amount;
+  const ganho        = futureAmount - user.bank.amount;
 
-  // Garantir que missão está inicializada antes de atualizar
   if (ganho > 0) {
     await prepareDailyMissionState(userId);
   }
@@ -747,9 +761,8 @@ async function handleResgatar(sock, msg, jid) {
   const updateResgate = {
     $inc: { gold: futureAmount },
     $set: {
-      'bank.amount': 0,
-      'bank.interest': 0,
-      'bank.daysRemaining': 0,
+      'bank.amount':    0,
+      'bank.interest':  0,
       'bank.startDate': null,
     },
   };

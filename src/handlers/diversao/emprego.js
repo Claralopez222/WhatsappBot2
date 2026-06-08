@@ -472,6 +472,7 @@ async function handleEmprego(sock, msg, jid) {
   try {
     const carteira = await getCarteira(userId, groupId);
 
+    // Desempregado
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
       const sujo = carteira.historicoSujo
         ? '\n⚠️ Histórico sujo: *30% de chance de contratação*'
@@ -482,15 +483,28 @@ async function handleEmprego(sock, msg, jid) {
       );
     }
 
-    const cargo        = resolverCargo(carteira.empregoAtual);
-    const proximoCargo = CARGO_POR_NIVEL[(cargo?.nivel ?? 0) + 1] ?? null;
+    const cargo = resolverCargo(carteira.empregoAtual);
+
+    // Cargo inválido no banco — reseta silenciosamente
+    if (!cargo) {
+      await CarteiraGrupo.findOneAndUpdate(
+        filtro(userId, groupId),
+        { $set: { empregoAtual: null } }
+      );
+      return reply(sock, jid, msg,
+        `⚠️ Cargo inválido detectado. Seu emprego foi resetado.\n` +
+        `Use *!procuraremprego* para se reempregar.`
+      );
+    }
+
+    const proximoCargo = CARGO_POR_NIVEL[cargo.nivel + 1] ?? null;
     const sucessos     = carteira.totalTrabalhosComSucesso ?? 0;
     const agora        = Date.now();
     const ultimoTs     = carteira.ultimoTrabalho
       ? new Date(carteira.ultimoTrabalho).getTime()
       : null;
 
-    // Status do turno
+    // ── Status do turno ──────────────────────────────────────────────────────
     let statusTurno = '🟢 Disponível para trabalhar agora!';
     if (ultimoTs) {
       const decorrido = agora - ultimoTs;
@@ -499,29 +513,36 @@ async function handleEmprego(sock, msg, jid) {
         statusTurno = `🟡 Próximo turno em *${formatMs(falta)}*`;
       } else if (decorrido < TEMPO.DEMISSAO_MS) {
         const janelaRestante = TEMPO.DEMISSAO_MS - decorrido;
-        statusTurno = `🔴 *ATENÇÃO!* Janela de tolerância: *${formatMs(janelaRestante)}* restantes!`;
+        statusTurno = `🔴 *ATENÇÃO!* Janela expira em *${formatMs(janelaRestante)}* — trabalhe logo!`;
       } else {
-        statusTurno = '💀 *Você será demitido ao usar !trabalhar!*';
+        statusTurno = `💀 *Prazo esgotado! Você será demitido ao usar !trabalhar*`;
       }
     }
 
-    let texto =
-      `💼 *SEU EMPREGO NESTE GRUPO*\n\n` +
-      `🏢 Cargo: *${cargo?.nome ?? carteira.empregoAtual}*\n` +
-      `💰 Salário: *${cargo?.salarioMin}–${cargo?.salarioMax} gold*\n` +
-      `📊 Turnos no cargo atual: *${sucessos}*\n` +
-      `📅 Status: ${statusTurno}\n`;
-
+    // ── Progresso de promoção ────────────────────────────────────────────────
+    let progressoTexto = '';
     if (proximoCargo) {
       const faltam = Math.max(0, proximoCargo.exigencia - sucessos);
-      texto +=
+      const barsOn = Math.min(10, Math.floor((sucessos / proximoCargo.exigencia) * 10));
+      const barra  = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
+      progressoTexto =
         `\n📈 *Próxima promoção:* ${proximoCargo.nome}\n` +
+        `   [${barra}] ${sucessos}/${proximoCargo.exigencia} turnos\n` +
         (faltam === 0
           ? `   ✅ *Pronto! Use !promocao agora!*`
           : `   ⏳ Faltam *${faltam} turno(s)*`);
     } else {
-      texto += `\n🏆 _Cargo máximo atingido!_`;
+      progressoTexto = `\n🏆 _Você está no cargo máximo!_`;
     }
+
+    // ── Montar resposta ──────────────────────────────────────────────────────
+    let texto =
+      `💼 *SEU EMPREGO NESTE GRUPO*\n\n` +
+      `🏢 Cargo: *${cargo.nome}*\n` +
+      `💰 Salário: *${cargo.salarioMin}–${cargo.salarioMax} gold* por turno\n` +
+      `📊 Turnos no cargo: *${sucessos}*\n` +
+      `📅 Status: ${statusTurno}` +
+      progressoTexto;
 
     if (carteira.historicoSujo) {
       texto += `\n\n⚠️ _Histórico sujo registrado._`;
@@ -534,7 +555,6 @@ async function handleEmprego(sock, msg, jid) {
     return reply(sock, jid, msg, '⚠️ Erro ao carregar emprego! Tente novamente.');
   }
 }
-
 // ─── !demitir ─────────────────────────────────────────────────────────────────
 
 async function handleDemitir(sock, msg, jid) {
@@ -585,6 +605,7 @@ module.exports = {
   handlePromocao,
   handleEmprego,
   handleDemitir,
+  handleMenuWork,
   CARGOS,
   CARGO_POR_SLUG,
 };

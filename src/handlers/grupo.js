@@ -369,7 +369,7 @@ async function handleRanking(sock, msg, jid, contactNames = {}) {
   }
 }
  
-module.exports = { handlePetRank, handleRankJogos, handleRanking };
+module.exports = { handleRanking };
 // ═══════════════════════════════════════════════════════════════
 // ─── !sorteio ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

@@ -37,6 +37,7 @@ const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidad
 const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversario'));
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
+const pescaHandler = require('./handlers/diversao/pesca');
 
 // ─── Silenciar logs de sessão ─────────────────────────────────
 const _log = console.log.bind(console);
@@ -699,18 +700,21 @@ if (matchCmd(cmdWord, 'gold'))
   if (matchCmd(cmdWord, 'comprarofferta'))
     { await diversaoHandler.handleOfertar(sock, msg, jid, caption); return; }
 
-  // ── PESCA ─────────────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'pescar') || matchCmd(cmdWord, 'pesca'))
-    { await diversaoHandler.handlePescar(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'varas') || matchCmd(cmdWord, 'lojavara') || matchCmd(cmdWord, 'varapesca'))
-    { await diversaoHandler.handleVaras(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'iscas') || matchCmd(cmdWord, 'lojaisca') || matchCmd(cmdWord, 'isca'))
-    { await diversaoHandler.handleIscas(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'inventariopesca') || matchCmd(cmdWord, 'invpesca') || matchCmd(cmdWord, 'minhapesca'))
-    { await diversaoHandler.handleInventarioPesca(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'venderpesca'))   { await pescaHandler.handleVenderPesca(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'rankingpesca'))  { await pescaHandler.handleRankingPesca(sock, msg, jid, contactNames); return; }
-if (matchCmd(cmdWord, 'statspesca'))    { await pescaHandler.handleStatsPesca(sock, msg, jid); return; }
+  // ── PESCA ─────────────────────────────────────────────────────────────────────
+if (matchCmd(cmdWord, 'pescar')         || matchCmd(cmdWord, 'pesca'))
+  { await pescaHandler.handlePescar(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'varas')          || matchCmd(cmdWord, 'lojavara')  || matchCmd(cmdWord, 'varapesca'))
+  { await pescaHandler.handleVaras(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'iscas')          || matchCmd(cmdWord, 'lojaisca')  || matchCmd(cmdWord, 'isca'))
+  { await pescaHandler.handleIscas(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'inventariopesca')|| matchCmd(cmdWord, 'invpesca')  || matchCmd(cmdWord, 'minhapesca'))
+  { await pescaHandler.handleInventarioPesca(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'venderpesca'))
+  { await pescaHandler.handleVenderPesca(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'rankingpesca'))
+  { await pescaHandler.handleRankingPesca(sock, msg, jid, contactNames); return; }
+if (matchCmd(cmdWord, 'statspesca'))
+  { await pescaHandler.handleStatsPesca(sock, msg, jid); return; }
 
  // ── EMPREGO ───────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'procuraremprego') || matchCmd(cmdWord, 'buscaemprego'))

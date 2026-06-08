@@ -2,7 +2,8 @@
  * Handler de Empregos — Bot WhatsApp
  * Sistema de carreira com cooldown, janela de tolerância e demissão por justa causa
  *
- * v1.1 — melhorias de robustez, validação de dados e mensagens mais claras
+ * v1.2 — cooldown ajustado para 6h30, demissão para 8h30, mensagens sincronizadas,
+ *         correção do bug de jid em _executarTurno, limpeza geral
  *
  * ⚠️  ATENÇÃO: Ajuste os dois requires abaixo conforme a estrutura do seu projeto.
  *
@@ -88,15 +89,23 @@ const CARGO_POR_NIVEL = Object.fromEntries(CARGOS.map(c => [c.nivel, c]));
 // ─── CONFIGURAÇÃO DE TEMPO ────────────────────────────────────────────────────
 
 const TEMPO = {
-  COOLDOWN_MS:  4 * 60 * 60 * 1000,  // 4 h — tempo mínimo entre turnos
-  JANELA_MS:    2 * 60 * 60 * 1000,  // 2 h — tolerância após o cooldown
-  DEMISSAO_MS:  6 * 60 * 60 * 1000,  // 6 h — demitido se ultrapassar este limite
+  COOLDOWN_MS: 6.5 * 60 * 60 * 1000,  // 6h30 — tempo mínimo entre turnos
+  JANELA_MS:     2 * 60 * 60 * 1000,  // 2h   — tolerância após o cooldown
+  // DEMISSAO_MS é derivado para manter consistência automática:
+  // se COOLDOWN_MS ou JANELA_MS mudarem, o limite de demissão acompanha.
 };
+TEMPO.DEMISSAO_MS = TEMPO.COOLDOWN_MS + TEMPO.JANELA_MS; // 8h30
+
 // Linha do tempo por turno:
-//   t=0h  → trabalhou
-//   t=4h  → próximo turno disponível  (COOLDOWN_MS)
-//   t=6h  → fim da janela de tolerância (COOLDOWN_MS + JANELA_MS)
-//   t>6h  → demissão por justa causa  (≥ DEMISSAO_MS desde o último trabalho)
+//   t=0h00 → trabalhou
+//   t=6h30 → próximo turno disponível  (COOLDOWN_MS)
+//   t=8h30 → fim da janela de tolerância (COOLDOWN_MS + JANELA_MS)
+//   t>8h30 → demissão por justa causa  (≥ DEMISSAO_MS desde o último trabalho)
+
+// Labels legíveis para usar nas mensagens (evita hardcode espalhado pelo código)
+const LABEL_COOLDOWN  = '6h30';
+const LABEL_JANELA    = '2h';
+const LABEL_DEMISSAO  = '8h30';
 
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 
@@ -227,8 +236,8 @@ async function handleProcurarEmprego(sock, msg, jid) {
       `💼 Cargo: *${cargoInicial.nome}*\n` +
       `💰 Salário por turno: *${cargoInicial.salarioMin}–${cargoInicial.salarioMax} gold*\n\n` +
       `📋 Use *!trabalhar* para começar a ganhar!\n` +
-      `⏰ Cooldown entre turnos: *4 horas*\n` +
-      `⚠️ Não perca o ponto — você tem *2h de tolerância* após o cooldown!`
+      `⏰ Cooldown entre turnos: *${LABEL_COOLDOWN}*\n` +
+      `⚠️ Não perca o ponto — você tem *${LABEL_JANELA} de tolerância* após o cooldown!`
     );
 
   } catch (e) {
@@ -274,25 +283,25 @@ async function handleTrabalhar(sock, msg, jid) {
       ? new Date(carteira.ultimoTrabalho).getTime()
       : null;
 
-    // Primeiro turno
+    // Primeiro turno — nunca houve registro anterior
     if (!ultimoTrabalho) {
       return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
     }
 
     const decorrido = agora - ultimoTrabalho;
 
-    // Cooldown ainda ativo (< 4h)
+    // Cooldown ainda ativo (< 6h30)
     if (decorrido < TEMPO.COOLDOWN_MS) {
       const falta = TEMPO.COOLDOWN_MS - decorrido;
       return reply(sock, jid, msg,
         `⏳ *TURNO EM ANDAMENTO!*\n\n` +
         `💼 Cargo: *${cargo.nome}*\n` +
         `🕐 Próximo turno disponível em: *${formatMs(falta)}*\n\n` +
-        `💡 _Não se atrase! Você tem 2h após o desbloqueio para bater o ponto._`
+        `💡 _Não se atrase! Você tem ${LABEL_JANELA} após o desbloqueio para bater o ponto._`
       );
     }
 
-    // Passou de 6h — demissão por justa causa
+    // Passou de 8h30 — demissão por justa causa
     if (decorrido >= TEMPO.DEMISSAO_MS) {
       await CarteiraGrupo.findOneAndUpdate(
         filtro(userId, groupId),
@@ -310,7 +319,7 @@ async function handleTrabalhar(sock, msg, jid) {
       return reply(sock, jid, msg,
         `🔴 *DEMITIDO POR JUSTA CAUSA!*\n\n` +
         `Você demorou *${horasPassadas}h* para bater o ponto.\n` +
-        `A janela de tolerância era de apenas *2 horas* após o desbloqueio.\n\n` +
+        `A janela de tolerância era de apenas *${LABEL_JANELA}* após o desbloqueio.\n\n` +
         `📋 Consequências:\n` +
         `  ❌ Cargo perdido: *${cargo.nome}*\n` +
         `  ❌ Progresso zerado\n` +
@@ -319,7 +328,7 @@ async function handleTrabalhar(sock, msg, jid) {
       );
     }
 
-    // Dentro da janela (entre 4h e 6h) → executar turno
+    // Dentro da janela (entre 6h30 e 8h30) → executar turno
     return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
 
   } catch (e) {
@@ -330,6 +339,9 @@ async function handleTrabalhar(sock, msg, jid) {
 
 /**
  * Executa um turno bem-sucedido: paga salário, incrementa contador, salva data.
+ *
+ * CORREÇÃO v1.2: usa o parâmetro `jid` recebido em vez de `msg.key.remoteJid`,
+ * garantindo consistência com o resto das funções do handler.
  */
 async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora) {
   const salario   = randInt(cargo.salarioMin, cargo.salarioMax);
@@ -368,10 +380,10 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
   }
 
   resposta +=
-    `\n\n⏰ Próximo turno disponível em *4 horas*\n` +
-    `⚠️ _Não passe de 6h ou você será demitido!_`;
+    `\n\n⏰ Próximo turno disponível em *${LABEL_COOLDOWN}*\n` +
+    `⚠️ _Não passe de ${LABEL_DEMISSAO} ou você será demitido!_`;
 
-  return reply(sock, msg.key.remoteJid, msg, resposta);
+  return reply(sock, jid, msg, resposta);
 }
 
 // ─── !promocao ────────────────────────────────────────────────────────────────
@@ -390,9 +402,11 @@ async function handlePromocao(sock, msg, jid) {
       );
     }
 
-    const cargoAtual   = resolverCargo(carteira.empregoAtual);
+    const cargoAtual = resolverCargo(carteira.empregoAtual);
     if (!cargoAtual) {
-      return reply(sock, jid, msg, '⚠️ Cargo inválido. Use *!procuraremprego* para se reempregar.');
+      return reply(sock, jid, msg,
+        '⚠️ Cargo inválido. Use *!procuraremprego* para se reempregar.'
+      );
     }
 
     const proximoCargo = CARGO_POR_NIVEL[cargoAtual.nivel + 1] ?? null;
@@ -484,8 +498,8 @@ async function handleEmprego(sock, msg, jid) {
         const falta = TEMPO.COOLDOWN_MS - decorrido;
         statusTurno = `🟡 Próximo turno em *${formatMs(falta)}*`;
       } else if (decorrido < TEMPO.DEMISSAO_MS) {
-        const janelRestante = TEMPO.DEMISSAO_MS - decorrido;
-        statusTurno = `🔴 *ATENÇÃO!* Janela de tolerância: *${formatMs(janelRestante)}* restantes!`;
+        const janelaRestante = TEMPO.DEMISSAO_MS - decorrido;
+        statusTurno = `🔴 *ATENÇÃO!* Janela de tolerância: *${formatMs(janelaRestante)}* restantes!`;
       } else {
         statusTurno = '💀 *Você será demitido ao usar !trabalhar!*';
       }

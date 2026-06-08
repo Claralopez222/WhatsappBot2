@@ -598,6 +598,46 @@ async function handleDemitir(sock, msg, jid) {
   }
 }
 
+// ─── !menuwork ────────────────────────────────────────────────────────────────
+
+async function handleMenuWork(sock, msg, jid, getPrefix) {
+  const P = getPrefix(jid);
+  const menu =
+`╔══════════════════════╗
+      💼 MENU EMPREGOS
+╚══════════════════════╝
+
+🔎 *COMEÇAR*
+  ▸ ${P}procuraremprego — Procura um emprego
+  ▸ ${P}emprego — Ver seu cargo e status atual
+  ▸ ${P}demitir — Pedir demissão voluntária
+
+⏱️ *TRABALHAR*
+  ▸ ${P}trabalhar — Bater o ponto e receber salário
+  ▸ ${P}work — Atalho para !trabalhar
+
+📈 *PROGRESSÃO*
+  ▸ ${P}promocao — Subir de cargo (se tiver turnos suficientes)
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+🏢 *CARGOS DISPONÍVEIS*
+  1. 🛵 Entregador de Pizza  _(inicial)_
+  2. 🏪 Atendente de Loja
+  3. 💻 Programador Júnior
+  4. 🏢 Diretor de Empresa   _(máximo)_
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+⏰ *REGRAS DO PONTO*
+  • Cooldown entre turnos: *6h30*
+  • Janela de tolerância: *2h* após o cooldown
+  • Após *8h30* sem bater ponto → demissão por justa causa
+  ⚠️ _Histórico sujo reduz chance de recontratação para 30%_
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+}
+
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 module.exports = {
   handleProcurarEmprego,

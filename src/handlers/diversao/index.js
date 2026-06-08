@@ -52,7 +52,7 @@ const {
 const {
   handlePescar, handleVaras, handleIscas, handleInventarioPesca,
   VARAS_PESCA, ISCAS, CATALOGO_PESCA, PEIXES_E_ITENS
-} = require('./handlePescar');
+} = require('./pesca');
 
 // Registrar itens de pesca no catálogo do marketplace
 registerCatalog({ ...VARAS_PESCA, ...ISCAS, ...PEIXES_E_ITENS });

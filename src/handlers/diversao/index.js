@@ -12,16 +12,6 @@ const {
   handleEmprego,
 } = require('./emprego');
 
-const {
-  handlePescar,
-  handleVaras,
-  handleIscas,
-  handleInventarioPesca,
-  VARAS_PESCA,
-  ISCAS,
-  CATALOGO_PESCA,
-} = require('./pesca');
-
 // Brincadeiras
 const {
   handleGay, handleSexo, handleNazista, handleLesbica, handleAura,

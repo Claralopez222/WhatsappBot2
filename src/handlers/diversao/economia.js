@@ -11,6 +11,8 @@ const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { prepareDailyMissionState } = require('./missoes');
+// Importar catálogos de pesca para o !comprar reconhecer varas e iscas
+const { VARAS_PESCA, ISCAS } = require('./pesca');
 
 // ─── RE-EXPORTA ITENS_LOJA (sem mudança) ─────────────────────────────────
 const ITENS_LOJA = {
@@ -324,7 +326,7 @@ async function handleComprar(sock, msg, jid, caption) {
   }
 
   const itemNome = match[1].toLowerCase().trim();
-  const itemInfo = ITENS_LOJA[itemNome];
+  const itemInfo = ITENS_LOJA[itemNome] || VARAS_PESCA[itemNome] || ISCAS[itemNome];
 
   if (!itemInfo) {
     const lista = Object.entries(ITENS_LOJA)
@@ -354,16 +356,27 @@ async function handleComprar(sock, msg, jid, caption) {
     return;
   }
 
-  // 1) Adicionar ao inventário global (Usuario)
+  // 1) Adicionar ao inventário correto
   try {
-    let user = await Usuario.findOne({ idWhatsApp: userId });
-    if (!user) {
-      user = new Usuario({ idWhatsApp: userId, gold: 0, inventory: { [itemNome]: 1 } });
+    const ehPesca = !!(VARAS_PESCA[itemNome] || ISCAS[itemNome]);
+    const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+
+    if (ehPesca) {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: idGrupo },
+        { $inc: { [`itensPesca.${itemNome}`]: 1 } },
+        { upsert: true }
+      );
     } else {
-      if (!user.inventory) user.inventory = {};
-      user.inventory[itemNome] = (user.inventory[itemNome] || 0) + 1;
+      let user = await Usuario.findOne({ idWhatsApp: userId });
+      if (!user) {
+        user = new Usuario({ idWhatsApp: userId, gold: 0, inventory: { [itemNome]: 1 } });
+      } else {
+        if (!user.inventory) user.inventory = {};
+        user.inventory[itemNome] = (user.inventory[itemNome] || 0) + 1;
+      }
+      await user.save();
     }
-    await user.save();
   } catch (e) {
     console.error('⚠️ Erro ao adicionar inventário:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao processar a compra! Tente novamente.' }, { quoted: msg });

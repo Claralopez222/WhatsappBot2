@@ -5,6 +5,23 @@
 
 // ─── Importar módulos específicos (mesma pasta) ───────────────────────────
 
+const {
+  handleProcurarEmprego,
+  handleTrabalhar,
+  handlePromocao,
+  handleEmprego,
+} = require('./emprego');
+
+const {
+  handlePescar,
+  handleVaras,
+  handleIscas,
+  handleInventarioPesca,
+  VARAS_PESCA,
+  ISCAS,
+  CATALOGO_PESCA,
+} = require('./pesca');
+
 // Brincadeiras
 const {
   handleGay, handleSexo, handleNazista, handleLesbica, handleAura,
@@ -208,6 +225,12 @@ module.exports = {
   handleEquiparRoubo,
   handleEquiparSec,
   handleRoubar,
+
+  // Emprego
+handleProcurarEmprego,
+handleTrabalhar,
+handlePromocao,
+handleEmprego,
 
   // ── Utilitários (2 funções) ───────────────────────────────────────────────
   getUserId,

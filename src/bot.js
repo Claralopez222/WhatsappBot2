@@ -709,6 +709,16 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'inventariopesca') || matchCmd(cmdWord, 'invpesca') || matchCmd(cmdWord, 'minhapesca'))
     { await diversaoHandler.handleInventarioPesca(sock, msg, jid); return; }
 
+  // ── EMPREGO ───────────────────────────────────────────────────
+if (matchCmd(cmdWord, 'procuraremprego') || matchCmd(cmdWord, 'buscaemprego'))
+  { await diversaoHandler.handleProcurarEmprego(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'trabalhar') || matchCmd(cmdWord, 'work'))
+  { await diversaoHandler.handleTrabalhar(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'promocao') || matchCmd(cmdWord, 'promoção'))
+  { await diversaoHandler.handlePromocao(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'emprego') || matchCmd(cmdWord, 'meuemprego'))
+  { await diversaoHandler.handleEmprego(sock, msg, jid); return; }
+
   // ─── Sistema de Roubo ─────────────────────────────────────────
   if (matchCmd(cmdWord, 'menuroubar'))
     { await diversaoHandler.handleMenuRoubo(sock, msg, jid, getPrefix); return; }

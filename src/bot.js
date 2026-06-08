@@ -709,7 +709,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'inventariopesca') || matchCmd(cmdWord, 'invpesca') || matchCmd(cmdWord, 'minhapesca'))
     { await diversaoHandler.handleInventarioPesca(sock, msg, jid); return; }
 
-  // ── EMPREGO ───────────────────────────────────────────────────
+ // ── EMPREGO ───────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'procuraremprego') || matchCmd(cmdWord, 'buscaemprego'))
   { await diversaoHandler.handleProcurarEmprego(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'trabalhar') || matchCmd(cmdWord, 'work'))
@@ -718,6 +718,10 @@ if (matchCmd(cmdWord, 'promocao') || matchCmd(cmdWord, 'promoção'))
   { await diversaoHandler.handlePromocao(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'emprego') || matchCmd(cmdWord, 'meuemprego'))
   { await diversaoHandler.handleEmprego(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'demitir') || matchCmd(cmdWord, 'pedirdemissao'))
+  { await diversaoHandler.handleDemitir(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'menuwork') || matchCmd(cmdWord, 'menuemprego'))
+  { await menuHandler.handleMenuWork(sock, msg, jid, getPrefix); return; }
 
   // ─── Sistema de Roubo ─────────────────────────────────────────
   if (matchCmd(cmdWord, 'menuroubar'))

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { fetchBuffer, fetchJson } = require(path.join(__dirname, '..', '..', 'fetchurl'));
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-const { handleMenu, handleMenuUtil, handleMenuJogos, handleMenuBaixar, handleMenuRelacionamento, handleAlteradores } = require(path.join(__dirname, 'menu'));
+const { handleMenu, handleMenuUtil, handleMenuJogos, handleMenuBaixar, handleMenuRelacionamento, handleAlteradores, handleMenuWork } = require(path.join(__dirname, 'menu'));
 const { handleLevelOn, handleLevel, handleRankLevel } = require(path.join(__dirname, 'level'));
 const { handleSave, handleSaveRec, handleTiktok, handleAudioDownload, handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs, getFfmpegPath, getFfprobePath } = require(path.join(__dirname, 'downloads'));
 
@@ -413,12 +413,12 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-let userGold = 0;
-try {
-  const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-  const carteira = await CarteiraGrupo.findOne({ idWhatsApp: resolvedJid, idGrupo: jid });
-  userGold = carteira?.gold ?? 0;
-} catch {}
+  let userGold = 0;
+  try {
+    const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: resolvedJid, idGrupo: jid });
+    userGold = carteira?.gold ?? 0;
+  } catch {}
 
   // ── Level / XP ────────────────────────────────────────────────────────────
   const msgsRec = msgCount?.get?.(alvoJid)?.count ?? 0;
@@ -614,6 +614,7 @@ module.exports = {
   handleMenuBaixar,
   handleMenuRelacionamento,
   handleAlteradores,
+  handleMenuWork,
   handleLevelOn,
   handleLevel,
   handleRankLevel,

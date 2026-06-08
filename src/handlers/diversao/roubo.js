@@ -15,7 +15,7 @@ const {
   getCarteira,
   alterarGold,
   alterarGoldSeguro,
-} = require(path.join(__dirname, '..', '..', 'services', 'carteiraService'));
+} = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { incrementMission } = require('./missoes');
 
 // ─── CONFIGURAÇÕES ────────────────────────────────────────────────────────────

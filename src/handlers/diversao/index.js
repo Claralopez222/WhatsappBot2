@@ -10,8 +10,9 @@ const {
   handleTrabalhar,
   handlePromocao,
   handleEmprego,
+  handleDemitir,
+  handleMenuWork,
 } = require('./emprego');
-
 // Brincadeiras
 const {
   handleGay, handleSexo, handleNazista, handleLesbica, handleAura,

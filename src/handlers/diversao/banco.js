@@ -6,7 +6,7 @@ const INVESTMENT_DURATION_MS = 3 * 60 * 60 * 1000; // 3 horas em ms
 // ─── Helpers de tempo ────────────────────────────────────────────────────────
 'use strict';
 
-const Usuario         = require('../models/Usuario');
+const Usuario = require(require('path').join(__dirname, '..', '..', 'models', 'Usuario'));
 const carteiraService = require('../services/carteiraService');
 
 // ─── Configuração central ──────────────────────────────────────────────────

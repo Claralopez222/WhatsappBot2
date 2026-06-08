@@ -2,20 +2,40 @@
  * Handler de Empregos — Bot WhatsApp
  * Sistema de carreira com cooldown, janela de tolerância e demissão por justa causa
  *
- * v1.0 — economia isolada por grupo via CarteiraGrupo
+ * v1.1 — melhorias de robustez, validação de dados e mensagens mais claras
+ *
+ * ⚠️  ATENÇÃO: Ajuste os dois requires abaixo conforme a estrutura do seu projeto.
  *
  * Comandos exportados:
  *   !procuraremprego  → tenta ser contratado
  *   !trabalhar / !work → bate o ponto (com toda a lógica de tempo)
  *   !promocao         → tenta subir de nível
  *   !emprego          → exibe status atual
+ *   !demitir          → pede demissão voluntariamente
  */
 
 'use strict';
 
-const path          = require('path');
-const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'services', 'carteiraService'));
+// ─── IMPORTS ──────────────────────────────────────────────────────────────────
+// TODO: ajuste os caminhos abaixo para bater com a estrutura real do projeto.
+//       Exemplo: se este arquivo está em src/handlers/diversao/emprego.js e
+//       os models ficam em src/models/, o caminho correto é '../../models/CarteiraGrupo'
+
+let CarteiraGrupo;
+let getCarteira;
+let alterarGold;
+
+try {
+  CarteiraGrupo = require('../../models/CarteiraGrupo');
+  ({ getCarteira, alterarGold } = require('../../services/carteiraService'));
+} catch (err) {
+  console.error(
+    '[Emprego] ERRO CRÍTICO: Não foi possível importar dependências.\n' +
+    '  Verifique os caminhos de CarteiraGrupo e carteiraService.\n' +
+    '  Detalhe:', err.message
+  );
+  process.exit(1);
+}
 
 // ─── TABELA DE CARGOS ─────────────────────────────────────────────────────────
 //
@@ -29,8 +49,8 @@ const CARGOS = [
     nivel:         1,
     salarioMin:    50,
     salarioMax:    100,
-    exigencia:     0,       // trabalhos necessários no cargo ANTERIOR para ser promovido
-    exigenciaNome: null,    // nome do cargo anterior (para mensagem de erro)
+    exigencia:     0,
+    exigenciaNome: null,
   },
   {
     slug:          'atendente',
@@ -68,27 +88,30 @@ const CARGO_POR_NIVEL = Object.fromEntries(CARGOS.map(c => [c.nivel, c]));
 // ─── CONFIGURAÇÃO DE TEMPO ────────────────────────────────────────────────────
 
 const TEMPO = {
-  COOLDOWN_MS:   4 * 60 * 60 * 1000,  // 4 h — tempo mínimo entre turnos
-  JANELA_MS:     2 * 60 * 60 * 1000,  // 2 h — tolerância após o cooldown
-  DEMISSAO_MS:   6 * 60 * 60 * 1000,  // 6 h — demitido se ultrapassar este limite
+  COOLDOWN_MS:  4 * 60 * 60 * 1000,  // 4 h — tempo mínimo entre turnos
+  JANELA_MS:    2 * 60 * 60 * 1000,  // 2 h — tolerância após o cooldown
+  DEMISSAO_MS:  6 * 60 * 60 * 1000,  // 6 h — demitido se ultrapassar este limite
 };
-// Resumo da linha do tempo por turno:
+// Linha do tempo por turno:
 //   t=0h  → trabalhou
 //   t=4h  → próximo turno disponível  (COOLDOWN_MS)
 //   t=6h  → fim da janela de tolerância (COOLDOWN_MS + JANELA_MS)
-//   t=6h+ → demissão por justa causa  (≡ DEMISSAO_MS desde o último trabalho)
+//   t>6h  → demissão por justa causa  (≥ DEMISSAO_MS desde o último trabalho)
 
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 
+/** Extrai o ID do usuário da mensagem. */
 function getUserId(msg) {
   return msg?.key?.participant || msg?.key?.remoteJid || null;
 }
 
+/** Retorna o JID do grupo ou null se for conversa privada. */
 function getGroupId(msg) {
   const jid = msg?.key?.remoteJid ?? '';
   return jid.endsWith('@g.us') ? jid : null;
 }
 
+/** Envia resposta citando a mensagem original. */
 async function reply(sock, jid, msg, texto) {
   return sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -109,12 +132,13 @@ function formatMs(ms) {
 }
 
 /**
- * Verifica se o usuário está em um grupo e retorna userId + groupId.
- * Retorna null se for conversa privada (já envia aviso).
+ * Verifica contexto de grupo e retorna { userId, groupId }.
+ * Envia aviso e retorna null se não for grupo ou usuário inválido.
  */
 async function resolverContexto(sock, msg, jid) {
   const userId  = getUserId(msg);
   const groupId = getGroupId(msg);
+
   if (!userId) {
     await reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
     return null;
@@ -128,6 +152,25 @@ async function resolverContexto(sock, msg, jid) {
   return { userId, groupId };
 }
 
+/**
+ * Retorna o cargo correspondente ao slug, ou null com log de aviso.
+ * Evita erros silenciosos quando o banco tem um slug desconhecido.
+ */
+function resolverCargo(slug) {
+  const cargo = CARGO_POR_SLUG[slug];
+  if (!cargo) {
+    console.warn(`[Emprego] Slug desconhecido na carteira: "${slug}"`);
+  }
+  return cargo ?? null;
+}
+
+// ─── QUERY HELPER ─────────────────────────────────────────────────────────────
+
+/** Filtro padrão para findOneAndUpdate. */
+function filtro(userId, groupId) {
+  return { idWhatsApp: userId, idGrupo: groupId };
+}
+
 // ─── !procuraremprego ────────────────────────────────────────────────────────
 
 async function handleProcurarEmprego(sock, msg, jid) {
@@ -138,18 +181,19 @@ async function handleProcurarEmprego(sock, msg, jid) {
   try {
     const carteira = await getCarteira(userId, groupId);
 
-    // Já tem emprego?
+    // Já empregado?
     if (carteira.empregoAtual && carteira.empregoAtual !== 'desempregado') {
-      const cargo = CARGO_POR_SLUG[carteira.empregoAtual];
+      const cargo = resolverCargo(carteira.empregoAtual);
       return reply(sock, jid, msg,
         `💼 *VOCÊ JÁ TEM EMPREGO!*\n\n` +
         `Cargo atual: *${cargo?.nome ?? carteira.empregoAtual}*\n\n` +
         `Use *!trabalhar* para bater o ponto ou\n` +
-        `*!promocao* para tentar subir de nível.`
+        `*!promocao* para tentar subir de nível.\n` +
+        `Para sair, use *!demitir*.`
       );
     }
 
-    // Histórico sujo → 30% de chance de contratação
+    // Histórico sujo → 30 % de chance de contratação
     if (carteira.historicoSujo) {
       const aprovado = Math.random() < 0.30;
       if (!aprovado) {
@@ -158,7 +202,7 @@ async function handleProcurarEmprego(sock, msg, jid) {
           `Você foi demitido por justa causa anteriormente.\n` +
           `As empresas estão relutantes em te contratar...\n\n` +
           `😔 *Sua candidatura foi recusada desta vez.*\n` +
-          `💡 Continue tentando — você tem 30% de chance a cada tentativa.`
+          `💡 Continue tentando — você tem *30%* de chance a cada tentativa.`
         );
       }
     }
@@ -166,15 +210,16 @@ async function handleProcurarEmprego(sock, msg, jid) {
     // Contratado! Sempre começa no nível 1
     const cargoInicial = CARGOS[0];
     await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: groupId },
+      filtro(userId, groupId),
       {
         $set: {
           empregoAtual:             cargoInicial.slug,
           totalTrabalhosComSucesso: 0,
           ultimoTrabalho:           null,
-          historicoSujo:            false,   // limpa o histórico ao ser contratado
+          historicoSujo:            false,
         },
-      }
+      },
+      { upsert: true }
     );
 
     return reply(sock, jid, msg,
@@ -187,7 +232,7 @@ async function handleProcurarEmprego(sock, msg, jid) {
     );
 
   } catch (e) {
-    console.error('[Emprego] handleProcurarEmprego:', e.message);
+    console.error('[Emprego] handleProcurarEmprego:', e);
     return reply(sock, jid, msg, '⚠️ Erro ao procurar emprego! Tente novamente.');
   }
 }
@@ -202,7 +247,7 @@ async function handleTrabalhar(sock, msg, jid) {
   try {
     const carteira = await getCarteira(userId, groupId);
 
-    // ── Sem emprego ────────────────────────────────────────────────────────
+    // Sem emprego
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
       return reply(sock, jid, msg,
         `😴 *VOCÊ ESTÁ DESEMPREGADO!*\n\n` +
@@ -211,20 +256,32 @@ async function handleTrabalhar(sock, msg, jid) {
       );
     }
 
-    const cargo = CARGO_POR_SLUG[carteira.empregoAtual];
-    const agora = Date.now();
+    const cargo = resolverCargo(carteira.empregoAtual);
+    if (!cargo) {
+      // Slug inválido no banco — reseta para evitar estado corrompido
+      await CarteiraGrupo.findOneAndUpdate(
+        filtro(userId, groupId),
+        { $set: { empregoAtual: null } }
+      );
+      return reply(sock, jid, msg,
+        `⚠️ Cargo inválido detectado. Seu emprego foi resetado.\n` +
+        `Use *!procuraremprego* para se reempregar.`
+      );
+    }
+
+    const agora          = Date.now();
     const ultimoTrabalho = carteira.ultimoTrabalho
       ? new Date(carteira.ultimoTrabalho).getTime()
       : null;
 
-    // ── Primeiro turno (nunca trabalhou antes) ────────────────────────────
+    // Primeiro turno
     if (!ultimoTrabalho) {
-      return await _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
+      return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
     }
 
     const decorrido = agora - ultimoTrabalho;
 
-    // ── Cooldown ainda ativo (< 4h) ────────────────────────────────────────
+    // Cooldown ainda ativo (< 4h)
     if (decorrido < TEMPO.COOLDOWN_MS) {
       const falta = TEMPO.COOLDOWN_MS - decorrido;
       return reply(sock, jid, msg,
@@ -235,10 +292,10 @@ async function handleTrabalhar(sock, msg, jid) {
       );
     }
 
-    // ── Passou de 6h (demissão por justa causa) ────────────────────────────
+    // Passou de 6h — demissão por justa causa
     if (decorrido >= TEMPO.DEMISSAO_MS) {
       await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: groupId },
+        filtro(userId, groupId),
         {
           $set: {
             empregoAtual:             null,
@@ -257,32 +314,30 @@ async function handleTrabalhar(sock, msg, jid) {
         `📋 Consequências:\n` +
         `  ❌ Cargo perdido: *${cargo.nome}*\n` +
         `  ❌ Progresso zerado\n` +
-        `  ⚠️ Histórico sujo ativado (30% de chance de recontratação)\n\n` +
+        `  ⚠️ Histórico sujo ativado *(30% de chance de recontratação)*\n\n` +
         `Use *!procuraremprego* para tentar um novo emprego.`
       );
     }
 
-    // ── Dentro da janela (entre 4h e 6h) → executar turno ─────────────────
-    return await _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
+    // Dentro da janela (entre 4h e 6h) → executar turno
+    return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
 
   } catch (e) {
-    console.error('[Emprego] handleTrabalhar:', e.message);
+    console.error('[Emprego] handleTrabalhar:', e);
     return reply(sock, jid, msg, '⚠️ Erro ao processar turno! Tente novamente.');
   }
 }
 
 /**
  * Executa um turno bem-sucedido: paga salário, incrementa contador, salva data.
- * Separado para ser chamado tanto no primeiro turno quanto nos seguintes.
  */
 async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora) {
-  const salario    = randInt(cargo.salarioMin, cargo.salarioMax);
-  const novosSucc  = (carteira.totalTrabalhosComSucesso ?? 0) + 1;
+  const salario   = randInt(cargo.salarioMin, cargo.salarioMax);
+  const novosSucc = (carteira.totalTrabalhosComSucesso ?? 0) + 1;
 
-  // Persiste turno e soma gold (via alterarGold para registrar no histórico)
   await Promise.all([
     CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: groupId },
+      filtro(userId, groupId),
       {
         $set: { ultimoTrabalho: new Date(agora) },
         $inc: { totalTrabalhosComSucesso: 1 },
@@ -291,7 +346,6 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
     alterarGold(userId, groupId, salario, `Salário: ${cargo.nome}`),
   ]);
 
-  // Verifica se está pronto para promoção
   const proximoCargo = CARGO_POR_NIVEL[cargo.nivel + 1] ?? null;
   const podePromover = proximoCargo && novosSucc >= proximoCargo.exigencia;
 
@@ -308,7 +362,7 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
   } else if (proximoCargo) {
     const faltam = proximoCargo.exigencia - novosSucc;
     resposta +=
-      `\n📈 Próxima promoção (*${proximoCargo.nome}*): faltam *${faltam} turnos*`;
+      `\n📈 Próxima promoção (*${proximoCargo.nome}*): faltam *${faltam} turno(s)*`;
   } else {
     resposta += `\n🏆 _Você está no cargo máximo! Parabéns, lenda._`;
   }
@@ -336,7 +390,11 @@ async function handlePromocao(sock, msg, jid) {
       );
     }
 
-    const cargoAtual   = CARGO_POR_SLUG[carteira.empregoAtual];
+    const cargoAtual   = resolverCargo(carteira.empregoAtual);
+    if (!cargoAtual) {
+      return reply(sock, jid, msg, '⚠️ Cargo inválido. Use *!procuraremprego* para se reempregar.');
+    }
+
     const proximoCargo = CARGO_POR_NIVEL[cargoAtual.nivel + 1] ?? null;
 
     // Cargo máximo
@@ -350,7 +408,7 @@ async function handlePromocao(sock, msg, jid) {
 
     const sucessos = carteira.totalTrabalhosComSucesso ?? 0;
 
-    // Não atingiu a exigência
+    // Exigência não atingida
     if (sucessos < proximoCargo.exigencia) {
       const faltam = proximoCargo.exigencia - sucessos;
       return reply(sock, jid, msg,
@@ -366,11 +424,11 @@ async function handlePromocao(sock, msg, jid) {
 
     // Promovido!
     await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: groupId },
+      filtro(userId, groupId),
       {
         $set: {
           empregoAtual:             proximoCargo.slug,
-          totalTrabalhosComSucesso: 0,   // zera para o novo cargo
+          totalTrabalhosComSucesso: 0,
         },
       }
     );
@@ -385,7 +443,7 @@ async function handlePromocao(sock, msg, jid) {
     );
 
   } catch (e) {
-    console.error('[Emprego] handlePromocao:', e.message);
+    console.error('[Emprego] handlePromocao:', e);
     return reply(sock, jid, msg, '⚠️ Erro ao processar promoção! Tente novamente.');
   }
 }
@@ -401,18 +459,22 @@ async function handleEmprego(sock, msg, jid) {
     const carteira = await getCarteira(userId, groupId);
 
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
-      const sujo = carteira.historicoSujo ? '\n⚠️ Histórico sujo: *30% de chance de contratação*' : '';
+      const sujo = carteira.historicoSujo
+        ? '\n⚠️ Histórico sujo: *30% de chance de contratação*'
+        : '';
       return reply(sock, jid, msg,
         `😴 *VOCÊ ESTÁ DESEMPREGADO*\n\n` +
         `Use *!procuraremprego* para conseguir um cargo!${sujo}`
       );
     }
 
-    const cargo         = CARGO_POR_SLUG[carteira.empregoAtual];
-    const proximoCargo  = CARGO_POR_NIVEL[(cargo?.nivel ?? 0) + 1] ?? null;
-    const sucessos      = carteira.totalTrabalhosComSucesso ?? 0;
-    const agora         = Date.now();
-    const ultimoTs      = carteira.ultimoTrabalho ? new Date(carteira.ultimoTrabalho).getTime() : null;
+    const cargo        = resolverCargo(carteira.empregoAtual);
+    const proximoCargo = CARGO_POR_NIVEL[(cargo?.nivel ?? 0) + 1] ?? null;
+    const sucessos     = carteira.totalTrabalhosComSucesso ?? 0;
+    const agora        = Date.now();
+    const ultimoTs     = carteira.ultimoTrabalho
+      ? new Date(carteira.ultimoTrabalho).getTime()
+      : null;
 
     // Status do turno
     let statusTurno = '🟢 Disponível para trabalhar agora!';
@@ -454,8 +516,51 @@ async function handleEmprego(sock, msg, jid) {
     return reply(sock, jid, msg, texto);
 
   } catch (e) {
-    console.error('[Emprego] handleEmprego:', e.message);
+    console.error('[Emprego] handleEmprego:', e);
     return reply(sock, jid, msg, '⚠️ Erro ao carregar emprego! Tente novamente.');
+  }
+}
+
+// ─── !demitir ─────────────────────────────────────────────────────────────────
+
+async function handleDemitir(sock, msg, jid) {
+  const ctx = await resolverContexto(sock, msg, jid);
+  if (!ctx) return;
+  const { userId, groupId } = ctx;
+
+  try {
+    const carteira = await getCarteira(userId, groupId);
+
+    if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
+      return reply(sock, jid, msg,
+        `😴 *VOCÊ JÁ ESTÁ DESEMPREGADO!*\n\nUse *!procuraremprego* para conseguir um cargo.`
+      );
+    }
+
+    const cargo = resolverCargo(carteira.empregoAtual);
+
+    await CarteiraGrupo.findOneAndUpdate(
+      filtro(userId, groupId),
+      {
+        $set: {
+          empregoAtual:             null,
+          totalTrabalhosComSucesso: 0,
+          ultimoTrabalho:           null,
+          // Demissão voluntária não suja o histórico
+        },
+      }
+    );
+
+    return reply(sock, jid, msg,
+      `👋 *VOCÊ PEDIU DEMISSÃO!*\n\n` +
+      `Cargo encerrado: *${cargo?.nome ?? carteira.empregoAtual}*\n\n` +
+      `✅ Seu histórico foi preservado (saída voluntária).\n` +
+      `Use *!procuraremprego* quando quiser voltar ao mercado.`
+    );
+
+  } catch (e) {
+    console.error('[Emprego] handleDemitir:', e);
+    return reply(sock, jid, msg, '⚠️ Erro ao processar demissão! Tente novamente.');
   }
 }
 
@@ -466,6 +571,7 @@ module.exports = {
   handleTrabalhar,
   handlePromocao,
   handleEmprego,
+  handleDemitir,
 
   // Exporta tabela para uso externo (ex.: loja, ranking)
   CARGOS,

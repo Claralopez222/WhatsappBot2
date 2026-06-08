@@ -8,8 +8,8 @@
  */
 
 const path = require('path');
-const Usuario      = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-require(path.join(__dirname, '..', '..', 'utils', 'carteira'))
+const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { prepareDailyMissionState } = require('./missoes');
 
 // ─── RE-EXPORTA ITENS_LOJA (sem mudança) ─────────────────────────────────

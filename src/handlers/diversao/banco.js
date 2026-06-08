@@ -1,13 +1,8 @@
-// ─── !banco ───────────────────────────────────────────────────────────────────
-
-const DAILY_DEPOSIT_LIMIT   = 10000;
-const INVESTMENT_DURATION_MS = 3 * 60 * 60 * 1000; // 3 horas em ms
-
-// ─── Helpers de tempo ────────────────────────────────────────────────────────
 'use strict';
 
-const Usuario = require(require('path').join(__dirname, '..', '..', 'models', 'Usuario'));
-const carteiraService = require(require('path').join(__dirname, '..', '..', 'utils', 'carteira'));
+const path = require('path');
+const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ─── Configuração central ──────────────────────────────────────────────────
 
@@ -19,7 +14,15 @@ const BANCO_CONFIG = {
   HISTORICO_LIMITE: 10,
 };
 
-// ─── Helpers puros ─────────────────────────────────────────────────────────
+// ─── Helpers puros ────────────────────────────────────────────────────────────
+
+function sortearJuros() {
+  return BANCO_CONFIG.JUROS_MIN + Math.floor(Math.random() * (BANCO_CONFIG.JUROS_MAX - BANCO_CONFIG.JUROS_MIN + 1));
+}
+
+function calcularResgate(amount, interest) {
+  return Math.round(amount * (1 + interest / 100));
+}
 
 function getMsLeft(startDate) {
   if (!startDate) return 0;
@@ -40,46 +43,8 @@ function formatTimeLeft(ms) {
   return `${s}s`;
 }
 
-// ... resto do arquivo
-// ─── Helpers puros ────────────────────────────────────────────────────────────
-
-/** Sorteia taxa de juros entre JUROS_MIN e JUROS_MAX (inteiro). */
-function sortearJuros() {
-  return BANCO_CONFIG.JUROS_MIN + Math.floor(Math.random() * (BANCO_CONFIG.JUROS_MAX - BANCO_CONFIG.JUROS_MIN + 1));
-}
-
-/** Calcula valor do resgate arredondado. */
-function calcularResgate(amount, interest) {
-  return Math.round(amount * (1 + interest / 100));
-}
-
-/**
- * Retorna quantos ms faltam para o investimento vencer.
- * Retorna 0 se já venceu ou se startDate for inválido.
- */
-function getMsLeft(startDate) {
-  if (!startDate) return 0;
-  const inicio = new Date(startDate).getTime();
-  if (isNaN(inicio)) return 0;
-  const restante = inicio + BANCO_CONFIG.PRAZO_MS - Date.now();
-  return restante > 0 ? restante : 0;
-}
-
-/** Formata ms em "Xh Ym Zs". */
-function formatTimeLeft(ms) {
-  const totalSec = Math.ceil(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return [h && `${h}h`, m && `${m}m`, `${s}s`].filter(Boolean).join(' ');
-}
-
 // ─── Helpers de acesso ao BD ──────────────────────────────────────────────────
 
-/**
- * Garante que o documento do usuário existe e retorna-o.
- * Usa upsert para ser seguro contra corridas.
- */
 async function garantirUsuario(idWhatsApp) {
   return Usuario.findOneAndUpdate(
     { idWhatsApp },
@@ -88,10 +53,6 @@ async function garantirUsuario(idWhatsApp) {
   );
 }
 
-/**
- * Retorna o saldo de gold do usuário no grupo (CarteiraGrupo).
- * Se idGrupo for nulo/undefined cai de volta para o gold global (Usuario).
- */
 async function getSaldoGrupo(idWhatsApp, idGrupo) {
   if (!idGrupo) return null;
   return carteiraService.getCarteira(idWhatsApp, idGrupo);

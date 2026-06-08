@@ -110,6 +110,17 @@ const RARITY_EMOJI = {
 const petCache     = new Map(); // userId  → pet object
 const spawnedPets  = new Map(); // groupId → { type, rarity, spawnedAt (ms) }
 const cooldownMap  = new Map(); // `${userId}:${action}` → timestamp
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+
+const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+function somenteGrupo(jid) {
+  return jid?.endsWith('@g.us') ?? false;
+}
+
+function resolverNome(idWhatsApp, contactNames) {
+  return contactNames?.[idWhatsApp] || idWhatsApp.split('@')[0];
+}
 
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 

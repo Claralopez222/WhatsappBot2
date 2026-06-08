@@ -933,7 +933,7 @@ if (matchCmd(cmdWord, 'menuwork') || matchCmd(cmdWord, 'menuemprego'))
   if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'banco') || matchCmdStart(cmd, 'banco '))
     { await diversaoHandler.handleBanco(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'historicobanco')) { await bancoHandler.handleHistoricoBanco(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'historicobanco')) { await diversaoHandler.handleHistoricoBanco(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'resgatar'))       { await diversaoHandler.handleResgatar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'levelon'))        { await utilidadeHandler.handleLevelOn(sock, msg, jid, author); return; }
   if (matchCmd(cmdWord, 'level'))          { await utilidadeHandler.handleLevel(sock, msg, jid, author, msgCount); return; }

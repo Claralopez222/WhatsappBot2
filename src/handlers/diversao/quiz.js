@@ -488,10 +488,29 @@ const DAILY_DEPOSIT_LIMIT   = 10000;
 const INVESTMENT_DURATION_MS = 3 * 60 * 60 * 1000; // 3 horas em ms
 
 // ─── Helpers de tempo ────────────────────────────────────────────────────────
+'use strict';
+
+const Usuario         = require('../models/Usuario');
+const carteiraService = require('../services/carteiraService');
+
+// ─── Configuração central ──────────────────────────────────────────────────
+
+const BANCO_CONFIG = {
+  PRAZO_MS:         3 * 60 * 60 * 1000,
+  JUROS_MIN:        5,
+  JUROS_MAX:        15,
+  DAILY_LIMIT:      5000,
+  HISTORICO_LIMITE: 10,
+};
+
+// ─── Helpers puros ─────────────────────────────────────────────────────────
 
 function getMsLeft(startDate) {
-  const elapsed = Date.now() - new Date(startDate).getTime();
-  return Math.max(0, INVESTMENT_DURATION_MS - elapsed);
+  if (!startDate) return 0;
+  const inicio = new Date(startDate).getTime();
+  if (isNaN(inicio)) return 0;
+  const restante = inicio + BANCO_CONFIG.PRAZO_MS - Date.now();
+  return restante > 0 ? restante : 0;
 }
 
 function formatTimeLeft(ms) {
@@ -505,21 +524,7 @@ function formatTimeLeft(ms) {
   return `${s}s`;
 }
 
-'use strict';
-
-const Usuario        = require('../models/Usuario');
-const carteiraService = require('../services/carteiraService');
-
-// ─── Configuração central ─────────────────────────────────────────────────────
-
-const BANCO_CONFIG = {
-  PRAZO_MS:          3 * 60 * 60 * 1000, // 3 horas
-  JUROS_MIN:         5,
-  JUROS_MAX:         15,
-  DAILY_LIMIT:       5000,
-  HISTORICO_LIMITE:  10,
-};
-
+// ... resto do arquivo
 // ─── Helpers puros ────────────────────────────────────────────────────────────
 
 /** Sorteia taxa de juros entre JUROS_MIN e JUROS_MAX (inteiro). */

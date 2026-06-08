@@ -9,7 +9,7 @@
 
 const path = require('path');
 const Usuario      = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-const { getCarteira, alterarGold, rankingGold } = require(path.join(__dirname, '..', 'services', 'carteiraService'));
+require(path.join(__dirname, '..', '..', 'utils', 'carteira'))
 const { prepareDailyMissionState } = require('./missoes');
 
 // ─── RE-EXPORTA ITENS_LOJA (sem mudança) ─────────────────────────────────

@@ -708,6 +708,9 @@ if (matchCmd(cmdWord, 'gold'))
     { await diversaoHandler.handleIscas(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'inventariopesca') || matchCmd(cmdWord, 'invpesca') || matchCmd(cmdWord, 'minhapesca'))
     { await diversaoHandler.handleInventarioPesca(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'venderpesca'))   { await pescaHandler.handleVenderPesca(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'rankingpesca'))  { await pescaHandler.handleRankingPesca(sock, msg, jid, contactNames); return; }
+if (matchCmd(cmdWord, 'statspesca'))    { await pescaHandler.handleStatsPesca(sock, msg, jid); return; }
 
  // ── EMPREGO ───────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'procuraremprego') || matchCmd(cmdWord, 'buscaemprego'))
@@ -926,6 +929,7 @@ if (matchCmd(cmdWord, 'menuwork') || matchCmd(cmdWord, 'menuemprego'))
   if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'banco') || matchCmdStart(cmd, 'banco '))
     { await diversaoHandler.handleBanco(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'historicobanco')) { await bancoHandler.handleHistoricoBanco(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'resgatar'))       { await diversaoHandler.handleResgatar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'levelon'))        { await utilidadeHandler.handleLevelOn(sock, msg, jid, author); return; }
   if (matchCmd(cmdWord, 'level'))          { await utilidadeHandler.handleLevel(sock, msg, jid, author, msgCount); return; }

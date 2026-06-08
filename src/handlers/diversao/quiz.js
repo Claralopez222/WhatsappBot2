@@ -505,33 +505,126 @@ function formatTimeLeft(ms) {
   return `${s}s`;
 }
 
-// ─── !banco ───────────────────────────────────────────────────────────────────
+'use strict';
 
+const Usuario        = require('../models/Usuario');
+const carteiraService = require('../services/carteiraService');
+
+// ─── Configuração central ─────────────────────────────────────────────────────
+
+const BANCO_CONFIG = {
+  PRAZO_MS:          3 * 60 * 60 * 1000, // 3 horas
+  JUROS_MIN:         5,
+  JUROS_MAX:         15,
+  DAILY_LIMIT:       5000,
+  HISTORICO_LIMITE:  10,
+};
+
+// ─── Helpers puros ────────────────────────────────────────────────────────────
+
+/** Sorteia taxa de juros entre JUROS_MIN e JUROS_MAX (inteiro). */
+function sortearJuros() {
+  return BANCO_CONFIG.JUROS_MIN + Math.floor(Math.random() * (BANCO_CONFIG.JUROS_MAX - BANCO_CONFIG.JUROS_MIN + 1));
+}
+
+/** Calcula valor do resgate arredondado. */
+function calcularResgate(amount, interest) {
+  return Math.round(amount * (1 + interest / 100));
+}
+
+/**
+ * Retorna quantos ms faltam para o investimento vencer.
+ * Retorna 0 se já venceu ou se startDate for inválido.
+ */
+function getMsLeft(startDate) {
+  if (!startDate) return 0;
+  const inicio = new Date(startDate).getTime();
+  if (isNaN(inicio)) return 0;
+  const restante = inicio + BANCO_CONFIG.PRAZO_MS - Date.now();
+  return restante > 0 ? restante : 0;
+}
+
+/** Formata ms em "Xh Ym Zs". */
+function formatTimeLeft(ms) {
+  const totalSec = Math.ceil(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return [h && `${h}h`, m && `${m}m`, `${s}s`].filter(Boolean).join(' ');
+}
+
+// ─── Helpers de acesso ao BD ──────────────────────────────────────────────────
+
+/**
+ * Garante que o documento do usuário existe e retorna-o.
+ * Usa upsert para ser seguro contra corridas.
+ */
+async function garantirUsuario(idWhatsApp) {
+  return Usuario.findOneAndUpdate(
+    { idWhatsApp },
+    { $setOnInsert: { idWhatsApp } },
+    { upsert: true, new: true }
+  );
+}
+
+/**
+ * Retorna o saldo de gold do usuário no grupo (CarteiraGrupo).
+ * Se idGrupo for nulo/undefined cai de volta para o gold global (Usuario).
+ */
+async function getSaldoGrupo(idWhatsApp, idGrupo) {
+  if (!idGrupo) return null;
+  return carteiraService.getCarteira(idWhatsApp, idGrupo);
+}
+
+// ─── handleBanco ─────────────────────────────────────────────────────────────
+
+/**
+ * Comando !banco [quantia]
+ *
+ * - Sem argumento: exibe situação atual do investimento.
+ * - Com argumento:  realiza (ou adiciona a) um depósito.
+ *
+ * O gold debitado/creditado usa SEMPRE o saldo de grupo (CarteiraGrupo)
+ * quando o comando é enviado dentro de um grupo. Em DM, usa o gold global.
+ *
+ * @param {object} sock    - cliente Baileys
+ * @param {object} msg     - mensagem WhatsApp
+ * @param {string} jid     - JID do chat (grupo ou DM)
+ * @param {string} caption - texto do comando
+ */
 async function handleBanco(sock, msg, jid, caption) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-  const match  = caption.match(/banco\s+(\d+)/i);
+  const userId  = msg.key.participant || msg.key.remoteJid;
+  // idGrupo só existe se for mensagem de grupo
+  const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
 
-  let user = await Usuario.findOne({ idWhatsApp: userId });
-  if (!user) {
-    user = await Usuario.create({ idWhatsApp: userId, gold: 0 });
-  }
+  const match = caption.match(/banco\s+(\d+)/i);
 
-  if (!user.bank) user.bank = {};
+  // ── Carregar/criar usuário e carteira ────────────────────────────────────
+  const user    = await garantirUsuario(userId);
+  const carteira = idGrupo ? await getSaldoGrupo(userId, idGrupo) : null;
+
+  // Saldo visível ao usuário: grupo se disponível, senão global
+  const saldoDisponivel = carteira ? (carteira.gold ?? 0) : (user.gold ?? 0);
 
   const today = new Date().toISOString().split('T')[0];
 
-  // Resetar limite diário se necessário
-  if (user.bank.lastDepositDate !== today) {
+  // Resetar limite diário atomicamente se mudou o dia
+  if (user.bank?.lastDepositDate !== today) {
+    await Usuario.updateOne(
+      { idWhatsApp: userId },
+      { $set: { 'bank.depositedToday': 0, 'bank.lastDepositDate': today } }
+    );
+    user.bank         = user.bank ?? {};
     user.bank.depositedToday  = 0;
     user.bank.lastDepositDate = today;
   }
 
-  const depositedToday = user.bank.depositedToday || 0;
-  const remainingLimit = DAILY_DEPOSIT_LIMIT - depositedToday;
+  const depositedToday = user.bank?.depositedToday ?? 0;
+  const remainingLimit = BANCO_CONFIG.DAILY_LIMIT - depositedToday;
 
-  // ─── Exibir status atual (sem argumento de quantia) ───────────────────────
+  // ── Exibir status (sem argumento de quantia) ─────────────────────────────
   if (!match) {
-    const hasInvestment = user.bank.amount && user.bank.amount > 0;
+    const hasInvestment = (user.bank?.amount ?? 0) > 0;
 
     if (!hasInvestment) {
       const texto =
@@ -543,7 +636,7 @@ async function handleBanco(sock, msg, jid, caption) {
         `  📊 Use: *!banco <quantia>*\n` +
         `  💵 Exemplo: *!banco 500*\n\n` +
         `*RENDIMENTOS:*\n` +
-        `  📈 Juros: 5-15%\n` +
+        `  📈 Juros: ${BANCO_CONFIG.JUROS_MIN}–${BANCO_CONFIG.JUROS_MAX}%\n` +
         `  ⏰ Prazo: *3 horas*\n\n` +
         `*RESGATE:*\n` +
         `  💎 Use: *!resgatar*\n` +
@@ -552,6 +645,7 @@ async function handleBanco(sock, msg, jid, caption) {
         `*LIMITE DIÁRIO:*\n` +
         `  📊 Depositado hoje: *${depositedToday}* gold\n` +
         `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
+        `*SEU SALDO${idGrupo ? ' (grupo)' : ''}:* 💰 *${saldoDisponivel}* gold\n\n` +
         `_Deixe seu dinheiro trabalhar para você!_ 🚀`;
 
       await sock.sendMessage(jid, { text: texto }, { quoted: msg });
@@ -559,10 +653,12 @@ async function handleBanco(sock, msg, jid, caption) {
     }
 
     const msLeft       = getMsLeft(user.bank.startDate);
-    const futureAmount = Math.round(user.bank.amount * (1 + user.bank.interest / 100));
+    const futureAmount = calcularResgate(user.bank.amount, user.bank.interest);
     const ganho        = futureAmount - user.bank.amount;
-    const status       = msLeft > 0 ? `⏳ Tempo restante: *${formatTimeLeft(msLeft)}*` : `✅ *PRONTO PARA RESGATAR!*`;
-    const emoji        = msLeft > 0 ? '⌛' : '🎯';
+    const status       = msLeft > 0
+      ? `⏳ Tempo restante: *${formatTimeLeft(msLeft)}*`
+      : `✅ *PRONTO PARA RESGATAR!*`;
+    const emoji = msLeft > 0 ? '⌛' : '🎯';
 
     const texto =
       `💼 ═══ SEU INVESTIMENTO ═══ 💼\n\n` +
@@ -577,6 +673,7 @@ async function handleBanco(sock, msg, jid, caption) {
       `*LIMITE DIÁRIO:*\n` +
       `  📊 Depositado hoje: *${depositedToday}* gold\n` +
       `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
+      `*SEU SALDO${idGrupo ? ' (grupo)' : ''}:* 💰 *${saldoDisponivel}* gold\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*AÇÕES:*\n` +
       (msLeft > 0
@@ -588,10 +685,10 @@ async function handleBanco(sock, msg, jid, caption) {
     return;
   }
 
-  // ─── Processar depósito ───────────────────────────────────────────────────
-  const amount = parseInt(match[1]);
+  // ── Processar depósito ───────────────────────────────────────────────────
+  const amount = parseInt(match[1], 10);
 
-  if (isNaN(amount) || amount <= 0) {
+  if (!amount || amount <= 0) {
     await sock.sendMessage(
       jid,
       { text: `⚠️ *QUANTIDADE INVÁLIDA*\n\nA quantia deve ser um número positivo!\n\n*EXEMPLO:*\n  *!banco 500*` },
@@ -601,75 +698,108 @@ async function handleBanco(sock, msg, jid, caption) {
   }
 
   if (remainingLimit <= 0) {
-    const texto =
-      `⚠️ *LIMITE DIÁRIO ATINGIDO*\n\nVocê já depositou *${depositedToday}* gold hoje!\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `*LIMITES:*\n` +
-      `  📊 Limite diário: *${DAILY_DEPOSIT_LIMIT}* gold\n` +
-      `  ✅ Depositado hoje: *${depositedToday}* gold\n` +
-      `  🔒 Limite restante: *0* gold\n\n` +
-      `_Volte amanhã para depositar mais!_ ⏰`;
-
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-    return;
-  }
-
-  if (amount > remainingLimit) {
-    const texto =
-      `⚠️ *LIMITE DIÁRIO EXCEDIDO*\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `*LIMITES:*\n` +
-      `  📊 Limite diário: *${DAILY_DEPOSIT_LIMIT}* gold\n` +
-      `  ✅ Depositado hoje: *${depositedToday}* gold\n` +
-      `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
-      `*VOCÊ TENTOU DEPOSITAR:* ${amount} gold\n\n` +
-      `_Tente depositar no máximo *${remainingLimit}* gold agora!_ ⏰`;
-
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-    return;
-  }
-
-  // Debitar gold do usuário atomicamente
-  const updatedUser = await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId, gold: { $gte: amount } },
-    { $inc: { gold: -amount } },
-    { new: true }
-  );
-
-  if (!updatedUser) {
-    const myGold = user.gold || 0;
     await sock.sendMessage(
       jid,
       {
         text:
-          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold!\n\n` +
+          `⚠️ *LIMITE DIÁRIO ATINGIDO*\n\nVocê já depositou *${depositedToday}* gold hoje!\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
-          `*SEU SALDO:*\n  💰 Disponível: *${myGold}* gold`,
+          `  📊 Limite diário: *${BANCO_CONFIG.DAILY_LIMIT}* gold\n` +
+          `  🔒 Limite restante: *0* gold\n\n` +
+          `_Volte amanhã para depositar mais!_ ⏰`,
       },
       { quoted: msg }
     );
     return;
   }
 
-  const hasActiveInvestment = user.bank.amount && user.bank.amount > 0;
+  if (amount > remainingLimit) {
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+          `⚠️ *LIMITE DIÁRIO EXCEDIDO*\n\n` +
+          `  📊 Limite diário: *${BANCO_CONFIG.DAILY_LIMIT}* gold\n` +
+          `  ✅ Depositado hoje: *${depositedToday}* gold\n` +
+          `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
+          `*Você tentou depositar:* ${amount} gold\n\n` +
+          `_Tente depositar no máximo *${remainingLimit}* gold agora!_ ⏰`,
+      },
+      { quoted: msg }
+    );
+    return;
+  }
+
+  // ── Debitar gold do saldo correto (grupo ou global) ──────────────────────
+  let saldoAposDebito;
+
+  if (idGrupo) {
+    // Débito no saldo de grupo — lança RangeError se insuficiente
+    try {
+      const carteiraAtualizada = await carteiraService.alterarGold(
+        userId, idGrupo, -amount, 'Depósito banco'
+      );
+      saldoAposDebito = carteiraAtualizada.gold;
+    } catch (err) {
+      if (err instanceof RangeError) {
+        await sock.sendMessage(
+          jid,
+          {
+            text:
+              `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold no grupo!\n\n` +
+              `━━━━━━━━━━━━━━━━\n` +
+              `*SEU SALDO (grupo):*\n  💰 Disponível: *${saldoDisponivel}* gold`,
+          },
+          { quoted: msg }
+        );
+        return;
+      }
+      throw err;
+    }
+  } else {
+    // Débito no gold global — atômico com $gte
+    const updatedUser = await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId, gold: { $gte: amount } },
+      { $inc: { gold: -amount } },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      await sock.sendMessage(
+        jid,
+        {
+          text:
+            `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold!\n\n` +
+            `━━━━━━━━━━━━━━━━\n` +
+            `*SEU SALDO:*\n  💰 Disponível: *${saldoDisponivel}* gold`,
+        },
+        { quoted: msg }
+      );
+      return;
+    }
+    saldoAposDebito = updatedUser.gold;
+  }
+
+  // ── Atualizar dados do banco no Usuario ──────────────────────────────────
+  const hasActiveInvestment = (user.bank?.amount ?? 0) > 0;
+  const newDepositedToday   = depositedToday + amount;
 
   if (hasActiveInvestment) {
-    // ─── Adicionar ao investimento existente ─────────────────────────────────
-    const newTotal         = user.bank.amount + amount;
-    const newDepositedToday = depositedToday + amount;
+    // Adicionar ao investimento existente
+    const newTotal = (user.bank.amount ?? 0) + amount;
 
     await Usuario.updateOne(
       { idWhatsApp: userId },
       {
         $set: {
-          'bank.amount':         newTotal,
-          'bank.depositedToday': newDepositedToday,
+          'bank.amount':          newTotal,
+          'bank.depositedToday':  newDepositedToday,
           'bank.lastDepositDate': today,
         },
       }
     );
 
-    const futureAmount = Math.round(newTotal * (1 + user.bank.interest / 100));
+    const futureAmount = calcularResgate(newTotal, user.bank.interest);
     const ganho        = futureAmount - newTotal;
     const msLeft       = getMsLeft(user.bank.startDate);
 
@@ -687,32 +817,31 @@ async function handleBanco(sock, msg, jid, caption) {
       `  💎 Resgate em: *${futureAmount}* gold\n` +
       `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `*SALDO ATUAL:*\n` +
-      `  💰 Disponível: *${updatedUser.gold}* gold\n` +
+      `*SALDO${idGrupo ? ' (grupo)' : ''}:*\n` +
+      `  💰 Disponível: *${saldoAposDebito}* gold\n` +
       `  🏦 Investido: *${newTotal}* gold\n` +
-      `  🔓 Limite restante hoje: *${DAILY_DEPOSIT_LIMIT - newDepositedToday}* gold`;
+      `  🔓 Limite restante hoje: *${BANCO_CONFIG.DAILY_LIMIT - newDepositedToday}* gold`;
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 
   } else {
-    // ─── Criar novo investimento ──────────────────────────────────────────────
-    const interest         = 5 + Math.floor(Math.random() * 11); // 5–15%
-    const newDepositedToday = depositedToday + amount;
+    // Criar novo investimento
+    const interest = sortearJuros();
 
     await Usuario.updateOne(
       { idWhatsApp: userId },
       {
         $set: {
-          'bank.amount':         amount,
-          'bank.interest':       interest,
-          'bank.startDate':      new Date().toISOString(),
+          'bank.amount':          amount,
+          'bank.interest':        interest,
+          'bank.startDate':       new Date().toISOString(),
           'bank.lastDepositDate': today,
-          'bank.depositedToday': newDepositedToday,
+          'bank.depositedToday':  newDepositedToday,
         },
       }
     );
 
-    const futureAmount = Math.round(amount * (1 + interest / 100));
+    const futureAmount = calcularResgate(amount, interest);
     const ganho        = futureAmount - amount;
 
     const texto =
@@ -728,22 +857,30 @@ async function handleBanco(sock, msg, jid, caption) {
       `  💎 Resgate em: *${futureAmount}* gold\n` +
       `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `*SALDO ATUAL:*\n` +
-      `  💰 Disponível: *${updatedUser.gold}* gold\n` +
+      `*SALDO${idGrupo ? ' (grupo)' : ''}:*\n` +
+      `  💰 Disponível: *${saldoAposDebito}* gold\n` +
       `  🏦 Investido: *${amount}* gold\n` +
-      `  🔓 Limite restante hoje: *${DAILY_DEPOSIT_LIMIT - newDepositedToday}* gold`;
+      `  🔓 Limite restante hoje: *${BANCO_CONFIG.DAILY_LIMIT - newDepositedToday}* gold`;
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   }
 }
 
-// ─── !resgatar ────────────────────────────────────────────────────────────────
+// ─── handleResgatar ───────────────────────────────────────────────────────────
 
+/**
+ * Comando !resgatar
+ *
+ * Credita o resgate no saldo de grupo (se vier de grupo) ou no gold global.
+ * Salva o histórico de resgate em bank.historico (últimos 10).
+ */
 async function handleResgatar(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-  const user   = await Usuario.findOne({ idWhatsApp: userId });
+  const userId  = msg.key.participant || msg.key.remoteJid;
+  const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
 
-  if (!user || !user.bank || !user.bank.amount || user.bank.amount <= 0) {
+  const user = await garantirUsuario(userId);
+
+  if (!user.bank?.amount || user.bank.amount <= 0) {
     await sock.sendMessage(
       jid,
       { text: `⚠️ *SEM INVESTIMENTOS ATIVOS*\n\nVocê não possui nenhum investimento ativo no banco!\n\n_Use *!banco <quantia>* para investir!_` },
@@ -755,7 +892,7 @@ async function handleResgatar(sock, msg, jid) {
   const msLeft = getMsLeft(user.bank.startDate);
 
   if (msLeft > 0) {
-    const futureAmount = Math.round(user.bank.amount * (1 + user.bank.interest / 100));
+    const futureAmount = calcularResgate(user.bank.amount, user.bank.interest);
     const ganho        = futureAmount - user.bank.amount;
 
     await sock.sendMessage(
@@ -777,43 +914,161 @@ async function handleResgatar(sock, msg, jid) {
     return;
   }
 
-  const futureAmount = Math.round(user.bank.amount * (1 + user.bank.interest / 100));
+  const futureAmount = calcularResgate(user.bank.amount, user.bank.interest);
   const ganho        = futureAmount - user.bank.amount;
 
-  if (ganho > 0) {
-    await prepareDailyMissionState(userId);
-  }
-
-  const updateResgate = {
-    $inc: { gold: futureAmount },
-    $set: {
-      'bank.amount':    0,
-      'bank.interest':  0,
-      'bank.startDate': null,
-    },
+  // ── Entrada no histórico ─────────────────────────────────────────────────
+  const entradaHistorico = {
+    data:      new Date().toISOString(),
+    investido: user.bank.amount,
+    resgate:   futureAmount,
+    juros:     user.bank.interest,
+    lucro:     ganho,
+    origem:    idGrupo ? 'grupo' : 'global',
+    idGrupo:   idGrupo ?? null,
   };
 
-  if (ganho > 0) {
-    updateResgate['$inc']['dailyMissions.progress.gold500'] = ganho;
+  // ── Creditar gold no saldo correto e zerar banco ─────────────────────────
+  if (idGrupo) {
+    // Crédito no saldo de grupo
+    await carteiraService.alterarGold(userId, idGrupo, futureAmount, 'Resgate banco');
+
+    // Atualizar missões e zerar banco num único update em Usuario
+    const updateResgate = {
+      $set: {
+        'bank.amount':    0,
+        'bank.interest':  0,
+        'bank.startDate': null,
+      },
+      $push: {
+        'bank.historico': {
+          $each:  [entradaHistorico],
+          $slice: -BANCO_CONFIG.HISTORICO_LIMITE,
+        },
+      },
+    };
+
+    if (ganho > 0) {
+      updateResgate.$inc = { 'dailyMissions.progress.gold500': ganho };
+    }
+
+    await Usuario.findOneAndUpdate({ idWhatsApp: userId }, updateResgate, { new: true });
+
+    // Saldo pós-resgate para exibir
+    const carteiraFinal = await carteiraService.getCarteira(userId, idGrupo);
+
+    const texto =
+      `🎉 ═══ RESGATE BEM-SUCEDIDO! ═══ 🎉\n\n` +
+      `💎 *Parabéns! Seu investimento rendeu!*\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `*RESUMO:*\n` +
+      `  💵 Investimento inicial: *${user.bank.amount}* gold\n` +
+      `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
+      `  💰 Resgate total: *${futureAmount}* gold\n` +
+      `  💹 Lucro obtido: *+${ganho}* gold\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `*SALDO FINAL (grupo):*\n` +
+      `  ✅ Total na conta: *${carteiraFinal.gold}* gold`;
+
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+
+  } else {
+    // Crédito no gold global — tudo em um único update atômico
+    const updateResgate = {
+      $inc: { gold: futureAmount },
+      $set: {
+        'bank.amount':    0,
+        'bank.interest':  0,
+        'bank.startDate': null,
+      },
+      $push: {
+        'bank.historico': {
+          $each:  [entradaHistorico],
+          $slice: -BANCO_CONFIG.HISTORICO_LIMITE,
+        },
+      },
+    };
+
+    if (ganho > 0) {
+      updateResgate.$inc['dailyMissions.progress.gold500'] = ganho;
+    }
+
+    const finalUser = await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      updateResgate,
+      { new: true }
+    );
+
+    const texto =
+      `🎉 ═══ RESGATE BEM-SUCEDIDO! ═══ 🎉\n\n` +
+      `💎 *Parabéns! Seu investimento rendeu!*\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `*RESUMO:*\n` +
+      `  💵 Investimento inicial: *${user.bank.amount}* gold\n` +
+      `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
+      `  💰 Resgate total: *${futureAmount}* gold\n` +
+      `  💹 Lucro obtido: *+${ganho}* gold\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `*SALDO FINAL:*\n` +
+      `  ✅ Total na conta: *${finalUser.gold}* gold`;
+
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  }
+}
+
+// ─── handleHistoricoBanco ─────────────────────────────────────────────────────
+
+/**
+ * Comando !historicobanco
+ *
+ * Exibe os últimos resgates do usuário (máx 10).
+ */
+async function handleHistoricoBanco(sock, msg, jid) {
+  const userId = msg.key.participant || msg.key.remoteJid;
+  const user   = await garantirUsuario(userId);
+
+  const historico = user.bank?.historico ?? [];
+
+  if (historico.length === 0) {
+    await sock.sendMessage(
+      jid,
+      { text: `📋 *HISTÓRICO DO BANCO*\n\nVocê ainda não realizou nenhum resgate!\n\n_Use *!banco <quantia>* para começar a investir._` },
+      { quoted: msg }
+    );
+    return;
   }
 
-  const finalUser = await Usuario.findOneAndUpdate({ idWhatsApp: userId }, updateResgate, { new: true });
+  const linhas = historico
+    .slice()
+    .reverse() // mais recente primeiro
+    .map((h, i) => {
+      const data   = new Date(h.data).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const origem = h.origem === 'grupo' ? '👥 grupo' : '🌐 global';
+      return (
+        `*${i + 1}.* ${data}\n` +
+        `   💵 ${h.investido} → 💎 ${h.resgate} gold (+${h.lucro}) | ${h.juros}% | ${origem}`
+      );
+    })
+    .join('\n\n');
 
   const texto =
-    `🎉 ═══ RESGATE BEM-SUCEDIDO! ═══ 🎉\n\n` +
-    `💎 *Parabéns! Seu investimento rendeu!*\n\n` +
+    `📋 ═══ HISTÓRICO DO BANCO ═══ 📋\n\n` +
+    `_Últimos ${historico.length} resgates:_\n\n` +
     `━━━━━━━━━━━━━━━━\n` +
-    `*RESUMO:*\n` +
-    `  💵 Investimento inicial: *${user.bank.amount}* gold\n` +
-    `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
-    `  💰 Resgate total: *${futureAmount}* gold\n` +
-    `  💹 Lucro obtido: *+${ganho}* gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n` +
-    `*SALDO FINAL:*\n` +
-    `  ✅ Total na conta: *${finalUser.gold}* gold`;
+    linhas +
+    `\n\n━━━━━━━━━━━━━━━━\n` +
+    `_Use *!banco* para verificar seu investimento atual._`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
+
+// ─── Exportar ─────────────────────────────────────────────────────────────────
+
+module.exports = {
+  handleBanco,
+  handleResgatar,
+  handleHistoricoBanco,
+};
 // ─── EXPORTS ──────────────────────────────────────────────────────────────────
 
 module.exports = {

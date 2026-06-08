@@ -41,7 +41,7 @@ const carteiraGrupoSchema = new mongoose.Schema(
     empregoAtual: {
       type:    String,
       default: null,
-      enum:    [null, 'entregador', 'atendente', 'programador', 'diretor'],
+      enum: [null, 'entregador', 'atendente', 'mecanico', 'chef', 'programador', 'medico', 'diretor', 'empresario'],
     },
     totalTrabalhosComSucesso: { type: Number, default: 0, min: 0 },
     ultimoTrabalho:           { type: Date,   default: null },

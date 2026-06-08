@@ -62,6 +62,8 @@ const {
   handleQuiz, handlePontos, handleRankJogos, handleBanco, handleResgatar, quizState
 } = require('./quiz');
 
+const { handleHistoricoBanco } = require('./banco');
+
 // Missões
 const {
   handleMissao, prepareDailyMissionState, findDailyMission, dailyMissionDefinitions
@@ -190,6 +192,7 @@ module.exports = {
   handleBanco,
   handleResgatar,
   quizState,
+  handleHistoricoBanco,
 
   // ── Missões (4 itens) ─────────────────────────────────────────────────────
   handleMissao,

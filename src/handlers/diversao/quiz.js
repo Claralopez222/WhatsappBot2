@@ -9,13 +9,23 @@
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { prepareDailyMissionState } = require('./missoes');
-
-const quizState = new Map();       // userId → { r: resposta, timeout }
-const pontosMap = new Map();       // userId → pontos (sincroniza com MongoDB)
-const quizDailyCount = new Map();  // userId_YYYY-MM-DD → count
 const { handleBanco, handleResgatar } = require('./banco');
 
+const quizState = new Map();
+const pontosMap = new Map();
+const quizDailyCount = new Map();
+
+const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+function somenteGrupo(jid) {
+  return jid?.endsWith('@g.us') ?? false;
+}
+
+function resolverNome(idWhatsApp, contactNames) {
+  return contactNames?.[idWhatsApp] || idWhatsApp.split('@')[0];
+}
 const perguntasQuiz = [
   // ── FUTEBOL ───────────────────────────────────────────────────────────────
   { p: '⚽ Qual país venceu a primeira Copa do Mundo em 1930?', r: 'uruguai', d: 'Futebol' },
@@ -481,4 +491,13 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
     }, { quoted: msg });
   }
 }
- 
+ module.exports = {
+  handleQuiz,
+  handlePontos,
+  handleRankJogos,  // ← precisa estar aqui
+  handleBanco,
+  handleResgatar,
+  changeGold,
+  quizState,
+  perguntasQuiz,
+};

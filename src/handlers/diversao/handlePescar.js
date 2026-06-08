@@ -14,10 +14,9 @@
 
 'use strict';
 
-const path         = require('path');
+const path          = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'services', 'carteiraService'));
-
+const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
 
 const CONFIG_PESCA = {

@@ -7,7 +7,7 @@ const INVESTMENT_DURATION_MS = 3 * 60 * 60 * 1000; // 3 horas em ms
 'use strict';
 
 const Usuario = require(require('path').join(__dirname, '..', '..', 'models', 'Usuario'));
-const carteiraService = require('../services/carteiraService');
+const carteiraService = require(require('path').join(__dirname, '..', '..', 'services', 'carteiraService'));
 
 // ─── Configuração central ──────────────────────────────────────────────────
 

@@ -467,37 +467,49 @@ async function handleStatusPet(sock, msg, jid) {
   );
 }
 
-// !rankpet
+// ─── !rankpet ───────────────────────────────────────────────────────────────
 async function handlePetRank(sock, msg, jid, contactNames = {}) {
+  if (!somenteGrupo(jid)) {
+    return reply(sock, jid, msg, '⚠️ Este comando só pode ser usado em grupos.');
+  }
+ 
   try {
+    // Busca membros deste grupo que possuem pet
+    const membros = await CarteiraGrupo.find({ idGrupo: jid }).lean();
+    if (!membros.length) {
+      return reply(sock, jid, msg,
+        `🐾 *RANKING DE PETS — ESTE GRUPO*\n\nNenhum membro registrado.\n\n_Use *!capturar* para conseguir o seu!_`
+      );
+    }
+ 
+    const idsMembros = membros.map(m => m.idWhatsApp);
+ 
     const usuarios = await Usuario.find({
-      idWhatsApp:  { $not: /@g\.us$/ },
+      idWhatsApp:  { $in: idsMembros },
       'pet.name':  { $exists: true, $nin: [null, ''] },
       'pet.level': { $exists: true },
     }).lean();
-
+ 
     const ranks = usuarios
       .map(u => ({ ...u, score: getRankScore(u.pet) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
-
+ 
     if (ranks.length === 0) {
       return reply(sock, jid, msg,
-        `🐾 *RANKING DE PETS*\n\nNenhum pet registrado ainda.\n\n_Use *!capturar* para conseguir o seu!_`
+        `🐾 *RANKING DE PETS — ESTE GRUPO*\n\nNenhum pet registrado ainda.\n\n_Use *!capturar* para conseguir o seu!_`
       );
     }
-
-    const medalhas = ['🥇', '🥈', '🥉'];
-    const linhas   = ranks.map((entry, i) => {
-      const name   = entry.nome || contactNames[entry.idWhatsApp] || entry.idWhatsApp.split('@')[0];
-      const def    = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
-      const medal  = medalhas[i] ?? `${i + 1}.`;
-      const re     = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
-      return `${medal} *${name}* — ${def.emoji} ${entry.pet.name} ${re} Lvl ${entry.pet.level ?? 1}`;
+ 
+    const linhas = ranks.map((entry, i) => {
+      const nome  = resolverNome(entry.idWhatsApp, contactNames) || entry.nome;
+      const def   = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
+      const re    = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
+      return `${MEDALS[i]} *${nome}* — ${def.emoji} ${entry.pet.name} ${re} Lvl ${entry.pet.level ?? 1}`;
     });
-
+ 
     return reply(sock, jid, msg,
-      `🐾 *RANKING DE PETS* 🐾\n\n` +
+      `🐾 *RANKING DE PETS — ESTE GRUPO* 🐾\n\n` +
       linhas.join('\n') +
       `\n\n_Use *!capturar* para entrar no ranking!_`
     );
@@ -506,6 +518,7 @@ async function handlePetRank(sock, msg, jid, contactNames = {}) {
     return reply(sock, jid, msg, '⚠️ Erro ao carregar o ranking.');
   }
 }
+ 
 
 // !pets
 async function handlePets(sock, msg, jid) {

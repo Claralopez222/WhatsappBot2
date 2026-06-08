@@ -202,33 +202,32 @@ async function debitarGold(userId, idGrupo, valor, descricao) {
   );
 }
 
-// ─── !gold ────────────────────────────────────────────────────────────────────
-
-async function handleGold(sock, msg, jid, getPrefix) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-  const idGrupo = jid; // jid do grupo
+async function handleGold(sock, msg, jid, getPrefix, contactNames) {
+  const userId  = msg.key.participant || msg.key.remoteJid;
+  const idGrupo = jid;
 
   try {
-    const carteira = await getCarteira(userId, idGrupo);
-    const gold = carteira?.gold ?? 0;
-    const userName = userId.split('@')[0].split(':')[0];
+    const carteira  = await getCarteira(userId, idGrupo);
+    const gold      = carteira?.gold ?? 0;
+    const numero    = userId.split('@')[0].split(':')[0];
+    const userName  = contactNames?.[userId] || numero;
 
-    let status = '🪨 POBRE';
-    if (gold >= 1000)     status = '💰 RICO';
-    else if (gold >= 500) status = '💵 ABASTADO';
-    else if (gold >= 100) status = '💴 CONFORTÁVEL';
+    let status = '🪨 Pobre';
+    if (gold >= 1000)     status = '💰 Rico';
+    else if (gold >= 500) status = '💵 Abastado';
+    else if (gold >= 100) status = '💴 Confortável';
 
     const P = getPrefix(jid);
     const texto =
       `💰 *SALDO DE GOLD* 💰\n\n` +
       `👤 *${userName}*\n` +
-      `💵 Gold neste grupo: *${gold}*\n` +
+      `💵 Saldo neste grupo: *${gold} gold*\n` +
       `📊 Status: ${status}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*FORMAS DE GANHAR:*\n` +
       `  📋 Missões: ${P}missao\n` +
       `  ⛏️ Garimpar: ${P}garimpar\n` +
-      `  🎲 Apostar:  ${P}apostar <valor>\n\n` +
+      `  🎲 Apostar: ${P}apostar <valor>\n\n` +
       `*FORMAS DE GASTAR:*\n` +
       `  🛒 Loja: ${P}loja\n` +
       `  🎁 Comprar: ${P}comprar <item>\n` +
@@ -240,7 +239,6 @@ async function handleGold(sock, msg, jid, getPrefix) {
     await sock.sendMessage(jid, { text: '⚠️ Erro ao buscar saldo!' }, { quoted: msg });
   }
 }
-
 // ─── !loja (sem mudanças visuais) ────────────────────────────────────────────
 
 async function handleLoja(sock, msg, jid, getPrefix) {

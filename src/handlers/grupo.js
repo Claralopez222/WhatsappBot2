@@ -325,53 +325,42 @@ async function handleDesmute(sock, msg, content, jid, botJid, mutedUsers, contac
   });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !ranking ──────────────────────────────────────────────────
-// BUG CORRIGIDO: query $not duplicada na mesma chave (Mongoose
-// ignora a segunda silenciosamente). Agora usa $regex correto.
-// MELHORIA: integrado ao CarteiraGrupo para ranking local por grupo.
-// ═══════════════════════════════════════════════════════════════
-
-async function handleRanking(sock, msg, jid, contactNames) {
+// ─── !ranking (gold) ─────────────────────────────────────────────────────────
+async function handleRanking(sock, msg, jid, contactNames = {}) {
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, {
       text: '⚠️ Este comando só pode ser usado em grupos.',
-    }, { quoted: msg }); return;
+    }, { quoted: msg });
+    return;
   }
-
+ 
   try {
-    const path          = require('path');
-    const CarteiraGrupo = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
-
-    // Busca top 10 por gold neste grupo específico
     const top = await CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
       .sort({ gold: -1 })
       .limit(10)
       .lean();
-
-    if (!top || top.length === 0) {
+ 
+    if (!top?.length) {
       await sock.sendMessage(jid, {
         text: 'ℹ️ Nenhum Gold registrado neste grupo ainda!',
-      }, { quoted: msg }); return;
+      }, { quoted: msg });
+      return;
     }
-
+ 
     const totalGold = top.reduce((s, u) => s + (u.gold || 0), 0);
     const maxGold   = top[0].gold || 1;
-    const medals    = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
-
+ 
     const linhas = top.map((u, i) => {
-      const count   = u.gold || 0;
-      const pct     = ((count / totalGold) * 100).toFixed(1);
-      const barras  = Math.round((count / maxGold) * 8) || 0;
-      const bar     = '█'.repeat(barras) + '░'.repeat(Math.max(0, 8 - barras));
-      const nome    = contactNames[u.idWhatsApp] || u.idWhatsApp?.split('@')[0] || 'Usuário';
-      return `${medals[i]} *${nome}*\n   ${bar} ${count} 💰 (${pct}%)`;
+      const count = u.gold || 0;
+      const pct   = ((count / totalGold) * 100).toFixed(1);
+      const bar   = barraProgresso(count, maxGold);
+      const nome  = resolverNome(u.idWhatsApp, contactNames);
+      return `${MEDALS[i]} *${nome}*\n   ${bar} ${count} 💰 (${pct}%)`;
     }).join('\n\n');
-
+ 
     await sock.sendMessage(jid, {
       text: `💰 *RANKING DE GOLD — ESTE GRUPO*\n\n${linhas}\n\n🏦 Total do Top 10: *${totalGold} Gold*`,
     }, { quoted: msg });
-
   } catch (err) {
     console.error('[handleRanking] Erro:', err.message);
     await sock.sendMessage(jid, {
@@ -379,7 +368,8 @@ async function handleRanking(sock, msg, jid, contactNames) {
     }, { quoted: msg });
   }
 }
-
+ 
+module.exports = { handlePetRank, handleRankJogos, handleRanking };
 // ═══════════════════════════════════════════════════════════════
 // ─── !sorteio ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

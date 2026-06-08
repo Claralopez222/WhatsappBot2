@@ -427,34 +427,60 @@ async function handlePontos(sock, msg, jid, author, senderJid) {
   }, { quoted: msg });
 }
 
-// ─── !rankjogos ──────────────────────────────────────────────────────────────
-
-async function handleRankJogos(sock, msg, jid, contactNames) {
-  try {
-    const allUsers = await Usuario.find({ quizPoints: { $exists: true, $gt: 0 } }).lean();
-    for (const user of allUsers) {
-      pontosMap.set(user.idWhatsApp, user.quizPoints);
-    }
-  } catch (e) {
-    console.error('⚠️ Erro ao sincronizar ranking:', e.message);
-  }
-
-  if (pontosMap.size === 0) {
-    await sock.sendMessage(jid, { text: '📭 Nenhum ponto registrado! Joga *!quiz* primeiro!' }, { quoted: msg });
+// ─── !rankjogos ─────────────────────────────────────────────────────────────
+async function handleRankJogos(sock, msg, jid, contactNames = {}) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Este comando só pode ser usado em grupos.',
+    }, { quoted: msg });
     return;
   }
-
-  const sorted = [...pontosMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
-  const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-  let texto = `🏆 *RANKING DE QUIZ* 🏆\n\n`;
-  sorted.forEach(([jidU, pts], i) => {
-    const nome = contactNames[jidU] || jidU.split('@')[0];
-    texto += `${medals[i]} *${nome}* — ${pts} pts ☁️\n`;
-  });
-  texto += `\n_Joga *!quiz* pra subir!_`;
-
-  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+ 
+  try {
+    // Busca membros deste grupo
+    const membros = await CarteiraGrupo.find({ idGrupo: jid }).lean();
+    if (!membros.length) {
+      await sock.sendMessage(jid, {
+        text: '📭 Nenhum membro registrado neste grupo! Joga *!quiz* primeiro!',
+      }, { quoted: msg });
+      return;
+    }
+ 
+    const idsMembros = membros.map(m => m.idWhatsApp);
+ 
+    // Busca pontos de quiz apenas dos membros deste grupo
+    const usuarios = await Usuario.find({
+      idWhatsApp:  { $in: idsMembros },
+      quizPoints:  { $exists: true, $gt: 0 },
+    }).lean();
+ 
+    if (!usuarios.length) {
+      await sock.sendMessage(jid, {
+        text: '📭 Nenhum ponto registrado neste grupo! Joga *!quiz* primeiro!',
+      }, { quoted: msg });
+      return;
+    }
+ 
+    const sorted = usuarios
+      .sort((a, b) => b.quizPoints - a.quizPoints)
+      .slice(0, 10);
+ 
+    let texto = `🏆 *RANKING DE QUIZ — ESTE GRUPO* 🏆\n\n`;
+    sorted.forEach((u, i) => {
+      const nome = resolverNome(u.idWhatsApp, contactNames);
+      texto += `${MEDALS[i]} *${nome}* — ${u.quizPoints} pts ☁️\n`;
+    });
+    texto += `\n_Joga *!quiz* pra subir!_`;
+ 
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  } catch (e) {
+    console.error('[RankJogos] handleRankJogos:', e.message);
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao carregar o ranking.',
+    }, { quoted: msg });
+  }
 }
+ 
 
 // ─── !banco ───────────────────────────────────────────────────────────────────
 

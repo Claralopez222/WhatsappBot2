@@ -624,8 +624,8 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
 
   // ── ECONOMIA ──────────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'gold'))
-    { await diversaoHandler.handleGold(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'gold'))
+  { await diversaoHandler.handleGold(sock, msg, jid, getPrefix, contactNames); return; }
   if (matchCmd(cmdWord, 'loja'))
     { await diversaoHandler.handleLoja(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'lojafood'))

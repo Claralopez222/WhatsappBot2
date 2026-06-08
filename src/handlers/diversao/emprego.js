@@ -2,8 +2,8 @@
  * Handler de Empregos — Bot WhatsApp
  * Sistema de carreira com cooldown, janela de tolerância e demissão por justa causa
  *
- * v1.2 — cooldown ajustado para 6h30, demissão para 8h30, mensagens sincronizadas,
- *         correção do bug de jid em _executarTurno, limpeza geral
+ * v1.3 — Novos cargos adicionados (8 no total), correção de exportação de
+ *         handleMenuWork, menu atualizado, mensagens sincronizadas.
  *
  * ⚠️  ATENÇÃO: Ajuste os dois requires abaixo conforme a estrutura do seu projeto.
  *
@@ -13,15 +13,12 @@
  *   !promocao         → tenta subir de nível
  *   !emprego          → exibe status atual
  *   !demitir          → pede demissão voluntariamente
+ *   !menuwork         → exibe o menu de empregos
  */
 
 'use strict';
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
-// TODO: ajuste os caminhos abaixo para bater com a estrutura real do projeto.
-//       Exemplo: se este arquivo está em src/handlers/diversao/emprego.js e
-//       os models ficam em src/models/, o caminho correto é '../../models/CarteiraGrupo'
-
 let CarteiraGrupo;
 let getCarteira;
 let alterarGold;
@@ -42,6 +39,8 @@ try {
 //
 // A ordem do array define a progressão. Não altere a posição dos itens.
 // Para adicionar novos cargos, basta inserir mais objetos — o resto se adapta.
+//
+// exigencia = total de turnos no cargo anterior necessários para promoção.
 
 const CARGOS = [
   {
@@ -63,22 +62,58 @@ const CARGOS = [
     exigenciaNome: 'Entregador de Pizza',
   },
   {
+    slug:          'mecanico',
+    nome:          '🔧 Mecânico',
+    nivel:         3,
+    salarioMin:    280,
+    salarioMax:    420,
+    exigencia:     18,
+    exigenciaNome: 'Atendente de Loja',
+  },
+  {
+    slug:          'chef',
+    nome:          '👨‍🍳 Chef de Cozinha',
+    nivel:         4,
+    salarioMin:    400,
+    salarioMax:    580,
+    exigencia:     28,
+    exigenciaNome: 'Mecânico',
+  },
+  {
     slug:          'programador',
     nome:          '💻 Programador Júnior',
-    nivel:         3,
-    salarioMin:    400,
-    salarioMax:    600,
-    exigencia:     25,
-    exigenciaNome: 'Atendente de Loja',
+    nivel:         5,
+    salarioMin:    600,
+    salarioMax:    850,
+    exigencia:     40,
+    exigenciaNome: 'Chef de Cozinha',
+  },
+  {
+    slug:          'medico',
+    nome:          '🩺 Médico',
+    nivel:         6,
+    salarioMin:    900,
+    salarioMax:    1200,
+    exigencia:     55,
+    exigenciaNome: 'Programador Júnior',
   },
   {
     slug:          'diretor',
     nome:          '🏢 Diretor de Empresa',
-    nivel:         4,
-    salarioMin:    1000,
-    salarioMax:    1500,
-    exigencia:     50,
-    exigenciaNome: 'Programador Júnior',
+    nivel:         7,
+    salarioMin:    1300,
+    salarioMax:    1800,
+    exigencia:     75,
+    exigenciaNome: 'Médico',
+  },
+  {
+    slug:          'empresario',
+    nome:          '💎 Empresário Bilionário',
+    nivel:         8,
+    salarioMin:    2500,
+    salarioMax:    4000,
+    exigencia:     100,
+    exigenciaNome: 'Diretor de Empresa',
   },
 ];
 
@@ -91,21 +126,14 @@ const CARGO_POR_NIVEL = Object.fromEntries(CARGOS.map(c => [c.nivel, c]));
 const TEMPO = {
   COOLDOWN_MS: 6.5 * 60 * 60 * 1000,  // 6h30 — tempo mínimo entre turnos
   JANELA_MS:     2 * 60 * 60 * 1000,  // 2h   — tolerância após o cooldown
-  // DEMISSAO_MS é derivado para manter consistência automática:
-  // se COOLDOWN_MS ou JANELA_MS mudarem, o limite de demissão acompanha.
 };
+// Derivado automaticamente: se COOLDOWN_MS ou JANELA_MS mudarem, acompanha.
 TEMPO.DEMISSAO_MS = TEMPO.COOLDOWN_MS + TEMPO.JANELA_MS; // 8h30
 
-// Linha do tempo por turno:
-//   t=0h00 → trabalhou
-//   t=6h30 → próximo turno disponível  (COOLDOWN_MS)
-//   t=8h30 → fim da janela de tolerância (COOLDOWN_MS + JANELA_MS)
-//   t>8h30 → demissão por justa causa  (≥ DEMISSAO_MS desde o último trabalho)
-
-// Labels legíveis para usar nas mensagens (evita hardcode espalhado pelo código)
-const LABEL_COOLDOWN  = '6h30';
-const LABEL_JANELA    = '2h';
-const LABEL_DEMISSAO  = '8h30';
+// Labels legíveis para mensagens (evita hardcode espalhado pelo código)
+const LABEL_COOLDOWN = '6h30';
+const LABEL_JANELA   = '2h';
+const LABEL_DEMISSAO = '8h30';
 
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 
@@ -163,7 +191,6 @@ async function resolverContexto(sock, msg, jid) {
 
 /**
  * Retorna o cargo correspondente ao slug, ou null com log de aviso.
- * Evita erros silenciosos quando o banco tem um slug desconhecido.
  */
 function resolverCargo(slug) {
   const cargo = CARGO_POR_SLUG[slug];
@@ -202,7 +229,7 @@ async function handleProcurarEmprego(sock, msg, jid) {
       );
     }
 
-    // Histórico sujo → 30 % de chance de contratação
+    // Histórico sujo → 30% de chance de contratação
     if (carteira.historicoSujo) {
       const aprovado = Math.random() < 0.30;
       if (!aprovado) {
@@ -267,7 +294,6 @@ async function handleTrabalhar(sock, msg, jid) {
 
     const cargo = resolverCargo(carteira.empregoAtual);
     if (!cargo) {
-      // Slug inválido no banco — reseta para evitar estado corrompido
       await CarteiraGrupo.findOneAndUpdate(
         filtro(userId, groupId),
         { $set: { empregoAtual: null } }
@@ -339,9 +365,6 @@ async function handleTrabalhar(sock, msg, jid) {
 
 /**
  * Executa um turno bem-sucedido: paga salário, incrementa contador, salva data.
- *
- * CORREÇÃO v1.2: usa o parâmetro `jid` recebido em vez de `msg.key.remoteJid`,
- * garantindo consistência com o resto das funções do handler.
  */
 async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora) {
   const salario   = randInt(cargo.salarioMin, cargo.salarioMax);
@@ -485,7 +508,6 @@ async function handleEmprego(sock, msg, jid) {
 
     const cargo = resolverCargo(carteira.empregoAtual);
 
-    // Cargo inválido no banco — reseta silenciosamente
     if (!cargo) {
       await CarteiraGrupo.findOneAndUpdate(
         filtro(userId, groupId),
@@ -535,7 +557,6 @@ async function handleEmprego(sock, msg, jid) {
       progressoTexto = `\n🏆 _Você está no cargo máximo!_`;
     }
 
-    // ── Montar resposta ──────────────────────────────────────────────────────
     let texto =
       `💼 *SEU EMPREGO NESTE GRUPO*\n\n` +
       `🏢 Cargo: *${cargo.nome}*\n` +
@@ -555,6 +576,7 @@ async function handleEmprego(sock, msg, jid) {
     return reply(sock, jid, msg, '⚠️ Erro ao carregar emprego! Tente novamente.');
   }
 }
+
 // ─── !demitir ─────────────────────────────────────────────────────────────────
 
 async function handleDemitir(sock, msg, jid) {
@@ -580,7 +602,7 @@ async function handleDemitir(sock, msg, jid) {
           empregoAtual:             null,
           totalTrabalhosComSucesso: 0,
           ultimoTrabalho:           null,
-          // Demissão voluntária não suja o histórico
+          // Demissão voluntária NÃO suja o histórico
         },
       }
     );
@@ -599,9 +621,18 @@ async function handleDemitir(sock, msg, jid) {
 }
 
 // ─── !menuwork ────────────────────────────────────────────────────────────────
+//
+// FIX v1.3: função agora exportada corretamente em module.exports (era o bug
+// que causava "diversaoHandler.handleMenuWork is not a function").
 
 async function handleMenuWork(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+  // getPrefix pode não ser passado em algumas chamadas — fallback para '!'
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+
+  const listaCargos = CARGOS
+    .map(c => `  ${c.nivel}. ${c.nome}${c.nivel === 1 ? '  _(inicial)_' : c.nivel === CARGOS.length ? '  _(máximo)_' : ''}`)
+    .join('\n');
+
   const menu =
 `╔══════════════════════╗
       💼 MENU EMPREGOS
@@ -621,16 +652,13 @@ async function handleMenuWork(sock, msg, jid, getPrefix) {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 🏢 *CARGOS DISPONÍVEIS*
-  1. 🛵 Entregador de Pizza  _(inicial)_
-  2. 🏪 Atendente de Loja
-  3. 💻 Programador Júnior
-  4. 🏢 Diretor de Empresa   _(máximo)_
+${listaCargos}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 ⏰ *REGRAS DO PONTO*
-  • Cooldown entre turnos: *6h30*
-  • Janela de tolerância: *2h* após o cooldown
-  • Após *8h30* sem bater ponto → demissão por justa causa
+  • Cooldown entre turnos: *${LABEL_COOLDOWN}*
+  • Janela de tolerância: *${LABEL_JANELA}* após o cooldown
+  • Após *${LABEL_DEMISSAO}* sem bater ponto → demissão por justa causa
   ⚠️ _Histórico sujo reduz chance de recontratação para 30%_
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -638,14 +666,30 @@ async function handleMenuWork(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
-// ─── Exportar ─────────────────────────────────────────────────────────────────
+// ─── EXPORTAR ─────────────────────────────────────────────────────────────────
+//
+// ⚠️  IMPORTANTE para o bug "handleMenuWork is not a function":
+//
+//  Se você importa via `diversaoHandler` (index.js de diversão), verifique se
+//  o index.js re-exporta handleMenuWork. Exemplo mínimo:
+//
+//    // src/handlers/diversao/index.js
+//    const emprego = require('./emprego');
+//    module.exports = {
+//      ...emprego,          // <-- espalha TODOS os exports do emprego.js
+//      // ...outros handlers
+//    };
+//
+//  Ou nomeadamente:
+//    handleMenuWork: emprego.handleMenuWork,
+
 module.exports = {
   handleProcurarEmprego,
   handleTrabalhar,
   handlePromocao,
   handleEmprego,
   handleDemitir,
-  handleMenuWork,
+  handleMenuWork,   // ← estava faltando ser re-exportado no index.js de diversao
   CARGOS,
   CARGO_POR_SLUG,
 };

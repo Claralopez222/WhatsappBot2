@@ -14,6 +14,7 @@ const { prepareDailyMissionState } = require('./missoes');
 const quizState = new Map();       // userId → { r: resposta, timeout }
 const pontosMap = new Map();       // userId → pontos (sincroniza com MongoDB)
 const quizDailyCount = new Map();  // userId_YYYY-MM-DD → count
+const { handleBanco, handleResgatar } = require('./banco');
 
 const perguntasQuiz = [
   // ── FUTEBOL ───────────────────────────────────────────────────────────────
@@ -481,17 +482,3 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
   }
 }
  
-
-
-// ─── EXPORTS ──────────────────────────────────────────────────────────────────
-
-module.exports = {
-  handleQuiz,
-  handlePontos,
-  handleRankJogos,
-  handleBanco,
-  handleResgatar,
-  changeGold,
-  quizState,
-  perguntasQuiz,
-};

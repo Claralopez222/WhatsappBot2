@@ -579,15 +579,12 @@ async function handleDemitir(sock, msg, jid) {
 }
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
-
 module.exports = {
   handleProcurarEmprego,
   handleTrabalhar,
   handlePromocao,
   handleEmprego,
   handleDemitir,
-
-  // Exporta tabela para uso externo (ex.: loja, ranking)
   CARGOS,
   CARGO_POR_SLUG,
 };

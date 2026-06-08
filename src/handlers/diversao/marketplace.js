@@ -44,7 +44,7 @@ const { ITENS_ROUBO, ITENS_SEGURANCA } = tryRequire('./roubo',       'roubo');
 
 // Itens de pesca: carregados dinamicamente se o módulo existir.
 // Para adicionar suporte completo, crie handlePescar.js e exporte VARAS_PESCA e ISCAS.
-const { VARAS_PESCA, ISCAS }           = tryRequire('./handlePescar', 'handlePescar');
+const { VARAS_PESCA, ISCAS } = tryRequire('./pesca', 'pesca');
 
 /**
  * Catálogo base compilado na inicialização.

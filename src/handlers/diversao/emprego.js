@@ -27,7 +27,7 @@ let alterarGold;
 
 try {
   CarteiraGrupo = require('../../models/CarteiraGrupo');
-  ({ getCarteira, alterarGold } = require('../../services/carteiraService'));
+  ({ getCarteira, alterarGold } = require('../../utils/carteira'));
 } catch (err) {
   console.error(
     '[Emprego] ERRO CRÍTICO: Não foi possível importar dependências.\n' +

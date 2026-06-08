@@ -185,7 +185,7 @@ const perguntasQuiz = [
   { p: '🏀 Quem inventou o basquete?', r: 'james naismith', d: 'Basquete' },
   { p: '🏀 Em que ano o basquete foi inventado?', r: '1891', d: 'Basquete' },
   // Recordes & Estatísticas
-  { p: '🏀 Quem é o maior pontuador da história da NBA?', r: 'lebron james', d: 'Basquete' },
+
   { p: '🏀 Qual jogador detém o recorde de maior número de assistências na NBA?', r: 'john stockton', d: 'Basquete' },
   { p: '🏀 Qual jogador detém o recorde de mais rebotes na história da NBA?', r: 'wilt chamberlain', d: 'Basquete' },
   { p: '🏀 Qual jogador tem a maior média de pontos por jogo em uma temporada da NBA?', r: 'wilt chamberlain', d: 'Basquete' },

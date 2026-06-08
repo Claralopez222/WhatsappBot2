@@ -721,7 +721,7 @@ if (matchCmd(cmdWord, 'emprego') || matchCmd(cmdWord, 'meuemprego'))
 if (matchCmd(cmdWord, 'demitir') || matchCmd(cmdWord, 'pedirdemissao'))
   { await diversaoHandler.handleDemitir(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'menuwork') || matchCmd(cmdWord, 'menuemprego'))
-  { await menuHandler.handleMenuWork(sock, msg, jid, getPrefix); return; }
+  { await diversaoHandler.handleMenuWork(sock, msg, jid, getPrefix); return; }
 
   // ─── Sistema de Roubo ─────────────────────────────────────────
   if (matchCmd(cmdWord, 'menuroubar'))

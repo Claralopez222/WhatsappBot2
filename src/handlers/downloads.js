@@ -79,53 +79,71 @@ function getYtDlpArgs() {
 }
 
 async function getYtDlpPath() {
-  if (_cachedYtDlpPath && fs.existsSync(_cachedYtDlpPath)) return _cachedYtDlpPath;
+  if (_cachedYtDlpPath) {
+    try {
+      require('child_process').execSync(`"${_cachedYtDlpPath}" --version`, { timeout: 3000 });
+      return _cachedYtDlpPath;
+    } catch { _cachedYtDlpPath = null; }
+  }
 
+  const { execSync } = require('child_process');
+
+  // 1. which/where
   try {
-    const { execSync } = require('child_process');
     const cmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
     const p = execSync(cmd, { timeout: 3000 }).toString().trim().split('\n')[0].trim();
     if (p) { _cachedYtDlpPath = p; return p; }
   } catch {}
 
-  const candidates = process.platform === 'win32' ? [
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
-    'C:\\Python312\\Scripts\\yt-dlp.exe',
-    path.resolve(__dirname, '../yt-dlp.exe'),
-  ] : [
-    '/usr/local/bin/yt-dlp',
-    '/usr/bin/yt-dlp',
-    path.resolve(__dirname, '../yt-dlp'),
-  ];
-
-  for (const c of candidates) {
-    try { if (fs.existsSync(c)) { _cachedYtDlpPath = c; return c; } } catch {}
-  }
-
-  // Auto-download yt-dlp.exe no Windows
-  if (process.platform === 'win32') {
-    const dlPath = path.resolve(__dirname, '../yt-dlp.exe');
-    if (!fs.existsSync(dlPath)) {
-      log.info('yt-dlp não encontrado. Baixando automaticamente...');
-      try {
-        await new Promise((resolve, reject) => {
-          const file = fs.createWriteStream(dlPath);
-          require('https').get('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe', (res) => {
-            if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-            res.pipe(file);
-            file.on('finish', () => file.close(resolve));
-          }).on('error', (err) => { try { fs.unlinkSync(dlPath); } catch {} reject(err); });
-        });
-        log.info('✅ yt-dlp.exe baixado em', dlPath);
-      } catch (e) {
-        log.warn('Não foi possível baixar yt-dlp.exe:', e.message);
-      }
+  // 2. Caminhos comuns Linux (pip instala aqui)
+  if (process.platform !== 'win32') {
+    const linuxCandidates = [
+      '/usr/local/bin/yt-dlp',
+      '/usr/bin/yt-dlp',
+      path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp'),
+      '/opt/render/project/.venv/bin/yt-dlp',
+      '/opt/render/project/python/bin/yt-dlp',
+      path.resolve(__dirname, '../yt-dlp'),
+    ];
+    for (const c of linuxCandidates) {
+      try { if (fs.existsSync(c)) { _cachedYtDlpPath = c; return c; } } catch {}
     }
-    if (fs.existsSync(dlPath)) { _cachedYtDlpPath = dlPath; return dlPath; }
+
+    // 3. Procura em todos os bin/ do sistema
+    try {
+      const found = execSync('find /usr /opt /root /home -name "yt-dlp" -type f 2>/dev/null | head -1', { timeout: 5000 }).toString().trim();
+      if (found) { _cachedYtDlpPath = found; return found; }
+    } catch {}
+
+    // 4. Fallback: python -m yt_dlp
+    for (const py of ['python3', 'python']) {
+      try {
+        execSync(`${py} -m yt_dlp --version`, { timeout: 3000 });
+        const wrapper = path.resolve(__dirname, '../yt-dlp-wrapper.sh');
+        fs.writeFileSync(wrapper, `#!/bin/sh\nexec ${py} -m yt_dlp "$@"\n`);
+        fs.chmodSync(wrapper, 0o755);
+        _cachedYtDlpPath = wrapper;
+        log.info(`yt-dlp via ${py} -m yt_dlp (wrapper criado)`);
+        return wrapper;
+      } catch {}
+    }
   }
 
+  // 5. Windows
+  if (process.platform === 'win32') {
+    const winCandidates = [
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
+      'C:\\Python312\\Scripts\\yt-dlp.exe',
+      path.resolve(__dirname, '../yt-dlp.exe'),
+    ];
+    for (const c of winCandidates) {
+      try { if (fs.existsSync(c)) { _cachedYtDlpPath = c; return c; } } catch {}
+    }
+  }
+
+  log.warn('yt-dlp nao encontrado — usando "yt-dlp" do PATH');
   return 'yt-dlp';
 }
 
@@ -501,7 +519,7 @@ async function handleAudioDownload(sock, msg, jid, caption) {
 
 async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const P = getPrefix(jid);
-  const nome = caption.replace(/^[!.,\/]*som\s*/i, '').trim();
+  const nome = caption.replace(/^[!.,\/]*(som|play)\s*/i, '').trim();
   if (!nome) {
     return sock.sendMessage(jid, { text: `⚠️ Digite o nome da música.\nExemplo: *${P}som Ela Deixou um Bilhete*` }, { quoted: msg });
   }

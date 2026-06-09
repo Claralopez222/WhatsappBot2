@@ -1,7 +1,7 @@
 /**
  * scripts/install-ytdlp.js
  * Baixa o binário yt-dlp no Linux (Render) em tempo de build.
- * No Windows é ignorado (usa yt-dlp do PATH local).
+ * No Windows é ignorado (usa yt-dlp do PATH local). 
  */
 const https = require('https');
 const fs    = require('fs');

@@ -422,7 +422,7 @@ async function startBot() {
     if (connection === 'close') {
       const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
       console.log(`🔌 Desconectado. Código: ${code} | Erro: ${lastDisconnect?.error?.message}`);
-      if (code !== DisconnectReason.loggedOut && code !== 405 && code !== 408 && code !== 401) {
+      if (code !== DisconnectReason.loggedOut) {
         setTimeout(() => startBot(), 30000);
       } else {
         console.log('🚪 Sessão encerrada definitivamente.');
@@ -1037,12 +1037,27 @@ app.get('/', (req, res) => res.send('Bot Online!'));
 
 app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));
 
-// â”€â”€â”€ Iniciar (apenas uma vez) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Servidor Web ─────────────────────────────────────────────────────────────
+const express = require('express');
+const app  = express();
+const port = process.env.PORT || 3000;
+
+app.get('/', (req, res) => res.send('Bot Online!'));
+
+app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));
+
+// ─── Iniciar (apenas uma vez) ─────────────────────────────────────────────────
 async function main() {
   const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/piroquinhas';
   mongoose.set('strictQuery', false);
   await mongoose.connect(mongoUri);
   console.log('✅ MongoDB conectado');
+
+  // Limpar sessão antiga (remova após primeiro login bem-sucedido)
+  const AuthData = mongoose.models.AuthData || mongoose.model('AuthData', new mongoose.Schema({ _id: String, data: String }, { timestamps: true }));
+  await AuthData.deleteMany({});
+  console.log('🗑️ Sessão antiga removida');
+
   await diversaoHandler.initializePersistedData();
   await loadRelationshipsFromDb();
   startBot();

@@ -421,8 +421,9 @@ async function startBot() {
     }
     if (connection === 'close') {
       const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      console.log(`🔌 Desconectado. Código: ${code} | Erro: ${lastDisconnect?.error?.message}`);
       if (code !== DisconnectReason.loggedOut && code !== 405 && code !== 408) {
-        setTimeout(() => startBot(), 5000);
+        setTimeout(() => startBot(), 30000);
       } else {
         console.log('🚪 Sessão encerrada definitivamente.');
         process.exit(0);

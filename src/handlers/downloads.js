@@ -1,787 +1,667 @@
-/**
- * Handler de Downloads
- * Comandos: .play, .play_video, .youtube, .instagram, .tiktok,
- *           .facebook, .twitter, .pinterest, .spotify, .soundcloud,
- *           .gimage, .pesquisayt, .twitch, .wallpapers
- *
- * ⚠️  Render não suporta binários como yt-dlp.
- *     Tudo aqui usa apenas APIs HTTP externas (sem execFile, sem ffmpeg-static).
- */
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+const sharp = require('sharp');
+const { fetchBuffer } = require(path.join(__dirname, '..', '..', 'fetchurl'));
+const { convertVideoToSticker } = require(path.join(__dirname, '..', '..', 'sticker'));
 
-const path   = require('path');
-const fs     = require('fs');
-const sharp  = require('sharp');
+let _cachedYtDlpPath = null;
+let _cachedFfmpegPath = null;
+let _logger = console;
 
-// ─── fetchBuffer ──────────────────────────────────────────────────────────────
-let fetchBuffer;
-try {
-  fetchBuffer = require(path.resolve(__dirname, '..', 'fetchurl.js')).fetchBuffer;
-} catch {
-  const axios = require('axios');
-  fetchBuffer = async (url, headers = {}) => {
-    const res = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 30000,
-      headers,
-    });
-    return Buffer.from(res.data);
-  };
-}
-
-// ─── Constantes ───────────────────────────────────────────────────────────────
-const API_KEY    = process.env.LOLHUMAN_KEY  || 'galanggg';
-const RAPID_KEY  = process.env.RAPIDAPI_KEY  || '';         // opcional
-const BASE       = 'https://api.lolhuman.xyz/api';
-const MAX_VIDEO  = 64 * 1024 * 1024; // 64 MB
-
-// ─── fetchJson ────────────────────────────────────────────────────────────────
-async function fetchJson(url, headers = {}) {
-  try {
-    const buf = await fetchBuffer(url, headers);
-    const txt = buf.toString('utf8').trim();
-    if (txt.startsWith('<')) throw new Error('API retornou HTML (possível erro de cota ou URL errada)');
-    return JSON.parse(txt);
-  } catch (e) {
-    console.error('[fetchJson]', e.message);
-    return null;
+function setLogger(loggerInstance) {
+  if (loggerInstance && typeof loggerInstance.info === 'function') {
+    _logger = loggerInstance;
   }
 }
 
-// ─── sendMetaCard ────────────────────────────────────────────────────────────
-async function sendMetaCard(sock, jid, msg, meta = {}, query = '') {
-  let texto = `━━━ [ 🔎 *Informações* ] ━━━\n\n`;
-  if (query)        texto += `• 🔎 *Pesquisa:* _${query}_\n\n`;
-  if (meta.title)   texto += `• 📌 *Título:* _${meta.title}_\n`;
-  if (meta.duration) {
-    const m = Math.floor(meta.duration / 60);
-    const s = String(meta.duration % 60).padStart(2, '0');
-    texto += `• ⏱️ *Duração:* ${m}:${s}\n`;
-  }
-  if (meta.uploader) texto += `• 👤 *Canal:* _${meta.uploader}_\n`;
-  if (meta.views)    texto += `• 👁️ *Views:* ${Number(meta.views).toLocaleString('pt-BR')}\n`;
+const log = {
+  info:  (...a) => _logger.info  ? _logger.info(...a)  : console.log(...a),
+  warn:  (...a) => _logger.warn  ? _logger.warn(...a)  : console.warn(...a),
+  error: (...a) => _logger.error ? _logger.error(...a) : console.error(...a),
+};
 
-  let cardBuffer = null;
-  if (meta.thumbnail) {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function expandirUrl(urlEncurtada) {
+  const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+  for (const method of ['head', 'get']) {
     try {
-      const raw     = await fetchBuffer(meta.thumbnail);
-      const base    = await sharp(raw).resize(800, 450, { fit: 'cover', position: 'centre' }).jpeg({ quality: 85 }).toBuffer();
-      const overlay = Buffer.from(
-        `<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg">` +
-        `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
-        `<stop offset="50%" stop-color="black" stop-opacity="0"/>` +
-        `<stop offset="100%" stop-color="black" stop-opacity="0.82"/>` +
-        `</linearGradient></defs>` +
-        `<rect width="800" height="450" fill="url(#g)"/></svg>`
-      );
-      cardBuffer = await sharp(base).composite([{ input: overlay, blend: 'over' }]).jpeg({ quality: 88 }).toBuffer();
-    } catch { /* sem thumbnail, tudo bem */ }
+      const res = await axios[method](urlEncurtada, { maxRedirects: 5, timeout: 10000, headers });
+      const final = res.request?.res?.responseUrl;
+      if (final) return final;
+    } catch {}
   }
+  return urlEncurtada;
+}
+
+function getFfmpegPath() {
+  if (_cachedFfmpegPath && fs.existsSync(_cachedFfmpegPath)) return _cachedFfmpegPath;
+
+  try {
+    const p = require('ffmpeg-static');
+    if (p && fs.existsSync(p)) { _cachedFfmpegPath = p; return p; }
+  } catch {}
+
+  const candidates = process.platform === 'win32'
+    ? ['C:\\ffmpeg\\bin\\ffmpeg.exe', 'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe']
+    : ['/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) { _cachedFfmpegPath = c; return c; }
+  }
+  return 'ffmpeg';
+}
+
+function getFfprobePath() {
+  try {
+    const s = require('ffprobe-static');
+    if (s?.path && fs.existsSync(s.path)) return s.path;
+  } catch {}
+  const candidates = process.platform === 'win32'
+    ? [path.resolve(__dirname, '../node_modules/ffprobe-static/bin/win32/x64/ffprobe.exe')]
+    : ['/usr/local/bin/ffprobe', '/usr/bin/ffprobe'];
+  for (const c of candidates) { if (fs.existsSync(c)) return c; }
+  return 'ffprobe';
+}
+
+function getYtDlpArgs() {
+  const args = [];
+  const ffmpegPath = getFfmpegPath();
+  if (ffmpegPath && ffmpegPath !== 'ffmpeg') args.push('--ffmpeg-location', path.dirname(ffmpegPath));
+  try {
+    const { execSync } = require('child_process');
+    const cmd = process.platform === 'win32' ? 'where node' : 'which node';
+    const nodeExe = execSync(cmd, { timeout: 3000 }).toString().trim().split('\n')[0].trim();
+    if (nodeExe) args.push('--js-runtimes', `node:${nodeExe}`);
+  } catch {}
+  return args;
+}
+
+async function getYtDlpPath() {
+  if (_cachedYtDlpPath && fs.existsSync(_cachedYtDlpPath)) return _cachedYtDlpPath;
+
+  try {
+    const { execSync } = require('child_process');
+    const cmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
+    const p = execSync(cmd, { timeout: 3000 }).toString().trim().split('\n')[0].trim();
+    if (p) { _cachedYtDlpPath = p; return p; }
+  } catch {}
+
+  const candidates = process.platform === 'win32' ? [
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
+    'C:\\Python312\\Scripts\\yt-dlp.exe',
+    path.resolve(__dirname, '../yt-dlp.exe'),
+  ] : [
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+    path.resolve(__dirname, '../yt-dlp'),
+  ];
+
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) { _cachedYtDlpPath = c; return c; } } catch {}
+  }
+
+  // Auto-download yt-dlp.exe no Windows
+  if (process.platform === 'win32') {
+    const dlPath = path.resolve(__dirname, '../yt-dlp.exe');
+    if (!fs.existsSync(dlPath)) {
+      log.info('yt-dlp não encontrado. Baixando automaticamente...');
+      try {
+        await new Promise((resolve, reject) => {
+          const file = fs.createWriteStream(dlPath);
+          require('https').get('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe', (res) => {
+            if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+            res.pipe(file);
+            file.on('finish', () => file.close(resolve));
+          }).on('error', (err) => { try { fs.unlinkSync(dlPath); } catch {} reject(err); });
+        });
+        log.info('✅ yt-dlp.exe baixado em', dlPath);
+      } catch (e) {
+        log.warn('Não foi possível baixar yt-dlp.exe:', e.message);
+      }
+    }
+    if (fs.existsSync(dlPath)) { _cachedYtDlpPath = dlPath; return dlPath; }
+  }
+
+  return 'yt-dlp';
+}
+
+// Executa yt-dlp como Promise
+function ytDlp(ytdlp, args, timeout = 120000) {
+  const { execFile } = require('child_process');
+  return new Promise((resolve) => {
+    execFile(ytdlp, args, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
+      if (err) {
+        log.warn('yt-dlp err:', stderr?.slice(-400) || err.message);
+        resolve({ ok: false, stdout: '', stderr: stderr || '' });
+      } else {
+        resolve({ ok: true, stdout: stdout || '', stderr: '' });
+      }
+    });
+  });
+}
+
+// Executa ffmpeg como Promise
+function ffmpeg(bin, args, timeout = 120000) {
+  const { execFile } = require('child_process');
+  return new Promise((resolve) => {
+    execFile(bin, args, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, _stdout, stderr) => {
+      if (err) {
+        log.warn('ffmpeg err:', stderr?.slice(-400) || err.message);
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
+  });
+}
+
+// Lê metadados via yt-dlp (não bloqueia o fluxo principal)
+async function fetchMeta(ytdlp, link, extraArgs = []) {
+  const args = [...getYtDlpArgs(), '--no-playlist', '--skip-download', '--print-json', '-o', 'dummy', ...extraArgs, link];
+  const { ok, stdout } = await ytDlp(ytdlp, args, 15000);
+  if (!ok || !stdout) return null;
+  try { return JSON.parse(stdout.trim()); } catch { return null; }
+}
+
+function formatMeta(meta) {
+  if (!meta) return '';
+  const parts = [];
+  if (meta.title)      parts.push(`📌 *Título:* ${meta.title}`);
+  if (meta.uploader || meta.channel) parts.push(`👤 *Canal:* ${meta.uploader || meta.channel}`);
+  if (meta.duration)   parts.push(`⏱️ *Duração:* ${Math.floor(meta.duration/60)}:${String(meta.duration%60).padStart(2,'0')}`);
+  if (meta.view_count) parts.push(`👁️ *Views:* ${Number(meta.view_count).toLocaleString('pt-BR')}`);
+  return parts.length ? parts.join('\n') + '\n\n' : '';
+}
+
+function tmpPath(id, suffix) {
+  return path.join(require('os').tmpdir(), `${id}${suffix}`);
+}
+
+function safeDel(...paths) {
+  for (const p of paths) { try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch {} }
+}
+
+const SIZE_LIMIT = 64 * 1024 * 1024;
+
+// ─── Handlers ─────────────────────────────────────────────────────────────────
+
+async function handleSave(sock, msg, jid, caption) {
+  let link = caption.replace(/^[!.,\/]*save\s*/i, '').trim();
+  if (!link || !link.startsWith('http')) {
+    return sock.sendMessage(jid, { text: '⚠️ Envie um link válido. Exemplo: *!save https://...*' }, { quoted: msg });
+  }
+
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  if (/vt\.tiktok|vm\.tiktok|pin\.it|t\.co|bit\.ly|tinyurl/i.test(link)) {
+    try { link = await expandirUrl(link); } catch {}
+  }
+
+  const ytdlp = await getYtDlpPath();
+  const ffmpegBin = getFfmpegPath();
+  const { randomUUID } = require('crypto');
+  const id = randomUUID();
+  const outTemplate = tmpPath(id, '_raw.%(ext)s');
+
+  // Metadados em background
+  const metaPromise = fetchMeta(ytdlp, link);
+
+  const baseArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m'];
+  if (/pinterest|pin\.it/i.test(link)) {
+    baseArgs.push(
+      '--referer', 'https://www.pinterest.com',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    );
+  }
+  baseArgs.push('-o', outTemplate, link);
+
+  const { ok: dlOk } = await ytDlp(ytdlp, baseArgs, 120000);
+  if (!dlOk) {
+    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
+  }
+
+  const base = outTemplate.replace('.%(ext)s', '');
+  const exts = ['.mp4','.mkv','.webm','.mov','.mp3','.m4a','.jpg','.jpeg','.png','.gif','.webp','.opus','.ogg','.pdf','.zip','.txt'];
+  let filePath = exts.map(e => base + e).find(p => fs.existsSync(p)) || null;
+
+  if (!filePath) {
+    return sock.sendMessage(jid, { text: '❌ Arquivo baixado não encontrado.' }, { quoted: msg });
+  }
+
+  let buffer = fs.readFileSync(filePath);
+  if (buffer.length < 1000) {
+    safeDel(filePath);
+    return sock.sendMessage(jid, { text: '❌ Conteúdo baixado está vazio.' }, { quoted: msg });
+  }
+  safeDel(filePath);
+
+  let lower = filePath.toLowerCase();
+  let name = path.basename(filePath);
+
+  // Converte vídeo para MP4 compatível
+  const videoExt = lower.match(/\.(mp4|mov|webm|mkv)$/);
+  if (videoExt) {
+    const inPath = tmpPath(id, `_in${videoExt[0]}`);
+    const outPath = tmpPath(id, '_out.mp4');
+    fs.writeFileSync(inPath, buffer);
+    const ok = await ffmpeg(ffmpegBin, [
+      '-y', '-i', inPath,
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-r', '30',
+      '-profile:v', 'baseline', '-level', '3.0',
+      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', outPath
+    ]);
+    safeDel(inPath);
+    if (ok && fs.existsSync(outPath)) {
+      const conv = fs.readFileSync(outPath);
+      if (conv.length > 1000) { buffer = conv; lower = outPath.toLowerCase(); name = name.replace(videoExt[0], '.mp4'); }
+      safeDel(outPath);
+    }
+  }
+
+  const meta = await metaPromise;
+  const infoText = formatMeta(meta);
+  const cap = (txt) => infoText ? infoText + txt : txt;
+
+  if (buffer.length > SIZE_LIMIT) {
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Arquivo muito grande — enviado como documento.') }, { quoted: msg });
+  } else if (lower.match(/\.(jpg|jpeg|png|webp|gif)$/)) {
+    await sock.sendMessage(jid, { image: buffer, caption: cap('🖼️ Aqui está a imagem') }, { quoted: msg });
+  } else if (lower.match(/\.(mp4|mov)$/)) {
+    try {
+      await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: cap('🎬 Aqui está o vídeo') }, { quoted: msg });
+    } catch {
+      await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Vídeo enviado como documento.') }, { quoted: msg });
+    }
+  } else if (lower.match(/\.(webm|mkv)$/)) {
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Vídeo enviado como documento.') }, { quoted: msg });
+  } else if (lower.match(/\.(mp3|m4a|opus|ogg)$/)) {
+    if (infoText) await sock.sendMessage(jid, { text: infoText }, { quoted: msg });
+    await sock.sendMessage(jid, { audio: buffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+  } else {
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Aqui está o arquivo') }, { quoted: msg });
+  }
+
+  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function handleSaveRec(sock, msg, jid, caption) {
+  let link = caption.replace(/^[!.,\/]*saverec\s*/i, '').trim();
+  if (!link || !link.startsWith('http')) {
+    return sock.sendMessage(jid, { text: '⚠️ Envie um link válido. Exemplo: *!saverec https://...*' }, { quoted: msg });
+  }
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  if (/vt\.tiktok|vm\.tiktok|pin\.it|t\.co|bit\.ly|tinyurl/i.test(link)) {
+    try { link = await expandirUrl(link); } catch {}
+  }
+
+  const ytdlp = await getYtDlpPath();
+  const ffmpegBin = getFfmpegPath();
+  const { randomUUID } = require('crypto');
+  const id = randomUUID();
+  const outTemplate = tmpPath(id, '_raw.%(ext)s');
+
+  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m', '-o', outTemplate, link];
+  if (/pinterest|pin\.it/i.test(link)) {
+    dlArgs.push('--referer', 'https://www.pinterest.com', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+  }
+
+  const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 120000);
+  if (!dlOk) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
+
+  const base = outTemplate.replace('.%(ext)s', '');
+  let filePath = ['.mp4','.mkv','.webm','.mov'].map(e => base + e).find(p => fs.existsSync(p)) || null;
+  if (!filePath) return sock.sendMessage(jid, { text: '❌ Arquivo de vídeo não encontrado.' }, { quoted: msg });
+
+  const recPath = tmpPath(id, '_rec.mp4');
+  const ok = await ffmpeg(ffmpegBin, [
+    '-y', '-i', filePath,
+    '-t', '10', '-vf', 'scale=512:-2:flags=lanczos',
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '28',
+    '-c:a', 'aac', '-b:a', '128k', recPath
+  ]);
+  safeDel(filePath);
+
+  const usePath = (ok && fs.existsSync(recPath)) ? recPath : null;
+  if (!usePath) return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+
+  const buffer = fs.readFileSync(usePath);
+  safeDel(usePath);
+
+  const name = path.basename(usePath);
+  if (buffer.length > SIZE_LIMIT) {
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: '📄 Vídeo muito grande — enviado como documento.' }, { quoted: msg });
+  } else {
+    await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: '🎬 Aqui está o vídeo recortado!' }, { quoted: msg });
+  }
+
+  try {
+    const stickerBuffer = await convertVideoToSticker(buffer);
+    await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
+  } catch (e) { log.warn('sticker err:', e.message); }
+
+  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function handleTiktok(sock, msg, jid, caption, getPrefix) {
+  const P = getPrefix(jid);
+  let link = caption.replace(/^[!.,\/]*tiktok2?\s*/i, '').trim();
+  if (!link || !link.startsWith('http')) {
+    return sock.sendMessage(jid, { text: `⚠️ Envie o link do vídeo.\nExemplo: *${P}tiktok https://vm.tiktok.com/xxx*` }, { quoted: msg });
+  }
+
+  if (/vt\.tiktok|vm\.tiktok/i.test(link)) {
+    try { link = await expandirUrl(link); } catch {}
+  }
+
+  const ytdlp = await getYtDlpPath();
+  const ffmpegBin = getFfmpegPath();
+  const { randomUUID } = require('crypto');
+  const id = randomUUID();
+
+  // Resolve cookies TikTok
+  const tiktokCookiesEnv = process.env.TIKTOK_COOKIES?.trim();
+  let cookieFilePath = null;
+  let cookieTempFile = null;
+
+  if (tiktokCookiesEnv) {
+    log.info(`✅ TIKTOK_COOKIES encontrado (${tiktokCookiesEnv.length} bytes)`);
+    cookieTempFile = tmpPath(id, '_tiktok_cookies.txt');
+    try { fs.writeFileSync(cookieTempFile, tiktokCookiesEnv, 'utf8'); cookieFilePath = cookieTempFile; } catch (e) { log.warn('Erro ao gravar cookie:', e.message); }
+  } else {
+    const local = path.join(__dirname, '../../tiktok_cookies.txt');
+    if (fs.existsSync(local)) { cookieFilePath = local; log.info('✅ Usando cookies locais'); }
+    else log.warn('⚠️ Sem cookies TikTok — pode falhar');
+  }
+
+  const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
+
+  // Metadados em background
+  const metaExtraArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
+  const metaPromise = fetchMeta(ytdlp, link, metaExtraArgs);
+
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+  log.info(`🎵 tiktok: baixando ${link}`);
+
+  const rawPath = tmpPath(id, '_raw.mp4');
+  const outPath = tmpPath(id, '_out.mp4');
+
+  const dlArgs = [
+    ...getYtDlpArgs(),
+    '--no-playlist',
+    '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+    '--merge-output-format', 'mp4',
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+    '--referer', 'https://www.tiktok.com/',
+  ];
+  if (cookieFilePath) { dlArgs.push('--cookies', cookieFilePath); log.info('🍪 Usando cookies'); }
+  dlArgs.push('-o', rawPath, link);
+
+  const { ok: dlOk, stderr: dlStderr } = await ytDlp(ytdlp, dlArgs, 60000);
+  if (!dlOk) {
+    cleanupCookie();
+    const isPhoto = /photo/i.test(dlStderr);
+    return sock.sendMessage(jid, {
+      text: isPhoto
+        ? '⚠️ Esse link é um *post de foto* do TikTok, não um vídeo!'
+        : '❌ Não consegui baixar o vídeo.\nVerifique se o link é válido.'
+    }, { quoted: msg });
+  }
+
+  if (!fs.existsSync(rawPath)) {
+    cleanupCookie();
+    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+  }
+
+  const encOk = await ffmpeg(ffmpegBin, [
+    '-y', '-i', rawPath,
+    '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
+    '-preset', 'fast', '-crf', '28',
+    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k',
+    '-movflags', '+faststart', outPath
+  ]);
+
+  safeDel(rawPath);
+
+  if (!encOk || !fs.existsSync(outPath)) {
+    cleanupCookie();
+    return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+  }
+
+  const videoBuffer = fs.readFileSync(outPath);
+  safeDel(outPath);
+
+  if (videoBuffer.length > SIZE_LIMIT) {
+    cleanupCookie();
+    return sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
+  }
+
+  const meta = await metaPromise;
+  const infoText = formatMeta(meta);
+  const finalCaption = infoText ? infoText + '🎵 Aqui está o vídeo!' : '🎵 Aqui está o vídeo!';
+
+  await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
+  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  cleanupCookie();
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function handleAudioDownload(sock, msg, jid, caption) {
+  const link = caption.replace(/^[!.,\/]*audio\s*/i, '').trim();
+  if (!link || !link.startsWith('http')) {
+    return sock.sendMessage(jid, { text: '⚠️ Envie o link do vídeo.\nExemplo: *!audio https://youtu.be/xxx*' }, { quoted: msg });
+  }
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  const ytdlp = await getYtDlpPath();
+  const ffmpegBin = getFfmpegPath();
+  const { randomUUID } = require('crypto');
+  const id = randomUUID();
+  const rawTemplate = tmpPath(id, '_raw.%(ext)s');
+  const outPath = tmpPath(id, '_out.mp3');
+
+  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'best', '--audio-quality', '0', '--max-filesize', '100m', '-o', rawTemplate, link];
+  const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 90000);
+  if (!dlOk) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o áudio.' }, { quoted: msg });
+
+  const base = rawTemplate.replace('.%(ext)s', '');
+  const rawPath = ['.mp3','.m4a','.opus','.ogg','.webm','.aac','.flac','.wav'].map(e => base + e).find(p => fs.existsSync(p)) || null;
+  if (!rawPath) return sock.sendMessage(jid, { text: '❌ Arquivo de áudio não encontrado.' }, { quoted: msg });
+
+  const encOk = await ffmpeg(ffmpegBin, [
+    '-y', '-i', rawPath,
+    '-vn', '-c:a', 'libmp3lame', '-b:a', '192k', '-ar', '44100', '-ac', '2', outPath
+  ]);
+  safeDel(rawPath);
+
+  if (!encOk || !fs.existsSync(outPath)) return sock.sendMessage(jid, { text: '❌ Falha ao processar o áudio.' }, { quoted: msg });
+
+  const audioBuffer = fs.readFileSync(outPath);
+  safeDel(outPath);
+
+  if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Áudio muito grande (máx 64MB).' }, { quoted: msg });
+
+  await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  log.info('✅ Áudio MP3 enviado!');
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
+  const P = getPrefix(jid);
+  const nome = caption.replace(/^[!.,\/]*som\s*/i, '').trim();
+  if (!nome) {
+    return sock.sendMessage(jid, { text: `⚠️ Digite o nome da música.\nExemplo: *${P}som Ela Deixou um Bilhete*` }, { quoted: msg });
+  }
+
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  const ytdlp = await getYtDlpPath();
+  const { randomUUID } = require('crypto');
+  const id = randomUUID();
+  const outTemplate = tmpPath(id, '.%(ext)s');
+  const query = `ytsearch1:${nome} official audio`;
+
+  // Metadados em background
+  const metaPromise = fetchMeta(ytdlp, query, ['--match-filter', '!is_live']);
+
+  const dlArgs = [
+    ...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'mp3',
+    '--audio-quality', '0', '--match-filter', '!is_live',
+    '--max-filesize', '50m', '-o', outTemplate, query
+  ];
+  const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
+  if (!ok) return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+
+  const base = outTemplate.replace('.%(ext)s', '');
+  const finalPath = ['.mp3','.m4a','.opus','.ogg','.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
+  if (!finalPath) return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+
+  const audioBuffer = fs.readFileSync(finalPath);
+  safeDel(finalPath);
+  if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Arquivo muito grande (máx 64MB).' }, { quoted: msg });
+
+  const meta = await metaPromise;
+
+  // Thumbnail como card
+  let cardBuffer = null;
+  const thumbUrl = meta?.thumbnail || (meta?.thumbnails?.length ? meta.thumbnails[meta.thumbnails.length - 1]?.url : null);
+  if (thumbUrl) {
+    try {
+      const thumbBuffer = await fetchBuffer(thumbUrl);
+      const base64 = (await sharp(thumbBuffer).resize(800, 450, { fit: 'cover', position: 'centre' }).jpeg({ quality: 85 }).toBuffer()).toString('base64');
+      const baseImage = Buffer.from(base64, 'base64');
+      const overlay = Buffer.from(`<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="50%" stop-color="black" stop-opacity="0"/><stop offset="100%" stop-color="black" stop-opacity="0.82"/></linearGradient></defs><rect width="800" height="450" fill="url(#g)"/></svg>`);
+      cardBuffer = await sharp(baseImage).composite([{ input: overlay, blend: 'over' }]).jpeg({ quality: 88 }).toBuffer();
+    } catch {}
+  }
+  if (!cardBuffer) {
+    try {
+      const svg = Buffer.from(`<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg"><rect width="800" height="450" fill="#0f3460"/></svg>`);
+      cardBuffer = await sharp(svg).jpeg({ quality: 90 }).toBuffer();
+    } catch {}
+  }
+
+  const titulo = meta?.title || nome;
+  const durSec = meta?.duration || 0;
+  const durStr = durSec ? `${Math.floor(durSec/60)}:${String(durSec%60).padStart(2,'0')}` : '—';
+  const uploader = meta?.uploader || meta?.channel || null;
+  const views = meta?.view_count ? Number(meta.view_count).toLocaleString('pt-BR') : null;
+
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  pendingMusic.set(senderJid, { audioBuffer, titulo, meta, nome });
+  setTimeout(() => pendingMusic.delete(senderJid), 10 * 60 * 1000);
+
+  let texto = `━━━ [ 🎧 *Piroquinhas* 🎧 ] ━━━\n\n`;
+  texto += `• 🔎 *Pesquisa:* _${nome}_\n\n`;
+  texto += `• 🎵 *Título:* _${titulo}_\n\n`;
+  texto += `• ⏱️ *Duração:* ${durStr}\n`;
+  if (uploader) texto += `• 👤 *Canal:* _${uploader}_\n`;
+  if (views)    texto += `• 👁️ *Views:* ${views}\n`;
+  texto += `\n━━━ [ 📱 *MAIS OPÇÕES* 📱 ] ━━━\n`;
+  texto += `🎬 *${P}playmp4* - _Baixa como vídeo_\n`;
+  texto += `📄 *${P}playdoc* - _Baixa como documento_`;
 
   if (cardBuffer) {
     await sock.sendMessage(jid, { image: cardBuffer, caption: texto }, { quoted: msg });
   } else {
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   }
+
+  await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  log.info(`✅ Música "${titulo}" enviada!`);
 }
 
-// ─── Helpers internos ────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 
-/** Baixa mídia e valida tamanho. Retorna null se muito grande. */
-async function safeFetch(url, maxBytes = MAX_VIDEO) {
-  const buf = await fetchBuffer(url);
-  if (buf.length > maxBytes) return null;
-  return buf;
-}
-
-/** Reage com ❌ e envia texto de erro */
-async function sendError(sock, jid, msg, texto) {
-  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-  await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !play (áudio via API) ────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handlePlay(sock, msg, jid, caption) {
-  const query = caption.replace(/^[!.]play2?\s*/i, '').trim();
-  if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.play <música>*' }, { quoted: msg });
-    return;
-  }
+async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const pending = pendingMusic.get(senderJid);
+  const P = getPrefix(jid);
+  if (!pending) return sock.sendMessage(jid, { text: `⚠️ Nenhuma música recente. Use *${P}som <música>* primeiro.` }, { quoted: msg });
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  try {
-    // 1) Busca metadados + link de download via API
-    const data = await fetchJson(
-      `${BASE}/youtube2mp3?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
-    );
+  const ytdlp = await getYtDlpPath();
+  const ffmpegBin = getFfmpegPath();
+  const { randomUUID } = require('crypto');
+  const id = randomUUID();
+  const rawPath = tmpPath(id, '_raw.mp4');
+  const outPath = tmpPath(id, '_out.mp4');
+  const target = pending.meta?.webpage_url || `ytsearch1:${pending.nome} official video`;
 
-    if (!data?.result?.downloadUrl && !data?.result?.link) {
-      // Fallback: pesquisa e pega o primeiro resultado
-      const search = await fetchJson(
-        `${BASE}/youtube/search?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
-      );
-      const first = search?.result?.[0];
-      if (!first?.url) {
-        await sendError(sock, jid, msg, '❌ Não encontrei essa música.');
-        return;
-      }
-      // tenta baixar pelo link direto
-      const data2 = await fetchJson(
-        `${BASE}/youtube2mp3?apikey=${API_KEY}&url=${encodeURIComponent(first.url)}`
-      );
-      if (!data2?.result?.downloadUrl) {
-        await sendError(sock, jid, msg, '❌ Não consegui baixar essa música.');
-        return;
-      }
-      Object.assign(data, data2);
-    }
+  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '--max-filesize', '120m', '-o', rawPath, target];
+  const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 180000);
 
-    const result      = data.result;
-    const downloadUrl = result.downloadUrl || result.link;
+  if (!dlOk || !fs.existsSync(rawPath)) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
 
-    await sendMetaCard(sock, jid, msg, {
-      title:    result.title    || query,
-      uploader: result.channel  || result.uploader || null,
-      duration: result.duration || null,
-      thumbnail: result.thumbnail || null,
-    }, query);
+  const encOk = await ffmpeg(ffmpegBin, [
+    '-y', '-i', rawPath,
+    '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
+    '-preset', 'fast', '-crf', '28',
+    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k',
+    '-movflags', '+faststart', '-max_muxing_queue_size', '1024', outPath
+  ]);
 
-    const audioBuffer = await fetchBuffer(downloadUrl);
-    await sock.sendMessage(jid, {
-      audio:    audioBuffer,
-      mimetype: 'audio/mpeg',
-      ptt:      false,
-    }, { quoted: msg });
+  safeDel(rawPath);
+  if (!encOk || !fs.existsSync(outPath)) return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
 
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[play]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar música.');
-  }
+  const videoBuffer = fs.readFileSync(outPath);
+  safeDel(outPath);
+
+  if (videoBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
+
+  await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: `🎬 *${pending.titulo}*` }, { quoted: msg });
+  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !play_video (vídeo via API) ──────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handlePlayVideo(sock, msg, jid, caption) {
-  const query = caption.replace(/^[!.]play_video2?\s*/i, '').trim();
-  if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.play_video <vídeo>*' }, { quoted: msg });
-    return;
-  }
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic) {
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const pending = pendingMusic.get(senderJid);
+  const P = getPrefix(jid);
+  if (!pending) return sock.sendMessage(jid, { text: `⚠️ Nenhuma música recente. Use *${P}som <música>* primeiro.` }, { quoted: msg });
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(
-      `${BASE}/youtube2mp4?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
-    );
-
-    if (!data?.result?.downloadUrl && !data?.result?.link) {
-      await sendError(sock, jid, msg, '❌ Não encontrei esse vídeo.');
-      return;
-    }
-
-    const result      = data.result;
-    const downloadUrl = result.downloadUrl || result.link;
-
-    await sendMetaCard(sock, jid, msg, {
-      title:    result.title    || query,
-      uploader: result.channel  || result.uploader || null,
-      duration: result.duration || null,
-      views:    result.views    || result.view_count || null,
-      thumbnail: result.thumbnail || null,
-    }, query);
-
-    const vidBuffer = await safeFetch(downloadUrl);
-    if (!vidBuffer) {
-      await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
-      return;
-    }
-
-    await sock.sendMessage(jid, { video: vidBuffer, mimetype: 'video/mp4' }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[play_video]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar vídeo.');
-  }
+  const safeName = (pending.titulo || 'musica').replace(/[^\w\s\-]/g, '').replace(/\s+/g, '_').slice(0, 60);
+  await sock.sendMessage(jid, {
+    document: pending.audioBuffer,
+    mimetype: 'audio/mpeg',
+    fileName: `${safeName}.mp3`,
+    caption: `📄 *${pending.titulo}*\n_Enviado como documento_`
+  }, { quoted: msg });
+  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !youtube / !youtubemp4 / !youtubemp3 ────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleYouTube(sock, msg, jid, caption, format = 'info') {
-  const link = caption.replace(/^[!.](youtube|youtubemp4|youtubemp3)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.youtube <link>*' }, { quoted: msg });
-    return;
-  }
+// ──────────────────────────────────────────────────────────────────────────────
 
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const endpoint = format === 'mp3' ? 'youtube2mp3' : 'youtube2mp4';
-    const data     = await fetchJson(`${BASE}/${endpoint}?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
-
-    if (!data?.result) {
-      await sendError(sock, jid, msg, '❌ Não consegui processar o link.');
-      return;
-    }
-
-    const result = data.result;
-    await sendMetaCard(sock, jid, msg, {
-      title:    result.title    || null,
-      uploader: result.channel  || result.uploader || null,
-      duration: result.duration || null,
-      views:    result.views    || result.view_count || null,
-      thumbnail: result.thumbnail || result.image || null,
-    }, link);
-
-    const downloadUrl = result.downloadUrl || result.link;
-    if (!downloadUrl) {
-      await sendError(sock, jid, msg, '❌ Link de download não disponível.');
-      return;
-    }
-
-    if (format === 'mp3') {
-      const buf = await fetchBuffer(downloadUrl);
-      await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-    } else if (format === 'mp4') {
-      const buf = await safeFetch(downloadUrl);
-      if (!buf) {
-        await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
-        return;
-      }
-      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
-    }
-
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[youtube]', e.message);
-    await sendError(sock, jid, msg, `❌ Erro ao baixar (${format}).`);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !instagram ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleInstagram(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.](instagram2?)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.instagram <link>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`${BASE}/instagram?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
-
-    if (!data?.result?.length) {
-      await sendError(sock, jid, msg, '❌ Não consegui baixar esse post.');
-      return;
-    }
-
-    const first = data.result[0];
-    await sendMetaCard(sock, jid, msg, {
-      title:     first.caption   || null,
-      thumbnail: first.thumbnail || first.url || null,
-    }, link);
-
-    let sent = 0;
-    for (const media of data.result.slice(0, 5)) {
-      try {
-        if (media.type === 'image') {
-          const buf = await fetchBuffer(media.url);
-          await sock.sendMessage(jid, { image: buf }, { quoted: msg });
-          sent++;
-        } else if (media.type === 'video') {
-          const buf = await safeFetch(media.url);
-          if (!buf) continue;
-          await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
-          sent++;
-        }
-      } catch (e) {
-        console.warn('[instagram] item falhou:', e.message);
-      }
-    }
-
-    if (sent === 0) {
-      await sendError(sock, jid, msg, '❌ Nenhuma mídia pôde ser enviada.');
-      return;
-    }
-
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[instagram]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar Instagram.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !tiktok ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleTikTok(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.](tiktok2?)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.tiktok <link>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`${BASE}/tiktok?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
-
-    if (!data?.result) {
-      await sendError(sock, jid, msg, '❌ Não consegui baixar esse TikTok.');
-      return;
-    }
-
-    const { title, author, duration, thumbnail } = data.result;
-    const videoUrl = data.result.link || data.result.downloadUrl || data.result.video;
-
-    if (!videoUrl) {
-      await sendError(sock, jid, msg, '❌ URL de download não encontrada.');
-      return;
-    }
-
-    await sendMetaCard(sock, jid, msg, {
-      title:    title     || null,
-      uploader: author?.nickname || author?.name || null,
-      duration: duration  || null,
-      thumbnail: thumbnail || null,
-    }, link);
-
-    const buf = await safeFetch(videoUrl);
-    if (!buf) {
-      await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
-      return;
-    }
-
-    await sock.sendMessage(jid, {
-      video:    buf,
-      mimetype: 'video/mp4',
-      caption:  `🎵 ${title || 'TikTok'}`,
-    }, { quoted: msg });
-
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[tiktok]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar TikTok.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !facebook ────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleFacebook(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.](facebook2?)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.facebook <link>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`${BASE}/facebook?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
-
-    const downloadUrl = data?.result?.download || data?.result?.downloadUrl || data?.result?.link;
-    if (!downloadUrl) {
-      await sendError(sock, jid, msg, '❌ Não consegui baixar esse vídeo.');
-      return;
-    }
-
-    await sendMetaCard(sock, jid, msg, {
-      title:    data.result.title    || null,
-      duration: data.result.duration || null,
-      uploader: data.result.uploader || null,
-      thumbnail: data.result.thumbnail || null,
-    }, link);
-
-    const buf = await safeFetch(downloadUrl);
-    if (!buf) {
-      await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
-      return;
-    }
-
-    await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[facebook]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar Facebook.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !twitter / !x ────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleTwitter(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.](twitter|x)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.twitter <link>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`${BASE}/twitter?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
-
-    const items  = data?.result ? (Array.isArray(data.result) ? data.result : [data.result]) : [];
-    const first  = items[0];
-
-    if (!first?.url) {
-      await sendError(sock, jid, msg, '❌ Não consegui baixar esse post.');
-      return;
-    }
-
-    await sendMetaCard(sock, jid, msg, {
-      title:    first.title || first.text || null,
-      thumbnail: first.thumbnail || null,
-      duration: first.duration   || null,
-    }, link);
-
-    for (const item of items.slice(0, 3)) {
-      try {
-        const buf = await safeFetch(item.url);
-        if (!buf) continue;
-        if (item.type === 'image' || /\.(jpg|jpeg|png|webp)/i.test(item.url)) {
-          await sock.sendMessage(jid, { image: buf }, { quoted: msg });
-        } else {
-          await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
-        }
-      } catch (e) {
-        console.warn('[twitter] item falhou:', e.message);
-      }
-    }
-
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[twitter]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar Twitter/X.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !pinterest ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handlePinterest(sock, msg, jid, caption) {
-  const query = caption.replace(/^[!.](pinterest2?)\s*/i, '').trim();
-  if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.pinterest <nome ou link>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  const isLink = /^https?:\/\//i.test(query) || /pinterest\.com/i.test(query);
-
-  try {
-    if (isLink) {
-      const data = await fetchJson(`${BASE}/pinterest?apikey=${API_KEY}&url=${encodeURIComponent(query)}`);
-      const imgUrl = data?.result;
-
-      if (!imgUrl) {
-        await sendError(sock, jid, msg, '❌ Não consegui baixar essa imagem.');
-        return;
-      }
-
-      const buf = await fetchBuffer(imgUrl);
-      await sock.sendMessage(jid, { image: buf }, { quoted: msg });
-    } else {
-      // Pesquisa por termo
-      const data = await fetchJson(
-        `${BASE}/google/image?apikey=${API_KEY}&query=${encodeURIComponent(query + ' pinterest')}`
-      );
-
-      if (!data?.result?.length) {
-        await sendError(sock, jid, msg, '❌ Nenhuma imagem encontrada.');
-        return;
-      }
-
-      let sent = 0;
-      for (const img of data.result.slice(0, 3)) {
-        try {
-          const buf = await fetchBuffer(img);
-          await sock.sendMessage(jid, { image: buf }, { quoted: msg });
-          sent++;
-        } catch { /* tenta próximo */ }
-      }
-
-      if (sent === 0) {
-        await sendError(sock, jid, msg, '❌ Nenhuma imagem pôde ser enviada.');
-        return;
-      }
-    }
-
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[pinterest]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar Pinterest.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !spotify ─────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleSpotify(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.]spotify\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.spotify <link>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`${BASE}/spotify?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
-
-    const previewUrl = data?.result?.preview_url;
-    if (!previewUrl) {
-      await sendError(sock, jid, msg, '❌ Preview não disponível para essa faixa.');
-      return;
-    }
-
-    const title  = data.result.name   || 'Spotify';
-    const artist = data.result.artist || 'Desconhecido';
-
-    await sendMetaCard(sock, jid, msg, {
-      title,
-      uploader:  artist,
-      thumbnail: data.result.thumbnail || null,
-      duration:  data.result.duration  || null,
-    }, link);
-
-    const buf = await fetchBuffer(previewUrl);
-    await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[spotify]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar Spotify.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !soundcloud ──────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleSoundCloud(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.]soundcloud\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.soundcloud <link>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`${BASE}/soundcloud?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
-
-    const downloadUrl = data?.result?.download || data?.result?.downloadUrl;
-    if (!downloadUrl) {
-      await sendError(sock, jid, msg, '❌ Não consegui baixar essa faixa.');
-      return;
-    }
-
-    await sendMetaCard(sock, jid, msg, {
-      title:    data.result.title    || null,
-      uploader: data.result.uploader || data.result.artist || null,
-      duration: data.result.duration || null,
-      thumbnail: data.result.thumbnail || null,
-    }, link);
-
-    const buf = await fetchBuffer(downloadUrl);
-    await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[soundcloud]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar SoundCloud.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !gimage ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleGImage(sock, msg, jid, caption) {
-  const query = caption.replace(/^[!.]gimage\s*/i, '').trim();
-  if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.gimage <termo>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(
-      `${BASE}/google/image?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
-    );
-
-    if (!data?.result?.length) {
-      await sendError(sock, jid, msg, '❌ Nenhuma imagem encontrada.');
-      return;
-    }
-
-    let sent = 0;
-    for (const img of data.result.slice(0, 3)) {
-      try {
-        const buf = await fetchBuffer(img);
-        await sock.sendMessage(jid, { image: buf }, { quoted: msg });
-        sent++;
-      } catch { /* tenta próximo */ }
-    }
-
-    if (sent === 0) {
-      await sendError(sock, jid, msg, '❌ Não consegui baixar as imagens.');
-      return;
-    }
-
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[gimage]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao buscar imagens.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !pesquisayt ──────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handlePesquisaYT(sock, msg, jid, caption) {
-  const query = caption.replace(/^[!.]pesquisayt\s*/i, '').trim();
-  if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.pesquisayt <termo>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(
-      `${BASE}/youtube/search?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
-    );
-
-    if (!data?.result?.length) {
-      await sendError(sock, jid, msg, '❌ Nenhum vídeo encontrado.');
-      return;
-    }
-
-    let texto = `🔍 *Resultados para "${query}"*\n\n`;
-    data.result.slice(0, 5).forEach((v, i) => {
-      texto += `*${i + 1}.* ${v.title}\n`;
-      if (v.duration) texto += `⏱️ ${v.duration}  `;
-      if (v.views)    texto += `👁️ ${Number(v.views).toLocaleString('pt-BR')} views`;
-      texto += `\n🔗 ${v.url}\n\n`;
-    });
-
-    await sock.sendMessage(jid, { text: texto.trim() }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[pesquisayt]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao pesquisar no YouTube.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !twitch ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleTwitch(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.]twitch\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: *.twitch <link>*' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`${BASE}/twitch?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
-
-    const videoUrl = data?.result?.video_url || data?.result?.downloadUrl;
-    if (!videoUrl) {
-      await sendError(sock, jid, msg, '❌ Não consegui baixar esse clipe.');
-      return;
-    }
-
-    await sendMetaCard(sock, jid, msg, {
-      title:    data.result.title     || null,
-      thumbnail: data.result.thumbnail || null,
-      duration: data.result.duration  || null,
-    }, link);
-
-    const buf = await safeFetch(videoUrl);
-    if (!buf) {
-      await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
-      return;
-    }
-
-    await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[twitch]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao baixar Twitch.');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !wallpapers ──────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleWallpapers(sock, msg, jid, category = 'wallpapers') {
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  const queries = {
-    animes:     'anime wallpaper 4k',
-    carros:     'car wallpaper 4k',
-    wallpapers: 'wallpaper 4k',
-  };
-  const query = queries[category] || 'wallpaper 4k';
-
-  try {
-    const data = await fetchJson(
-      `${BASE}/google/image?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
-    );
-
-    if (!data?.result?.length) {
-      await sendError(sock, jid, msg, '❌ Nenhum wallpaper encontrado.');
-      return;
-    }
-
-    let sent = 0;
-    for (const img of data.result.slice(0, 3)) {
-      try {
-        const buf = await fetchBuffer(img);
-        await sock.sendMessage(jid, { image: buf }, { quoted: msg });
-        sent++;
-      } catch { /* tenta próximo */ }
-    }
-
-    if (sent === 0) {
-      await sendError(sock, jid, msg, '❌ Não consegui baixar os wallpapers.');
-      return;
-    }
-
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('[wallpapers]', e.message);
-    await sendError(sock, jid, msg, '❌ Erro ao buscar wallpapers.');
-  }
-}
-
-// ─── Exports ─────────────────────────────────────────────────────────────────
 module.exports = {
-  handlePlay,
-  handlePlayVideo,
-  handleYouTube,
-  handleInstagram,
-  handleTikTok,
-  handleFacebook,
-  handleTwitter,
-  handlePinterest,
-  handleSpotify,
-  handleSoundCloud,
-  handleGImage,
-  handlePesquisaYT,
-  handleTwitch,
-  handleWallpapers,
+  setLogger,
+  handleSave,
+  handleSaveRec,
+  handleTiktok,
+  handleAudioDownload,
+  handleSom,
+  handlePlayMp4,
+  handlePlayDoc,
+  getYtDlpPath,
+  getYtDlpArgs,
+  getFfmpegPath,
+  getFfprobePath,
 };

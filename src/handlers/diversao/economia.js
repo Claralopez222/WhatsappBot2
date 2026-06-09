@@ -9,7 +9,7 @@
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { getCarteira, alterarGold, transferirGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { prepareDailyMissionState } = require('./missoes');
 // Importar catálogos de pesca para o !comprar reconhecer varas e iscas
 const { VARAS_PESCA, ISCAS } = require('./pesca');

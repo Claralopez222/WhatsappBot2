@@ -150,7 +150,7 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 async function handleComprarRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match   = caption.match(/buy\s+(\S+)/i)
+  const match = caption.match(/buyroubo\s+(\S+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, {
@@ -219,7 +219,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
 async function handleComprarSec(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  caption.match(/buysec\s+(\S+)/i)
+  const match = caption.match(/buysec\s+(\S+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, {
@@ -279,12 +279,10 @@ async function handleComprarSec(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── !equiparroubo ────────────────────────────────────────────────────────────
-
 async function handleEquiparRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  caption.match(/buyroubo\s+(\S+)/i)
+  const match   = caption.match(/equiparroubo\s+(\S+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, {
@@ -310,7 +308,7 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
     await sock.sendMessage(jid, {
       text:
         `❌ Você não possui *${itemInfo.nome}* neste grupo!\n\n` +
-        `🛒 Compre com *!comprarroubo ${itemSlug}*`,
+        `🛒 Compre com *!buyroubo ${itemSlug}*`,
     }, { quoted: msg });
     return;
   }
@@ -332,7 +330,6 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
       `🔫 Agora use *!roubar @pessoa* para atacar!`,
   }, { quoted: msg });
 }
-
 // ─── !equiparsec ──────────────────────────────────────────────────────────────
 
 async function handleEquiparSec(sock, msg, jid, caption) {

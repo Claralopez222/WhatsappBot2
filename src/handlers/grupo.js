@@ -966,20 +966,6 @@ async function handleBemVindo(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ── Ativar / Personalizar ─────────────────────────────────────
-  const mensagem = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim()
-    || `👋 Bem-vindo(a) ao grupo, {nome}! 🎉\n_Leia as regras e divirta-se!_`;
-
-  bemVindoGroups.set(jid, { ativo: true, mensagem });
-
-  await sock.sendMessage(jid, {
-    text:
-      `✅ Ativado! Toda vez que alguém entrar vou mandar:\n\n${mensagem}\n\n` +
-      `_Use {nome} para mencionar quem entrou._\n` +
-      `_!bemvindo off para desativar._`,
-  }, { quoted: msg });
-
-
 // ─── Handler interno chamado pelo bot.js ao detectar novo membro ─
 async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
   const cfg = bemVindoGroups.get(jid);

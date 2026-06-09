@@ -4,6 +4,7 @@
   "description": "Bot de WhatsApp que converte imagens e vídeos em figurinhas com o comando !s",
   "main": "src/bot.js",
   "scripts": {
+    "build": "npm install && node scripts/install-ytdlp.js",
     "start": "node src/bot.js",
     "dev": "nodemon src/bot.js"
   },

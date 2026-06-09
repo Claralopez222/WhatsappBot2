@@ -150,7 +150,7 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 async function handleComprarRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match   = caption.match(/comprarroubo\s+(\S+)/i);
+  const match   = caption.match(/buy\s+(\S+)/i)
 
   if (!match) {
     await sock.sendMessage(jid, {
@@ -219,7 +219,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
 async function handleComprarSec(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match   = caption.match(/comprarsec\s+(\S+)/i);
+  caption.match(/buysec\s+(\S+)/i)
 
   if (!match) {
     await sock.sendMessage(jid, {
@@ -284,7 +284,7 @@ async function handleComprarSec(sock, msg, jid, caption) {
 async function handleEquiparRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match   = caption.match(/equiparroubo\s+(\S+)/i);
+  caption.match(/buyroubo\s+(\S+)/i)
 
   if (!match) {
     await sock.sendMessage(jid, {

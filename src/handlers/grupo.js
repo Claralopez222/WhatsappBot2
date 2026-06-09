@@ -1,22 +1,42 @@
-/**
- * Handler de Grupo — Piroquinhas Bot
- * Comandos: !ban, !mute, !desmute, !ranking, !sorteio, !enquete, !todos,
- *           !fechar, !abrir, !promover, !rebaixar, !tempo, !antilink,
- *           !autosticker, !reportar, !grupinfo, !bemvindo, !linkgrupo,
- *           !apagarmsg, !slowmode, !antiflood, !listaadm, !listamembros,
- *           !avisar, !fixargrupo, !menuadm
- */
+//**
+ //* Handler de Grupo — Piroquinhas Bot
+ //* Comandos: !ban, !mute, !desmute, !ranking, !sorteio, !enquete, !todos,
+ //*           !fechar, !abrir, !promover, !rebaixar, !tempo, !antilink,
+ //*           !autosticker, !reportar, !grupinfo, !bemvindo, !linkgrupo,
+ //*           !apagarmsg, !slowmode, !antiflood, !listaadm, !listamembros,
+ //*           !avisar, !fixargrupo, !menuadm
+ 
 
 'use strict';
+
+const fs   = require('fs');
+const path = require('path');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── ESTADO GLOBAL (em memória — resetado ao reiniciar o bot) ─
 // ═══════════════════════════════════════════════════════════════
 
-const slowModeGroups  = new Map(); // jid → { segundos, lastMsg: Map<userJid, timestamp> }
-const antiFloodGroups = new Map(); // jid → { limite, janela_ms, msgs: Map<userJid, number[]> }
-const bemVindoGroups  = new Map(); // jid → { ativo: bool, mensagem: string }
-const grupoAvisosMap  = new Map(); // jid → [{ texto, data }]
+/** @type {Map<string, { segundos: number, lastMsg: Map<string, number> }>} */
+const slowModeGroups = new Map();
+
+/** @type {Map<string, { limite: number, janela_ms: number, msgs: Map<string, number[]>, ultimaLimpeza: number }>} */
+const antiFloodGroups = new Map();
+
+/** @type {Map<string, { ativo: boolean, mensagem: string }>} */
+const bemVindoGroups = new Map();
+
+/** @type {Map<string, Array<{ texto: string, data: number }>>} */
+const grupoAvisosMap = new Map();
+
+/**
+ * Map<grupoJid, Set<userJid>> — isolado por grupo para evitar
+ * que mutes de um grupo vazem para outro.
+ * @type {Map<string, Set<string>>}
+ */
+const mutedUsers = new Map();
+
+const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', 'Audio-Image', 'imageban.jpg');
+const BAN_AUDIO_PATH = path.join(__dirname, '..', '..', 'Audio-Image', 'audioban.mp4');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── UTILS ────────────────────────────────────────────────────
@@ -24,11 +44,17 @@ const grupoAvisosMap  = new Map(); // jid → [{ texto, data }]
 
 /**
  * Verifica se um participante é admin ou superadmin num grupo.
+ * @param {object} sock
+ * @param {string} groupJid
+ * @param {string} userJid
+ * @returns {Promise<boolean>}
  */
 async function isAdmin(sock, groupJid, userJid) {
   try {
     const meta = await sock.groupMetadata(groupJid);
-    const part = meta.participants?.find(p => p.id === userJid || p.lid === userJid);
+    const part = meta.participants?.find(
+      p => p.id === userJid || p.lid === userJid
+    );
     return part?.admin === 'admin' || part?.admin === 'superadmin';
   } catch (err) {
     console.error('[isAdmin] Erro ao buscar metadata:', err.message);
@@ -37,7 +63,12 @@ async function isAdmin(sock, groupJid, userJid) {
 }
 
 /**
- * Normaliza um JID removendo sufixos de dispositivo (ex: "55119:3@s" → "55119").
+ * Normaliza um JID removendo sufixos de dispositivo.
+ * Exemplos:
+ *   "5511912345678:3@s.whatsapp.net" → "5511912345678"
+ *   "5511912345678@s.whatsapp.net"   → "5511912345678"
+ * @param {string} jid
+ * @returns {string}
  */
 function normalizeJidBase(jid) {
   if (!jid || typeof jid !== 'string') return '';
@@ -46,6 +77,10 @@ function normalizeJidBase(jid) {
 
 /**
  * Verifica se um JID pertence ao próprio bot.
+ * Compara apenas o número base (sem sufixos de dispositivo ou @).
+ * @param {string} jid
+ * @param {string} botJid
+ * @returns {boolean}
  */
 function isBotJid(jid, botJid) {
   if (!botJid || !jid) return false;
@@ -53,7 +88,13 @@ function isBotJid(jid, botJid) {
 }
 
 /**
- * Retorna true se o alvo for o bot ou um admin (não pode ser banido/mutado).
+ * Retorna true se o alvo for o bot ou um admin.
+ * Usado para proteger esses usuários de ban/mute/reportar.
+ * @param {object} sock
+ * @param {string} groupJid
+ * @param {string} targetJid
+ * @param {string} botJid
+ * @returns {Promise<boolean>}
  */
 async function isProtectedTarget(sock, groupJid, targetJid, botJid) {
   if (isBotJid(targetJid, botJid)) return true;
@@ -61,24 +102,34 @@ async function isProtectedTarget(sock, groupJid, targetJid, botJid) {
 }
 
 /**
- * Resolve o JID do alvo a partir de menção ou reply.
- * Prioridade: menção → reply (participant do quoted).
+ * Resolve o JID do alvo a partir de menção direta ou reply.
+ * Prioridade: menção (@tag) → reply (participant do quoted).
+ * Tenta resolver @lid para @s.whatsapp.net quando possível.
+ * @param {object} sock
+ * @param {object} msg
+ * @param {object} content
+ * @param {string} jid  JID do grupo
+ * @returns {Promise<string|null>}
  */
 async function resolveTargetJid(sock, msg, content, jid) {
-  const mentionedJid      = content.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  const quotedParticipant = content.extendedTextMessage?.contextInfo?.participant;
+  const ctx               = content.extendedTextMessage?.contextInfo;
+  const mentionedJid      = ctx?.mentionedJid || [];
+  const quotedParticipant = ctx?.participant;
 
-  // Prioriza reply quando não há menção explícita
-  if (mentionedJid.length === 0 && quotedParticipant) return quotedParticipant;
-  if (mentionedJid.length === 0) return null;
+  // Sem menção → tenta reply
+  if (mentionedJid.length === 0) {
+    return quotedParticipant || null;
+  }
 
   let rawJid = mentionedJid[0];
 
-  // Resolve @lid → @s.whatsapp.net quando possível
+  // Resolve @lid → @s.whatsapp.net quando o grupo fornece o mapeamento
   if (rawJid.endsWith('@lid') && jid.endsWith('@g.us')) {
     try {
       const meta = await sock.groupMetadata(jid);
-      const part = meta.participants?.find(p => p.id === rawJid || p.lid === rawJid);
+      const part = meta.participants?.find(
+        p => p.id === rawJid || p.lid === rawJid
+      );
       if (part?.id && !part.id.endsWith('@lid')) rawJid = part.id;
     } catch (err) {
       console.error('[resolveTargetJid] Erro ao resolver @lid:', err.message);
@@ -88,26 +139,43 @@ async function resolveTargetJid(sock, msg, content, jid) {
   return rawJid;
 }
 
-/** Retorna true apenas se o JID for de um grupo. */
+/**
+ * Retorna true apenas se o JID for de um grupo.
+ * @param {string} jid
+ * @returns {boolean}
+ */
 function somenteGrupo(jid) {
-  return jid.endsWith('@g.us');
+  return typeof jid === 'string' && jid.endsWith('@g.us');
 }
 
 /**
- * Checa se o remetente é admin. Se não for, envia aviso e retorna false.
+ * Checa se o remetente é admin do grupo.
+ * Se não for, envia aviso e retorna false.
+ * @param {object} sock
+ * @param {object} msg
+ * @param {string} jid
+ * @param {string} [cmd]
+ * @returns {Promise<boolean>}
  */
 async function checkAdmin(sock, msg, jid, cmd = 'este comando') {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   if (!await isAdmin(sock, jid, senderJid)) {
-    await sock.sendMessage(jid, {
-      text: `❌ Apenas admins podem usar *!${cmd}*!`,
-    }, { quoted: msg });
+    await sock.sendMessage(
+      jid,
+      { text: `❌ Apenas admins podem usar *!${cmd}*!` },
+      { quoted: msg }
+    );
     return false;
   }
   return true;
 }
 
-/** Formata milissegundos para uma string legível (ex: "2d 3h" ou "45min"). */
+/**
+ * Formata milissegundos em texto legível.
+ * Exemplos: "2d 3h" | "5h 20min" | "45min"
+ * @param {number} ms
+ * @returns {string}
+ */
 function formatarTempo(ms) {
   const dias  = Math.floor(ms / (1000 * 60 * 60 * 24));
   const horas = Math.floor((ms % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -118,12 +186,88 @@ function formatarTempo(ms) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ─── HELPERS DE MUTE (isolados por grupo) ─────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Verifica se um usuário está mutado num grupo específico.
+ * @param {string} groupJid
+ * @param {string} userJid
+ * @returns {boolean}
+ */
+function isMuted(groupJid, userJid) {
+  return mutedUsers.get(groupJid)?.has(userJid) ?? false;
+}
+
+/**
+ * Muta um usuário num grupo específico.
+ * Cria o Set do grupo se ainda não existir.
+ * @param {string} groupJid
+ * @param {string} userJid
+ */
+function muteUser(groupJid, userJid) {
+  if (!mutedUsers.has(groupJid)) mutedUsers.set(groupJid, new Set());
+  mutedUsers.get(groupJid).add(userJid);
+}
+
+/**
+ * Desmuta um usuário num grupo específico.
+ * @param {string} groupJid
+ * @param {string} userJid
+ * @returns {boolean} true se o usuário estava mutado e foi removido
+ */
+function unmuteUser(groupJid, userJid) {
+  const s = mutedUsers.get(groupJid);
+  if (!s) return false;
+  const deleted = s.delete(userJid);
+  // Limpa o Set vazio para não manter entradas mortas no Map
+  if (s.size === 0) mutedUsers.delete(groupJid);
+  return deleted;
+}
+
+/**
+ * Retorna quantos usuários estão mutados num grupo.
+ * @param {string} groupJid
+ * @returns {number}
+ */
+function mutedCount(groupJid) {
+  return mutedUsers.get(groupJid)?.size ?? 0;
+}
+
+/**
+ * Remove todos os mutes de um grupo específico.
+ * NÃO afeta outros grupos.
+ * @param {string} groupJid
+ */
+function clearMuted(groupJid) {
+  mutedUsers.delete(groupJid);
+}
+
+/**
+ * Retorna uma cópia do Set de mutados de um grupo (ou Set vazio).
+ * Útil para bot.js iterar sem expor a referência interna.
+ * @param {string} groupJid
+ * @returns {Set<string>}
+ */
+function getMutedSet(groupJid) {
+  return new Set(mutedUsers.get(groupJid) ?? []);
+}
+// ═══════════════════════════════════════════════════════════════
 // ─── !ban ──────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * @param {object}   sock
+ * @param {object}   msg
+ * @param {object}   content
+ * @param {string}   jid          JID do grupo
+ * @param {string}   botJid
+ * @param {object}   contactNames  { [jid]: nome }
+ */
 async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   if (!somenteGrupo(jid)) {
-    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
+    return;
   }
   if (!await checkAdmin(sock, msg, jid, 'ban')) return;
 
@@ -132,26 +276,33 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
   const isAll      = /@all/.test(textCmd);
 
+  // ── Ban em massa (@all) ────────────────────────────────────
   if (isAll) {
     let meta;
     try {
       meta = await sock.groupMetadata(jid);
     } catch (err) {
       console.error('[handleBan @all] Erro ao buscar metadata:', err.message);
-      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg }); return;
+      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg });
+      return;
     }
 
-    const targets = meta.participants.filter(p =>
-      !p.admin &&
-      !isBotJid(p.id, botJid) &&
-      normalizeJidBase(p.id)  !== senderBase &&
-      normalizeJidBase(p.lid || '') !== senderBase
-    ).map(p => p.id);
+    // Exclui: admins, o bot e o próprio remetente (inclusive linked devices via @lid)
+    const targets = meta.participants
+      .filter(p => {
+        if (p.admin) return false;
+        if (isBotJid(p.id, botJid)) return false;
+        const base    = normalizeJidBase(p.id);
+        const baseLid = normalizeJidBase(p.lid || '');
+        return base !== senderBase && baseLid !== senderBase;
+      })
+      .map(p => p.id);
 
     if (targets.length === 0) {
       await sock.sendMessage(jid, {
         text: '⚠️ Nenhum membro não-admin para remover.',
-      }, { quoted: msg }); return;
+      }, { quoted: msg });
+      return;
     }
 
     await sock.sendMessage(jid, {
@@ -159,22 +310,32 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     }, { quoted: msg });
 
     let ok = 0, fail = 0;
+
     for (let i = 0; i < targets.length; i += 5) {
       const lote = targets.slice(i, i + 5);
+
+      // Tenta remover o lote inteiro primeiro; se falhar, tenta um a um
       try {
         await sock.groupParticipantsUpdate(jid, lote, 'remove');
         ok += lote.length;
       } catch {
-        // Tenta individualmente se o lote falhar
         for (const t of lote) {
           try {
             await sock.groupParticipantsUpdate(jid, [t], 'remove');
             ok++;
-          } catch { fail++; }
+          } catch (err) {
+            console.warn('[handleBan @all] Falha ao remover', t, err.message);
+            fail++;
+          }
         }
       }
+
+      // Pausa entre lotes para não sobrecarregar a API
       if (i + 5 < targets.length) await new Promise(r => setTimeout(r, 1500));
     }
+
+    // Remove os banidos do mute para não deixar entradas mortas
+    for (const t of targets) unmuteUser(jid, t);
 
     await sock.sendMessage(jid, {
       text:
@@ -186,95 +347,160 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  // Ban individual
+  // ── Ban individual ─────────────────────────────────────────
   const targetJid = await resolveTargetJid(sock, msg, content, jid);
   if (!targetJid) {
     await sock.sendMessage(jid, {
       text: '⚠️ Marque alguém.\nExemplo: *!ban @fulano* ou *!ban @all*',
-    }, { quoted: msg }); return;
+    }, { quoted: msg });
+    return;
   }
+
   if (normalizeJidBase(targetJid) === senderBase) {
-    await sock.sendMessage(jid, { text: '🤡 Você não pode banir a si mesmo.' }, { quoted: msg }); return;
+    await sock.sendMessage(jid, { text: '🤡 Você não pode banir a si mesmo.' }, { quoted: msg });
+    return;
   }
+
   if (await isProtectedTarget(sock, jid, targetJid, botJid)) {
     await sock.sendMessage(jid, {
       text: isBotJid(targetJid, botJid)
         ? '🤖 Não é possível banir o bot!'
         : '👑 Não é possível banir um admin.',
-    }, { quoted: msg }); return;
+    }, { quoted: msg });
+    return;
   }
 
   try {
-    await sock.groupParticipantsUpdate(jid, [targetJid], 'remove');
     const nome = contactNames[targetJid] || targetJid.split('@')[0];
-    await sock.sendMessage(jid, {
-      text: `🔨 *${nome}* foi banido(a) do grupo! Tchau! 👋`,
-      mentions: [targetJid],
-    });
+
+    // Envia imagem de ban se disponível
+    if (fs.existsSync(BAN_IMAGE_PATH)) {
+      await sock.sendMessage(jid, {
+        image:    fs.readFileSync(BAN_IMAGE_PATH),
+        caption:  `🔨 *${nome}* foi banido(a) do grupo! Tchau! 👋`,
+        mentions: [targetJid],
+      });
+    }
+
+    // Envia áudio de ban se disponível
+    if (fs.existsSync(BAN_AUDIO_PATH)) {
+      await sock.sendMessage(jid, {
+        audio:    fs.readFileSync(BAN_AUDIO_PATH),
+        mimetype: 'audio/mp4',
+        ptt:      false,
+      });
+    }
+
+    // Pequena pausa para que as mensagens cheguem antes do ban
+    await new Promise(r => setTimeout(r, 1500));
+
+    await sock.groupParticipantsUpdate(jid, [targetJid], 'remove');
+
+    // Limpa mute residual para não deixar entradas mortas no Map
+    unmuteUser(jid, targetJid);
   } catch (err) {
     console.error('[handleBan] Erro ao remover:', err.message);
-    await sock.sendMessage(jid, { text: '❌ Não consegui remover. O bot é admin?' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui remover. O bot é admin?',
+    }, { quoted: msg });
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ─── !mute ─────────────────────────────────────────────────────
+// ─── !mute ────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNames) {
+/**
+ * Muta um membro (ou todos os não-admins) do grupo.
+ * O estado é gerenciado pelo Map interno `mutedUsers`, isolado por grupo.
+ * O parâmetro legado `_mutedUsers` foi removido da assinatura — atualize
+ * as chamadas no bot.js para não passá-lo.
+ *
+ * @param {object} sock
+ * @param {object} msg
+ * @param {object} content
+ * @param {string} jid
+ * @param {string} botJid
+ * @param {object} contactNames
+ */
+async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   if (!somenteGrupo(jid)) {
-    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
+    return;
   }
   if (!await checkAdmin(sock, msg, jid, 'mute')) return;
 
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const textCmd   = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
-  const isAll     = /@all/.test(textCmd);
+  const senderJid  = msg.key.participant || msg.key.remoteJid;
+  const senderBase = normalizeJidBase(senderJid);
+  const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+  const isAll      = /@all/.test(textCmd);
 
+  // ── Mute em massa (@all) ───────────────────────────────────
   if (isAll) {
     let meta;
     try {
       meta = await sock.groupMetadata(jid);
     } catch (err) {
       console.error('[handleMute @all] Erro:', err.message);
-      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg }); return;
+      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg });
+      return;
     }
 
-    const targets = meta.participants.filter(p =>
-      !p.admin &&
-      !isBotJid(p.id, botJid) &&
-      p.id !== senderJid
-    ).map(p => p.id);
+    const targets = meta.participants
+      .filter(p => {
+        if (p.admin) return false;
+        if (isBotJid(p.id, botJid)) return false;
+        const base    = normalizeJidBase(p.id);
+        const baseLid = normalizeJidBase(p.lid || '');
+        return base !== senderBase && baseLid !== senderBase;
+      })
+      .map(p => p.id);
 
     if (targets.length === 0) {
       await sock.sendMessage(jid, {
         text: '⚠️ Nenhum membro não-admin para mutar.',
-      }, { quoted: msg }); return;
+      }, { quoted: msg });
+      return;
     }
 
-    for (const t of targets) mutedUsers.set(t, true);
+    for (const t of targets) muteUser(jid, t);
+
     await sock.sendMessage(jid, {
       text: `🔇 *${targets.length} membro(s) mutados!*\n_Se falarem serão removidos em 20s._`,
     }, { quoted: msg });
     return;
   }
 
+  // ── Mute individual ────────────────────────────────────────
   const targetJid = await resolveTargetJid(sock, msg, content, jid);
   if (!targetJid) {
     await sock.sendMessage(jid, {
       text: '⚠️ Marque alguém.\nExemplo: *!mute @fulano* ou *!mute @all*',
-    }, { quoted: msg }); return;
+    }, { quoted: msg });
+    return;
   }
+
   if (await isProtectedTarget(sock, jid, targetJid, botJid)) {
     await sock.sendMessage(jid, {
       text: isBotJid(targetJid, botJid)
         ? '🤖 Não é possível mutar o bot.'
         : '👑 Não é possível mutar um admin.',
-    }, { quoted: msg }); return;
+    }, { quoted: msg });
+    return;
   }
 
-  mutedUsers.set(targetJid, true);
   const nome = contactNames[targetJid] || targetJid.split('@')[0];
+
+  if (isMuted(jid, targetJid)) {
+    await sock.sendMessage(jid, {
+      text: `ℹ️ *${nome}* já está mutado(a).`,
+      mentions: [targetJid],
+    }, { quoted: msg });
+    return;
+  }
+
+  muteUser(jid, targetJid);
+
   await sock.sendMessage(jid, {
     text: `🔇 *${nome}* foi mutado(a)!\n_Se falar será removido(a) em 20s._`,
     mentions: [targetJid],
@@ -282,85 +508,163 @@ async function handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNa
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ─── !desmute ──────────────────────────────────────────────────
+// ─── !desmute ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleDesmute(sock, msg, content, jid, botJid, mutedUsers, contactNames) {
+/**
+ * Desmuta um membro (ou todos) do grupo.
+ * O parâmetro legado `_mutedUsers` foi removido da assinatura — atualize
+ * as chamadas no bot.js para não passá-lo.
+ *
+ * @param {object} sock
+ * @param {object} msg
+ * @param {object} content
+ * @param {string} jid
+ * @param {string} botJid
+ * @param {object} contactNames
+ */
+async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
   if (!somenteGrupo(jid)) {
-    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
+    return;
   }
   if (!await checkAdmin(sock, msg, jid, 'desmute')) return;
 
   const textCmd = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
   const isAll   = /@all/.test(textCmd);
 
+  // ── Desmute em massa (@all) ────────────────────────────────
   if (isAll) {
-    if (mutedUsers.size === 0) {
-      await sock.sendMessage(jid, { text: 'ℹ️ Nenhum membro está mutado.' }, { quoted: msg }); return;
+    const count = mutedCount(jid);
+    if (count === 0) {
+      await sock.sendMessage(jid, {
+        text: 'ℹ️ Nenhum membro está mutado neste grupo.',
+      }, { quoted: msg });
+      return;
     }
-    const count = mutedUsers.size;
-    mutedUsers.clear();
+
+    clearMuted(jid); // afeta apenas este grupo
     await sock.sendMessage(jid, {
       text: `🔊 *${count} membro(s) desmutados!* Podem falar! 🎤`,
     }, { quoted: msg });
     return;
   }
 
+  // ── Desmute individual ─────────────────────────────────────
   const targetJid = await resolveTargetJid(sock, msg, content, jid);
   if (!targetJid) {
     await sock.sendMessage(jid, {
       text: '⚠️ Marque alguém.\nExemplo: *!desmute @fulano* ou *!desmute @all*',
-    }, { quoted: msg }); return;
-  }
-  if (!mutedUsers.has(targetJid)) {
-    const nome = contactNames[targetJid] || targetJid.split('@')[0];
-    await sock.sendMessage(jid, { text: `ℹ️ *${nome}* não está mutado(a).` }, { quoted: msg }); return;
+    }, { quoted: msg });
+    return;
   }
 
-  mutedUsers.delete(targetJid);
   const nome = contactNames[targetJid] || targetJid.split('@')[0];
+
+  if (!unmuteUser(jid, targetJid)) {
+    await sock.sendMessage(jid, {
+      text: `ℹ️ *${nome}* não está mutado(a) neste grupo.`,
+    }, { quoted: msg });
+    return;
+  }
+
   await sock.sendMessage(jid, {
     text: `🔊 *${nome}* foi desmutado(a)! Pode falar! 🎤`,
     mentions: [targetJid],
   });
 }
 
-// ─── !ranking (gold) ─────────────────────────────────────────────────────────
-async function handleRanking(sock, msg, jid, contactNames = {}) {
+// ═══════════════════════════════════════════════════════════════
+// ─── !ranking ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/** Medalhas padrão para o ranking (posições 1–10). */
+const MEDALS_DEFAULT = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+
+/**
+ * Barra de progresso padrão com blocos Unicode.
+ * @param {number} valor
+ * @param {number} maximo
+ * @param {number} [tamanho=10]
+ * @returns {string}
+ */
+function barraProgressoDefault(valor, maximo, tamanho = 10) {
+  if (maximo <= 0) return '░'.repeat(tamanho);
+  const filled = Math.min(Math.round((valor / maximo) * tamanho), tamanho);
+  return '█'.repeat(filled) + '░'.repeat(tamanho - filled);
+}
+
+/**
+ * Exibe o ranking de Gold do grupo.
+ * Dependências do sistema de economia são injetadas via `deps` para evitar
+ * acoplamento direto e facilitar testes.
+ *
+ * @param {object} sock
+ * @param {object} msg
+ * @param {string} jid
+ * @param {object} [contactNames={}]
+ * @param {object} [deps={}]
+ * @param {object}   deps.CarteiraGrupo   Model Mongoose
+ * @param {string[]} [deps.MEDALS]
+ * @param {Function} [deps.barraProgresso]
+ * @param {Function} [deps.resolverNome]
+ */
+async function handleRanking(sock, msg, jid, contactNames = {}, deps = {}) {
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, {
       text: '⚠️ Este comando só pode ser usado em grupos.',
     }, { quoted: msg });
     return;
   }
- 
+
+  const {
+    CarteiraGrupo,
+    MEDALS         = MEDALS_DEFAULT,
+    barraProgresso = barraProgressoDefault,
+    resolverNome   = (id, names) => names[id] || id.split('@')[0],
+  } = deps;
+
+  if (!CarteiraGrupo) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Sistema de economia não disponível.',
+    }, { quoted: msg });
+    return;
+  }
+
   try {
-    const top = await CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
+    // Garante que find() retorna um array antes de chamar .lean()
+    const query = CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
       .sort({ gold: -1 })
-      .limit(10)
-      .lean();
- 
+      .limit(10);
+
+    if (typeof query.lean !== 'function') {
+      throw new TypeError('CarteiraGrupo.find() não retornou um Query válido do Mongoose.');
+    }
+
+    const top = await query.lean();
+
     if (!top?.length) {
       await sock.sendMessage(jid, {
         text: 'ℹ️ Nenhum Gold registrado neste grupo ainda!',
       }, { quoted: msg });
       return;
     }
- 
+
     const totalGold = top.reduce((s, u) => s + (u.gold || 0), 0);
     const maxGold   = top[0].gold || 1;
- 
+
     const linhas = top.map((u, i) => {
       const count = u.gold || 0;
-      const pct   = ((count / totalGold) * 100).toFixed(1);
+      const pct   = totalGold > 0 ? ((count / totalGold) * 100).toFixed(1) : '0.0';
       const bar   = barraProgresso(count, maxGold);
       const nome  = resolverNome(u.idWhatsApp, contactNames);
-      return `${MEDALS[i]} *${nome}*\n   ${bar} ${count} 💰 (${pct}%)`;
+      return `${MEDALS[i] ?? `${i + 1}.`} *${nome}*\n   ${bar} ${count} 💰 (${pct}%)`;
     }).join('\n\n');
- 
+
     await sock.sendMessage(jid, {
       text: `💰 *RANKING DE GOLD — ESTE GRUPO*\n\n${linhas}\n\n🏦 Total do Top 10: *${totalGold} Gold*`,
     }, { quoted: msg });
+
   } catch (err) {
     console.error('[handleRanking] Erro:', err.message);
     await sock.sendMessage(jid, {
@@ -368,8 +672,7 @@ async function handleRanking(sock, msg, jid, contactNames = {}) {
     }, { quoted: msg });
   }
 }
- 
-module.exports = { handleRanking };
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !sorteio ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -378,7 +681,6 @@ async function handleSorteio(sock, msg, content, jid, contactNames) {
   const mentions = content.extendedTextMessage?.contextInfo?.mentionedJid || [];
   let participantes = [...mentions];
 
-  // Se não mencionou ninguém, usa todos os membros do grupo
   if (participantes.length === 0 && somenteGrupo(jid)) {
     try {
       const meta  = await sock.groupMetadata(jid);
@@ -496,8 +798,6 @@ async function handleFecharAbrir(sock, msg, jid, fechar) {
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !promover / !rebaixar ─────────────────────────────────────
-// BUG CORRIGIDO: o bloco original bloqueava "demote" logo no
-// início, tornando o rebaixamento completamente inacessível.
 // ═══════════════════════════════════════════════════════════════
 
 async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, contactNames) {
@@ -554,7 +854,6 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     return;
   }
 
-  // Ação individual
   const targetJid = await resolveTargetJid(sock, msg, content, jid);
   if (!targetJid) {
     await sock.sendMessage(jid, { text: '⚠️ Marque alguém ou use @all.' }, { quoted: msg }); return;
@@ -566,7 +865,6 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
         : '🤖 Não é possível rebaixar o bot.',
     }, { quoted: msg }); return;
   }
-  // Impede rebaixar a si mesmo
   if (acao === 'demote' && targetJid === senderJid) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se rebaixar.' }, { quoted: msg }); return;
   }
@@ -588,9 +886,8 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !tempo ────────────────────────────────────────────────────
-// BUG CORRIGIDO: o código original calculava o tempo desde a
-// CRIAÇÃO do grupo, não desde quando o membro entrou. Agora usa
-// o campo `joinedAt` do participante quando disponível.
+// FIX: usa joinedAt quando disponível; fallback para criação do
+//      grupo com aviso explícito de que é uma estimativa.
 // ═══════════════════════════════════════════════════════════════
 
 async function handleTempo(sock, msg, content, jid, author, contactNames) {
@@ -601,19 +898,17 @@ async function handleTempo(sock, msg, content, jid, author, contactNames) {
   const mentionedJid = content.extendedTextMessage?.contextInfo?.mentionedJid || [];
   const senderJid    = msg.key.participant || msg.key.remoteJid;
   const alvoJid      = mentionedJid[0] || senderJid;
-  const nomeAlvo     = mentionedJid[0]
-    ? (contactNames[alvoJid] || alvoJid.split('@')[0])
-    : author;
 
   let entradaTexto = '❓ desconhecido';
+  let isFallback   = false;
+
   try {
     const meta = await sock.groupMetadata(jid);
     const part = meta.participants?.find(p => p.id === alvoJid || p.lid === alvoJid);
 
-    // joinedAt é um timestamp Unix disponível em algumas versões do Baileys
     const entradaMs = part?.joinedAt
       ? part.joinedAt * 1000
-      : (meta.creation || 0) * 1000; // fallback: criação do grupo
+      : (() => { isFallback = true; return (meta.creation || 0) * 1000; })();
 
     const diffMs = Date.now() - entradaMs;
     const dias   = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -624,6 +919,8 @@ async function handleTempo(sock, msg, content, jid, author, contactNames) {
     else if (meses > 0) entradaTexto = `há *${meses} ${meses > 1 ? 'meses' : 'mês'}*`;
     else if (dias > 0)  entradaTexto = `há *${dias} dia${dias > 1 ? 's' : ''}*`;
     else                entradaTexto = `há *menos de 1 dia*`;
+
+    if (isFallback) entradaTexto += ' _(estimativa — desde a criação do grupo)_';
   } catch (err) {
     console.error('[handleTempo] Erro:', err.message);
   }
@@ -714,7 +1011,6 @@ async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, sav
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !reportar ─────────────────────────────────────────────────
-// MELHORIA: adicionada verificação de auto-reporte.
 // ═══════════════════════════════════════════════════════════════
 
 async function handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid) {
@@ -822,6 +1118,9 @@ async function handleGrupInfo(sock, msg, jid) {
   const bvCfg    = bemVindoGroups.has(jid) && bemVindoGroups.get(jid).ativo
     ? '✅ Ativo'
     : '❌ Inativo';
+  const muteCfg  = mutedCount(jid) > 0
+    ? `✅ *${mutedCount(jid)} mutado(s)*`
+    : '❌ Nenhum';
 
   await sock.sendMessage(jid, {
     text:
@@ -834,6 +1133,7 @@ async function handleGrupInfo(sock, msg, jid) {
       `📊 *Total:* ${total}\n\n` +
       `⏱️ *Slow Mode:* ${slowCfg}\n` +
       `🛡️ *Anti-Flood:* ${floodCfg}\n` +
+      `🔇 *Mutados:* ${muteCfg}\n` +
       `👋 *Boas-vindas:* ${bvCfg}\n\n` +
       `📝 *Descrição:*\n${desc}`,
   }, { quoted: msg });
@@ -899,15 +1199,15 @@ async function handleListaMembros(sock, msg, jid, contactNames) {
     }, { quoted: msg }); return;
   }
 
-  // Divide em chunks de 30 para não ultrapassar o limite do WhatsApp
   const MAX    = 30;
   const chunks = [];
   for (let i = 0; i < membros.length; i += MAX) chunks.push(membros.slice(i, i + MAX));
 
   for (let ci = 0; ci < chunks.length; ci++) {
     const linhas = chunks[ci].map((p, i) => {
-      const nome = contactNames[p.id] || p.id.split('@')[0];
-      return `${ci * MAX + i + 1}. *${nome}* (+${p.id.split('@')[0]})`;
+      const nome    = contactNames[p.id] || p.id.split('@')[0];
+      const mutado  = isMuted(jid, p.id) ? ' 🔇' : '';
+      return `${ci * MAX + i + 1}. *${nome}* (+${p.id.split('@')[0]})${mutado}`;
     }).join('\n');
 
     await sock.sendMessage(jid, {
@@ -922,6 +1222,7 @@ async function handleListaMembros(sock, msg, jid, contactNames) {
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !bemvindo ────────────────────────────────────────────────
+// FIX: trata o argumento "on" explicitamente.
 // ═══════════════════════════════════════════════════════════════
 
 async function handleBemVindo(sock, msg, jid, caption) {
@@ -931,10 +1232,11 @@ async function handleBemVindo(sock, msg, jid, caption) {
   }
   if (!await checkAdmin(sock, msg, jid, 'bemvindo')) return;
 
-  const args = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim().toLowerCase();
+  const args = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim();
+  const argsLower = args.toLowerCase();
 
   // ── Desativar ─────────────────────────────────────────────────
-  if (args === 'off' || args === 'desativar') {
+  if (argsLower === 'off' || argsLower === 'desativar') {
     if (!bemVindoGroups.get(jid)?.ativo) {
       await sock.sendMessage(jid, { text: 'já tá desativado não tem nada pra desligar 😅' }, { quoted: msg });
       return;
@@ -945,7 +1247,7 @@ async function handleBemVindo(sock, msg, jid, caption) {
   }
 
   // ── Status ────────────────────────────────────────────────────
-  if (args === 'status') {
+  if (argsLower === 'status') {
     const cfg = bemVindoGroups.get(jid);
     if (!cfg?.ativo) {
       await sock.sendMessage(jid, { text: 'Boas-vindas tá desativado aqui.\n\n_Use !bemvindo para ativar._' }, { quoted: msg });
@@ -955,10 +1257,18 @@ async function handleBemVindo(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Ativar / Personalizar ─────────────────────────────────────
-  const mensagem = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim()
-    || `👋 Bem-vindo(a) ao grupo, {nome}! 🎉\n_Leia as regras e divirta-se!_`;
+  // FIX: "on" explícito → ativa com mensagem padrão
+  if (argsLower === 'on' || argsLower === 'ativar') {
+    const mensagem = `👋 Bem-vindo(a) ao grupo, {nome}! 🎉\n_Leia as regras e divirta-se!_`;
+    bemVindoGroups.set(jid, { ativo: true, mensagem });
+    await sock.sendMessage(jid, {
+      text: `✅ Boas-vindas ativado com a mensagem padrão!\n\n${mensagem}\n\n_Use !bemvindo [sua mensagem] para personalizar._\n_!bemvindo off para desativar._`,
+    }, { quoted: msg });
+    return;
+  }
 
+  // ── Ativar / Personalizar com mensagem customizada ────────────
+  const mensagem = args || `👋 Bem-vindo(a) ao grupo, {nome}! 🎉\n_Leia as regras e divirta-se!_`;
   bemVindoGroups.set(jid, { ativo: true, mensagem });
 
   await sock.sendMessage(jid, {
@@ -1004,6 +1314,7 @@ async function handleLinkGrupo(sock, msg, jid) {
     await sock.sendMessage(jid, { text: '❌ Não consegui obter o link. O bot é admin?' }, { quoted: msg });
   }
 }
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !apagarmsg ───────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -1042,7 +1353,6 @@ async function handleApagarMsg(sock, msg, content, jid) {
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !slowmode ────────────────────────────────────────────────
-// MELHORIA: valida NaN explicitamente antes de aceitar o valor.
 // ═══════════════════════════════════════════════════════════════
 
 async function handleSlowMode(sock, msg, jid, caption) {
@@ -1074,11 +1384,8 @@ async function handleSlowMode(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── Verificação de slow mode — chamar no bot.js ANTES de processar ──
-/**
- * Retorna true se a mensagem for permitida, false se deve ser bloqueada.
- * Atualiza o timestamp do último envio quando permitido.
- */
+// ─── Verificação de slow mode ─────────────────────────────────
+
 function verificarSlowMode(jid, userJid) {
   const cfg = slowModeGroups.get(jid);
   if (!cfg) return true;
@@ -1094,7 +1401,8 @@ function verificarSlowMode(jid, userJid) {
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !antiflood ───────────────────────────────────────────────
-// MELHORIA: valida os dois parâmetros (msgs e janela) com NaN.
+// FIX: limpeza periódica do Map de timestamps para evitar
+//      vazamento de memória em grupos grandes.
 // ═══════════════════════════════════════════════════════════════
 
 async function handleAntiFlood(sock, msg, jid, caption) {
@@ -1110,7 +1418,6 @@ async function handleAntiFlood(sock, msg, jid, caption) {
     await sock.sendMessage(jid, { text: '🛡️❌ *Anti-Flood desativado!*' }, { quoted: msg }); return;
   }
 
-  // Formato esperado: !antiflood 5/10  (5 msgs em 10 segundos)
   const match  = arg.match(/^(\d+)\/(\d+)$/);
   const limite = match ? parseInt(match[1], 10) : NaN;
   const janela = match ? parseInt(match[2], 10) * 1000 : NaN;
@@ -1124,7 +1431,7 @@ async function handleAntiFlood(sock, msg, jid, caption) {
     }, { quoted: msg }); return;
   }
 
-  antiFloodGroups.set(jid, { limite, janela_ms: janela, msgs: new Map() });
+  antiFloodGroups.set(jid, { limite, janela_ms: janela, msgs: new Map(), ultimaLimpeza: Date.now() });
   await sock.sendMessage(jid, {
     text:
       `🛡️✅ *Anti-Flood ativado!*\n` +
@@ -1133,11 +1440,8 @@ async function handleAntiFlood(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── Verificação de anti-flood — retorna true se deve remover ─────
-/**
- * Retorna true quando o usuário ultrapassou o limite e deve ser removido.
- * Admins e o bot são sempre ignorados.
- */
+// ─── Verificação de anti-flood ────────────────────────────────
+
 async function verificarAntiFlood(sock, jid, userJid, botJid) {
   const cfg = antiFloodGroups.get(jid);
   if (!cfg) return false;
@@ -1145,6 +1449,17 @@ async function verificarAntiFlood(sock, jid, userJid, botJid) {
   if (await isAdmin(sock, jid, userJid).catch(() => false)) return false;
 
   const agora = Date.now();
+
+  // FIX: limpeza periódica a cada 5 minutos para evitar vazamento de memória
+  if (agora - cfg.ultimaLimpeza > 5 * 60 * 1000) {
+    for (const [uid, timestamps] of cfg.msgs.entries()) {
+      const filtrado = timestamps.filter(t => agora - t < cfg.janela_ms);
+      if (filtrado.length === 0) cfg.msgs.delete(uid);
+      else cfg.msgs.set(uid, filtrado);
+    }
+    cfg.ultimaLimpeza = agora;
+  }
+
   const lista = (cfg.msgs.get(userJid) || []).filter(t => agora - t < cfg.janela_ms);
   lista.push(agora);
   cfg.msgs.set(userJid, lista);
@@ -1272,7 +1587,8 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     `▸ ${P}autosticker on/off — Auto-sticker\n` +
     `▸ ${P}slowmode [seg] — Slow mode (1–3600s)\n` +
     `▸ ${P}antiflood [msgs]/[seg] — Anti-flood\n` +
-    `▸ ${P}bemvindo [msg] — Mensagem de boas-vindas\n` +
+    `▸ ${P}bemvindo on — Ativar boas-vindas\n` +
+    `▸ ${P}bemvindo [msg] — Ativar com msg customizada\n` +
     `▸ ${P}bemvindo off — Desativar boas-vindas\n\n` +
 
     `🔔 *COMUNICAÇÃO*\n` +
@@ -1331,5 +1647,6 @@ module.exports = {
   processarBemVindo,
   verificarSlowMode,
   verificarAntiFlood,
+  isMuted,       // exportado para bot.js verificar antes de processar msg
   isAdmin,
 };

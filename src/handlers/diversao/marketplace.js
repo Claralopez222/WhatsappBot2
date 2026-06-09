@@ -471,12 +471,145 @@ async function handleOfertar(sock, msg, jid, caption) {
 
 // ─── !buy ─────────────────────────────────────────────────────────────────────
 
+const BUY_COOLDOWNS = new Map(); // compradorId → timestamp última compra
+
+// ── Helpers internos ──────────────────────────────────────────────────────────
+
+function parseBuyArgs(caption) {
+  const match = caption.match(/buy\s+(\S+)\s+(\S+)\s+(\d+)/i);
+  if (!match) return null;
+  return {
+    vendedorRaw: match[1],
+    itemKey:     match[2].toLowerCase().trim(),
+    quantidade:  parseInt(match[3], 10),
+  };
+}
+
+function checkCooldown(compradorId) {
+  const agora     = Date.now();
+  const ultimo    = BUY_COOLDOWNS.get(compradorId) ?? 0;
+  const restante  = CONFIG.COOLDOWN_BUY_MS - (agora - ultimo);
+  if (restante > 0) return Math.ceil(restante / 1000);
+  return 0;
+}
+
+function buildMensagemComprador({ oferta, quantidade, totalBruto, taxa, novoSaldoComprador }) {
+  return (
+    `✅ *COMPRA REALIZADA!*\n\n` +
+    `📦 *Item:* ${oferta.itemNome}\n` +
+    `📊 *Quantidade:* ${quantidade}\n` +
+    `💵 *Preço unit.:* ${oferta.preco}g\n` +
+    `💸 *Total pago:* ${totalBruto}g\n` +
+    `🏦 *Taxa (${CONFIG.TAXA_MERCADO_PCT}%):* ${taxa}g\n` +
+    `👤 *Vendedor:* ${formatarNumero(oferta.sellerId)}\n\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `💰 *Seu novo saldo:* ${novoSaldoComprador}g`
+  );
+}
+
+function buildMensagemVendedor({ oferta, quantidade, totalLiquido, taxa, compradorId }) {
+  return {
+    text:
+      `🛒 *VENDA REALIZADA!*\n\n` +
+      `📦 ${oferta.itemNome} × ${quantidade}\n` +
+      `💵 Preço unit.: *${oferta.preco}g*\n` +
+      `💰 Você recebeu: *+${totalLiquido}g*\n` +
+      `🏦 Taxa de mercado: *-${taxa}g*\n` +
+      `👤 Comprador: @${formatarNumero(compradorId)}`,
+    mentions: [compradorId],
+  };
+}
+
+// ── Lógica transacional ───────────────────────────────────────────────────────
+
+async function executarCompra({ compradorId, vendedorId, itemKey, quantidade }, session) {
+  // 1. Buscar oferta e saldo em paralelo
+  const [oferta, saldo] = await Promise.all([
+    Oferta.findOne({ sellerId: vendedorId, itemKey }).session(session).lean(),
+    getSaldo(compradorId, session),
+  ]);
+
+  // 2. Validações de negócio
+  if (!oferta || oferta.quantidade <= 0) {
+    const err = new Error('OFERTA_NAO_ENCONTRADA');
+    err.userMsg = `❌ Oferta não encontrada!\n\nVer ofertas disponíveis: *!avenda*`;
+    throw err;
+  }
+
+  if (quantidade > oferta.quantidade) {
+    const err = new Error('QUANTIDADE_INSUFICIENTE');
+    err.userMsg =
+      `⚠️ *Quantidade indisponível!*\n\n` +
+      `📦 Disponível: *${oferta.quantidade}x ${oferta.itemNome}*\n` +
+      `📊 Você pediu: *${quantidade}*`;
+    throw err;
+  }
+
+  const totalBruto   = oferta.preco * quantidade;
+  const taxa         = Math.floor(totalBruto * CONFIG.TAXA_MERCADO_PCT / 100);
+  const totalLiquido = totalBruto - taxa;
+
+  if (saldo < totalBruto) {
+    const err = new Error('SALDO_INSUFICIENTE');
+    err.userMsg =
+      `❌ *SALDO INSUFICIENTE*\n\n` +
+      `💰 Você tem: *${saldo}g*\n` +
+      `💸 Precisa: *${totalBruto}g*\n` +
+      `📊 Faltam: *${totalBruto - saldo}g*`;
+    throw err;
+  }
+
+  // 3. Atualizar oferta ou remover se esgotada
+  if (oferta.quantidade - quantidade === 0) {
+    await Oferta.deleteOne({ _id: oferta._id }, { session });
+  } else {
+    await Oferta.findByIdAndUpdate(
+      oferta._id,
+      { $inc: { quantidade: -quantidade } },
+      { session, new: false }
+    );
+  }
+
+  // 4. Transferências e inventário em paralelo
+  const [novoSaldoComprador] = await Promise.all([
+    changeGold(compradorId, -totalBruto, session),
+    changeGold(vendedorId,  totalLiquido, session),
+    adicionarInventario(compradorId, itemKey, quantidade, session),
+  ]);
+
+  // 5. Registrar log
+  await MarketLog.create([{
+    compradorId,
+    vendedorId,
+    itemKey,
+    itemNome:  oferta.itemNome,
+    quantidade,
+    precoUnit: oferta.preco,
+    totalBruto,
+    taxa,
+    totalLiquido,
+    timestamp: new Date(),
+  }], { session });
+
+  return { novoSaldoComprador, oferta, totalBruto, taxa, totalLiquido };
+}
+
+// ── Handler principal ─────────────────────────────────────────────────────────
+
 async function handleBuy(sock, msg, jid, caption) {
   const compradorId = getUserId(msg);
-  if (!compradorId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
+  if (!compradorId) {
+    return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
+  }
 
-  const match = caption.match(/buy\s+(\S+)\s+(\S+)\s+(\d+)/i);
-  if (!match) {
+  // Cooldown anti-spam
+  const espera = checkCooldown(compradorId);
+  if (espera > 0) {
+    return reply(sock, jid, msg, `⏳ Aguarde *${espera}s* antes de comprar novamente.`);
+  }
+
+  const args = parseBuyArgs(caption);
+  if (!args) {
     return reply(sock, jid, msg,
       '⚠️ Use: *!buy <vendedor> <item> <quantidade>*\n' +
       'Exemplo: *!buy 5511999999999 dinamite 2*\n\n' +
@@ -484,114 +617,40 @@ async function handleBuy(sock, msg, jid, caption) {
     );
   }
 
-  const vendedorId = toJid(match[1]);
-  const itemKey    = match[2].toLowerCase().trim();
-  const quantidade = parseInt(match[3]);
+  const { vendedorRaw, itemKey, quantidade } = args;
+  const vendedorId = toJid(vendedorRaw);
 
   if (compradorId === vendedorId) {
     return reply(sock, jid, msg, '❌ Você não pode comprar sua própria oferta!');
   }
 
-  if (quantidade < 1) {
-    return reply(sock, jid, msg, '⚠️ Quantidade deve ser pelo menos 1.');
+  if (quantidade < 1 || quantidade > CONFIG.MAX_QTD_COMPRA) {
+    return reply(sock, jid, msg,
+      `⚠️ Quantidade deve ser entre *1* e *${CONFIG.MAX_QTD_COMPRA}*.`
+    );
   }
 
+  // Registra cooldown antes da transação para evitar cliques duplos
+  BUY_COOLDOWNS.set(compradorId, Date.now());
+
   try {
-    const { mensagem, novoSaldoComprador, oferta, totalBruto, taxa, totalLiquido } =
-      await withTransaction(async (session) => {
-        const oferta = await Oferta.findOne({ sellerId: vendedorId, itemKey }).session(session);
-
-        if (!oferta || oferta.quantidade <= 0) {
-          const err    = new Error('OFERTA_NAO_ENCONTRADA');
-          err.userMsg  = `❌ Oferta não encontrada!\n\nVer ofertas disponíveis: *!avenda*`;
-          throw err;
-        }
-
-        if (quantidade > oferta.quantidade) {
-          const err    = new Error('QUANTIDADE_INSUFICIENTE');
-          err.userMsg  =
-            `⚠️ *Quantidade indisponível!*\n\n` +
-            `📦 Disponível: *${oferta.quantidade}x ${oferta.itemNome}*\n` +
-            `📊 Você pediu: *${quantidade}*`;
-          throw err;
-        }
-
-        const totalBruto   = oferta.preco * quantidade;
-        const taxa         = Math.floor(totalBruto * CONFIG.TAXA_MERCADO_PCT / 100);
-        const totalLiquido = totalBruto - taxa;
-        const saldo        = await getSaldo(compradorId);
-
-        if (saldo < totalBruto) {
-          const err    = new Error('SALDO_INSUFICIENTE');
-          err.userMsg  =
-            `❌ *SALDO INSUFICIENTE*\n\n` +
-            `💰 Você tem: *${saldo}g*\n` +
-            `💸 Precisa: *${totalBruto}g*\n` +
-            `📊 Faltam: *${totalBruto - saldo}g*`;
-          throw err;
-        }
-
-        // 1. Atualizar/remover oferta
-        if (oferta.quantidade - quantidade === 0) {
-          await Oferta.deleteOne({ _id: oferta._id }, { session });
-        } else {
-          await Oferta.findByIdAndUpdate(
-            oferta._id,
-            { $inc: { quantidade: -quantidade } },
-            { session }
-          );
-        }
-
-        // 2. Transferir gold
-        const novoSaldoComprador = await changeGold(compradorId, -totalBruto, session);
-        await changeGold(vendedorId, totalLiquido, session);
-
-        // 3. Entregar item ao comprador
-        await adicionarInventario(compradorId, itemKey, quantidade, session);
-
-        // 4. Registrar no log
-        await MarketLog.create([{
-          compradorId,
-          vendedorId,
-          itemKey,
-          itemNome:     oferta.itemNome,
-          quantidade,
-          precoUnit:    oferta.preco,
-          totalBruto,
-          taxa,
-          totalLiquido,
-        }], { session });
-
-        return { novoSaldoComprador, oferta, totalBruto, taxa, totalLiquido };
-      });
-
-    // ── Resposta ao comprador ──────────────────────────────────────────────
-    await reply(sock, jid, msg,
-      `✅ *COMPRA REALIZADA!*\n\n` +
-      `📦 *Item:* ${oferta.itemNome}\n` +
-      `📊 *Quantidade:* ${quantidade}\n` +
-      `💵 *Preço unit.:* ${oferta.preco}g\n` +
-      `💸 *Total pago:* ${totalBruto}g\n` +
-      `🏦 *Taxa do mercado (${CONFIG.TAXA_MERCADO_PCT}%):* ${taxa}g\n` +
-      `👤 *Vendedor:* ${formatarNumero(vendedorId)}\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `💰 *Seu novo saldo:* ${novoSaldoComprador}g`
+    const resultado = await withTransaction((session) =>
+      executarCompra({ compradorId, vendedorId, itemKey, quantidade }, session)
     );
 
-    // ── Notificar vendedor no privado (best-effort) ────────────────────────
-    sock.sendMessage(vendedorId, {
-      text:
-        `🛒 *VENDA REALIZADA!*\n\n` +
-        `📦 ${oferta.itemNome} × ${quantidade}\n` +
-        `💰 Você recebeu: *+${totalLiquido}g*\n` +
-        `🏦 Taxa de mercado: *-${taxa}g*\n` +
-        `👤 Comprador: @${formatarNumero(compradorId)}`,
-      mentions: [compradorId],
-    }).catch(() => { /* notificação é best-effort */ });
+    await reply(sock, jid, msg, buildMensagemComprador({ ...resultado, quantidade }));
+
+    sock
+      .sendMessage(vendedorId, buildMensagemVendedor({ ...resultado, quantidade, compradorId }))
+      .catch((err) => console.warn('[Market] Notificação ao vendedor falhou:', err.message));
 
   } catch (e) {
-    if (e.userMsg) return reply(sock, jid, msg, e.userMsg);
-    console.error('[Market] handleBuy:', e.message);
+    // Libera cooldown em caso de erro de negócio para não punir o usuário
+    if (e.userMsg) {
+      BUY_COOLDOWNS.delete(compradorId);
+      return reply(sock, jid, msg, e.userMsg);
+    }
+    console.error('[Market] handleBuy erro inesperado:', e);
     return reply(sock, jid, msg, '⚠️ Erro ao processar a compra! Tente novamente.');
   }
 }

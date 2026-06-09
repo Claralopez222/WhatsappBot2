@@ -604,7 +604,10 @@ async function handlePetRank(sock, msg, jid, contactNames = {}) {
 }
 
 // !pets
-async function handlePets(sock, msg, jid) {
+async function handlePets(sock, msg, jid, caption = '') {
+  const prefixMatch = caption.match(/^([!.,/])/);
+  const prefix = prefixMatch ? prefixMatch[1] : '!';
+
   const grupos = { 'COMUM': [], 'RARO': [], 'ULTRA-RARO': [], 'LENDÁRIO': [] };
 
   for (const [, pet] of Object.entries(PET_SYSTEM)) {
@@ -616,7 +619,7 @@ async function handlePets(sock, msg, jid) {
     const re = RARITY_EMOJI[rar] ?? '';
     texto += `${re} *${rar}*\n${lista.join('\n')}\n\n`;
   }
-  texto += `💡 _Um pet selvagem aparece a cada hora. Use *!capturar* na hora certa!_`;
+  texto += `💡 _Um pet selvagem aparece a cada hora. Use *${prefix}capturar* na hora certa!_`;
 
   return reply(sock, jid, msg, texto);
 }
@@ -626,8 +629,12 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
   const userId = getUserId(msg);
   if (!userId) return;
 
+  // Detecta o prefixo usado pelo usuário (! . , /)
+  const prefixMatch = caption.match(/^([!.,/])/);
+  const prefix = prefixMatch ? prefixMatch[1] : '!';
+
   const args = caption
-    .replace(/^[!./]?abrigo\s*/i, '')
+    .replace(/^[!.,/]?abrigo\s*/i, '')
     .trim()
     .split(/\s+/)
     .filter(Boolean)
@@ -638,11 +645,10 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     const pet = await getPet(userId);
     if (!pet?.name) {
       return reply(sock, jid, msg,
-        `⚠️ Você não tem um pet para deixar no abrigo.\n_Capture um com *!capturar*!_`
+        `⚠️ Você não tem um pet para deixar no abrigo.\n_Capture um com *${prefix}capturar*!_`
       );
     }
 
-    // Write atômico único: remove pet e salva no abrigo de uma vez
     petCache.delete(userId);
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
@@ -661,8 +667,8 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     return reply(sock, jid, msg,
       `🏥 *PET ENVIADO AO ABRIGO!*\n\n` +
       `${def.emoji} *${pet.name}* foi guardado com segurança.\n\n` +
-      `Para vê-lo novamente: *!abrigo*\n` +
-      `Para adotá-lo de volta: *!abrigo ${pet.name} pegar*`
+      `Para vê-lo novamente: *${prefix}abrigo*\n` +
+      `Para adotá-lo de volta: *${prefix}abrigo ${pet.name} pegar*`
     );
   }
 
@@ -677,33 +683,31 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
 
     if (!alvo?.petShelter?.shelteredPet) {
       return reply(sock, jid, msg,
-        `❌ Nenhum pet com o nome "*${nomeBusca}*" encontrado no abrigo.\n\nVer lista: *!abrigo*`
+        `❌ Nenhum pet com o nome "*${nomeBusca}*" encontrado no abrigo.\n\nVer lista: *${prefix}abrigo*`
       );
     }
 
     const petAtual = await getPet(userId);
     if (petAtual?.name) {
       return reply(sock, jid, msg,
-        `⚠️ Você já tem *${petAtual.name}*! Deixe-o no abrigo antes de adotar outro.`
+        `⚠️ Você já tem *${petAtual.name}*! Use *${prefix}abrigo deixar* antes de adotar outro.`
       );
     }
 
     const petAdotado = alvo.petShelter.shelteredPet;
 
-    // Libera do abrigo
     await Usuario.findOneAndUpdate(
       { idWhatsApp: alvo.idWhatsApp },
       { $set: { 'petShelter.isSheltered': false, 'petShelter.shelteredPet': null } }
     );
 
-    // Dá o pet ao novo dono (usando savePet para invalidar cache corretamente)
     await savePet(userId, petAdotado);
 
     const def = PET_SYSTEM[petAdotado.type] ?? { emoji: '🐾' };
     return reply(sock, jid, msg,
       `🎉 *ADOÇÃO CONCLUÍDA!*\n\n` +
       `${def.emoji} *${petAdotado.name}* (${petAdotado.rarity}) agora é seu!\n\n` +
-      `Use *!statuspet* para ver os atributos.`
+      `Use *${prefix}statuspet* para ver os atributos.`
     );
   }
 
@@ -714,7 +718,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     if (lista.length === 0) {
       return reply(sock, jid, msg,
         `🏥 *ABRIGO DE PETS*\n\n😔 O abrigo está vazio!\n\n` +
-        `Deixe seu pet: *!abrigo deixar*`
+        `Deixe seu pet: *${prefix}abrigo deixar*`
       );
     }
 
@@ -728,8 +732,8 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     });
 
     texto += `━━━━━━━━━━━\n`;
-    texto += `*Para adotar:* !abrigo <nome> pegar\n`;
-    texto += `Exemplo: _!abrigo ${lista[0].petShelter.shelteredPet.name} pegar_`;
+    texto += `*Para adotar:* ${prefix}abrigo <nome> pegar\n`;
+    texto += `Exemplo: _${prefix}abrigo ${lista[0].petShelter.shelteredPet.name} pegar_`;
 
     return reply(sock, jid, msg, texto);
   } catch (e) {
@@ -739,8 +743,10 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
 }
 
 // Stub de compatibilidade
-async function handleAdoptarPet(sock, msg, jid) {
-  return reply(sock, jid, msg, '⚠️ Use *!abrigo <nome> pegar* para adotar um pet do abrigo!');
+async function handleAdoptarPet(sock, msg, jid, caption = '') {
+  const prefixMatch = caption?.match(/^([!.,/])/);
+  const prefix = prefixMatch ? prefixMatch[1] : '!';
+  return reply(sock, jid, msg, `⚠️ Use *${prefix}abrigo <nome> pegar* para adotar um pet do abrigo!`);
 }
 
 // ─── TRIGGER MANUAL (compatibilidade + uso interno do scheduler) ──────────────

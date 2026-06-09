@@ -699,7 +699,7 @@ if (matchCmd(cmdWord, 'gold'))
   if (matchCmd(cmdWord, 'comprarofferta'))
     { await diversaoHandler.handleOfertar(sock, msg, jid, caption); return; }
 
-  // ── PESCA ─────────────────────────────────────────────────────────────────────
+  /// ── PESCA ─────────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'pescar')         || matchCmd(cmdWord, 'pesca'))
   { await pescaHandler.handlePescar(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'varas')          || matchCmd(cmdWord, 'lojavara')  || matchCmd(cmdWord, 'varapesca'))
@@ -708,7 +708,7 @@ if (matchCmd(cmdWord, 'iscas')          || matchCmd(cmdWord, 'lojaisca')  || mat
   { await pescaHandler.handleIscas(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'inventariopesca')|| matchCmd(cmdWord, 'invpesca')  || matchCmd(cmdWord, 'minhapesca'))
   { await pescaHandler.handleInventarioPesca(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'venderpesca'))
+if (matchCmd(cmdWord, 'sellpesca'))
   { await pescaHandler.handleVenderPesca(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'rankingpesca'))
   { await pescaHandler.handleRankingPesca(sock, msg, jid, contactNames); return; }
@@ -729,23 +729,23 @@ if (matchCmd(cmdWord, 'demitir') || matchCmd(cmdWord, 'pedirdemissao'))
 if (matchCmd(cmdWord, 'menuwork') || matchCmd(cmdWord, 'menuemprego'))
   { await diversaoHandler.handleMenuWork(sock, msg, jid, getPrefix); return; }
 
-  // ─── Sistema de Roubo ─────────────────────────────────────────
-  if (matchCmd(cmdWord, 'menuroubar'))
-    { await diversaoHandler.handleMenuRoubo(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'menusec'))
-    { await diversaoHandler.handleMenuSec(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'comprarroubo'))
-    { await diversaoHandler.handleComprarRoubo(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'comprarsec'))
-    { await diversaoHandler.handleComprarSec(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'equiparroubo'))
-    { await diversaoHandler.handleEquiparRoubo(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'equiparsec'))
-    { await diversaoHandler.handleEquiparSec(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'roubar'))
-    { await diversaoHandler.handleRoubar(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'alteradores'))
-    { await utilidadeHandler.handleAlteradores(sock, msg, jid); return; }
+// ─── Sistema de Roubo ─────────────────────────────────────────
+if (matchCmd(cmdWord, 'menuroubar'))
+  { await diversaoHandler.handleMenuRoubo(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'menusec'))
+  { await diversaoHandler.handleMenuSec(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'buyroubo'))
+  { await diversaoHandler.handleComprarRoubo(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'buysec'))
+  { await diversaoHandler.handleComprarSec(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'equiparroubo'))
+  { await diversaoHandler.handleEquiparRoubo(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'equiparsec'))
+  { await diversaoHandler.handleEquiparSec(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'roubar'))
+  { await diversaoHandler.handleRoubar(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'alteradores'))
+  { await utilidadeHandler.handleAlteradores(sock, msg, jid); return; }
 
   // ── UTILIDADES ────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'qrcode ') || matchCmd(cmdWord, 'qrcode'))

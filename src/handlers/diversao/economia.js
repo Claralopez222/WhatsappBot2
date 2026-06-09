@@ -430,101 +430,143 @@ async function handleVender(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── !inventario (global — sem mudança) ──────────────────────────────────────
+'use strict';
+
+// ─── !inventario ──────────────────────────────────────────────────────────────
+
+const MSG_INVENTARIO_VAZIO =
+  `📦 *SEU INVENTÁRIO* 📦\n\n` +
+  `Você não possui itens no momento!\n\n` +
+  `*COMO GANHAR ITENS?*\n` +
+  `  🛒 Comprar na loja: *!loja*\n` +
+  `  📋 Completar missões: *!missao*\n\n` +
+  `Use *!comprar <item>* para começar!`;
 
 async function handleInventario(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
-  try {
-    const user = await Usuario.findOne({ idWhatsApp: userId });
+  const [user, carteira] = await Promise.all([
+    Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean(),
+    getCarteira(userId, jid),
+  ]);
 
-    if (!user?.inventory || Object.keys(user.inventory).length === 0) {
-      await sock.sendMessage(jid, {
-        text:
-          `📦 *SEU INVENTÁRIO* 📦\n\nVocê não possui itens no momento!\n\n` +
-          `*COMO GANHAR ITENS?*\n  🛒 Comprar na loja: !loja\n  📋 Completar missões: !missao\n\nUse *!comprar <item>* para começar!`,
-      }, { quoted: msg });
-      return;
-    }
+  // ── Filtrar apenas itens conhecidos e com quantidade > 0
+  const itensValidos = Object.entries(user?.inventory ?? {})
+    .filter(([key, qtd]) => qtd > 0 && ITENS_LOJA[key])
+    .map(([key, qtd]) => ({ info: ITENS_LOJA[key], qtd }));
 
-    let texto     = `📦 *SEU INVENTÁRIO* 📦\n\n`;
-    let totalItens = 0;
-
-    for (const [itemKey, quantidade] of Object.entries(user.inventory)) {
-      const itemInfo = ITENS_LOJA[itemKey];
-      if (itemInfo && quantidade > 0) {
-        texto += `  • ${itemInfo.nome} × ${quantidade}\n`;
-        totalItens += quantidade;
-      }
-    }
-
-    if (totalItens === 0) {
-      await sock.sendMessage(jid, { text: `📦 *SEU INVENTÁRIO* 📦\n\nVocê não possui itens no momento!` }, { quoted: msg });
-      return;
-    }
-
-    texto += `\n━━━━━━━━━━━━━━━━\n*TOTAL:* ${totalItens} item(ns)\n\n💰 *SALDO NESTE GRUPO:*\n  Gold: *${await getSaldoGrupo(userId, jid)}* gold`;
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-  } catch (e) {
-    console.error('⚠️ Erro handleInventario:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao buscar inventário!' }, { quoted: msg });
+  if (itensValidos.length === 0) {
+    await sock.sendMessage(jid, { text: MSG_INVENTARIO_VAZIO }, { quoted: msg });
+    return;
   }
+
+  const totalItens = itensValidos.reduce((acc, { qtd }) => acc + qtd, 0);
+
+  const linhas = itensValidos
+    .map(({ info, qtd }) => `  • ${info.nome} × ${qtd}`)
+    .join('\n');
+
+  await sock.sendMessage(jid, {
+    text:
+      `📦 *SEU INVENTÁRIO* 📦\n\n` +
+      `${linhas}\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `*TOTAL:* ${totalItens} item(ns)\n\n` +
+      `💰 *SALDO NESTE GRUPO:*\n` +
+      `  Gold: *${carteira?.gold ?? 0}* gold`,
+  }, { quoted: msg });
 }
 
 // ─── !pix ─────────────────────────────────────────────────────────────────────
 // Transfere gold dentro do mesmo grupo (CarteiraGrupo → CarteiraGrupo)
 
-async function handlePix(sock, msg, jid, caption) {
-  const userId       = msg.key.participant || msg.key.remoteJid;
-  const idGrupo      = jid;
+/**
+ * Extrai { targetJid, numeroPura, quantia } do contexto da mensagem.
+ * Retorna null se não for possível resolver os parâmetros.
+ */
+function parsearPix(msg, caption) {
   const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
 
-  let targetJid  = mentionedJid;
-  let numeroPura = '';
-  let quantia    = 0;
-
-  if (targetJid) {
-    numeroPura = targetJid.split('@')[0].split(':')[0];
-    const parts = caption.trim().split(/\s+/);
-    quantia = parseInt(parts[parts.length - 1]);
-  } else {
-    const numMatch = caption.match(/(?:pix|transferir)\s+@?(\d+)\s+(\d+)/i);
-    if (numMatch) {
-      numeroPura = numMatch[1].replace(/\D/g, '');
-      targetJid  = `${numeroPura}@s.whatsapp.net`;
-      quantia    = parseInt(numMatch[2]);
-    }
+  // ── Caso 1: menção via @tag
+  if (mentionedJid) {
+    const parts   = caption.trim().split(/\s+/);
+    const quantia = parseInt(parts[parts.length - 1], 10);
+    if (isNaN(quantia) || quantia <= 0) return null;
+    return {
+      targetJid:  mentionedJid,
+      numeroPura: mentionedJid.split('@')[0].split(':')[0],
+      quantia,
+    };
   }
 
-  if (!targetJid || isNaN(quantia) || quantia <= 0) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!pix @pessoa quantia*\nExemplo: *!pix @Felipe 30*' }, { quoted: msg });
-    return;
-  }
+  // ── Caso 2: número digitado manualmente (!pix 5511999 50)
+  const numMatch = caption.match(/(?:pix|transferir)\s+@?(\d+)\s+(\d+)/i);
+  if (!numMatch) return null;
 
-  if (userId === targetJid) {
-    await sock.sendMessage(jid, { text: '⚠️ Você não pode fazer PIX para si mesmo!' }, { quoted: msg });
-    return;
-  }
+  const numeroPura = numMatch[1].replace(/\D/g, '');
+  const quantia    = parseInt(numMatch[2], 10);
+  if (!numeroPura || isNaN(quantia) || quantia <= 0) return null;
 
-  // Debitar remetente (atômico)
-  const remetente = await debitarGold(userId, idGrupo, quantia, `PIX para @${numeroPura}`);
-  if (!remetente) {
-    const saldo = await getSaldoGrupo(userId, idGrupo);
+  return {
+    targetJid:  `${numeroPura}@s.whatsapp.net`,
+    numeroPura,
+    quantia,
+  };
+}
+
+async function handlePix(sock, msg, jid, caption) {
+  const userId = msg.key.participant || msg.key.remoteJid;
+  const parsed = parsearPix(msg, caption);
+
+  if (!parsed) {
     await sock.sendMessage(jid, {
-      text: `⚠️ *SALDO INSUFICIENTE!*\n\n💰 Você tem: *${saldo}* gold\n💸 Precisa de: *${quantia}* gold`,
+      text: '⚠️ Use: *!pix @pessoa quantia*\nExemplo: *!pix @Felipe 30*',
     }, { quoted: msg });
     return;
   }
 
-  // Creditar destinatário no mesmo grupo
-  await alterarGold(targetJid, idGrupo, quantia, `PIX de @${userId.split('@')[0].split(':')[0]}`);
+  const { targetJid, numeroPura, quantia } = parsed;
+
+  if (userId === targetJid) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Você não pode fazer PIX para si mesmo!',
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Usa transferirGold do carteiraService: débito + crédito atômicos em sequência.
+  //    Se o débito falhar (saldo insuficiente), o crédito não acontece.
+  let resultado;
+  try {
+    resultado = await transferirGold(
+      userId,
+      targetJid,
+      jid,
+      quantia,
+      'PIX'
+    );
+  } catch (e) {
+    if (e instanceof RangeError) {
+      const saldo = (await getCarteira(userId, jid))?.gold ?? 0;
+      await sock.sendMessage(jid, {
+        text:
+          `⚠️ *SALDO INSUFICIENTE!*\n\n` +
+          `💰 Você tem: *${saldo}* gold\n` +
+          `💸 Precisa de: *${quantia}* gold`,
+      }, { quoted: msg });
+      return;
+    }
+    throw e; // erro inesperado — deixa subir
+  }
+
+  const remetenteNum = userId.split('@')[0].split(':')[0];
 
   await sock.sendMessage(jid, {
     text:
       `✅ *TRANSFERÊNCIA REALIZADA!* ✅\n\n` +
       `💸 *${quantia} gold* enviado para *@${numeroPura}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `💰 Seu novo saldo: *${remetente.gold}* gold`,
+      `💰 Seu novo saldo: *${resultado.de.gold}* gold`,
     mentions: [targetJid, userId],
   }, { quoted: msg });
 }
@@ -584,41 +626,56 @@ async function handleApostar(sock, msg, jid, caption) {
   }
 }
 
+'use strict';
+
 // ─── !extrato ─────────────────────────────────────────────────────────────────
-// Mostra o histórico da CarteiraGrupo (local ao grupo)
+
+const EXTRATO_LIMITE = 10;
+
+const EXTRATO_DATE_FMT = { day: '2-digit', month: '2-digit' };
+const EXTRATO_HORA_FMT = { hour: '2-digit', minute: '2-digit' };
+
+function formatarDataHora(date) {
+  if (!date) return { data: '??/??', hora: '??:??' };
+  const d = new Date(date);
+  return {
+    data: d.toLocaleDateString('pt-BR', EXTRATO_DATE_FMT),
+    hora: d.toLocaleTimeString('pt-BR', EXTRATO_HORA_FMT),
+  };
+}
+
+function buildLinhaTransacao(t) {
+  const { data, hora } = formatarDataHora(t.date);
+  const recebido = t.type === 'recebido';
+  return `  ${recebido ? '✅' : '❌'} *${recebido ? '+' : '-'}${t.amount}g* | ${t.item} | ${data} ${hora}`;
+}
 
 async function handleExtrato(sock, msg, jid) {
-  const userId  = msg.key.participant || msg.key.remoteJid;
-  const idGrupo = jid;
+  const userId = msg.key.participant || msg.key.remoteJid;
 
-  const carteira = await getCarteira(userId, idGrupo);
-
-  if (!carteira) {
-    await sock.sendMessage(jid, { text: '❌ Você não tem cadastro neste grupo!' }, { quoted: msg });
-    return;
-  }
-
-  const historico = carteira.goldHistory ?? [];
+  const carteira  = await getCarteira(userId, jid);
+  const historico = carteira?.goldHistory ?? [];
 
   if (historico.length === 0) {
     await sock.sendMessage(jid, {
       text:
         `📊 *EXTRATO DE TRANSAÇÕES* 📊\n\n` +
         `😔 Nenhuma transação registrada ainda.\n\n` +
-        `💰 *Saldo atual:* ${carteira.gold} gold`,
+        `💰 *Saldo atual:* ${carteira?.gold ?? 0} gold`,
     }, { quoted: msg });
     return;
   }
 
-  const ultimas = [...historico].reverse().slice(0, 10);
-  let totalEntrada = 0, totalSaida = 0;
-  const linhas = [];
+  const ultimas = historico.slice(-EXTRATO_LIMITE).reverse();
+
+  let totalEntrada = 0;
+  let totalSaida   = 0;
+  const linhas     = [];
 
   for (const t of ultimas) {
-    const data = t.date ? new Date(t.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '??/??';
-    const hora = t.date ? new Date(t.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '??:??';
-    if (t.type === 'recebido') { totalEntrada += t.amount; linhas.push(`  ✅ *+${t.amount}g* | ${t.item} | ${data} ${hora}`); }
-    else                       { totalSaida   += t.amount; linhas.push(`  ❌ *-${t.amount}g* | ${t.item} | ${data} ${hora}`); }
+    if (t.type === 'recebido') totalEntrada += t.amount;
+    else                       totalSaida   += t.amount;
+    linhas.push(buildLinhaTransacao(t));
   }
 
   await sock.sendMessage(jid, {
@@ -636,165 +693,274 @@ async function handleExtrato(sock, msg, jid) {
 // ─── !garimpar ────────────────────────────────────────────────────────────────
 
 const GARIMPO_COOLDOWN_MS = 60 * 60 * 1000;
-const garimpoCache = new Map(); // userId → timestamp (cache local para evitar race condition)
+const GARIMPO_GOLD_MIN    = 30;
+const GARIMPO_GOLD_MAX    = 129;
 
-function formatarTempoGarimpo(ms) {
+// Cache local: userId → timestamp do último garimpo bem-sucedido
+// Evita round-trip ao banco em chamadas duplicadas / double-tap
+const garimpoCache = new Map();
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function sortearOuro() {
+  return (
+    Math.floor(Math.random() * (GARIMPO_GOLD_MAX - GARIMPO_GOLD_MIN + 1)) +
+    GARIMPO_GOLD_MIN
+  );
+}
+
+function formatarTempo(ms) {
   const totalSec = Math.ceil(ms / 1000);
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return m > 0 ? `${m}min ${s}s` : `${s}s`;
 }
 
+function msgCooldown(restante) {
+  return (
+    `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n` +
+    `⛏️ Você já garimpou recentemente!\n\n` +
+    `⏰ Próximo garimpo em: *${formatarTempo(restante)}*`
+  );
+}
+
+// ─── Handler principal ────────────────────────────────────────────────────────
+
 async function handleGarimpar(sock, msg, jid) {
-  const userId  = msg.key.participant || msg.key.remoteJid;
-  const idGrupo = jid;
-  const agora   = Date.now();
+  const userId = msg.key.participant || msg.key.remoteJid;
+  const agora  = Date.now();
 
-  // ── Verificar cooldown no cache local primeiro (evita double-tap e chamada desnecessária ao banco)
-  const cacheLocal = garimpoCache.get(userId) || 0;
-  const tempoPassadoCache = agora - cacheLocal;
-  if (cacheLocal > 0 && tempoPassadoCache < GARIMPO_COOLDOWN_MS) {
-    const restante = GARIMPO_COOLDOWN_MS - tempoPassadoCache;
-    await sock.sendMessage(jid, {
-      text:
-        `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n` +
-        `⛏️ Você já garimpou recentemente!\n\n` +
-        `⏰ Próximo garimpo em: *${formatarTempoGarimpo(restante)}*`,
-    }, { quoted: msg });
+  // ── 1. Checar cache local (evita chamada desnecessária ao banco e double-tap)
+  const tsCache = garimpoCache.get(userId) ?? 0;
+  if (tsCache > 0) {
+    const passado = agora - tsCache;
+    if (passado < GARIMPO_COOLDOWN_MS) {
+      await sock.sendMessage(jid, { text: msgCooldown(GARIMPO_COOLDOWN_MS - passado) }, { quoted: msg });
+      return;
+    }
+  }
+
+  // ── 2. Update atômico: só avança se o cooldown realmente expirou no banco.
+  //       Elimina race condition entre instâncias / após reinicialização.
+  const agora_date   = new Date(agora);
+  const limiteData   = new Date(agora - GARIMPO_COOLDOWN_MS);
+
+  const userAtualizado = await Usuario.findOneAndUpdate(
+    {
+      idWhatsApp: userId,
+      $or: [
+        { ultimoGarimpo: { $exists: false } },
+        { ultimoGarimpo: null              },
+        { ultimoGarimpo: { $lte: limiteData } },
+      ],
+    },
+    { $set: { ultimoGarimpo: agora_date } },
+    { new: false, upsert: false } // `new: false` → retorna doc ANTES da alteração
+  );
+
+  // Se não encontrou doc elegível, o cooldown ainda está ativo no banco
+  if (!userAtualizado) {
+    const userAtual = await Usuario.findOne({ idWhatsApp: userId })
+      .select('ultimoGarimpo')
+      .lean();
+
+    const tsUltimo = userAtual?.ultimoGarimpo
+      ? new Date(userAtual.ultimoGarimpo).getTime()
+      : agora;
+
+    const restante = GARIMPO_COOLDOWN_MS - (agora - tsUltimo);
+
+    // Sincroniza cache com a realidade do banco
+    garimpoCache.set(userId, tsUltimo);
+
+    await sock.sendMessage(jid, { text: msgCooldown(Math.max(restante, 0)) }, { quoted: msg });
     return;
   }
 
-  // ── Verificar cooldown no banco (para persistir entre reinicializações do bot)
-  const userGlobal = await Usuario.findOne({ idWhatsApp: userId }).lean();
-  const ultimoGarimpo = userGlobal?.ultimoGarimpo ? new Date(userGlobal.ultimoGarimpo).getTime() : 0;
-  const tempoPassado  = agora - ultimoGarimpo;
-
-  if (tempoPassado < GARIMPO_COOLDOWN_MS) {
-    const restante = GARIMPO_COOLDOWN_MS - tempoPassado;
-    garimpoCache.set(userId, ultimoGarimpo); // sincroniza cache com banco
-    await sock.sendMessage(jid, {
-      text:
-        `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n` +
-        `⛏️ Você já garimpou recentemente!\n\n` +
-        `⏰ Próximo garimpo em: *${formatarTempoGarimpo(restante)}*`,
-    }, { quoted: msg });
-    return;
-  }
-
-  // ── Marcar cooldown imediatamente (antes do banco, evita race condition)
+  // ── 3. Cooldown confirmado como livre — marcar cache imediatamente
   garimpoCache.set(userId, agora);
 
   try {
-    const ouro = Math.floor(Math.random() * 100) + 30; // 30–129 gold
+    const ouro = sortearOuro();
 
-    // Atualizar cooldown e missão de gold no Usuario global
+    // Atualizar missão diária e creditar gold em paralelo
     await prepareDailyMissionState(userId);
+
+    const [carteira] = await Promise.all([
+      alterarGold(userId, jid, ouro, 'Garimpo'),
+      Usuario.findOneAndUpdate(
+        { idWhatsApp: userId },
+        { $inc: { 'dailyMissions.progress.gold500': ouro } },
+        { upsert: true }
+      ),
+    ]);
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+          `⛏️ ═══ GARIMPO ═══ ⛏️\n\n` +
+          `🪨 Você cavou fundo e encontrou ouro!\n\n` +
+          `━━━━━━━━━━━━━━━━\n` +
+          `💎 Encontrado: *+${ouro} gold*\n` +
+          `💰 Novo saldo: *${carteira.gold} gold*\n\n` +
+          `⏰ Próximo garimpo em: *1 hora*`,
+      },
+      { quoted: msg }
+    );
+  } catch (e) {
+    // Rollback do cooldown no banco para o estado anterior
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      {
-        $set: { ultimoGarimpo: new Date() },
-        $inc: { 'dailyMissions.progress.gold500': ouro },
-      },
-      { upsert: true }
-    );
+      { $set: { ultimoGarimpo: userAtualizado.ultimoGarimpo ?? null } }
+    ).catch(() => {}); // silencia erro secundário
 
-    // Creditar na carteira do grupo
-    const carteira = await alterarGold(userId, idGrupo, ouro, 'Garimpo');
-
-    await sock.sendMessage(jid, {
-      text:
-        `⛏️ ═══ GARIMPO ═══ ⛏️\n\n` +
-        `🪨 Você cavou fundo e encontrou ouro!\n\n` +
-        `━━━━━━━━━━━━━━━━\n` +
-        `💎 Encontrado: *+${ouro} gold*\n` +
-        `💰 Novo saldo: *${carteira.gold}* gold\n\n` +
-        `⏰ Próximo garimpo em: *1 hora*`,
-    }, { quoted: msg });
-  } catch (e) {
-    // Se der erro, desfaz o cache para o usuário poder tentar de novo
+    // Desfaz cache para liberar nova tentativa
     garimpoCache.delete(userId);
+
     console.error('⚠️ Erro handleGarimpar:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao garimpar! Tente novamente.' }, { quoted: msg });
   }
 }
 
-// ─── !slots ───────────────────────────────────────────────────────────────────
+'use strict';
 
-async function handleSlots(sock, msg, jid, senderJid, caption) {
-  const idGrupo = jid;
-  const args    = caption.trim().split(/\s+/);
-  const aposta  = parseInt(args[1]);
+// ─── Helpers compartilhados ───────────────────────────────────────────────────
 
-  if (!aposta || isNaN(aposta) || aposta <= 0) {
-    await sock.sendMessage(jid, { text: '⚠️ Uso correto: *!slots [valor]*\nExemplo: *!slots 50*' }, { quoted: msg });
-    return;
+/**
+ * Tenta debitar gold usando o update atômico do carteiraService.
+ * Retorna a carteira atualizada ou null se saldo insuficiente.
+ */
+async function tentarDebitar(userId, idGrupo, valor, descricao) {
+  try {
+    return await alterarGold(userId, idGrupo, -valor, descricao);
+  } catch (e) {
+    if (e instanceof RangeError) return null; // saldo insuficiente
+    throw e;
+  }
+}
+
+/**
+ * Credita prêmio e atualiza missão diária em paralelo.
+ * Retorna o saldo final atualizado.
+ */
+async function creditarPremioEMissao(userId, idGrupo, premio, descricao, lucroLiq, saldoFallback) {
+  const ops = [];
+
+  if (premio > 0) {
+    ops.push(alterarGold(userId, idGrupo, premio, descricao));
   }
 
-  const userDebited = await debitarGold(senderJid, idGrupo, aposta, 'Slots');
-  if (!userDebited) {
-    const saldo = await getSaldoGrupo(senderJid, idGrupo);
+  if (lucroLiq > 0) {
+    ops.push(
+      prepareDailyMissionState(userId).then(() =>
+        Usuario.findOneAndUpdate(
+          { idWhatsApp: userId },
+          { $inc: { 'dailyMissions.progress.gold500': lucroLiq } }
+        )
+      )
+    );
+  }
+
+  if (ops.length === 0) return saldoFallback;
+
+  const [carteira] = await Promise.all(ops);
+  return carteira?.gold ?? saldoFallback;
+}
+
+function msgSaldoInsuficiente(saldo, aposta) {
+  return (
+    `❌ *Saldo insuficiente!*\n\n` +
+    `💰 Seu saldo: *${saldo}* gold\n` +
+    `💸 Aposta: *${aposta}* gold`
+  );
+}
+
+// ─── !slots ───────────────────────────────────────────────────────────────────
+
+const SLOTS_FRUTAS       = ['🍒', '🍋', '🍇', '🍉', '🔔'];
+const SLOTS_FRAMES       = [
+  `[ 🎲 | 🍒 | 🎲 ]`,
+  `[ 🍋 | 🎲 | 🍇 ]`,
+  `[ 🍉 | 🍒 | 🔔 ]`,
+  `[ 🔔 | 🍋 | 🍒 ]`,
+  `[ 🍇 | 🍉 | 🍋 ]`,
+];
+const SLOTS_FRAME_DELAY  = 300;
+
+function sortearSlots() {
+  const pick = () => SLOTS_FRUTAS[Math.floor(Math.random() * SLOTS_FRUTAS.length)];
+  return [pick(), pick(), pick()];
+}
+
+function calcularMultiplicador(r1, r2, r3) {
+  if (r1 === r2 && r2 === r3)                   return { mult: 10,  label: '🎉 *JACKPOT MÁXIMO!* Três iguais! Multiplicado por 10!' };
+  if (r1 === r2 || r2 === r3 || r1 === r3)      return { mult: 2.5, label: '✨ *QUASE JACKPOT!* Duas iguais! Multiplicado por 2.5!' };
+  return { mult: 0, label: '❌ *Você perdeu!* O banco agradece.' };
+}
+
+function buildSlotsFrame(frame) {
+  return `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     ${frame}\n\n_Girando..._`;
+}
+
+function buildSlotsResultado(r1, r2, r3, aposta, multiplicador, label, lucroLiq, saldoFinal) {
+  const premio = Math.floor(aposta * multiplicador);
+  return (
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+    `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
+    `${label}\n` +
+    `━━━━━━━━━━━━━━━━\n*DETALHES:*\n` +
+    `  💵 Aposta: *${aposta}* gold\n` +
+    (multiplicador > 0
+      ? `  ✖️ Multiplicador: *${multiplicador}x*\n  💰 Prêmio: *${premio}* gold\n`
+      : '') +
+    `  ${lucroLiq >= 0 ? '✅' : '❌'} Resultado: *${lucroLiq >= 0 ? '+' : ''}${lucroLiq}* gold\n` +
+    `  💎 Saldo: *${saldoFinal}* gold`
+  );
+}
+
+async function handleSlots(sock, msg, jid, senderJid, caption) {
+  const args   = caption.trim().split(/\s+/);
+  const aposta = parseInt(args[1]);
+
+  if (!aposta || isNaN(aposta) || aposta <= 0) {
     await sock.sendMessage(jid, {
-      text: `❌ Saldo insuficiente!\n\n💰 Seu saldo: *${saldo}* gold\n💸 Aposta: *${aposta}* gold`,
+      text: '⚠️ Uso correto: *!slots [valor]*\nExemplo: *!slots 50*',
     }, { quoted: msg });
     return;
   }
 
-  const frutas = ['🍒', '🍋', '🍇', '🍉', '🔔'];
-  const r1 = frutas[Math.floor(Math.random() * frutas.length)];
-  const r2 = frutas[Math.floor(Math.random() * frutas.length)];
-  const r3 = frutas[Math.floor(Math.random() * frutas.length)];
+  // ── Débito atômico (usa RangeError do carteiraService para saldo insuficiente)
+  const carteiraDebitada = await tentarDebitar(senderJid, jid, aposta, 'Slots');
+  if (!carteiraDebitada) {
+    const saldo = (await getCarteira(senderJid, jid))?.gold ?? 0;
+    await sock.sendMessage(jid, { text: msgSaldoInsuficiente(saldo, aposta) }, { quoted: msg });
+    return;
+  }
 
+  // ── Animação de giro
   const msgInicial = await sock.sendMessage(jid, {
-    text: `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🎲 | 🎲 | 🎲 ]\n\n_Girando..._`,
+    text: buildSlotsFrame('[ 🎲 | 🎲 | 🎲 ]'),
   }, { quoted: msg });
 
-  const frames = [
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🎲 | 🍒 | 🎲 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍋 | 🎲 | 🍇 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍉 | 🍒 | 🔔 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🔔 | 🍋 | 🍒 ]\n\n_Girando..._`,
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     [ 🍇 | 🍉 | 🍋 ]\n\n_Girando..._`,
-  ];
-
-  for (const frame of frames) {
-    await new Promise(r => setTimeout(r, 300));
-    try { await sock.chatModify({ text: frame }, msgInicial.key); } catch {}
+  for (const frame of SLOTS_FRAMES) {
+    await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
+    try { await sock.chatModify({ text: buildSlotsFrame(frame) }, msgInicial.key); } catch {}
   }
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
 
-  let multiplicador = 0;
-  let resultadoMsg  = '❌ *Você perdeu!* O banco agradece.';
-  if (r1 === r2 && r2 === r3)                       { multiplicador = 10;  resultadoMsg = '🎉 *JACKPOT MÁXIMO!* Três iguais! Multiplicado por 10!'; }
-  else if (r1 === r2 || r2 === r3 || r1 === r3)     { multiplicador = 2.5; resultadoMsg = '✨ *QUASE JACKPOT!* Duas iguais! Multiplicado por 2.5!'; }
+  // ── Resultado
+  const [r1, r2, r3]      = sortearSlots();
+  const { mult, label }   = calcularMultiplicador(r1, r2, r3);
+  const premio            = Math.floor(aposta * mult);
+  const lucroLiq          = premio - aposta;
+  const saldoFallback     = carteiraDebitada.gold + lucroLiq;
 
-  const premio   = Math.floor(aposta * multiplicador);
-  const lucroLiq = premio - aposta;
+  const saldoFinal = await creditarPremioEMissao(
+    senderJid, jid, premio, `Slots (${mult}x)`, lucroLiq, saldoFallback
+  );
 
-  // Creditar prêmio na carteira do grupo
-  let saldoFinal = userDebited.gold + lucroLiq;
-  if (premio > 0) {
-    const carteira = await alterarGold(senderJid, idGrupo, premio, `Slots (${multiplicador}x)`);
-    saldoFinal = carteira?.gold ?? saldoFinal;
-  }
-
-  // Missão de gold (Usuario global)
-  if (lucroLiq > 0) {
-    await prepareDailyMissionState(senderJid);
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJid },
-      { $inc: { 'dailyMissions.progress.gold500': lucroLiq } }
-    );
-  }
-
-  const textoFinal =
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
-    `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
-    `${resultadoMsg}\n` +
-    `━━━━━━━━━━━━━━━━\n*DETALHES:*\n` +
-    `  💵 Aposta: *${aposta}* gold\n` +
-    (multiplicador > 0 ? `  ✖️ Multiplicador: *${multiplicador}x*\n  💰 Prêmio: *${premio}* gold\n` : '') +
-    `  ${lucroLiq >= 0 ? '✅' : '❌'} Resultado: *${lucroLiq >= 0 ? '+' : ''}${lucroLiq}* gold\n` +
-    `  💎 Saldo: *${saldoFinal}* gold`;
+  const textoFinal = buildSlotsResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal);
 
   try { await sock.chatModify({ text: textoFinal }, msgInicial.key); }
   catch { await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg }); }
@@ -802,69 +968,77 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
 
 // ─── !corrida ─────────────────────────────────────────────────────────────────
 
+const CORRIDA_BICHOS  = ['🐎 Cavalo', '🐅 Tigre', '🐢 Tartaruga', '🐕 Cachorro'];
+const CORRIDA_EMOJIS  = ['🐎', '🐅', '🐢', '🐕'];
+const CORRIDA_MULT    = 3;
+
+function buildPista(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal) {
+  let pista = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
+
+  for (let i = 0; i < CORRIDA_BICHOS.length; i++) {
+    pista += i === vencedorIdx
+      ? `${CORRIDA_EMOJIS[i]} ══════════════ 💨 🏆\n`
+      : `${CORRIDA_EMOJIS[i]} ${'═'.repeat(Math.floor(Math.random() * 8) + 2)}\n`;
+  }
+
+  pista +=
+    `\n━━━━━━━━━━━━━━━━\n` +
+    `🎯 Você apostou no *${CORRIDA_BICHOS[escolhaIdx]}*\n` +
+    `🏆 Vencedor: *${CORRIDA_BICHOS[vencedorIdx]}*\n\n`;
+
+  pista += lucroLiq > 0
+    ? `🎉 *VITÓRIA!* Você ganhou *+${aposta * CORRIDA_MULT}* gold!\n`
+    : `❌ *DERROTA!* Você perdeu *${aposta}* gold.\n`;
+
+  pista += `💰 Saldo: *${saldoFinal}* gold`;
+
+  return pista;
+}
+
 async function handleCorrida(sock, msg, jid, senderJid, caption) {
-  const idGrupo = jid;
   const args    = caption.trim().split(/\s+/);
-  const escolha = parseInt(args[1]);
+  const escolha = parseInt(args[1]); // 1–4
   const aposta  = parseInt(args[2]);
 
-  if (!escolha || !aposta || isNaN(escolha) || isNaN(aposta) || escolha < 1 || escolha > 4 || aposta <= 0) {
+  const escolhaValida = escolha >= 1 && escolha <= CORRIDA_BICHOS.length;
+
+  if (!escolha || !aposta || isNaN(escolha) || isNaN(aposta) || !escolhaValida || aposta <= 0) {
     await sock.sendMessage(jid, {
       text:
         `⚠️ Uso correto: *!corrida [bicho] [valor]*\n\n` +
         `*Escolha seu corredor:*\n` +
-        `1️⃣ 🐎 Cavalo\n2️⃣ 🐅 Tigre\n3️⃣ 🐢 Tartaruga\n4️⃣ 🐕 Cachorro\n\n` +
-        `Exemplo: *!corrida 1 50* (Aposta 50 no Cavalo)`,
+        CORRIDA_BICHOS.map((b, i) => `${i + 1}️⃣ ${b}`).join('\n') +
+        `\n\nExemplo: *!corrida 1 50* (Aposta 50 no Cavalo)`,
     }, { quoted: msg });
     return;
   }
 
-  const userDebited = await debitarGold(senderJid, idGrupo, aposta, `Corrida`);
-  if (!userDebited) {
-    const saldo = await getSaldoGrupo(senderJid, idGrupo);
-    await sock.sendMessage(jid, {
-      text: `❌ Saldo insuficiente!\n\n💰 Seu saldo: *${saldo}* gold\n💸 Aposta: *${aposta}* gold`,
-    }, { quoted: msg });
+  const escolhaIdx = escolha - 1;
+
+  // ── Débito atômico
+  const carteiraDebitada = await tentarDebitar(
+    senderJid, jid, aposta, `Corrida (${CORRIDA_BICHOS[escolhaIdx]})`
+  );
+  if (!carteiraDebitada) {
+    const saldo = (await getCarteira(senderJid, jid))?.gold ?? 0;
+    await sock.sendMessage(jid, { text: msgSaldoInsuficiente(saldo, aposta) }, { quoted: msg });
     return;
   }
 
-  const bichos     = ['🐎 Cavalo', '🐅 Tigre', '🐢 Tartaruga', '🐕 Cachorro'];
-  const emojis     = ['🐎', '🐅', '🐢', '🐕'];
-  const vencedorIdx = Math.floor(Math.random() * 4);
-  const ganhou     = (escolha - 1) === vencedorIdx;
-  const premio     = ganhou ? aposta * 3 : 0;
-  const lucroLiq   = premio - aposta;
+  // ── Resultado
+  const vencedorIdx  = Math.floor(Math.random() * CORRIDA_BICHOS.length);
+  const ganhou       = escolhaIdx === vencedorIdx;
+  const premio       = ganhou ? aposta * CORRIDA_MULT : 0;
+  const lucroLiq     = premio - aposta;
+  const saldoFallback = carteiraDebitada.gold + lucroLiq;
 
-  let saldoFinal = userDebited.gold + lucroLiq;
-  if (premio > 0) {
-    const carteira = await alterarGold(senderJid, idGrupo, premio, `Corrida (${bichos[escolha - 1]})`);
-    saldoFinal = carteira?.gold ?? saldoFinal;
-  }
+  const saldoFinal = await creditarPremioEMissao(
+    senderJid, jid, premio, `Corrida (${CORRIDA_BICHOS[escolhaIdx]})`, lucroLiq, saldoFallback
+  );
 
-  if (lucroLiq > 0) {
-    await prepareDailyMissionState(senderJid);
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJid },
-      { $inc: { 'dailyMissions.progress.gold500': lucroLiq } }
-    );
-  }
-
-  let pista = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
-  for (let i = 0; i < 4; i++) {
-    pista += i === vencedorIdx
-      ? `${emojis[i]} ══════════════ 💨 🏆\n`
-      : `${emojis[i]} ${'═'.repeat(Math.floor(Math.random() * 8) + 2)}\n`;
-  }
-
-  pista += `\n━━━━━━━━━━━━━━━━\n`;
-  pista += `🎯 Você apostou no *${bichos[escolha - 1]}*\n`;
-  pista += `🏆 Vencedor: *${bichos[vencedorIdx]}*\n\n`;
-  pista += ganhou
-    ? `🎉 *VITÓRIA!* Você ganhou *+${aposta * 3}* gold!\n`
-    : `❌ *DERROTA!* Você perdeu *${aposta}* gold.\n`;
-  pista += `💰 Saldo: *${saldoFinal}* gold`;
-
-  await sock.sendMessage(jid, { text: pista }, { quoted: msg });
+  await sock.sendMessage(jid, {
+    text: buildPista(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal),
+  }, { quoted: msg });
 }
 
 // ─── EXPORTS ──────────────────────────────────────────────────────────────────

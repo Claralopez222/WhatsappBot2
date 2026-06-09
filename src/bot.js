@@ -426,24 +426,27 @@ async function startBot() {
     }
   });
 
-  // â”€â”€ ConexÃ£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ // ── Conexão ───────────────────────────────────────────────────────────────
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      console.log('\nðŸ“± Escaneie o QR Code:\n');
+      console.log('\n📱 Escaneie o QR Code:\n');
       console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
       await QRCode.toFile(path.resolve(__dirname, '../qrcode.png'), qr, { width: 400 });
     }
     if (connection === 'close') {
       const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      if (code !== DisconnectReason.loggedOut) startBot();
-      else console.log('ðŸšª Desconectado. Delete /session e reinicie.');
+      if (code !== DisconnectReason.loggedOut && code !== 405 && code !== 408) {
+        setTimeout(() => startBot(), 5000);
+      } else {
+        console.log('🚪 Sessão encerrada definitivamente.');
+        process.exit(0);
+      }
     } else if (connection === 'open') {
       botJid = sock.user?.id || null;
-      console.log(`âœ… Bot conectado! JID: ${botJid}\n`);
+      console.log(`✅ Bot conectado! JID: ${botJid}\n`);
       initPetScheduler(sock);
     }
   });
-
 } // fim de startBot()
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // â”€â”€â”€ HANDLER PRINCIPAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

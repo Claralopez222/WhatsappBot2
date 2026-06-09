@@ -12,7 +12,7 @@ const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { prepareDailyMissionState } = require('./missoes');
 const { handleBanco, handleResgatar } = require('./banco');
-const { alterarGold } = require('./carteiraService'); // ajuste o path
+
 
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 const quizState      = new Map(); // senderJid → { r, timeout }

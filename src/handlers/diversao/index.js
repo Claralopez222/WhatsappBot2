@@ -69,11 +69,12 @@ const {
   handleMissao, prepareDailyMissionState, findDailyMission, dailyMissionDefinitions
 } = require('./missoes');
 
+
 // Pets
 const {
   handleCapturarPet, handleAlimentarPet, handleBrincarPet,
   handleStatusPet, handlePetRank, handlePets, handleAbrigo,
-  petSystem, petData, shelterData, handleAdoptarPet
+  handleAdoptarPet, initPetScheduler, registerActiveGroup
 } = require('./pets');
 
 // Roubo (Sistema de assaltos)
@@ -200,7 +201,7 @@ module.exports = {
   findDailyMission,
   dailyMissionDefinitions,
 
-  // ── Pets (11 itens) ───────────────────────────────────────────────────────
+  // ── Pets (13 itens) ───────────────────────────────────────────────────────
   handleCapturarPet,
   handleAdoptarPet,
   handleAlimentarPet,
@@ -212,6 +213,8 @@ module.exports = {
   petSystem,
   petData,
   shelterData,
+  initPetScheduler,
+  registerActiveGroup,
 
   // ── Roubo (7 itens) ───────────────────────────────────────────────────────
   handleMenuRoubo,

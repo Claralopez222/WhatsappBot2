@@ -38,6 +38,7 @@ const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversa
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
 const pescaHandler = require('./handlers/diversao/pesca');
+const { initPetScheduler, registerActiveGroup } = require(path.join(__dirname, 'handlers', 'diversao'));
 
 // ─── Silenciar logs de sessão ─────────────────────────────────
 const _log = console.log.bind(console);
@@ -369,7 +370,6 @@ async function startBot() {
       if (msg.key.fromMe) continue;
       if (!msg.message)   continue;
 
-      // ✅ CORRIGIDO: variáveis declaradas ANTES de serem usadas
       const _jid       = msg.key.remoteJid || '';
       const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
 
@@ -379,14 +379,12 @@ async function startBot() {
       }
 
       try {
-        // ── Contagem MongoDB + Missão diária ──────────────────
         if (!_isPrivate) {
           const remetente  = msg.key.participant || msg.key.remoteJid;
           const nomeDoCara = msg.pushName || 'Usuário do Zap';
 
           await prepareDailyMissionState(remetente);
 
-          // ✅ CORRIGIDO: CarteiraGrupo agora vem APÓS as variáveis serem definidas
           await CarteiraGrupo.findOneAndUpdate(
             { idWhatsApp: remetente, idGrupo: _jid },
             {
@@ -407,6 +405,7 @@ async function startBot() {
         }
 
         await handleMessage(sock, msg);
+        if (_jid.endsWith('@g.us')) registerActiveGroup(_jid);
       } catch (err) {
         console.error('❌ Erro no processamento da mensagem:', err.message);
       }
@@ -441,11 +440,11 @@ async function startBot() {
     } else if (connection === 'open') {
       botJid = sock.user?.id || null;
       console.log(`✅ Bot conectado! JID: ${botJid}\n`);
+      initPetScheduler(sock);
     }
   });
 
 } // ← fim de startBot()
-
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

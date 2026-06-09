@@ -507,7 +507,7 @@ async function handleToGif(sock, msg, content, jid) {
 
 // (comando !roubar removido)
 
-// ═══════════════════════════════════════════════════════════════
+// // ═══════════════════════════════════════════════════════════════
 // ─── !estourar ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
@@ -516,54 +516,96 @@ async function handleEstourar(sock, msg, content, jid) {
   const quoted      = contextInfo?.quotedMessage;
   const textMsg     = content.conversation || content.extendedTextMessage?.text || '';
 
-  if (!quoted?.audioMessage) {
+  // ── Validar: precisa ser um áudio ou PTT (voice note)
+  const audioMsg = quoted?.audioMessage || quoted?.pttMessage;
+  if (!audioMsg) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Responda a um *áudio* com !estourar.\nEx: *!estourar 80* _(padrão: 20x | máx: 100)_',
+      text: '⚠️ Responda a um *áudio* com *!estourar*.\nEx: *!estourar 80* _(padrão: 20x | máx: 100)_',
     }, { quoted: msg });
     return;
   }
 
+  // ── Parsear volume (1–100, padrão 20)
   const match  = textMsg.match(/estourar\s+(\d+)/i);
-  const volume = Math.max(1, Math.min(100, match ? parseInt(match[1]) : 20));
+  const volume = Math.max(1, Math.min(100, match ? parseInt(match[1], 10) : 20));
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  const audioBuffer = await downloadMediaMessage(
-    buildQuotedMsg(jid, contextInfo, quoted),
-    'buffer', {},
-    { logger, reuploadRequest: sock.updateMediaMessage }
-  );
+  // ── Download do áudio citado
+  let audioBuffer;
+  try {
+    audioBuffer = await downloadMediaMessage(
+      buildQuotedMsg(jid, contextInfo, quoted),
+      'buffer',
+      {},
+      { logger, reuploadRequest: sock.updateMediaMessage }
+    );
+  } catch (err) {
+    console.error('[estourar] Erro no download do áudio:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Não foi possível baixar o áudio. Tente novamente.' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    return;
+  }
 
+  // ── Arquivos temporários
   const ffmpegBin = require('ffmpeg-static');
   const tmpId     = crypto.randomUUID();
   const inPath    = path.join(os.tmpdir(), `${tmpId}_in.ogg`);
   const outPath   = path.join(os.tmpdir(), `${tmpId}_out.ogg`);
 
+  const cleanup = () => {
+    for (const f of [inPath, outPath]) {
+      try { fs.unlinkSync(f); } catch { /* ignora */ }
+    }
+  };
+
   fs.writeFileSync(inPath, audioBuffer);
 
+  // ── Processar com FFmpeg
   const ok = await new Promise((resolve) => {
-    execFile(ffmpegBin, [
-      '-y', '-i', inPath,
-      '-filter:a', `volume=${volume}`,
-      '-c:a', 'libopus', '-b:a', '64k',
-      outPath,
-    ], { timeout: 30000 }, (err) => resolve(!err));
+    execFile(
+      ffmpegBin,
+      [
+        '-y', '-i', inPath,
+        '-filter:a', `volume=${volume}`,
+        '-c:a', 'libopus', '-b:a', '64k',
+        '-vn',          // ignorar vídeo (evita erro em arquivos mistos)
+        '-map_metadata', '-1', // limpar metadados desnecessários
+        outPath,
+      ],
+      { timeout: 30000 },
+      (err) => {
+        if (err) console.error('[estourar] FFmpeg erro:', err.message);
+        resolve(!err);
+      }
+    );
   });
 
-  try { fs.unlinkSync(inPath); } catch { /* ignora */ }
-
   if (!ok || !fs.existsSync(outPath)) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao processar o áudio.' }, { quoted: msg });
+    cleanup();
+    await sock.sendMessage(jid, { text: '❌ Erro ao processar o áudio com FFmpeg.' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
     return;
   }
 
+  // ── Enviar áudio processado
   const outBuffer = fs.readFileSync(outPath);
-  try { fs.unlinkSync(outPath); } catch { /* ignora */ }
+  cleanup();
 
-  await sock.sendMessage(jid, { audio: outBuffer, mimetype: 'audio/ogg; codecs=opus', ptt: true });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  try {
+    await sock.sendMessage(jid, {
+      audio:    outBuffer,
+      mimetype: 'audio/ogg; codecs=opus',
+      ptt:      true,
+    }, { quoted: msg }); // quotado para ficar em contexto na conversa
+
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    console.error('[estourar] Erro ao enviar áudio:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Áudio processado, mas falhou ao enviar.' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+  }
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !brat / !figtexto ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -573,17 +615,27 @@ async function handleBrat(sock, msg, jid, caption, getPrefix, stickerCount) {
   const text = caption.replace(/^[!.,\/]brat\s*/i, '').trim();
 
   if (!text) {
-    await sock.sendMessage(jid, { text: `⚠️ Digite um texto!\nEx: *${P}brat seu texto aqui*` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Digite um texto!\nEx: *${P}brat seu texto aqui*`,
+    }, { quoted: msg });
     return false;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  const sticker   = await convertBratSticker(text);
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
-  await sock.sendMessage(jid, { sticker });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  return true;
+
+  try {
+    const sticker   = await convertBratSticker(text);
+    const senderJid = msg.key.participant || msg.key.remoteJid;
+    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    await sock.sendMessage(jid, { sticker });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    return true;
+  } catch (err) {
+    console.error('[brat] Erro ao gerar sticker:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Erro ao gerar o sticker. Tente novamente.' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    return false;
+  }
 }
 
 async function handleFigtexto(sock, msg, jid, caption, getPrefix, stickerCount) {
@@ -591,17 +643,27 @@ async function handleFigtexto(sock, msg, jid, caption, getPrefix, stickerCount) 
   const text = caption.replace(/^[!.,\/]figtexto\s*/i, '').trim();
 
   if (!text) {
-    await sock.sendMessage(jid, { text: `⚠️ Digite um texto!\nEx: *${P}figtexto seu texto aqui*` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Digite um texto!\nEx: *${P}figtexto seu texto aqui*`,
+    }, { quoted: msg });
     return false;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  const sticker   = await convertTextoSticker(text);
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
-  await sock.sendMessage(jid, { sticker });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  return true;
+
+  try {
+    const sticker   = await convertTextoSticker(text);
+    const senderJid = msg.key.participant || msg.key.remoteJid;
+    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    await sock.sendMessage(jid, { sticker });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    return true;
+  } catch (err) {
+    console.error('[figtexto] Erro ao gerar sticker:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Erro ao gerar o sticker. Tente novamente.' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    return false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -611,28 +673,33 @@ async function handleFigtexto(sock, msg, jid, caption, getPrefix, stickerCount) 
 async function handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, versao = 1) {
   const P   = getPrefix(jid);
   const cmd = versao === 2 ? 'attp2' : 'attp';
-  const text = caption.replace(new RegExp(`^[!.,\/]${cmd}\\s*`, 'i'), '').trim();
+  const text = caption.replace(new RegExp(`^[!.,\\/]${cmd}\\s*`, 'i'), '').trim();
 
   if (!text) {
-    await sock.sendMessage(jid, { text: `⚠️ Digite um texto!\nEx: *${P}${cmd} Olá mundo*` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Digite um texto!\nEx: *${P}${cmd} Olá mundo*`,
+    }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    const url = versao === 1
-      ? `https://api.lolhuman.xyz/api/textsticker?apikey=galanggg&text=${encodeURIComponent(text)}`
-      : `https://api.lolhuman.xyz/api/textsticker2?apikey=galanggg&text=${encodeURIComponent(text)}`;
-    const buf       = await fetchBuffer(url);
+    const endpoint = versao === 1 ? 'textsticker' : 'textsticker2';
+    const url      = `https://api.lolhuman.xyz/api/${endpoint}?apikey=galanggg&text=${encodeURIComponent(text)}`;
+    const buf      = await fetchBuffer(url);
+
+    if (!buf || buf.length < 100) throw new Error('Buffer inválido ou vazio');
+
     const senderJid = msg.key.participant || msg.key.remoteJid;
     if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
     await sock.sendMessage(jid, { sticker: buf });
-  } catch {
-    // Fallback para figtexto local
-    await handleFigtexto(sock, msg, jid,
-      caption.replace(new RegExp(`^[!.,\/]${cmd}`, 'i'), '!figtexto'),
-      getPrefix, stickerCount);
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    console.error(`[${cmd}] API falhou, usando fallback figtexto:`, err.message);
+    // Fallback para figtexto local — repassa a caption adaptada
+    const captionFallback = caption.replace(new RegExp(`^[!.,\\/]${cmd}`, 'i'), '!figtexto');
+    await handleFigtexto(sock, msg, jid, captionFallback, getPrefix, stickerCount);
   }
 }
 
@@ -643,55 +710,71 @@ async function handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, vers
 async function handleQc(sock, msg, jid, caption, getPrefix, stickerCount, versao = 1) {
   const P   = getPrefix(jid);
   const cmd = versao === 2 ? 'qc2' : 'qc';
-  const text = caption.replace(new RegExp(`^[!.,\/]${cmd}\\s*`, 'i'), '').trim();
+  const text = caption.replace(new RegExp(`^[!.,\\/]${cmd}\\s*`, 'i'), '').trim();
 
   if (!text) {
-    await sock.sendMessage(jid, { text: `⚠️ Digite um texto!\nEx: *${P}${cmd} Frase aqui*` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Digite um texto!\nEx: *${P}${cmd} Frase aqui*`,
+    }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  const bgColor  = versao === 1 ? '#1a1a2e' : '#2d1b69';
-  const txtColor = versao === 1 ? '#e0e0e0' : '#f8c6ff';
-  const acColor  = versao === 1 ? '#e94560' : '#c084fc';
+  try {
+    const bgColor  = versao === 1 ? '#1a1a2e' : '#2d1b69';
+    const txtColor = versao === 1 ? '#e0e0e0' : '#f8c6ff';
+    const acColor  = versao === 1 ? '#e94560' : '#c084fc';
 
-  // Quebra o texto em linhas de até 28 caracteres
-  const words = text.split(' ');
-  const lines = [];
-  let cur = '';
-  for (const w of words) {
-    if ((cur + w).length > 28) { if (cur) lines.push(cur.trim()); cur = w + ' '; }
-    else cur += w + ' ';
+    // ── Quebra em linhas de até 28 caracteres (sem cortar palavras)
+    const words = text.split(' ');
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      if (cur && (cur + ' ' + w).length > 28) {
+        lines.push(cur.trim());
+        cur = w;
+      } else {
+        cur = cur ? cur + ' ' + w : w;
+      }
+    }
+    if (cur.trim()) lines.push(cur.trim());
+
+    const lineHeight = 38;
+    const padding    = 80;
+    const h          = Math.max(200, padding + lines.length * lineHeight + 60);
+
+    // ── Escapar caracteres especiais XML
+    const escape = (s) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const textSvgLines = lines
+      .map((l, i) =>
+        `<text x="256" y="${padding + i * lineHeight}" font-family="Arial, sans-serif" font-size="24" fill="${txtColor}" text-anchor="middle">${escape(l)}</text>`
+      )
+      .join('\n    ');
+
+    const svg = `<svg width="512" height="${h}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="${h}" rx="20" fill="${bgColor}"/>
+  <rect x="20" y="20" width="6" height="${h - 40}" rx="3" fill="${acColor}"/>
+  ${textSvgLines}
+</svg>`;
+
+    const imgBuf    = await sharp(Buffer.from(svg)).resize(512, h).webp().toBuffer();
+    const sticker   = await convertImageToSticker(imgBuf);
+    const senderJid = msg.key.participant || msg.key.remoteJid;
+    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    await sock.sendMessage(jid, { sticker });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    console.error(`[${cmd}] Erro ao gerar sticker:`, err.message);
+    await sock.sendMessage(jid, { text: '❌ Erro ao gerar o sticker. Tente novamente.' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
-  if (cur.trim()) lines.push(cur.trim());
-
-  const lineHeight = 38;
-  const h          = Math.max(200, 80 + lines.length * lineHeight + 60);
-
-  const textSvgLines = lines
-    .map((l, i) => {
-      const safe = l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return `<text x="256" y="${80 + i * lineHeight}" font-family="Arial" font-size="24" fill="${txtColor}" text-anchor="middle">${safe}</text>`;
-    })
-    .join('\n');
-
-  const svg = `<svg width="512" height="${h}" xmlns="http://www.w3.org/2000/svg">
-    <rect width="512" height="${h}" rx="20" fill="${bgColor}"/>
-    <rect x="20" y="20" width="6" height="${h - 40}" rx="3" fill="${acColor}"/>
-    ${textSvgLines}
-  </svg>`;
-
-  const imgBuf    = await sharp(Buffer.from(svg)).resize(512, h).webp().toBuffer();
-  const sticker   = await convertImageToSticker(imgBuf);
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
-  await sock.sendMessage(jid, { sticker });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ─── !emojimix / !emoji ───────────────────────────────────────
+// ─── !emojimix ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
 async function handleEmojiMix(sock, msg, jid, caption, getPrefix, stickerCount) {
@@ -700,7 +783,9 @@ async function handleEmojiMix(sock, msg, jid, caption, getPrefix, stickerCount) 
   const parts = args.split('+').map(s => s.trim()).filter(Boolean);
 
   if (parts.length < 2) {
-    await sock.sendMessage(jid, { text: `⚠️ Use: *${P}emojimix 😀+😎*` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Use: *${P}emojimix 😀+😎*`,
+    }, { quoted: msg });
     return;
   }
 
@@ -711,27 +796,57 @@ async function handleEmojiMix(sock, msg, jid, caption, getPrefix, stickerCount) 
 
   if (!cp1 || !cp2) {
     await sock.sendMessage(jid, { text: '⚠️ Envie emojis válidos!' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    return;
+  }
+
+  // A Emoji Kitchen tem datas de lançamento diferentes — tenta as principais
+  const dates = ['20201001', '20211115', '20220406', '20220815', '20230301'];
+  let buf = null;
+
+  for (const date of dates) {
+    try {
+      const url = `https://www.gstatic.com/android/keyboard/emojikitchen/${date}/u${cp1}/u${cp1}_u${cp2}.png`;
+      buf = await fetchBuffer(url);
+      if (buf && buf.length > 100) break;
+    } catch {
+      // tenta próxima data
+    }
+  }
+
+  if (!buf || buf.length <= 100) {
+    await sock.sendMessage(jid, {
+      text: '❌ Não foi possível misturar esses emojis. Tente outra combinação!',
+    }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
     return;
   }
 
   try {
-    const url     = `https://www.gstatic.com/android/keyboard/emojikitchen/20201001/u${cp1}/u${cp1}_u${cp2}.png`;
-    const buf     = await fetchBuffer(url);
-    const sticker = await convertImageToSticker(buf);
+    const sticker   = await convertImageToSticker(buf);
     const senderJid = msg.key.participant || msg.key.remoteJid;
     if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
     await sock.sendMessage(jid, { sticker });
-  } catch {
-    await sock.sendMessage(jid, { text: '❌ Não foi possível misturar esses emojis. Tente outros!' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    console.error('[emojimix] Erro ao converter sticker:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Erro ao gerar o sticker.' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !emoji ───────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 
 async function handleEmoji(sock, msg, jid, caption, getPrefix, stickerCount) {
   const P    = getPrefix(jid);
   const args = caption.replace(/^[!.,\/]emoji\s*/i, '').trim();
 
   if (!args) {
-    await sock.sendMessage(jid, { text: `⚠️ Use: *${P}emoji 😀* ou *${P}emoji 😀/apple*` }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: `⚠️ Use: *${P}emoji 😀* ou *${P}emoji 😀/apple*`,
+    }, { quoted: msg });
     return;
   }
 
@@ -742,23 +857,36 @@ async function handleEmoji(sock, msg, jid, caption, getPrefix, stickerCount) {
 
   if (!cp) {
     await sock.sendMessage(jid, { text: '⚠️ Emoji inválido!' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
     return;
   }
 
+  // URLs por provedor (com fallback para twitter)
+  const urls = {
+    apple:   `https://em-content.zobj.net/source/apple/354/${cp}.png`,
+    twitter: `https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/${cp}.png`,
+    google:  `https://fonts.gstatic.com/s/e/notoemoji/latest/${cp}/emoji.svg`,
+  };
+  const url = urls[provider] || urls.twitter;
+
   try {
-    const url = provider === 'apple'
-      ? `https://em-content.zobj.net/source/apple/354/${cp}.png`
-      : `https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/${cp}.png`;
-    const buf     = await fetchBuffer(url);
-    const sticker = await convertImageToSticker(buf);
+    const buf = await fetchBuffer(url);
+
+    if (!buf || buf.length < 100) throw new Error('Imagem inválida ou vazia');
+
+    const sticker   = await convertImageToSticker(buf);
     const senderJid = msg.key.participant || msg.key.remoteJid;
     if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
     await sock.sendMessage(jid, { sticker });
-  } catch {
-    await sock.sendMessage(jid, { text: '❌ Não encontrei esse emoji. Tente outro!' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    console.error('[emoji] Erro:', err.message);
+    await sock.sendMessage(jid, {
+      text: `❌ Não encontrei esse emoji${provider !== 'twitter' ? ` no provedor *${provider}*` : ''}. Tente outro!`,
+    }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── BUSCA DE FIGURINHAS (Tenor) ──────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -770,43 +898,88 @@ async function buscarFigurinha(sock, msg, jid, query, qtd, stickerCount) {
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    const key     = process.env.TENOR_KEY || 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCyk';
-    const url     = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${key}&limit=${limit}&media_filter=gif`;
-    const buf     = await fetchBuffer(url);
-    const data    = JSON.parse(buf.toString('utf8'));
-    const results = data.results || [];
+    const key  = process.env.TENOR_KEY || 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCyk';
+    const url  = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${key}&limit=${limit}&media_filter=gif`;
+    const buf  = await fetchBuffer(url);
 
+    let data;
+    try {
+      data = JSON.parse(buf.toString('utf8'));
+    } catch {
+      throw new Error('Resposta inválida da API do Tenor');
+    }
+
+    const results = data.results || [];
     if (!results.length) throw new Error('sem resultados');
 
     let sent = 0;
     for (const item of results) {
-      const gifUrl = item.media_formats?.gif?.url || item.media_formats?.tinygif?.url;
-      if (!gifUrl) continue;
+      // Prefere gif completo; fallback para tinygif (menor tamanho)
+      const gifUrl =
+        item.media_formats?.gif?.url ||
+        item.media_formats?.tinygif?.url ||
+        item.media_formats?.mediumgif?.url;
 
-      const gifBuf = await fetchBuffer(gifUrl);
-      const ext    = detectExt(gifBuf);
-      let sticker  = await videoToStickerBuffer(gifBuf, ext === 'mp4' ? 'mp4' : 'gif');
-      if (!sticker || sticker.length < 100) sticker = await convertVideoToSticker(gifBuf);
+      if (!gifUrl) {
+        console.warn('[figurinha] Item sem URL de gif, pulando.');
+        continue;
+      }
 
-      await sock.sendMessage(jid, { sticker });
-      if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
-      sent++;
+      let gifBuf;
+      try {
+        gifBuf = await fetchBuffer(gifUrl);
+      } catch (err) {
+        console.warn('[figurinha] Falha ao baixar gif:', err.message);
+        continue;
+      }
+
+      let sticker;
+      try {
+        const ext = detectExt(gifBuf);
+        sticker   = await videoToStickerBuffer(gifBuf, ext === 'mp4' ? 'mp4' : 'gif');
+        if (!sticker || sticker.length < 100) {
+          sticker = await convertVideoToSticker(gifBuf);
+        }
+      } catch (err) {
+        console.warn('[figurinha] Falha ao converter sticker:', err.message);
+        continue;
+      }
+
+      if (!sticker || sticker.length < 100) {
+        console.warn('[figurinha] Sticker gerado inválido, pulando.');
+        continue;
+      }
+
+      try {
+        await sock.sendMessage(jid, { sticker });
+        if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+        sent++;
+      } catch (err) {
+        console.warn('[figurinha] Falha ao enviar sticker:', err.message);
+      }
     }
 
-    if (sent === 0) throw new Error('nenhum gif enviado');
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    if (sent === 0) throw new Error('nenhum gif convertido com sucesso');
 
-  } catch {
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    console.error('[figurinha] buscarFigurinha:', err.message);
     await sock.sendMessage(jid, {
       text: `❌ Não encontrei figurinhas de *${query}*. Tente outro tema!`,
     }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
 }
 
+// ─── Categorias predefinidas ──────────────────────────────────
+
 async function handleFigCategoria(sock, msg, jid, caption, cmd, query, stickerCount) {
-  const qtd = caption.replace(new RegExp(`^[!.,\/]${cmd}\\s*`, 'i'), '').trim() || '1';
+  const rawQtd = caption.replace(new RegExp(`^[!.,\\/]${cmd}\\s*`, 'i'), '').trim();
+  const qtd    = rawQtd || '1';
   await buscarFigurinha(sock, msg, jid, query, qtd, stickerCount);
 }
+
+// ─── Pesquisa livre ───────────────────────────────────────────
 
 async function handlePesquisaFig(sock, msg, jid, caption, getPrefix, stickerCount) {
   const P     = getPrefix(jid);
@@ -828,25 +1001,29 @@ async function handlePesquisaFig(sock, msg, jid, caption, getPrefix, stickerCoun
 
 async function handleMenuFig(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
-  const menu =
-    `╭━━━━━━━━━━━━━━━━━╮\n` +
-    `│  🎭 *MENU FIGURINHAS* 🎭\n│\n` +
-    `│ ▸ ${P}s _— imagem/vídeo → sticker_\n` +
-    `│ ▸ ${P}f _— alias do !s_\n` +
-    `│ ▸ ${P}attp _<texto>_\n` +
-    `│ ▸ ${P}attp2 _<texto>_\n` +
-    `│ ▸ ${P}brat _<texto>_\n` +
-    `│ ▸ ${P}figtexto _<texto>_\n` +
-    `│ ▸ ${P}qc _<texto>_\n` +
-    `│ ▸ ${P}qc2 _<texto>_\n` +
-    `│ ▸ ${P}emojimix _😀+😎_\n` +
-    `│ ▸ ${P}emoji _😀_\n` +
-    `│ ▸ ${P}desfig _— sticker → imagem/vídeo_\n` +
-    `│ ▸ ${P}toimg _— alias do !desfig_\n` +
-    `│ ▸ ${P}togif _— sticker → gif_\n` +
-    `│ ▸ ${P}estourar _— amplifica áudio_\n` +
-    `│ ▸ ${P}figemoji / figroblox / figmeme\n` +
-    `╰━━━━━━━⊰ ✧ ⊱━━━━━━━╯`;
+
+  const menu = [
+    `╭━━━━━━━━━━━━━━━━━╮`,
+    `│  🎭 *MENU FIGURINHAS* 🎭`,
+    `│`,
+    `│ ▸ ${P}s _— imagem/vídeo → sticker_`,
+    `│ ▸ ${P}f _— alias do ${P}s_`,
+    `│ ▸ ${P}attp _<texto>_`,
+    `│ ▸ ${P}attp2 _<texto>_`,
+    `│ ▸ ${P}brat _<texto>_`,
+    `│ ▸ ${P}figtexto _<texto>_`,
+    `│ ▸ ${P}qc _<texto>_`,
+    `│ ▸ ${P}qc2 _<texto>_`,
+    `│ ▸ ${P}emojimix _😀+😎_`,
+    `│ ▸ ${P}emoji _😀_`,
+    `│ ▸ ${P}desfig _— sticker → imagem/vídeo_`,
+    `│ ▸ ${P}toimg _— alias do ${P}desfig_`,
+    `│ ▸ ${P}togif _— sticker → gif_`,
+    `│ ▸ ${P}estourar _— amplifica áudio_`,
+    `│ ▸ ${P}figemoji / ${P}figroblox / ${P}figmeme`,
+    `│ ▸ ${P}pesquisafig _<tema>_`,
+    `╰━━━━━━━⊰ ✧ ⊱━━━━━━━╯`,
+  ].join('\n');
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
   console.log('🎭 Menu figurinhas enviado');

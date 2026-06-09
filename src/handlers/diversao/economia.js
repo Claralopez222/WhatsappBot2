@@ -253,7 +253,7 @@ async function handleLoja(sock, msg, jid, getPrefix) {
     `✨ *ESTILO*\n👕 Camiseta — 50 gold\n👖 Calça — 60 gold\n👟 Sapato — 70 gold\n\n` +
     `💻 *TECNOLOGIA*\n📱 Celular — 200 gold\n💾 Memória USB — 150 gold\n🖥️ Computador — 500 gold\n\n` +
     `━━━━━━━━━━━━━━━━\n` +
-    `*COMO COMPRAR?*\n  ${P}comprar <nome_item>\n\n` +
+    `*COMO COMPRAR?*\n  ${P}buy <nome_item>\n\n` +
     `*SEUS ITENS?*\n  ${P}inventario\n\n` +
     `*VENDER ITENS?*\n  ${P}vender <item>`;
 
@@ -270,7 +270,7 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
     `🍔 *LANCHES*\n  🍔 Hamburger Simples — 40 gold\n  🌭 Hot Dog — 35 gold\n  🥪 Sanduíche — 45 gold\n\n` +
     `🍗 *CARNES*\n  🍗 Frango Frito — 35 gold\n  🍗 Costela — 80 gold\n\n` +
     `🍫 *DOCES*\n  🍫 Chocolate — 25 gold\n  🍰 Bolo — 65 gold\n  🍦 Sorvete — 30 gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}comprar <nome_item>`;
+    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
@@ -282,7 +282,7 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
     `🎾 *BRINQUEDOS*\n  🎾 Bolinha de Tênis — 35 gold\n  🧸 Pelúcia — 50 gold\n  🎪 Disco Voador — 60 gold\n\n` +
     `💊 *MEDICAMENTOS*\n  💊 Remédio Geral — 80 gold\n  🩹 Bandagem — 50 gold\n  💉 Vacina — 120 gold\n\n` +
     `⚙️ *ACESSÓRIOS*\n  🎀 Coleira Colorida — 55 gold\n  👑 Coroa Pet — 100 gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}comprar <nome_item>`;
+    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
@@ -294,7 +294,7 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
     `📱 *SMARTPHONES*\n  📱 Smartphone Premium — 2500 gold\n  📱 Smartphone Gamer — 3500 gold\n  📱 Tablet Pro — 3500 gold\n\n` +
     `🎮 *PERIFÉRICOS*\n  🖱️ Mouse Gamer — 350 gold\n  ⌨️ Teclado Mecânico — 450 gold\n  🖥️ Monitor 4K — 2500 gold\n  🎧 Headset Gamer — 800 gold\n\n` +
     `🔌 *ACESSÓRIOS*\n  🔌 Cabo USB-C — 50 gold\n  💾 SSD 1TB — 800 gold\n  💾 SSD 2TB — 1500 gold\n  💾 Memória RAM 16GB — 600 gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}comprar <nome_item>`;
+    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
@@ -307,21 +307,21 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
     `🎽 *VESTUÁRIO*\n  👕 Camiseta Casal — 110 gold\n  🧢 Gorro Casal — 85 gold\n  🩴 Chinelo de Casal — 95 gold\n\n` +
     `🏠 *DECORAÇÃO*\n  💡 Luminária Romântica — 140 gold\n  🕯️ Vela Aromática — 90 gold\n  🪞 Espelho com LED — 180 gold\n\n` +
     `🍷 *BEBIDAS E GOURMET*\n  ☕ Chá Especial Casal — 70 gold\n  🍷 Taça para Vinho — 160 gold\n  🍾 Garrafa Vinho Tinto — 250 gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}comprar <nome_item>\n\n` +
+    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>\n\n` +
     `💑 _Mostre seu amor com presentes incríveis!_`;
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-// ─── !comprar ─────────────────────────────────────────────────────────────────
+// ─── !buy ─────────────────────────────────────────────────────────────────
 // Gold debitado da CarteiraGrupo; inventário salvo no Usuario global.
 
 async function handleComprar(sock, msg, jid, caption) {
   const userId  = msg.key.participant || msg.key.remoteJid;
   const idGrupo = jid;
-  const match   = caption.match(/comprar\s+(.+)/i);
+  const match   = caption.match(/buy\s+(.+)/i);
 
   if (!match) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!comprar <nome_do_item>*\nExemplo: *!comprar pizza*' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Use: *!buy <nome_do_item>*\nExemplo: *!buy pizza*' }, { quoted: msg });
     return;
   }
 
@@ -337,7 +337,7 @@ async function handleComprar(sock, msg, jid, caption) {
       text:
         `⚠️ *ITEM NÃO ENCONTRADO*\n\nO item *${itemNome}* não existe!\n\n` +
         `━━━━━━━━━━━━━━━━\n*ITENS DISPONÍVEIS:*\n${lista}\n\n` +
-        `*USE:*\n  !comprar <item>\n  Exemplo: !comprar pizza`,
+        `*USE:*\n  !buy <item>\n  Exemplo: !buy pizza`,
     }, { quoted: msg });
     return;
   }
@@ -440,7 +440,7 @@ const MSG_INVENTARIO_VAZIO =
   `*COMO GANHAR ITENS?*\n` +
   `  🛒 Comprar na loja: *!loja*\n` +
   `  📋 Completar missões: *!missao*\n\n` +
-  `Use *!comprar <item>* para começar!`;
+  `Use *!buy <item>* para começar!`;
 
 async function handleInventario(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;

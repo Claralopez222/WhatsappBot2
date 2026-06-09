@@ -555,8 +555,8 @@ const FILTROS = {
  * Aplica o filtro especificado na imagem ou vídeo recebido.
  * @param {string} filtro - Chave do filtro no mapa FILTROS
  */
-async function handleImageFilter(sock, msg, content, jid, filtro, getPrefix) {
-  const P = getPrefix(jid);
+async function handleImageFilter(sock, msg, content, jid, filtro, prefix) {
+  const P = prefix;
   const cfg = FILTROS[filtro];
 
   if (!cfg) {
@@ -805,8 +805,8 @@ async function handleSfundo(sock, msg, content, jid) {
 // !menuefeitos
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function handleMenuEfeitos(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+async function handleMenuEfeitos(sock, msg, jid, prefix) {
+  const P = prefix;
 
   // CORRIGIDO: filtros sem suporte a vídeo listados de forma precisa
   const semVideo = [

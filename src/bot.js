@@ -626,7 +626,7 @@ if (matchCmd(cmdWord, 'gold'))
     { await diversaoHandler.handleLojaTec(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'lojacasal'))
     { await diversaoHandler.handleLojaCasal(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'comprar'))
+  if (matchCmd(cmdWord, 'buy'))
     { await diversaoHandler.handleComprar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'vender'))
     { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }

@@ -5,7 +5,7 @@ const { handleMenu, handleMenuUtil, handleMenuJogos, handleMenuBaixar, handleMen
 const { handleMenuWork } = require(path.join(__dirname, '..', 'diversao', 'emprego'));
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { handleLevelOn, handleLevel, handleRankLevel } = require(path.join(__dirname, 'level'));
-const { handleSave, handleSaveRec, handleTiktok, handleAudioDownload, handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs, getFfmpegPath, getFfprobePath } = require(path.join(__dirname, 'downloads'));
+const { handleSave, handleSaveRec, handleTiktok, handleAudioDownload, handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs, getFfmpegPath, getFfprobePath } = require(path.join(__dirname, '..', 'downloads'));
 
 let logger = { level: 'silent' };
 let REMOVEBG_KEY = process.env.REMOVEBG_KEY || '';
@@ -133,7 +133,7 @@ async function handleClima(sock, msg, jid, caption) {
     const texto = `${emoji} *Clima em ${local}*\n\n🌡️ *Temperatura:* ${temp}°C\n🤔 *Sensação:* ${sens}°C\n💧 *Umidade:* ${umid}%\n💨 *Vento:* ${vento} km/h\n📋 *Condição:* ${desc}`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
+  } catch {
     await sock.sendMessage(jid, { text: `❌ Não consegui obter o clima de *${cidade}*.\nVerifique o nome da cidade.` }, { quoted: msg });
   }
 }
@@ -388,7 +388,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const alvoJid   = mentions[0] || contextInfo?.participant || senderJid;
 
-  // ── Resolver número real (suporte a @lid) ─────────────────────────────────
   let resolvedJid = alvoJid;
   let number      = extractNumber(alvoJid);
 
@@ -405,7 +404,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 
   const nome = contactNames?.[alvoJid] || contactNames?.[resolvedJid] || number;
 
-  // ── Dados do MongoDB ──────────────────────────────────────────────────────
   let userData = null;
   try {
     userData = await Usuario?.findOne({ idWhatsApp: resolvedJid });
@@ -421,7 +419,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     userGold = carteira?.gold ?? 0;
   } catch {}
 
-  // ── Level / XP ────────────────────────────────────────────────────────────
   const msgsRec = msgCount?.get?.(alvoJid)?.count ?? 0;
   const xp      = userData?.xp ?? msgsRec;
   const level   = userData?.level ?? (Math.floor(xp / 50) + 1);
@@ -430,7 +427,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   const barsOn  = Math.floor(xpPct / 10);
   const xpBar   = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
 
-  // ── Atividade ─────────────────────────────────────────────────────────────
   const cmdsRec = cmdCount?.get?.(alvoJid) ?? 0;
   const sticks  = stickerCount?.get?.(alvoJid) ?? 0;
   const total   = msgsRec + cmdsRec + sticks;
@@ -446,7 +442,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
   } catch {}
 
-  // ── Admin no grupo ────────────────────────────────────────────────────────
   let isAdmin   = false;
   let groupName = '';
   if (jid.endsWith('@g.us')) {
@@ -457,7 +452,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     } catch {}
   }
 
-  // ── Banco / investimento ──────────────────────────────────────────────────
   let bankText = '❌ Sem investimento ativo';
   try {
     if (userData?.bank?.amount > 0) {
@@ -468,7 +462,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // ── Missões diárias ───────────────────────────────────────────────────────
   let missaoText = '';
   try {
     const { dailyMissionDefinitions } = require('./missoes');
@@ -483,7 +476,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // ── Itens equipados ───────────────────────────────────────────────────────
   let equipRouboText = '❌ Nenhum';
   let equipSecText   = '❌ Nenhum';
   try {
@@ -491,7 +483,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     if (userData?.equiparsec)  equipSecText   = ITENS_SEGURANCA_NOMES[userData.equiparsec] || userData.equiparsec;
   } catch {}
 
-  // ── Pet ───────────────────────────────────────────────────────────────────
   let petText = '❌ Sem pet';
   try {
     if (userData?.pet?.name) {
@@ -502,7 +493,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // ── Aniversário ───────────────────────────────────────────────────────────
   let birthdayText = '';
   try {
     const dataPath = path.resolve(__dirname, '../../../data.json');
@@ -522,7 +512,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // ── Relacionamento ────────────────────────────────────────────────────────
   let relStatus = '💔 Solteiro(a)';
   try {
     if (relacionamentos) {
@@ -543,14 +532,12 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // ── Foto de perfil ────────────────────────────────────────────────────────
   let picBuffer = null;
   try {
     const url = await sock.profilePictureUrl(alvoJid, 'image');
     if (url) picBuffer = await fetchBuffer(url);
   } catch {}
 
-  // ── Montar texto ──────────────────────────────────────────────────────────
   const L = [];
   L.push(`🔎 *PERFIL DO USUÁRIO* 🔎`);
   L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
@@ -593,7 +580,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 
   const texto = L.join('\n');
 
-  // ── Enviar ────────────────────────────────────────────────────────────────
   try {
     if (picBuffer) {
       await sock.sendMessage(jid, { image: picBuffer, caption: texto }, { quoted: msg });

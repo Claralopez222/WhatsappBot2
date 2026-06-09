@@ -110,7 +110,7 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
   texto += `*COMANDOS:*\n`;
-  texto += `  ${P}comprarroubo <item> — Comprar item\n`;
+  texto += `  ${P}buyroubo <item> — Comprar item\n`;
   texto += `  ${P}equiparroubo <item> — Equipar item\n`;
   texto += `  ${P}meusitensroubo — Ver inventário de ataque\n`;
   texto += `  ${P}roubar @pessoa — Roubar alguém\n\n`;
@@ -136,7 +136,7 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
   texto += `*COMANDOS:*\n`;
-  texto += `  ${P}comprarsec <item> — Comprar item\n`;
+  texto += `  ${P}buysec <item> — Comprar item\n`;
   texto += `  ${P}equiparsec <item> — Equipar defesa\n`;
   texto += `  ${P}meussec — Ver inventário de segurança\n`;
   texto += `  ${P}meiosec — Ver defesa ativa\n\n`;

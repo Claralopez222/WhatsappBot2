@@ -47,6 +47,7 @@ function getTodayKey(senderJid) {
 // ─── BANCO DE DADOS ──────────────────────────────────────────────────────────
 
 async function syncQuizPointsFromDB(userId) {
+  if (!userId) return;
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId }).lean();
     if (user && typeof user.quizPoints === 'number') {
@@ -58,19 +59,23 @@ async function syncQuizPointsFromDB(userId) {
 }
 
 async function saveQuizPointsToDB(userId, pontos) {
+  if (!userId) return;
   try {
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       { $set: { quizPoints: pontos } },
       { upsert: true, new: true }
     );
-    console.log(`✅ Pontos salvos: ${userId} → ${pontos} pts`);
   } catch (e) {
     console.error('⚠️ Erro ao salvar pontos quiz no MongoDB:', e.message);
   }
 }
 
 async function changeGold(userId, amount) {
+  if (!userId || userId.endsWith('@lid')) {
+    console.warn('⚠️ changeGold ignorado: jid inválido:', userId);
+    return 0;
+  }
   try {
     if (amount > 0) await prepareDailyMissionState(userId);
     const update = { $inc: { gold: amount } };
@@ -298,91 +303,119 @@ const perguntasQuiz = [
   { p: '🏀 Em que ano a WNBA foi fundada?', r: '1996', d: 'Basquete' },
 ];
 
-// ─── HANDLE QUIZ ─────────────────────────────────────────────────────────────
-
 async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   await syncQuizPointsFromDB(senderJid);
+
+  // ── Resolver @lid para jid real
+  let resolvedJid = senderJid;
+  if (senderJid?.endsWith('@lid')) {
+    try {
+      const number = senderJid.split('@')[0].split(':')[0];
+      const results = await sock.onWhatsApp(number);
+      if (results?.length > 0 && results[0].jid) {
+        resolvedJid = results[0].jid;
+      }
+    } catch {
+      resolvedJid = senderJid; // mantém o original se falhar
+    }
+  }
 
   // ── Verificar se está respondendo uma pergunta ativa
   if (quizState.has(senderJid)) {
     const state = quizState.get(senderJid);
-    const resposta = normalize(
-      msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
-    );
-    const correta = normalize(state.r);
+
+    const textoRaw = caption ||
+      msg.message?.conversation ||
+      msg.message?.extendedTextMessage?.text ||
+      msg.message?.ephemeralMessage?.message?.conversation ||
+      msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text || '';
+
+    const resposta = normalize(textoRaw);
+    const correta  = normalize(state.r);
+
+    if (
+      textoRaw.startsWith('!') ||
+      textoRaw.startsWith('.') ||
+      textoRaw.startsWith('/') ||
+      textoRaw.startsWith(',')
+    ) {
+      return;
+    }
 
     clearTimeout(state.timeout);
     quizState.delete(senderJid);
 
-    if (!resposta) {
+    if (!resposta.trim()) {
       await sock.sendMessage(jid, {
-        text: `❌ Você deve enviar uma *resposta em texto*, não figurinha! 😅`,
+        text: `❌ Você deve enviar uma *resposta em texto*! 😅`,
       }, { quoted: msg });
       return;
     }
 
-    if (resposta.includes(correta) || correta.includes(resposta)) {
-      const pts = (pontosMap.get(senderJid) || 0) + 10;
-      pontosMap.set(senderJid, pts);
-      await saveQuizPointsToDB(senderJid, pts);
+    const respostasValidas = correta.split('/').map(r => r.trim()).filter(Boolean);
+    const acertou = respostasValidas.some(rv =>
+      resposta.includes(rv) || rv.includes(resposta)
+    );
+
+    if (acertou) {
+      const pts = (pontosMap.get(resolvedJid) || 0) + 10;  // ← corrigido
+      pontosMap.set(resolvedJid, pts);                      // ← corrigido
+      await saveQuizPointsToDB(resolvedJid, pts);           // ← corrigido
       const goldReward = 15;
-      await alterarGold(senderJid, jid, goldReward, 'Quiz vitória');
+      await changeGold(resolvedJid, goldReward);
 
       try {
-        await prepareDailyMissionState(senderJid);
+        await prepareDailyMissionState(resolvedJid);
         await Usuario.findOneAndUpdate(
-          { idWhatsApp: senderJid },
+          { idWhatsApp: resolvedJid },
           { $inc: { 'dailyMissions.progress.quiz5': 1 } }
         );
-        console.log(`✅ Missão quiz5 atualizada para ${senderJid}`);
       } catch (e) {
         console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message);
       }
 
       await sock.sendMessage(jid, {
-        text: `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n💰 *+10 pontos!* Total: *${pts} pts* ☁️\n💵 *+${goldReward} gold!*`,
+        text:
+          `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n` +
+          `💰 *+10 pontos!* Total: *${pts} pts* ☁️\n` +
+          `💵 *+${goldReward} gold!*`,
       }, { quoted: msg });
     } else {
       await sock.sendMessage(jid, {
-        text: `❌ *ERROU!* *${author}*!\n\nResposta correta era: *${state.r}* 😬`,
+        text:
+          `❌ *ERROU!* *${author}*!\n\n` +
+          `✅ Resposta correta: *${state.r}* 😬`,
       }, { quoted: msg });
     }
     return;
   }
 
   // ── Verificar limite diário de 10 quiz
-  const todayKey = getTodayKey(senderJid);
+  const todayKey  = getTodayKey(senderJid);
   const quizCount = quizDailyCount.get(todayKey) || 0;
 
   if (quizCount >= 10) {
     await sock.sendMessage(jid, {
-      text: `⚠️ *${author}*, você atingiu o limite de 10 quiz por dia! Volte amanhã! 😴`,
+      text: `⚠️ *${author}*, você atingiu o limite de *10 quiz por dia*! Volte amanhã! 😴`,
     }, { quoted: msg });
     return;
   }
 
   // ── Filtrar por categoria
-  const cmd = caption.trim().toLowerCase().split(' ')[0];
-  const cmdClean = cmd.replace(/^[!.,\/@]/, '');
-  let perguntasFiltradas = perguntasQuiz;
+  const cmdRaw   = caption.trim().toLowerCase().split(' ')[0];
+  const cmdClean = cmdRaw.replace(/^[!.,\/@]/, '');
 
-  if (cmdClean === 'quizfut') {
-    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Futebol');
-  } else if (cmdClean === 'quizctec') {
-    perguntasFiltradas = perguntasQuiz.filter(q =>
-      ['Ciência', 'Química', 'Física', 'Biologia', 'Astronomia', 'Tecnologia'].includes(q.d)
-    );
-  } else if (cmdClean === 'quizgeo') {
-    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Geografia');
-  } else if (cmdClean === 'quizmat') {
-    perguntasFiltradas = perguntasQuiz.filter(q =>
-      ['Matemática', 'Geometria', 'Cálculo', 'Estatística'].includes(q.d)
-    );
-  } else if (cmdClean === 'quizhis') {
-    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'História');
-  } else if (cmdClean === 'quizbsq') {
-    perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Basquete');
-  }
+  const categoriaMap = {
+    quizfut:  q => q.d === 'Futebol',
+    quizctec: q => ['Ciência', 'Química', 'Física', 'Biologia', 'Astronomia', 'Tecnologia'].includes(q.d),
+    quizgeo:  q => q.d === 'Geografia',
+    quizmat:  q => ['Matemática', 'Geometria', 'Cálculo', 'Estatística'].includes(q.d),
+    quizhis:  q => q.d === 'História',
+    quizbsq:  q => q.d === 'Basquete',
+  };
+
+  const filtro = categoriaMap[cmdClean];
+  const perguntasFiltradas = filtro ? perguntasQuiz.filter(filtro) : perguntasQuiz;
 
   if (perguntasFiltradas.length === 0) {
     await sock.sendMessage(jid, {
@@ -391,11 +424,11 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // ── Incrementar contador diário ANTES de sortear
+  // ── Incrementar contador diário
   quizDailyCount.set(todayKey, quizCount + 1);
 
-  // ── Sortear pergunta sem repetir recentemente (por usuário)
-  if (!global.recentQuiz) global.recentQuiz = {};
+  // ── Sortear pergunta sem repetir recentemente
+  if (!global.recentQuiz)            global.recentQuiz = {};
   if (!global.recentQuiz[senderJid]) global.recentQuiz[senderJid] = [];
 
   let q;
@@ -412,36 +445,76 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   global.recentQuiz[senderJid].push(q.p);
   if (global.recentQuiz[senderJid].length > 5) global.recentQuiz[senderJid].shift();
 
-  // ── Timeout de 30s para expirar a pergunta
+  // ── Timeout de 30s
   const timeout = setTimeout(() => {
-    quizState.delete(senderJid);
-    sock.sendMessage(jid, {
-      text: `⏰ Tempo esgotado, *${author}*!\n\nResposta correta era: *${q.r}* 😬`,
-    });
+    if (quizState.has(senderJid)) {
+      quizState.delete(senderJid);
+      sock.sendMessage(jid, {
+        text: `⏰ *Tempo esgotado*, *${author}*!\n\n✅ Resposta correta: *${q.r}* 😬`,
+      }).catch(() => {});
+    }
   }, 30000);
 
   quizState.set(senderJid, { r: q.r, timeout });
 
+  const restantes = 10 - quizCount - 1;
+
   await sock.sendMessage(jid, {
-    text: `🧠 *QUIZ — ${q.d.toUpperCase()}*\n\n❓ *${q.p}*\n\n_Você tem 30 segundos!_\n_Quiz ${quizCount + 1}/10 hoje_`,
+    text:
+      `🧠 *QUIZ — ${q.d.toUpperCase()}*\n\n` +
+      `❓ *${q.p}*\n\n` +
+      `⏱️ _Você tem 30 segundos!_\n` +
+      `📊 _Quiz ${quizCount + 1}/10 hoje · ${restantes} restante(s)_`,
   }, { quoted: msg });
 }
 
 // ─── !pontos ─────────────────────────────────────────────────────────────────
 
 async function handlePontos(sock, msg, jid, author, senderJid) {
-  await syncQuizPointsFromDB(senderJid);
-  const pts = pontosMap.get(senderJid) || 0;
-  const comentario =
-    pts === 0   ? 'Que inútil, nem um ponto ainda!' :
-    pts < 30    ? 'Tá fraco(a)! Joga mais!' :
-    pts < 80    ? 'Razoável, pode melhorar!' :
-    pts < 150   ? 'Bom desempenho! Continua!' :
-    pts < 250   ? 'Excelente! Quase lá!' :
-                  'MONSTRO! Que pontuação!';
+
+  // ── Resolver @lid para jid real
+  let resolvedJid = senderJid;
+  if (senderJid?.endsWith('@lid')) {
+    try {
+      const number = senderJid.split('@')[0].split(':')[0];
+      const results = await sock.onWhatsApp(number);
+      if (results?.length > 0 && results[0].jid) {
+        resolvedJid = results[0].jid;
+      }
+    } catch {
+      resolvedJid = senderJid;
+    }
+  }
+
+  await syncQuizPointsFromDB(resolvedJid);        // ← corrigido
+  const pts = pontosMap.get(resolvedJid) || 0;    // ← corrigido
+
+  const { emoji, titulo, comentario } =
+    pts === 0   ? { emoji: '😴', titulo: 'Novato',        comentario: 'Nem começou ainda... joga logo!' } :
+    pts < 30    ? { emoji: '😬', titulo: 'Iniciante',     comentario: 'Tá fraco(a)! Joga mais!' } :
+    pts < 80    ? { emoji: '🙂', titulo: 'Aprendiz',      comentario: 'Razoável, pode melhorar!' } :
+    pts < 150   ? { emoji: '😊', titulo: 'Intermediário', comentario: 'Bom desempenho! Continua assim!' } :
+    pts < 250   ? { emoji: '😎', titulo: 'Avançado',      comentario: 'Excelente! Quase no topo!' } :
+    pts < 500   ? { emoji: '🏆', titulo: 'Expert',        comentario: 'Impressionante! Você é bom(a)!' } :
+                  { emoji: '👑', titulo: 'LENDA',          comentario: 'MONSTRO! Que pontuação absurda!' };
+
+  // Barra de progresso
+  const niveis     = [0, 30, 80, 150, 250, 500, Infinity];
+  const nivelAtual = niveis.findIndex(n => pts < n) - 1;
+  const ptsBase    = niveis[Math.max(nivelAtual, 0)];
+  const ptsTopo    = niveis[Math.min(nivelAtual + 1, niveis.length - 1)];
+  const pct        = ptsTopo === Infinity ? 100 : Math.floor(((pts - ptsBase) / (ptsTopo - ptsBase)) * 100);
+  const barsOn     = Math.min(10, Math.floor(pct / 10));
+  const barra      = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
 
   await sock.sendMessage(jid, {
-    text: `🏅 *${author}*, você tem *${pts} pontos* no quiz! ☁️\n\n_${comentario}_`,
+    text:
+      `${emoji} *PONTUAÇÃO DE QUIZ*\n\n` +
+      `👤 *Jogador:* ${author}\n` +
+      `🏅 *Pontos:* ${pts} pts\n` +
+      `🎖️ *Rank:* ${titulo}\n\n` +
+      `📊 *Progresso:* [${barra}] ${pct}%\n\n` +
+      `💬 _${comentario}_`,
   }, { quoted: msg });
 }
 

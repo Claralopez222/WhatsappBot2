@@ -194,14 +194,17 @@ async function handle8ball(sock, msg, jid, caption) {
   await sock.sendMessage(jid, { text: `🎱 *${resp}*` }, { quoted: msg });
 }
 
-// ─── !ship
-async function handleShip(sock, msg, content, jid, author, contactNames) {
+// ─── !ship ────────────────────────────────────────────────────────────────────
+async function handleShip(sock, msg, content, jid, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const mencionados = contextInfo?.mentionedJid || [];
 
   if (mencionados.length < 2) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Marca duas pessoas!\nExemplo: *!ship @fulano @ciclano*',
+      text:
+        `💘 *SHIP* 💘\n\n` +
+        `⚠️ Você precisa marcar *duas pessoas*!\n\n` +
+        `*Exemplo:* !ship @fulano @ciclano`,
     }, { quoted: msg });
     return;
   }
@@ -209,17 +212,32 @@ async function handleShip(sock, msg, content, jid, author, contactNames) {
   const [jid1, jid2] = mencionados;
   const nome1 = contactNames?.[jid1] || `@${jid1.split('@')[0]}`;
   const nome2 = contactNames?.[jid2] || `@${jid2.split('@')[0]}`;
-  const pct = Math.floor(Math.random() * 101);
-  const barra = buildBar(pct, '💘');
 
-  let comentario;
-  if (pct <= 20)      comentario = 'Nem em universo paralelo... 💀';
-  else if (pct <= 50) comentario = 'Uma amizade improvável, mas possível! 🤝';
-  else if (pct <= 80) comentario = 'Esse ship tem potencial! 👀🔥';
-  else                comentario = 'SHIP CONFIRMADO! Alguém avisa logo! 💍✨';
+  // Nome do casal combinado
+  const metade1 = nome1.slice(0, Math.ceil(nome1.length / 2));
+  const metade2 = nome2.slice(Math.floor(nome2.length / 2));
+  const nomeShip = (metade1 + metade2).toLowerCase();
+
+  const pct    = Math.floor(Math.random() * 101);
+  const barra  = buildBar(pct, '💘');
+
+  const { emoji, comentario } =
+    pct <= 10  ? { emoji: '💀', comentario: 'Nem em universo paralelo... é um desastre!' } :
+    pct <= 25  ? { emoji: '😬', comentario: 'Muito difícil... melhor nem tentar!' } :
+    pct <= 40  ? { emoji: '🤷', comentario: 'Tem mais chance de virar amizade do que namoro.' } :
+    pct <= 55  ? { emoji: '🤝', comentario: 'Uma amizade improvável, mas possível!' } :
+    pct <= 70  ? { emoji: '👀', comentario: 'Esse ship tem potencial, alguém incentiva!' } :
+    pct <= 85  ? { emoji: '🔥', comentario: 'Tá pegando fogo esse ship! Vai em frente!' } :
+    pct <= 95  ? { emoji: '💍', comentario: 'SHIP CONFIRMADO! Alguém avisa logo!' } :
+                 { emoji: '👑', comentario: 'AMOR PERFEITO! Feitos um pro outro! 🌹' };
 
   await sock.sendMessage(jid, {
-    text: `💘 *SHIP* 💘\n\n*${nome1}* 💞 *${nome2}*\n\n${barra} *${pct}%*\n\n_${comentario}_`,
+    text:
+      `💘 *SHIP* 💘\n\n` +
+      `*${nome1}* 💞 *${nome2}*\n` +
+      `🏷️ *Nome do casal:* _${nomeShip}_\n\n` +
+      `${barra} *${pct}%* ${emoji}\n\n` +
+      `💬 _${comentario}_`,
     mentions: [jid1, jid2],
   }, { quoted: msg });
 }
@@ -250,38 +268,63 @@ async function handleRolar(sock, msg, content, jid, author) {
   }, { quoted: msg });
 }
 
-// ─── !xingar
+// ─── !xingar ──────────────────────────────────────────────────────────────────
 async function handleXingar(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
-  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
   const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
   const display = mentionedJid ? nome : author;
 
-  const xingamentos = [
-    'Seu pé de pano! 🧦',
-    'Mala sem alça! 🧳',
-    'Lesma com chapéu! 🐌',
-    'Pé frio ambulante! 🧊',
-    'Pastel de vento! 🥟',
-    'Banana mole! 🍌',
-    'Queijo derretido! 🧀',
-    'Bolacha murcha! 🍪',
-    'Esponja ressecada! 🧽',
-    'Abacaxi sem graça! 🍍',
-  ];
+    const xingamentos = [
+  // 🍑 Picantes mas engraçados
+  'Viado sem graça! 🏳️‍🌈',
+  'Corno feliz! 🦌',
+  'Arrombado(a) de primeira viagem! 🚪',
+  'Filho(a) de uma égua! 🐴',
+  'Bosta embrulhada em celofane! 🎁',
+  'Otário(a) com diploma! 🎓',
+  'Porra nenhuma em forma humana! 💀',
+  'Cu de frango assado! 🍗',
+  'Merda com perna! 💩',
+  'Inútil até pra encher linguiça! 🌭',
+  'Babaca de carteirinha! 💳',
+  'Idiota com WiFi! 📶',
+  'Bundão com autoestima! 🍑',
+  'Trouxa graduado(a)! 🎓',
+  'Palhaço(a) sem circo! 🤡',
+  'Lixo com pretensão! 🗑️',
+  'Cretino(a) de luxo! 💎',
+  'Imbecil com charme! ✨',
+  'Retardado(a) funcional! 🧠',
+  'Bocó com celular novo! 📱',
+  'Pateta profissional! 🤪',
+  'Panaca com aspirações! 🚀',
+  'Zé mané evoluído! 🦧',
+  'Energúmeno(a) simpático(a)! 😊',
+  'Jumento(a) alfabetizado(a)! 🫏',
+  'Animal irracional com conta no Insta! 🐒',
+  'Desgraçado(a) querido(a)! 🥰',
+  'Vagabundo(a) com horário! ⏰',
+  'Lazarento(a) cheiroso(a)! 🌸',
+  'Safado(a) sem coragem! 😏',
+];
+
 
   const xingamento = xingamentos[Math.floor(Math.random() * xingamentos.length)];
 
   await sock.sendMessage(jid, {
-    text: `🤬 *${display.toUpperCase()}*, você é um(a) *${xingamento}*\n\n_Só na brincadeira! 😂_`,
+    text:
+      `🤬 *${display.toUpperCase()}*, você é um(a):\n\n` +
+      `*${xingamento}*\n\n` +
+      `_Só na brincadeira, não leva a sério! 😂_`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
 
-// ─── !elogio
+// ─── !elogio ──────────────────────────────────────────────────────────────────
 async function handleElogio(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
-  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
   const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
   const display = mentionedJid ? nome : author;
 
@@ -294,19 +337,32 @@ async function handleElogio(sock, msg, content, jid, author, contactNames) {
     { emoji: '❤️', texto: 'Uma das pessoas mais generosas que existem.' },
     { emoji: '🚀', texto: 'Vai longe! O sucesso é inevitável pra você.' },
     { emoji: '🌈', texto: 'Alegra o dia de todos ao redor simplesmente existindo.' },
+    { emoji: '🧠', texto: 'Resolve qualquer problema com uma facilidade absurda.' },
+    { emoji: '🎯', texto: 'Quando foca em algo, não tem quem pare!' },
+    { emoji: '🌺', texto: 'Tem uma energia que contagia todo mundo positivamente.' },
+    { emoji: '💎', texto: 'Uma pessoa rara — dessas que aparecem uma vez na vida.' },
+    { emoji: '🦁', texto: 'Tem coragem pra encarar qualquer desafio de frente.' },
+    { emoji: '🎵', texto: 'Deixa tudo ao redor mais bonito só com sua presença.' },
+    { emoji: '🌙', texto: 'Brilha mesmo nas situações mais difíceis.' },
+    { emoji: '🤝', texto: 'É o tipo de pessoa que nunca abandona quem precisa.' },
+    { emoji: '⭐', texto: 'Uma estrela que ninguém consegue apagar.' },
+    { emoji: '🍀', texto: 'Quem te tem por perto tem muita sorte!' },
   ];
 
   const { emoji, texto } = elogios[Math.floor(Math.random() * elogios.length)];
 
   await sock.sendMessage(jid, {
-    text: `💐 *ELOGIO PARA ${display.toUpperCase()}* 💐\n\n${emoji} _${texto}_\n\n_Elogio 100% verdadeiro e merecido! ✨_`,
+    text:
+      `💐 *ELOGIO PARA ${display.toUpperCase()}* 💐\n\n` +
+      `${emoji} _${texto}_\n\n` +
+      `_Elogio 100% verdadeiro e merecido! ✨_`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
 
-// ─── !crush
+// ─── !crush ───────────────────────────────────────────────────────────────────
 async function handleCrush(sock, msg, content, jid, author, contactNames) {
-  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const contextInfo  = content?.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
 
   if (!mentionedJid) {
@@ -325,25 +381,34 @@ async function handleCrush(sock, msg, content, jid, author, contactNames) {
   }
 
   const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
-  const chance = Math.floor(Math.random() * 101);
+  const chance   = Math.floor(Math.random() * 101);
 
-  let emoji, resposta;
-  if (chance <= 20)      { emoji = '💔'; resposta = 'Não vai rolar... Parte pra próxima! 😬'; }
-  else if (chance <= 50) { emoji = '🤷'; resposta = 'Talvez! Ninguém sabe. Tenta a sorte! 😅'; }
-  else if (chance <= 80) { emoji = '💕'; resposta = 'Tem uma boa chance! Vai lá falar com ele(a)! 👀'; }
-  else                   { emoji = '💍'; resposta = 'Casamento confirmado pelo universo! 😍✨'; }
+  const { emoji, resposta } =
+    chance <= 10  ? { emoji: '💀', resposta: 'Nem em sonho vai rolar... Desiste logo!' } :
+    chance <= 25  ? { emoji: '💔', resposta: 'Não vai rolar. Parte pra próxima! 😬' } :
+    chance <= 45  ? { emoji: '🤷', resposta: 'Talvez! Ninguém sabe. Tenta a sorte! 😅' } :
+    chance <= 65  ? { emoji: '💕', resposta: 'Tem uma boa chance! Vai lá falar com ele(a)! 👀' } :
+    chance <= 85  ? { emoji: '🔥', resposta: 'Tá pegando fogo! Só falta dar o primeiro passo!' } :
+    chance <= 99  ? { emoji: '💍', resposta: 'Casamento confirmado pelo universo! 😍✨' } :
+                    { emoji: '👑', resposta: 'ALMA GÊMEA! Escritos nas estrelas! 🌟' };
+
+  const barra = buildBar(chance, '💘');
 
   await sock.sendMessage(jid, {
-    text: `💘 *CRUSH REPORT* 💘\n\n*${author}* tem crush em *${nomeAlvo}*\n\n${emoji} Chance de dar certo: *${chance}%*\n\n_${resposta}_`,
+    text:
+      `💘 *CRUSH REPORT* 💘\n\n` +
+      `*${author}* tem crush em *${nomeAlvo}*\n\n` +
+      `${barra} *${chance}%* ${emoji}\n\n` +
+      `💬 _${resposta}_`,
     mentions: [mentionedJid],
   }, { quoted: msg });
 }
 
-// ─── !cantada
+// ─── !cantada ─────────────────────────────────────────────────────────────────
 async function handleCantada(sock, msg, content, jid, author, contactNames) {
-  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const contextInfo  = content?.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
-  const nomeAlvo = mentionedJid
+  const nomeAlvo     = mentionedJid
     ? (contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`)
     : null;
 
@@ -356,42 +421,71 @@ async function handleCantada(sock, msg, content, jid, author, contactNames) {
     'Se beleza fosse crime, você estaria preso(a) há anos. 🔒',
     'Você é Google? Porque tem tudo que eu tava procurando. 🔍',
     'Seu pai é ladrão? Porque você roubou meu coração. 💔',
+    'Você é anestesista? Porque me deixou completamente apaixonado(a). 💉',
+    'Sabe programar? Porque você travou meu coração com um bug de amor. 💻',
+    'Você é um alarme? Porque você é a primeira coisa que quero ver de manhã. ⏰',
+    'É de outro planeta? Porque uma pessoa assim não existe na Terra. 🪐',
+    'Você é espelho? Porque me vejo com você. 🪞',
+    'Sabe fazer macarrão? Porque você é macarrão. 🍝',
+    'Você é elevador? Porque me eleva só de te ver. 🛗',
+    'É músico(a)? Porque você tem o ritmo do meu coração. 🎵',
+    'Você gosta de redes sociais? Porque você tem todos os meus likes. ❤️',
+    'É médico(a)? Porque meu coração acelera quando você aparece. 💓',
+    'Você é wi-fi? Porque sinto sua conexão de longe. 📡',
+    'É padeiro(a)? Porque você é um pão. 🍞',
   ];
 
   const cantada = cantadas[Math.floor(Math.random() * cantadas.length)];
   const destino = nomeAlvo ? ` para *${nomeAlvo}*` : '';
 
+  const reacoes = [
+    '😏 Funcionou ou deu cringe?',
+    '🤡 Pode apostar que não vai funcionar.',
+    '😂 Quem escreveu isso merece um prêmio.',
+    '👀 Aguardando a resposta...',
+    '🫣 Coragem! Pelo menos tentou!',
+  ];
+
+  const reacao = reacoes[Math.floor(Math.random() * reacoes.length)];
+
   await sock.sendMessage(jid, {
-    text: `💋 *CANTADA${destino ? ` DE ${author.toUpperCase()}` : ''}*${destino}\n\n_"${cantada}"_\n\n😏 Achou que funcionaria?`,
+    text:
+      `💋 *CANTADA${destino ? ` DE ${author.toUpperCase()}` : ''}*${destino}\n\n` +
+      `_"${cantada}"_\n\n` +
+      `${reacao}`,
     mentions: mentionedJid ? [mentionedJid] : [],
   }, { quoted: msg });
 }
 
-// ─── !safadeza
+// ─── !safadeza ────────────────────────────────────────────────────────────────
 async function handleSafadeza(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
-  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
   const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
-  const pct = Math.floor(Math.random() * 101);
-
-  let emoji, frase;
-  if (pct <= 10)      { emoji = '😇'; frase = 'Santinho(a)! Nem sabe o que é safadeza!'; }
-  else if (pct <= 30) { emoji = '😊'; frase = 'Inocentinho(a), mas com um olhar suspeito! 👀'; }
-  else if (pct <= 50) { emoji = '😏'; frase = 'Na média! Safado(a) na medida certa! 😂'; }
-  else if (pct <= 70) { emoji = '🔥'; frase = 'Bastante safado(a)! Todo mundo já desconfia!'; }
-  else if (pct <= 89) { emoji = '😈'; frase = 'Muito safado(a)! Uma lenda viva do grupo!'; }
-  else if (pct <= 99) { emoji = '👹'; frase = 'Quase 100%! Deveria ter vergonha... mas não tem!'; }
-  else                { emoji = '🏆'; frase = '100% SAFADO(A)! Campeão(ã) absoluto(a)! 🎊'; }
-
-  const barra = buildBar(pct, '🟥');
+  const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
+  const { emoji, frase } =
+    pct <= 10  ? { emoji: '😇', frase: 'Santinho(a)! Nem sabe o que é safadeza!' } :
+    pct <= 25  ? { emoji: '🥺', frase: 'Inocentinho(a) demais! Precisa se soltar!' } :
+    pct <= 40  ? { emoji: '😊', frase: 'Certinho(a) por fora, mas tem um olhar suspeito! 👀' } :
+    pct <= 55  ? { emoji: '😏', frase: 'Na média! Safado(a) na medida certa!' } :
+    pct <= 70  ? { emoji: '🔥', frase: 'Bastante safado(a)! Todo mundo já desconfia!' } :
+    pct <= 84  ? { emoji: '😈', frase: 'Muito safado(a)! Uma lenda viva do grupo!' } :
+    pct <= 92  ? { emoji: '👹', frase: 'Nível absurdo! Deveria ter vergonha... mas não tem!' } :
+    pct <= 99  ? { emoji: '☠️', frase: 'PERIGO EXTREMO! Fuja enquanto é tempo!' } :
+                 { emoji: '🏆', frase: '100% SAFADO(A)! Campeão(ã) absoluto(a) do grupo! 🎊' };
+
+  const barra = buildBar(pct, '🟥');
+
   await sock.sendMessage(jid, {
-    text: `${emoji} *SAFADÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    text:
+      `${emoji} *SAFADÔMETRO DE ${display.toUpperCase()}* ${emoji}\n\n` +
+      `${barra} *${pct}%*\n\n` +
+      `💬 _${frase}_`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
-
 // ─── !tiro
 async function handleTiro(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
@@ -417,22 +511,36 @@ async function handleMorte(sock, msg, content, jid, author, contactNames) {
   const idade = Math.floor(Math.random() * 81) + 20;
 
   const causas = [
-    'escorregou numa casca de banana 🍌',
-    'foi vencido(a) num duelo de olhar fixo com um pombo 🐦',
-    'morreu de vergonha alheia assistindo cringe 😬',
-    'engasgou com a própria riqueza 💸',
-    'foi derrubado(a) por um Roomba descontrolado 🤖',
-    'teve overdose de memes ruins 💀',
-    'morreu esperando o WiFi conectar 📶',
-    'foi derrotado(a) por um Lego no escuro 🧱',
-    'sucumbiu à preguiça extrema 🦥',
-    'pereceu assistindo série até o amanhecer 📺',
+    'escorregou numa casca de banana e foi de base 🍌',
+    'morreu de vergonha alheia assistindo o próprio histórico do YouTube 📱',
+    'foi vencido(a) num duelo de olhar com um pombo e perdeu 🐦',
+    'engasgou tentando explicar que não é burro(a) 🧠',
+    'foi derrubado(a) por um Roomba com raiva 🤖',
+    'overdose de meme ruim no grupo da família 💀',
+    'morreu esperando o Pix cair 🏦',
+    'pisou no Lego às 3 da manhã e o coração não aguentou 🧱',
+    'morreu de preguiça mesmo, literalmente 🦥',
+    'assistiu série até o sol nascer e o corpo desistiu 📺',
+    'morreu tentando entender a conta de luz 📄',
+    'foi atropelado(a) por carrinho de mercado descontrolado 🛒',
+    'morreu de tédio numa reunião que poderia ser e-mail 💼',
+    'tomou um susto com notificação de ex e parou o coração 📲',
+    'foi fulminado(a) por raio enquanto procurava sinal de internet 📶',
+    'morreu lendo briga política no Twitter 🐦',
+    'sufocou tentando abrir embalagem lacrada 📦',
+    'morreu de fome esperando a pizza chegar 🍕',
+    'foi eliminado(a) pelo próprio antivírus 🦠',
+    'morreu de susto quando o carregador chegou em 1% 🔋',
   ];
 
   const causa = causas[Math.floor(Math.random() * causas.length)];
 
   await sock.sendMessage(jid, {
-    text: `💀 *PREVISÃO DE MORTE* 💀\n\n*${display}* vai morrer aos *${idade} anos*...\n\n⚰️ _Causa: ${causa}_\n\n_Que Deus tenha misericórdia! 🙏_`,
+    text:
+      `💀 *PREVISÃO DE MORTE* 💀\n\n` +
+      `*${display}* vai bater as botas aos *${idade} anos*\n\n` +
+      `⚰️ _Causa mortis: ${causa}_\n\n` +
+      `_Que Deus tenha misericórdia dessa alma perdida 🙏_`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
@@ -441,16 +549,30 @@ async function handleMorte(sock, msg, content, jid, author, contactNames) {
 async function handleRoletaRussa(sock, msg, content, jid, author) {
   const morreu = Math.random() < 1 / 6;
 
+  const frasesMorte = [
+    `*${author}* colocou na cabeça, fechou o olho e... *BANG! 💥*\n\n☠️ _foi pro saco. Descanse em paz, otário(a)._`,
+    `*${author}* girou o tambor cheio de confiança e... *BANG! 💥*\n\n💀 _confiou demais. Tchau!_`,
+    `*${author}* rezou, soprou, girou e... *BANG! 💥*\n\n⚰️ _nem a reza ajudou. Vai com Deus._`,
+  ];
+
+  const frasesSobreviveu = [
+    `*${author}* girou o tambor tremendo e... *CLIQUE! 😅*\n\n✅ _sem bala! Dessa vez escapou, sortudo(a)._`,
+    `*${author}* fechou o olho, esperou o fim e... *CLIQUE! 😅*\n\n😂 _tá vivo(a), acredita? Aproveita enquanto dura._`,
+    `*${author}* quase mijou de medo e... *CLIQUE! 😅*\n\n🎉 _sobreviveu! Mas o susto ficou._`,
+  ];
+
+  const frase = morreu
+    ? frasesMorte[Math.floor(Math.random() * frasesMorte.length)]
+    : frasesSobreviveu[Math.floor(Math.random() * frasesSobreviveu.length)];
+
   await sock.sendMessage(jid, {
-    text: morreu
-      ? `🔫 *ROLETA RUSSA* 🔫\n\n*${author}* girou o tambor... *BANG! 💥*\n\n☠️ _A bala estava lá. Descanse em paz!_`
-      : `🔫 *ROLETA RUSSA* 🔫\n\n*${author}* girou o tambor... *CLIQUE! 😅*\n\n✅ _Sem bala! Você sobreviveu por enquanto..._`,
+    text: `🔫 *ROLETA RUSSA* 🔫\n\n${frase}`,
   }, { quoted: msg });
 }
 
 // ─── !roletarussa2 (com menção)
 async function handleRoletaRussa2(sock, msg, content, jid, author, contactNames) {
-  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const contextInfo  = content?.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
 
   if (!mentionedJid) {
@@ -461,24 +583,66 @@ async function handleRoletaRussa2(sock, msg, content, jid, author, contactNames)
   }
 
   const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
-  const morreu = Math.random() < 1 / 6;
+  const morreu   = Math.random() < 1 / 6;
+
+  const frasesMorte = [
+    `*${author}* apontou pra @${mentionedJid.split('@')[0]} sem dó e... *BANG! 💥*\n\n☠️ _foi pro outro lado. Brutal._`,
+    `*${author}* olhou nos olhos de @${mentionedJid.split('@')[0]}, sorriu e... *BANG! 💥*\n\n💀 _não vai lembrar de nada._`,
+    `*${author}* disse "confia em mim" pra @${mentionedJid.split('@')[0]} e... *BANG! 💥*\n\n⚰️ _confiou. Erro fatal._`,
+  ];
+
+  const frasesSobreviveu = [
+    `*${author}* apontou pra @${mentionedJid.split('@')[0]} e... *CLIQUE! 😅*\n\n✅ _sobreviveu! Dessa vez._`,
+    `*${author}* tentou se livrar de @${mentionedJid.split('@')[0]} e... *CLIQUE! 😅*\n\n😂 _não foi dessa vez. Ainda tá aqui pra encher o saco._`,
+    `*${author}* apontou cheio de confiança e... *CLIQUE! 😅*\n\n🎉 @${mentionedJid.split('@')[0]} _escapou! O universo protegeu._`,
+  ];
+
+  const frase = morreu
+    ? frasesMorte[Math.floor(Math.random() * frasesMorte.length)]
+    : frasesSobreviveu[Math.floor(Math.random() * frasesSobreviveu.length)];
 
   await sock.sendMessage(jid, {
-    text: morreu
-      ? `🔫 *ROLETA RUSSA* 🔫\n\n*${author}* apontou pra *${nomeAlvo}*... *BANG! 💥*\n\n☠️ _${nomeAlvo} foi pro outro lado!_`
-      : `🔫 *ROLETA RUSSA* 🔫\n\n*${author}* apontou pra *${nomeAlvo}*... *CLIQUE! 😅*\n\n✅ _${nomeAlvo} sobreviveu por pouco!_`,
+    text: `🔫 *ROLETA RUSSA* 🔫\n\n${frase}`,
     mentions: [mentionedJid],
   }, { quoted: msg });
 }
 
-// ─── !roletarussa3 (grupo inteiro — substitua membros pela lógica real do seu bot)
-async function handleRoletaRussa3(sock, msg, content, jid, author) {
-  const membros = ['@fulano', '@ciclano', '@beltrano'];
-  const vitima = membros[Math.floor(Math.random() * membros.length)];
+// ─── !roletarussa3 (grupo inteiro)
+async function handleRoletaRussa3(sock, msg, jid, author, senderJid) {
+  try {
+    const meta    = await sock.groupMetadata(jid);
+    const membros = meta.participants
+      .map(p => p.id)
+      .filter(id => id !== senderJid);
 
-  await sock.sendMessage(jid, {
-    text: `🔫 *ROLETA RUSSA NO GRUPO* 🔫\n\nO tambor girou entre todos...\n\n💥 *BANG!* A bala pegou *${vitima}*!\n\n☠️ _Que descanse em paz!_`,
-  }, { quoted: msg });
+    if (!membros.length) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Não tem ninguém aqui pra morrer além de você!',
+      }, { quoted: msg });
+      return;
+    }
+
+    const vitimaJid = membros[Math.floor(Math.random() * membros.length)];
+    const mention   = `@${vitimaJid.split('@')[0]}`;
+
+    const frases = [
+      `O tambor girou entre todo mundo...\n\n💥 *BANG!* A bala pegou ${mention}!\n\n☠️ _Vai com Deus, otário(a)._`,
+      `Todo mundo rezando e o destino escolheu...\n\n💥 *BANG!* Direto em ${mention}!\n\n💀 _O grupo agradece pelo sacrifício._`,
+      `Silêncio total, tambor girando e...\n\n💥 *BANG!* ${mention} levou!\n\n⚰️ _Nem viu vir. Descanse em paz._`,
+    ];
+
+    const frase = frases[Math.floor(Math.random() * frases.length)];
+
+    await sock.sendMessage(jid, {
+      text: `🔫 *ROLETA RUSSA NO GRUPO* 🔫\n\n${frase}`,
+      mentions: [vitimaJid],
+    }, { quoted: msg });
+
+  } catch {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Só funciona em grupos!',
+    }, { quoted: msg });
+  }
 }
 
 // ─── !falta
@@ -527,10 +691,11 @@ async function handleBaterFalta(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// ─── !eununca
+// ─── !eununca ─────────────────────────────────────────────────────────────────
 async function handleEuNunca(sock, msg, content, jid) {
   const frases = [
-    'Eu nunca fiz xixi na piscina... 🏊',
+    // 😅 Cotidiano
+    'Eu nunca fiz xixi na piscina. 🏊',
     'Eu nunca menti pro dentista dizendo que escovo 3x ao dia. 🦷',
     'Eu nunca fingi que não vi a mensagem. 📵',
     'Eu nunca ri de algo inapropriado no pior momento. 😬',
@@ -540,12 +705,66 @@ async function handleEuNunca(sock, msg, content, jid) {
     'Eu nunca fui dormir sem escovar os dentes. 😴',
     'Eu nunca comprei algo por impulso e me arrependi. 🛍️',
     'Eu nunca tirei a roupa da máquina depois de 3 dias. 👕',
+    'Eu nunca fingi estar ocupado pra não ir a algum lugar. 🙄',
+    'Eu nunca respondi "a caminho" estando ainda em casa. 🏠',
+    'Eu nunca fui ao banheiro só pra fugir de uma situação chata. 🚽',
+    'Eu nunca mandei áudio de mais de 5 minutos. 🎤',
+    'Eu nunca stalkeei o perfil de alguém por mais de 30 minutos. 👀',
+    'Eu nunca guardei comida no quarto escondido. 🍫',
+    'Eu nunca chorei assistindo a um filme animado. 🥺',
+    'Eu nunca fiz as unhas e estraguei logo em seguida. 💅',
+    'Eu nunca cantei errado uma música por anos sem perceber. 🎵',
+    'Eu nunca mandei mensagem pra pessoa errada. 😰',
+
+    // 😏 Relacionamentos
+    'Eu nunca fiquei com mais de uma pessoa no mesmo dia. 💘',
+    'Eu nunca inventei desculpa pra terminar com alguém. 💔',
+    'Eu nunca bisbilhotei o celular de alguém. 📱',
+    'Eu nunca fingi gostar de algo só pra impressionar alguém. 😏',
+    'Eu nunca mandei mensagem no zap pra alguém que estava do lado. 🤫',
+    'Eu nunca fiquei com o ex(a) depois de terminar. 🔁',
+    'Eu nunca dei like sem querer em foto antiga de alguém que eu stalkeava. 😱',
+    'Eu nunca inventei que tava doente pra não ver alguém. 🤒',
+
+    // 🍻 Balada / Festa
+    'Eu nunca bebi e fiz algo que me arrependi no dia seguinte. 🍺',
+    'Eu nunca dancei em cima de mesa. 🕺',
+    'Eu nunca acordei sem lembrar como cheguei em casa. 😵',
+    'Eu nunca perdi um sapato na festa. 👟',
+    'Eu nunca chorei bêbado(a) sem motivo aparente. 😭',
+    'Eu nunca mandei mensagem comprometedora de madrugada. 🌙',
+    'Eu nunca jurei que não ia beber e bebeu assim mesmo. 🍻',
+
+    // 💻 Tech / Redes sociais
+    'Eu nunca postei foto editada demais e disse que era natural. 📸',
+    'Eu nunca fingi não ter internet pra não responder alguém. 📶',
+    'Eu nunca passei mais de 3 horas no TikTok sem perceber. 📱',
+    'Eu nunca criei conta fake só pra ver o perfil de alguém. 🕵️',
+    'Eu nunca comprei seguidores. 📊',
+    'Eu nunca deletei foto por ter pouco like. 🗑️',
+
+    // 🏫 Escola / Trabalho
+    'Eu nunca copiei tarefa de alguém na última hora. 📝',
+    'Eu nunca dormi na aula e acordei com a turma olhando. 😴',
+    'Eu nunca mandei mensagem pro chefe dizendo que tava doente estando saudável. 🤧',
+    'Eu nunca colei na prova. ✏️',
+    'Eu nunca fiz trabalho em grupo sozinho enquanto os outros sumiam. 😤',
   ];
 
   const frase = frases[Math.floor(Math.random() * frases.length)];
 
+  const reacoes = [
+    '👆 Quem já fez, bebe! 🍺',
+    '🍹 Quem já fez isso toma um gole!',
+    '😂 Quem se identificou, bebe dobrado!',
+    '🫵 Tô te olhando... bebe!',
+    '🍻 Quem já fez levanta a mão... e bebe!',
+  ];
+
+  const reacao = reacoes[Math.floor(Math.random() * reacoes.length)];
+
   await sock.sendMessage(jid, {
-    text: `🙈 *EU NUNCA...* 🙈\n\n_"${frase}"_\n\n👆 Quem já fez, bebe! 🍺`,
+    text: `🙈 *EU NUNCA...* 🙈\n\n_"${frase}"_\n\n${reacao}`,
   }, { quoted: msg });
 }
 

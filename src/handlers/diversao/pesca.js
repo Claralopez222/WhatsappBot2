@@ -459,10 +459,10 @@ async function handleInventarioPesca(sock, msg, jid) {
   }
 }
 
-// ─── !venderpesca ─────────────────────────────────────────────────────────────
+// ─── !sellpesca ─────────────────────────────────────────────────────────────
 
 /**
- * !venderpesca <item> [quantidade]
+ * !sellpesca <item> [quantidade]
  * Vende itens pescados por CONFIG_PESCA.PERCENTUAL_VENDA do valor base.
  * Varas e iscas não podem ser vendidas por este comando.
  */
@@ -482,8 +482,8 @@ async function handleVenderPesca(sock, msg, jid, caption) {
   if (!itemKey) {
     return reply(sock, jid, msg,
       `💵 *VENDER ITEM DE PESCA*\n\n` +
-      `Uso: *!venderpesca <item> [quantidade]*\n` +
-      `Exemplo: *!venderpesca peixe_pequeno 5*\n\n` +
+      `Uso: *!sellpesca <item> [quantidade]*\n` +
+      `Exemplo: *!sellpesca peixe_pequeno 5*\n\n` +
       `📦 Ver seus itens: *!inventariopesca*`
     );
   }

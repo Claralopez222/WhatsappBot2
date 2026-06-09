@@ -1038,13 +1038,7 @@ app.get('/', (req, res) => res.send('Bot Online!'));
 app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));
 
 // ─── Servidor Web ─────────────────────────────────────────────────────────────
-const express = require('express');
-const app  = express();
-const port = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('Bot Online!'));
-
-app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));
 
 // ─── Iniciar (apenas uma vez) ─────────────────────────────────────────────────
 async function main() {

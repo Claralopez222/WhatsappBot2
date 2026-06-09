@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
-const { fetchBuffer } = require(path.join(__dirname, '..', '..', 'fetchurl'));
-const { convertVideoToSticker } = require(path.join(__dirname, '..', '..', 'sticker'));
+const { fetchBuffer } = require(path.join(__dirname, '..', 'fetchurl'));
+const { convertVideoToSticker } = require(path.join(__dirname, '..', 'sticker'));
 
 let _cachedYtDlpPath = null;
 let _cachedFfmpegPath = null;

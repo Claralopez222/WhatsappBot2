@@ -302,16 +302,8 @@ function getSenderName(msg) {
   return msg.pushName || msg.key.remoteJid?.split('@')[0] || 'Usuário';
 }
 
-
-// ═══════════════════════════════════════════════════════════════
-// ─── INICIALIZAR BOT ──────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 async function startBot() {
-  const { state, saveCreds } = await useMongoAuthState();
-  const { version }          = await fetchLatestBaileysVersion();
-
-  console.log(`\n🤖 Iniciando bot com Baileys v${version.join('.')}\n`);
+  // 1️⃣ MongoDB PRIMEIRO
   try {
     const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/piroquinhas';
     mongoose.set('strictQuery', false);
@@ -321,7 +313,14 @@ async function startBot() {
     await loadRelationshipsFromDb();
   } catch (e) {
     console.error('❌ Erro ao inicializar MongoDB:', e.message);
+    process.exit(1); // para não continuar sem banco
   }
+
+  // 2️⃣ Auth e versão DEPOIS do MongoDB
+  const { state, saveCreds } = await useMongoAuthState();
+  const { version }          = await fetchLatestBaileysVersion();
+
+  console.log(`\n🤖 Iniciando bot com Baileys v${version.join('.')}\n`);
 
   const sock = makeWASocket({
     version,
@@ -426,6 +425,7 @@ async function startBot() {
       }
     }
   });
+}
 
   // ── Conexão ───────────────────────────────────────────────────
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
@@ -445,7 +445,7 @@ async function startBot() {
     }
   });
 
-} // ← fim de startBot()
+ // ← fim de startBot()
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

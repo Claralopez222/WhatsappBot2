@@ -915,39 +915,43 @@ async function handleListaMembros(sock, msg, jid, contactNames) {
 
 async function handleBemVindo(sock, msg, jid, caption) {
   if (!somenteGrupo(jid)) {
-    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+    await sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
+    return;
   }
   if (!await checkAdmin(sock, msg, jid, 'bemvindo')) return;
 
-  const args = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim();
+  const args = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim().toLowerCase();
 
+  // ── Desativar ─────────────────────────────────────────────────
   if (args === 'off' || args === 'desativar') {
+    if (!bemVindoGroups.get(jid)?.ativo) {
+      await sock.sendMessage(jid, { text: 'já tá desativado não tem nada pra desligar 😅' }, { quoted: msg });
+      return;
+    }
     bemVindoGroups.delete(jid);
-    await sock.sendMessage(jid, { text: '👋❌ *Mensagem de boas-vindas desativada!*' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '👋 Boas-vindas desativado.' }, { quoted: msg });
     return;
   }
 
+  // ── Status ────────────────────────────────────────────────────
   if (args === 'status') {
     const cfg = bemVindoGroups.get(jid);
     if (!cfg?.ativo) {
-      await sock.sendMessage(jid, { text: '👋 Boas-vindas: ❌ *Desativado*' }, { quoted: msg });
+      await sock.sendMessage(jid, { text: 'Boas-vindas tá desativado aqui.\n\n_Use !bemvindo para ativar._' }, { quoted: msg });
     } else {
-      await sock.sendMessage(jid, {
-        text: `👋 Boas-vindas: ✅ *Ativado*\n\n_Mensagem atual:_\n${cfg.mensagem}`,
-      }, { quoted: msg });
+      await sock.sendMessage(jid, { text: `Boas-vindas tá ativo! Mensagem atual:\n\n${cfg.mensagem}` }, { quoted: msg });
     }
     return;
   }
 
-  const mensagem = args || `👋 Bem-vindo(a) ao grupo, {nome}! 🎉\n_Leia as regras e divirta-se!_`;
+  // ── Ativar / Personalizar ─────────────────────────────────────
+  const mensagem = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim()
+    || `👋 Bem-vindo(a) ao grupo, {nome}! 🎉\n_Leia as regras e divirta-se!_`;
+
   bemVindoGroups.set(jid, { ativo: true, mensagem });
 
   await sock.sendMessage(jid, {
-    text:
-      `👋✅ *Boas-vindas ativado!*\n\n` +
-      `_Mensagem:_\n${mensagem}\n\n` +
-      `💡 Use *{nome}* para mencionar o novo membro.\n` +
-      `Use *!bemvindo off* para desativar.`,
+    text: `✅ Ativado! Toda vez que alguém entrar vou mandar:\n\n${mensagem}\n\n_Use {nome} para mencionar quem entrou._\n_!bemvindo off para desativar._`,
   }, { quoted: msg });
 }
 
@@ -956,7 +960,55 @@ async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
   const cfg = bemVindoGroups.get(jid);
   if (!cfg?.ativo) return;
 
-  const mensagem = cfg.mensagem.replace('{nome}', `@${novoMembro.split('@')[0]}`);
+  const numero = novoMembro.split('@')[0].split(':')[0];
+  const mencao = numero ? `@${numero}` : nomeDisplay;
+  const mensagem = cfg.mensagem.replace(/\{nome\}/gi, mencao);
+
+  await sock.sendMessage(jid, {
+    text: mensagem,
+    mentions: [novoMembro],
+  });
+}
+
+  // ── Status ────────────────────────────────────────────────────
+  if (args === 'status') {
+    const cfg = bemVindoGroups.get(jid);
+    if (!cfg?.ativo) {
+      await sock.sendMessage(jid, {
+        text: `👋 *Boas-vindas*\n\nStatus: ❌ Desativado\n\n_Use *!bemvindo* para ativar._`,
+      }, { quoted: msg });
+    } else {
+      await sock.sendMessage(jid, {
+        text: `👋 *Boas-vindas*\n\nStatus: ✅ Ativado\n\n_Mensagem atual:_\n${cfg.mensagem}`,
+      }, { quoted: msg });
+    }
+    return;
+  }
+
+  // ── Ativar / Personalizar ─────────────────────────────────────
+  const mensagem = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim()
+    || `👋 Bem-vindo(a) ao grupo, {nome}! 🎉\n_Leia as regras e divirta-se!_`;
+
+  bemVindoGroups.set(jid, { ativo: true, mensagem });
+
+  await sock.sendMessage(jid, {
+    text:
+      `✅ Boas-vindas ativado!\n\n` +
+      `${mensagem}\n\n` +
+      `_Use {nome} para mencionar quem entrou._\n` +
+      `_!bemvindo off para desativar._`,
+  }, { quoted: msg });
+
+
+// ─── Handler interno chamado pelo bot.js ao detectar novo membro ─
+async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
+  const cfg = bemVindoGroups.get(jid);
+  if (!cfg?.ativo) return;
+
+  const numero = novoMembro.split('@')[0].split(':')[0];
+  const mencao = numero ? `@${numero}` : nomeDisplay;
+  const mensagem = cfg.mensagem.replace(/\{nome\}/gi, mencao);
+
   await sock.sendMessage(jid, {
     text: mensagem,
     mentions: [novoMembro],

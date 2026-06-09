@@ -3,7 +3,7 @@
  * Comandos: !quiz, !quizfut, !quizctec, !quizgeo, !quizmat, !quizhis, !quizbsq
  *           !pontos, !rankjogos
  * - 185+ questões
- * - Cooldown de 1 hora por usuário (não por dia)
+ * - Limite de 10 quiz por dia por usuário
  * - Pontos salvos na nuvem (MongoDB)
  */
 
@@ -16,10 +16,8 @@ const { handleBanco, handleResgatar } = require('./banco');
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 const quizState      = new Map(); // senderJid → { r, timeout }
 const pontosMap      = new Map(); // senderJid → pts (cache)
-const quizCooldown   = new Map(); // senderJid → timestamp do último quiz iniciado
-const recentQuizMap  = new Map(); // senderJid → string[] (últimas perguntas sorteadas)
+const quizDailyCount = new Map(); // "senderJid_YYYY-MM-DD" → número de quizzes jogados hoje
 
-const COOLDOWN_MS = 60 * 60 * 1000; // 1 hora
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
 // ─── UTILITÁRIOS ─────────────────────────────────────────────────────────────
@@ -40,17 +38,9 @@ function normalize(str) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-function tempoRestante(senderJid) {
-  const ultimo = quizCooldown.get(senderJid);
-  if (!ultimo) return 0;
-  return Math.max(0, COOLDOWN_MS - (Date.now() - ultimo));
-}
-
-function formatarTempo(ms) {
-  const min = Math.floor(ms / 60000);
-  const seg = Math.floor((ms % 60000) / 1000);
-  if (min > 0) return `${min}min ${seg}s`;
-  return `${seg}s`;
+function getTodayKey(senderJid) {
+  const today = new Date().toISOString().split('T')[0];
+  return `${senderJid}_${today}`;
 }
 
 // ─── BANCO DE DADOS ──────────────────────────────────────────────────────────
@@ -306,58 +296,6 @@ const perguntasQuiz = [
   { p: '🏀 Qual é o nome do troféu entregue ao campeão da NBA?', r: 'larry obrien', d: 'Basquete' },
   { p: '🏀 Em que ano foi fundada a NBA?', r: '1946', d: 'Basquete' },
 ];
-// ─── UTILITÁRIOS INTERNOS ────────────────────────────────────────────────────
-
-function getTodayKey(senderJid) {
-  const today = new Date().toISOString().split('T')[0];
-  return `${senderJid}_${today}`;
-}
-
-async function syncQuizPointsFromDB(userId) {
-  try {
-    const user = await Usuario.findOne({ idWhatsApp: userId }).lean();
-    if (user && typeof user.quizPoints === 'number') {
-      pontosMap.set(userId, user.quizPoints);
-    }
-  } catch (e) {
-    console.error('⚠️ Erro ao sincronizar pontos quiz:', e.message);
-  }
-}
-
-async function saveQuizPointsToDB(userId, pontos) {
-  try {
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      { $set: { quizPoints: pontos } },
-      { upsert: true, new: true }
-    );
-    console.log(`✅ Pontos salvos: ${userId} → ${pontos} pts`);
-  } catch (e) {
-    console.error('⚠️ Erro ao salvar pontos quiz no MongoDB:', e.message);
-  }
-}
-
-async function changeGold(userId, amount) {
-  try {
-    if (amount > 0) {
-      await prepareDailyMissionState(userId);
-    }
-    const update = { $inc: { gold: amount } };
-    if (amount > 0) {
-      update['$inc']['dailyMissions.progress.gold500'] = amount;
-    }
-    const user = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      update,
-      { upsert: true, new: true }
-    );
-    console.log(`✅ Gold alterado: ${userId} → ${amount} (novo saldo: ${user?.gold})`);
-    return user?.gold || 0;
-  } catch (e) {
-    console.error('⚠️ Erro ao alterar gold:', e.message);
-    return 0;
-  }
-}
 
 // ─── HANDLE QUIZ ─────────────────────────────────────────────────────────────
 
@@ -367,10 +305,10 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   // ── Verificar se está respondendo uma pergunta ativa
   if (quizState.has(senderJid)) {
     const state = quizState.get(senderJid);
-    const resposta = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '')
-      .trim().toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const correta = state.r.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const resposta = normalize(
+      msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
+    );
+    const correta = normalize(state.r);
 
     clearTimeout(state.timeout);
     quizState.delete(senderJid);
@@ -442,18 +380,20 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   } else if (cmdClean === 'quizhis') {
     perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'História');
   } else if (cmdClean === 'quizbsq') {
-    // ── NOVO: filtro de basquete
     perguntasFiltradas = perguntasQuiz.filter(q => q.d === 'Basquete');
   }
 
   if (perguntasFiltradas.length === 0) {
-    await sock.sendMessage(jid, { text: '⚠️ Nenhuma pergunta disponível para essa categoria no momento.' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '⚠️ Nenhuma pergunta disponível para essa categoria no momento.',
+    }, { quoted: msg });
     return;
   }
 
+  // ── Incrementar contador diário ANTES de sortear
   quizDailyCount.set(todayKey, quizCount + 1);
 
-  // ── Sortear pergunta sem repetir recentemente
+  // ── Sortear pergunta sem repetir recentemente (por usuário)
   if (!global.recentQuiz) global.recentQuiz = {};
   if (!global.recentQuiz[senderJid]) global.recentQuiz[senderJid] = [];
 
@@ -462,11 +402,16 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   do {
     q = perguntasFiltradas[Math.floor(Math.random() * perguntasFiltradas.length)];
     tentativas++;
-  } while (global.recentQuiz[senderJid].includes(q.p) && tentativas < 20 && perguntasFiltradas.length > 2);
+  } while (
+    global.recentQuiz[senderJid].includes(q.p) &&
+    tentativas < 20 &&
+    perguntasFiltradas.length > 2
+  );
 
   global.recentQuiz[senderJid].push(q.p);
   if (global.recentQuiz[senderJid].length > 5) global.recentQuiz[senderJid].shift();
 
+  // ── Timeout de 30s para expirar a pergunta
   const timeout = setTimeout(() => {
     quizState.delete(senderJid);
     sock.sendMessage(jid, {
@@ -481,24 +426,26 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   }, { quoted: msg });
 }
 
-module.exports = { handleQuiz };
 // ─── !pontos ─────────────────────────────────────────────────────────────────
 
 async function handlePontos(sock, msg, jid, author, senderJid) {
   await syncQuizPointsFromDB(senderJid);
   const pts = pontosMap.get(senderJid) || 0;
-  const comentario = pts === 0 ? 'Que inútil, nem um ponto ainda!' :
-    pts < 30 ? 'Tá fraco(a)! Joga mais!' :
-    pts < 80 ? 'Razoável, pode melhorar!' :
-    pts < 150 ? 'Bom desempenho! Continua!' :
-    pts < 250 ? 'Excelente! Quase lá!' : 'MONSTRO! Que pontuação!';
+  const comentario =
+    pts === 0   ? 'Que inútil, nem um ponto ainda!' :
+    pts < 30    ? 'Tá fraco(a)! Joga mais!' :
+    pts < 80    ? 'Razoável, pode melhorar!' :
+    pts < 150   ? 'Bom desempenho! Continua!' :
+    pts < 250   ? 'Excelente! Quase lá!' :
+                  'MONSTRO! Que pontuação!';
 
   await sock.sendMessage(jid, {
     text: `🏅 *${author}*, você tem *${pts} pontos* no quiz! ☁️\n\n_${comentario}_`,
   }, { quoted: msg });
 }
 
-// ─── !rankjogos ─────────────────────────────────────────────────────────────
+// ─── !rankjogos ──────────────────────────────────────────────────────────────
+
 async function handleRankJogos(sock, msg, jid, contactNames = {}) {
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, {
@@ -506,9 +453,8 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
     }, { quoted: msg });
     return;
   }
- 
+
   try {
-    // Busca membros deste grupo
     const membros = await CarteiraGrupo.find({ idGrupo: jid }).lean();
     if (!membros.length) {
       await sock.sendMessage(jid, {
@@ -516,33 +462,32 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
       }, { quoted: msg });
       return;
     }
- 
+
     const idsMembros = membros.map(m => m.idWhatsApp);
- 
-    // Busca pontos de quiz apenas dos membros deste grupo
+
     const usuarios = await Usuario.find({
-      idWhatsApp:  { $in: idsMembros },
+      idWhatsApp: { $in: idsMembros },
       quizPoints:  { $exists: true, $gt: 0 },
     }).lean();
- 
+
     if (!usuarios.length) {
       await sock.sendMessage(jid, {
         text: '📭 Nenhum ponto registrado neste grupo! Joga *!quiz* primeiro!',
       }, { quoted: msg });
       return;
     }
- 
+
     const sorted = usuarios
       .sort((a, b) => b.quizPoints - a.quizPoints)
       .slice(0, 10);
- 
+
     let texto = `🏆 *RANKING DE QUIZ — ESTE GRUPO* 🏆\n\n`;
     sorted.forEach((u, i) => {
       const nome = resolverNome(u.idWhatsApp, contactNames);
       texto += `${MEDALS[i]} *${nome}* — ${u.quizPoints} pts ☁️\n`;
     });
     texto += `\n_Joga *!quiz* pra subir!_`;
- 
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (e) {
     console.error('[RankJogos] handleRankJogos:', e.message);
@@ -551,10 +496,13 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
     }, { quoted: msg });
   }
 }
- module.exports = {
+
+// ─── EXPORTS ─────────────────────────────────────────────────────────────────
+
+module.exports = {
   handleQuiz,
   handlePontos,
-  handleRankJogos,  // ← precisa estar aqui
+  handleRankJogos,
   handleBanco,
   handleResgatar,
   changeGold,

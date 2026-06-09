@@ -1,80 +1,80 @@
 /**
  * Handler de Downloads
- * Comandos: .play, .play_video, .youtube, .instagram, .tiktok, .facebook, .twitter, .spotify, etc
+ * Comandos: .play, .play_video, .youtube, .instagram, .tiktok,
+ *           .facebook, .twitter, .pinterest, .spotify, .soundcloud,
+ *           .gimage, .pesquisayt, .twitch, .wallpapers
+ *
+ * ⚠️  Render não suporta binários como yt-dlp.
+ *     Tudo aqui usa apenas APIs HTTP externas (sem execFile, sem ffmpeg-static).
  */
 
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const path = require('path');
-const fs = require('fs');
-const { tmpdir } = require('os');
-const { randomUUID } = require('crypto');
-const sharp = require('sharp');
+const path   = require('path');
+const fs     = require('fs');
+const sharp  = require('sharp');
 
-// ─── Importar utilitário de fetch ─────────────────────────────────────────
+// ─── fetchBuffer ──────────────────────────────────────────────────────────────
 let fetchBuffer;
 try {
-  const fetchUrlPath = path.resolve(__dirname, '..', 'fetchurl.js');
-  fetchBuffer = require(fetchUrlPath).fetchBuffer;
-} catch (e) {
-  console.error('⚠️ ERRO ao importar fetchurl.js:', e.message);
-  // Fallback: usar axios se fetchurl não estiver disponível
+  fetchBuffer = require(path.resolve(__dirname, '..', 'fetchurl.js')).fetchBuffer;
+} catch {
   const axios = require('axios');
-  fetchBuffer = async (url) => {
-    try {
-      const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 });
-      return Buffer.from(response.data);
-    } catch (err) {
-      throw new Error(`Erro ao buscar URL: ${err.message}`);
-    }
+  fetchBuffer = async (url, headers = {}) => {
+    const res = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 30000,
+      headers,
+    });
+    return Buffer.from(res.data);
   };
 }
 
-let logger = { level: 'silent' };
+// ─── Constantes ───────────────────────────────────────────────────────────────
+const API_KEY    = process.env.LOLHUMAN_KEY  || 'galanggg';
+const RAPID_KEY  = process.env.RAPIDAPI_KEY  || '';         // opcional
+const BASE       = 'https://api.lolhuman.xyz/api';
+const MAX_VIDEO  = 64 * 1024 * 1024; // 64 MB
 
-function setLogger(newLogger) {
-  logger = newLogger;
-}
-
-// ─── Helper: busca JSON via URL ──────────────────────────────────────────────
+// ─── fetchJson ────────────────────────────────────────────────────────────────
 async function fetchJson(url, headers = {}) {
   try {
-    const buf = await fetchBuffer(url);
+    const buf = await fetchBuffer(url, headers);
     const txt = buf.toString('utf8').trim();
-    if (txt.startsWith('<')) {
-      console.error('fetchJson recebeu HTML em vez de JSON:', txt.slice(0, 200).replace(/\s+/g, ' '));
-      return null;
-    }
+    if (txt.startsWith('<')) throw new Error('API retornou HTML (possível erro de cota ou URL errada)');
     return JSON.parse(txt);
   } catch (e) {
-    console.error('Erro ao buscar JSON:', e.message);
+    console.error('[fetchJson]', e.message);
     return null;
   }
 }
 
-// ─── Helper: envia texto/carta de metadados ─────────────────────────────────
+// ─── sendMetaCard ────────────────────────────────────────────────────────────
 async function sendMetaCard(sock, jid, msg, meta = {}, query = '') {
-  let cardBuffer = null;
-  let texto = `━━━ [ 🔎 *Informações* 🔎 ] ━━━\n\n`;
-  if (query) texto += `• 🔎 *Pesquisa:* _${query}_\n\n`;
-  if (meta.title) texto += `• 📌 *Título:* _${meta.title}_\n\n`;
+  let texto = `━━━ [ 🔎 *Informações* ] ━━━\n\n`;
+  if (query)        texto += `• 🔎 *Pesquisa:* _${query}_\n\n`;
+  if (meta.title)   texto += `• 📌 *Título:* _${meta.title}_\n`;
   if (meta.duration) {
-    const durSec = meta.duration;
-    const durStr = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
-    texto += `• ⏱️ *Duração:* ${durStr}\n`;
+    const m = Math.floor(meta.duration / 60);
+    const s = String(meta.duration % 60).padStart(2, '0');
+    texto += `• ⏱️ *Duração:* ${m}:${s}\n`;
   }
   if (meta.uploader) texto += `• 👤 *Canal:* _${meta.uploader}_\n`;
-  if (meta.views) texto += `• 👁️ *Views:* ${meta.views}\n`;
+  if (meta.views)    texto += `• 👁️ *Views:* ${Number(meta.views).toLocaleString('pt-BR')}\n`;
 
-  // build card image if thumbnail provided
+  let cardBuffer = null;
   if (meta.thumbnail) {
     try {
-      const buf = await fetchBuffer(meta.thumbnail);
-      let baseImage = await sharp(buf).resize(800,450,{fit:'cover',position:'centre'}).jpeg({quality:85}).toBuffer();
-      const overlay = Buffer.from(`<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="50%" stop-color="black" stop-opacity="0"/><stop offset="100%" stop-color="black" stop-opacity="0.82"/></linearGradient></defs><rect width="800" height="450" fill="url(#g)"/></svg>`);
-      cardBuffer = await sharp(baseImage).composite([{input:overlay,blend:'over'}]).jpeg({quality:88}).toBuffer();
-    } catch (e) {
-      // ignore failures, send text only
-    }
+      const raw     = await fetchBuffer(meta.thumbnail);
+      const base    = await sharp(raw).resize(800, 450, { fit: 'cover', position: 'centre' }).jpeg({ quality: 85 }).toBuffer();
+      const overlay = Buffer.from(
+        `<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg">` +
+        `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
+        `<stop offset="50%" stop-color="black" stop-opacity="0"/>` +
+        `<stop offset="100%" stop-color="black" stop-opacity="0.82"/>` +
+        `</linearGradient></defs>` +
+        `<rect width="800" height="450" fill="url(#g)"/></svg>`
+      );
+      cardBuffer = await sharp(base).composite([{ input: overlay, blend: 'over' }]).jpeg({ quality: 88 }).toBuffer();
+    } catch { /* sem thumbnail, tudo bem */ }
   }
 
   if (cardBuffer) {
@@ -84,649 +84,691 @@ async function sendMetaCard(sock, jid, msg, meta = {}, query = '') {
   }
 }
 
-// ─── !play / !play2 ─────────────────────────────────────────────────────────
-async function handlePlay(sock, msg, jid, caption, version = 1) {
+// ─── Helpers internos ────────────────────────────────────────────────────────
+
+/** Baixa mídia e valida tamanho. Retorna null se muito grande. */
+async function safeFetch(url, maxBytes = MAX_VIDEO) {
+  const buf = await fetchBuffer(url);
+  if (buf.length > maxBytes) return null;
+  return buf;
+}
+
+/** Reage com ❌ e envia texto de erro */
+async function sendError(sock, jid, msg, texto) {
+  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !play (áudio via API) ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handlePlay(sock, msg, jid, caption) {
   const query = caption.replace(/^[!.]play2?\s*/i, '').trim();
   if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .play <música>' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.play <música>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    // fetch metadata in background (don't wait for slow queries)
-    const { execFile } = require('child_process');
-    const util = require(path.join(__dirname, 'utilidade'));
-    const ytdlp = util.getYtDlpPath ? await util.getYtDlpPath() : 'yt-dlp';
-    let meta = null;
-    
-    setImmediate(() => {
-      try {
-        execFile(ytdlp, ['--no-playlist', '--print-json', '--skip-download', `ytsearch1:${query}`], { timeout: 10000 }, (err, stdout) => {
-          if (!err && stdout) {
-            try { meta = JSON.parse(stdout); } catch { }
-          }
-        });
-      } catch { }
-    });
+    // 1) Busca metadados + link de download via API
+    const data = await fetchJson(
+      `${BASE}/youtube2mp3?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
+    );
 
-    // build description immediately without waiting for metadata
-    let cardBuffer = null;
-    let texto = `━━━ [ 🎧 *Piroquinhas* 🎧 ] ━━━\n\n`;
-    texto += `• 🔎 *Pesquisa:* _${query}_\n`;
-    texto += `• ⏳ *Processando...*\n\n`;
-    texto += `━━━ [ 📱 *MAIS OPÇÕES* 📱 ] ━━━\n`;
-    texto += `🎬 *.playmp4* - _Baixa como vídeo_\n`;
-    texto += `📄 *.playdoc* - _Baixa como documento_`;
-
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-
-    // now download audio
-    const tmpId = randomUUID();
-    const outTemplate = path.join(tmpdir(), `${tmpId}.%(ext)s`);
-
-    const dlOk = await new Promise((resolve) => {
-      execFile(ytdlp, [
-        '--no-playlist', '-x', '--audio-format', 'mp3',
-        '--max-filesize', '120m', '-o', outTemplate,
-        `ytsearch1:${query}`
-      ], { timeout: 180000 }, (err, _stdout, stderr) => {
-        if (err) { console.log('yt-dlp play err:', stderr?.slice(-400)); resolve(false); } else resolve(true);
-      });
-    });
-
-    if (!dlOk) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar a música.' }, { quoted: msg });
-      return;
-    }
-
-    const mp3Path = path.join(tmpdir(), `${tmpId}.mp3`);
-    if (!fs.existsSync(mp3Path)) {
-      await sock.sendMessage(jid, { text: '❌ Arquivo não encontrado após download.' }, { quoted: msg });
-      return;
-    }
-
-    const audioBuffer = fs.readFileSync(mp3Path);
-    await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-
-    try { fs.unlinkSync(mp3Path); } catch {};
-  } catch (e) {
-    console.error('play error', e);
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar música.' }, { quoted: msg });
-  }
-}
-
-// ─── !play_video / !play_video2 ─────────────────────────────────────────────
-async function handlePlayVideo(sock, msg, jid, caption, version = 1) {
-  const query = caption.replace(/^[!.]play_video2?\s*/i, '').trim();
-  if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .play_video <vídeo>' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const { execFile } = require('child_process');
-    const util = require(path.join(__dirname, 'utilidade'));
-    const ytdlp = util.getYtDlpPath ? await util.getYtDlpPath() : 'yt-dlp';
-    let meta = null;
-    try {
-      const info = await new Promise((resolve) => {
-        execFile(ytdlp, ['--no-playlist','--print-json','--skip-download',`ytsearch1:${query}`], { timeout: 30000 }, (err, stdout) => {
-          if (!err && stdout) {
-            try { resolve(JSON.parse(stdout)); } catch { resolve(null); }
-          } else resolve(null);
-        });
-      });
-      if (info) meta = info;
-    } catch {}
-
-    // show metadata text similar to audio
-    let cardBuffer = null;
-    let texto = `━━━ [ 🎬 *Piroquinhas* 🎬 ] ━━━\n\n`;
-    texto += `• 🔎 *Pesquisa:* _${query}_\n\n`;
-    if (meta) {
-      const titulo = meta.title || query;
-      const durSec = meta.duration || 0;
-      const durStr = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2,'0')}` : '—';
-      const uploader = meta.uploader || meta.channel || null;
-      const views = meta.view_count ? Number(meta.view_count).toLocaleString('pt-BR') : null;
-      texto += `• 🎥 *Título:* _${titulo}_\n\n`;
-      texto += `• ⏱️ *Duração:* ${durStr}\n`;
-      if (uploader) texto += `• 👤 *Canal:* _${uploader}_\n`;
-      if (views) texto += `• 👁️ *Views:* ${views}_\n`;
-
-      const thumbUrl = meta.thumbnail || (meta.thumbnails?.length ? meta.thumbnails[meta.thumbnails.length-1]?.url : null);
-      if (thumbUrl) {
-        try {
-          const buf = await fetchBuffer(thumbUrl);
-          let baseImage = await sharp(buf).resize(800,450,{fit:'cover',position:'centre'}).jpeg({quality:85}).toBuffer();
-          const overlay = Buffer.from(`<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="50%" stop-color="black" stop-opacity="0"/><stop offset="100%" stop-color="black" stop-opacity="0.82"/></linearGradient></defs><rect width="800" height="450" fill="url(#g)"/></svg>`);
-          cardBuffer = await sharp(baseImage).composite([{input:overlay,blend:'over'}]).jpeg({quality:88}).toBuffer();
-        } catch {}
-      }
-    }
-    texto += `\n━━━ [ 📱 *MAIS OPÇÕES* 📱 ] ━━━\n`;
-    texto += `🎵 *.play* - _Som mp3_\n`;
-    texto += `📄 *.playdoc* - _Baixa como documento_`;
-
-    if (cardBuffer) {
-      await sock.sendMessage(jid, { image: cardBuffer, caption: texto }, { quoted: msg });
-    } else {
-      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-    }
-
-    const tmpId = randomUUID();
-    const outTemplate = path.join(tmpdir(), `${tmpId}.%(ext)s`);
-
-    const dlOk = await new Promise((resolve) => {
-      execFile(ytdlp, [
-        '--no-playlist', '-f', 'best', '--max-filesize', '120m',
-        '-o', outTemplate,
-        `ytsearch1:${query}`
-      ], { timeout: 180000 }, (err, _stdout, stderr) => {
-        if (err) { console.log('yt-dlp playvideo err:', stderr?.slice(-400)); resolve(false); } else resolve(true);
-      });
-    });
-
-    if (!dlOk) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
-      return;
-    }
-
-    const vidPath = path.join(tmpdir(), `${tmpId}.mp4`);
-    if (!fs.existsSync(vidPath)) {
-      const alt = ['.mkv','.webm','.mov'].map(ext=>path.join(tmpdir(), `${tmpId}${ext}`)).find(p=>fs.existsSync(p));
-      if (alt) vidPath = alt;
-    }
-    if (!fs.existsSync(vidPath)) {
-      await sock.sendMessage(jid, { text: '❌ Arquivo não encontrado após download.' }, { quoted: msg });
-      return;
-    }
-
-    const videoBuffer = fs.readFileSync(vidPath);
-    try { fs.unlinkSync(vidPath); } catch {}
-
-    if (videoBuffer.length > 64 * 1024 * 1024) {
-      await sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
-      return;
-    }
-
-    await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4' }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    console.error('play video error', e);
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar vídeo.' }, { quoted: msg });
-  }
-}
-
-// ─── !youtube / !youtubemp4 / !youtubemp3 ───────────────────────────────────
-async function handleYouTube(sock, msg, jid, caption, format = 'info') {
-  const link = caption.replace(/^[!.](youtube|youtubemp4|youtubemp3)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .youtube <link>' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    // metadata card for any format
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/youtube2mp4?apikey=galanggg&url=${encodeURIComponent(link)}`);
-    if (!data?.result) throw new Error('Erro ao processar');
-    const meta = {
-      title: data.result.title || null,
-      uploader: data.result.channel || data.result.uploader || null,
-      duration: data.result.duration || null,
-      views: data.result.views || data.result.view_count || null,
-      thumbnail: data.result.thumbnail || data.result.image || null,
-    };
-    await sendMetaCard(sock, jid, msg, meta, link);
-
-    if (format === 'mp4') {
-      if (!data.result.downloadUrl) throw new Error('Erro ao processar');
-      const buffer = await fetchBuffer(data.result.downloadUrl);
-      if (buffer.length > 64 * 1024 * 1024) {
-        await sock.sendMessage(jid, { text: '❌ Vídeo muito grande.' }, { quoted: msg });
+    if (!data?.result?.downloadUrl && !data?.result?.link) {
+      // Fallback: pesquisa e pega o primeiro resultado
+      const search = await fetchJson(
+        `${BASE}/youtube/search?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
+      );
+      const first = search?.result?.[0];
+      if (!first?.url) {
+        await sendError(sock, jid, msg, '❌ Não encontrei essa música.');
         return;
       }
-      await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4' }, { quoted: msg });
-    } else if (format === 'mp3') {
-      if (!data.result.downloadUrl) throw new Error('Erro ao processar');
-      const buffer = await fetchBuffer(data.result.downloadUrl);
-      await sock.sendMessage(jid, { audio: buffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-    }
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    await sock.sendMessage(jid, { text: `❌ Erro ao baixar ${format}.` }, { quoted: msg });
-  }
-}
-
-// ─── !instagram / !instagram2 ───────────────────────────────────────────────
-async function handleInstagram(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.](instagram2?)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .instagram <link>' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/instagram?apikey=galanggg&url=${encodeURIComponent(link)}`);
-    
-    if (!data?.result?.length) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar.' }, { quoted: msg });
-      return;
-    }
-
-    // first item metadata
-    const first = data.result[0] || {};
-    await sendMetaCard(sock, jid, msg, {
-      title: first.caption || null,
-      thumbnail: first.thumbnail || first.url || null
-    }, link);
-
-    for (const media of data.result.slice(0, 3)) {
-      if (media.type === 'image') {
-        const imgBuffer = await fetchBuffer(media.url);
-        await sock.sendMessage(jid, { image: imgBuffer }, { quoted: msg });
-      } else if (media.type === 'video') {
-        const vidBuffer = await fetchBuffer(media.url);
-        if (vidBuffer.length < 64 * 1024 * 1024) {
-          await sock.sendMessage(jid, { video: vidBuffer, mimetype: 'video/mp4' }, { quoted: msg });
-        }
+      // tenta baixar pelo link direto
+      const data2 = await fetchJson(
+        `${BASE}/youtube2mp3?apikey=${API_KEY}&url=${encodeURIComponent(first.url)}`
+      );
+      if (!data2?.result?.downloadUrl) {
+        await sendError(sock, jid, msg, '❌ Não consegui baixar essa música.');
+        return;
       }
+      Object.assign(data, data2);
     }
+
+    const result      = data.result;
+    const downloadUrl = result.downloadUrl || result.link;
+
+    await sendMetaCard(sock, jid, msg, {
+      title:    result.title    || query,
+      uploader: result.channel  || result.uploader || null,
+      duration: result.duration || null,
+      thumbnail: result.thumbnail || null,
+    }, query);
+
+    const audioBuffer = await fetchBuffer(downloadUrl);
+    await sock.sendMessage(jid, {
+      audio:    audioBuffer,
+      mimetype: 'audio/mpeg',
+      ptt:      false,
+    }, { quoted: msg });
+
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar Instagram.' }, { quoted: msg });
+    console.error('[play]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar música.');
   }
 }
 
-// ─── !tiktok / !tiktok2 ─────────────────────────────────────────────────────
-async function handleTikTok(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.](tiktok2?)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .tiktok <link>' }, { quoted: msg });
+// ═══════════════════════════════════════════════════════════════
+// ─── !play_video (vídeo via API) ──────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handlePlayVideo(sock, msg, jid, caption) {
+  const query = caption.replace(/^[!.]play_video2?\s*/i, '').trim();
+  if (!query) {
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.play_video <vídeo>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/tiktok?apikey=galanggg&url=${encodeURIComponent(link)}`);
-    
-    if (!data?.result) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+    const data = await fetchJson(
+      `${BASE}/youtube2mp4?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
+    );
+
+    if (!data?.result?.downloadUrl && !data?.result?.link) {
+      await sendError(sock, jid, msg, '❌ Não encontrei esse vídeo.');
       return;
     }
 
-    const { title, author, duration, thumbnail, link: videoUrl } = data.result;
+    const result      = data.result;
+    const downloadUrl = result.downloadUrl || result.link;
 
-    // Send metadata card
     await sendMetaCard(sock, jid, msg, {
-      title: title || null,
-      uploader: author?.nickname || null,
-      duration: duration || null,
-      thumbnail: thumbnail || null,
-    }, link);
+      title:    result.title    || query,
+      uploader: result.channel  || result.uploader || null,
+      duration: result.duration || null,
+      views:    result.views    || result.view_count || null,
+      thumbnail: result.thumbnail || null,
+    }, query);
 
-    const vidBuffer = await fetchBuffer(videoUrl);
-    if (vidBuffer.length > 64 * 1024 * 1024) {
-      await sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
-      return;
-    }
-
-    await sock.sendMessage(jid, { video: vidBuffer, mimetype: 'video/mp4', caption: `🎵 ${title || 'TikTok'}` }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar TikTok.' }, { quoted: msg });
-  }
-}
-
-// ─── !facebook / !facebook2 ─────────────────────────────────────────────────
-async function handleFacebook(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.](facebook2?)\s*/i, '').trim();
-  if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .facebook <link>' }, { quoted: msg });
-    return;
-  }
-
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/facebook?apikey=galanggg&url=${encodeURIComponent(link)}`);
-    
-    if (!data?.result?.download) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar.' }, { quoted: msg });
-      return;
-    }
-
-    // send metadata card
-    await sendMetaCard(sock, jid, msg, {
-      title: data.result.title || null,
-      duration: data.result.duration || null,
-      uploader: data.result.uploader || null,
-      thumbnail: data.result.thumbnail || null
-    }, link);
-
-    const vidBuffer = await fetchBuffer(data.result.download);
-    
-    if (vidBuffer.length > 64 * 1024 * 1024) {
-      await sock.sendMessage(jid, { text: '❌ Vídeo muito grande.' }, { quoted: msg });
+    const vidBuffer = await safeFetch(downloadUrl);
+    if (!vidBuffer) {
+      await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
       return;
     }
 
     await sock.sendMessage(jid, { video: vidBuffer, mimetype: 'video/mp4' }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar Facebook.' }, { quoted: msg });
+    console.error('[play_video]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar vídeo.');
   }
 }
 
-// ─── !twitter / !x ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// ─── !youtube / !youtubemp4 / !youtubemp3 ────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handleYouTube(sock, msg, jid, caption, format = 'info') {
+  const link = caption.replace(/^[!.](youtube|youtubemp4|youtubemp3)\s*/i, '').trim();
+  if (!link) {
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.youtube <link>*' }, { quoted: msg });
+    return;
+  }
+
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  try {
+    const endpoint = format === 'mp3' ? 'youtube2mp3' : 'youtube2mp4';
+    const data     = await fetchJson(`${BASE}/${endpoint}?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
+
+    if (!data?.result) {
+      await sendError(sock, jid, msg, '❌ Não consegui processar o link.');
+      return;
+    }
+
+    const result = data.result;
+    await sendMetaCard(sock, jid, msg, {
+      title:    result.title    || null,
+      uploader: result.channel  || result.uploader || null,
+      duration: result.duration || null,
+      views:    result.views    || result.view_count || null,
+      thumbnail: result.thumbnail || result.image || null,
+    }, link);
+
+    const downloadUrl = result.downloadUrl || result.link;
+    if (!downloadUrl) {
+      await sendError(sock, jid, msg, '❌ Link de download não disponível.');
+      return;
+    }
+
+    if (format === 'mp3') {
+      const buf = await fetchBuffer(downloadUrl);
+      await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+    } else if (format === 'mp4') {
+      const buf = await safeFetch(downloadUrl);
+      if (!buf) {
+        await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
+        return;
+      }
+      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
+    }
+
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (e) {
+    console.error('[youtube]', e.message);
+    await sendError(sock, jid, msg, `❌ Erro ao baixar (${format}).`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !instagram ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handleInstagram(sock, msg, jid, caption) {
+  const link = caption.replace(/^[!.](instagram2?)\s*/i, '').trim();
+  if (!link) {
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.instagram <link>*' }, { quoted: msg });
+    return;
+  }
+
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  try {
+    const data = await fetchJson(`${BASE}/instagram?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
+
+    if (!data?.result?.length) {
+      await sendError(sock, jid, msg, '❌ Não consegui baixar esse post.');
+      return;
+    }
+
+    const first = data.result[0];
+    await sendMetaCard(sock, jid, msg, {
+      title:     first.caption   || null,
+      thumbnail: first.thumbnail || first.url || null,
+    }, link);
+
+    let sent = 0;
+    for (const media of data.result.slice(0, 5)) {
+      try {
+        if (media.type === 'image') {
+          const buf = await fetchBuffer(media.url);
+          await sock.sendMessage(jid, { image: buf }, { quoted: msg });
+          sent++;
+        } else if (media.type === 'video') {
+          const buf = await safeFetch(media.url);
+          if (!buf) continue;
+          await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
+          sent++;
+        }
+      } catch (e) {
+        console.warn('[instagram] item falhou:', e.message);
+      }
+    }
+
+    if (sent === 0) {
+      await sendError(sock, jid, msg, '❌ Nenhuma mídia pôde ser enviada.');
+      return;
+    }
+
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (e) {
+    console.error('[instagram]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar Instagram.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !tiktok ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handleTikTok(sock, msg, jid, caption) {
+  const link = caption.replace(/^[!.](tiktok2?)\s*/i, '').trim();
+  if (!link) {
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.tiktok <link>*' }, { quoted: msg });
+    return;
+  }
+
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  try {
+    const data = await fetchJson(`${BASE}/tiktok?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
+
+    if (!data?.result) {
+      await sendError(sock, jid, msg, '❌ Não consegui baixar esse TikTok.');
+      return;
+    }
+
+    const { title, author, duration, thumbnail } = data.result;
+    const videoUrl = data.result.link || data.result.downloadUrl || data.result.video;
+
+    if (!videoUrl) {
+      await sendError(sock, jid, msg, '❌ URL de download não encontrada.');
+      return;
+    }
+
+    await sendMetaCard(sock, jid, msg, {
+      title:    title     || null,
+      uploader: author?.nickname || author?.name || null,
+      duration: duration  || null,
+      thumbnail: thumbnail || null,
+    }, link);
+
+    const buf = await safeFetch(videoUrl);
+    if (!buf) {
+      await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
+      return;
+    }
+
+    await sock.sendMessage(jid, {
+      video:    buf,
+      mimetype: 'video/mp4',
+      caption:  `🎵 ${title || 'TikTok'}`,
+    }, { quoted: msg });
+
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (e) {
+    console.error('[tiktok]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar TikTok.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !facebook ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handleFacebook(sock, msg, jid, caption) {
+  const link = caption.replace(/^[!.](facebook2?)\s*/i, '').trim();
+  if (!link) {
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.facebook <link>*' }, { quoted: msg });
+    return;
+  }
+
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  try {
+    const data = await fetchJson(`${BASE}/facebook?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
+
+    const downloadUrl = data?.result?.download || data?.result?.downloadUrl || data?.result?.link;
+    if (!downloadUrl) {
+      await sendError(sock, jid, msg, '❌ Não consegui baixar esse vídeo.');
+      return;
+    }
+
+    await sendMetaCard(sock, jid, msg, {
+      title:    data.result.title    || null,
+      duration: data.result.duration || null,
+      uploader: data.result.uploader || null,
+      thumbnail: data.result.thumbnail || null,
+    }, link);
+
+    const buf = await safeFetch(downloadUrl);
+    if (!buf) {
+      await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
+      return;
+    }
+
+    await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (e) {
+    console.error('[facebook]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar Facebook.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !twitter / !x ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function handleTwitter(sock, msg, jid, caption) {
   const link = caption.replace(/^[!.](twitter|x)\s*/i, '').trim();
   if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .twitter <link>' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.twitter <link>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/twitter?apikey=galanggg&url=${encodeURIComponent(link)}`);
-    
-    if (!data?.result) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar.' }, { quoted: msg });
+    const data = await fetchJson(`${BASE}/twitter?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
+
+    const items  = data?.result ? (Array.isArray(data.result) ? data.result : [data.result]) : [];
+    const first  = items[0];
+
+    if (!first?.url) {
+      await sendError(sock, jid, msg, '❌ Não consegui baixar esse post.');
       return;
     }
 
-    // metadata card using first item
-    const first = data.result[0] || {};
     await sendMetaCard(sock, jid, msg, {
-      title: first.title || first.text || null,
-      thumbnail: first.thumbnail || first.url || null,
-      duration: first.duration || null
+      title:    first.title || first.text || null,
+      thumbnail: first.thumbnail || null,
+      duration: first.duration   || null,
     }, link);
 
-    if (first.url) {
-      const media = await fetchBuffer(first.url);
-      if (first.type === 'image') {
-        await sock.sendMessage(jid, { image: media }, { quoted: msg });
-      } else {
-        if (media.length < 64 * 1024 * 1024) {
-          await sock.sendMessage(jid, { video: media, mimetype: 'video/mp4' }, { quoted: msg });
+    for (const item of items.slice(0, 3)) {
+      try {
+        const buf = await safeFetch(item.url);
+        if (!buf) continue;
+        if (item.type === 'image' || /\.(jpg|jpeg|png|webp)/i.test(item.url)) {
+          await sock.sendMessage(jid, { image: buf }, { quoted: msg });
+        } else {
+          await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
         }
+      } catch (e) {
+        console.warn('[twitter] item falhou:', e.message);
       }
     }
+
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar Twitter.' }, { quoted: msg });
+    console.error('[twitter]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar Twitter/X.');
   }
 }
 
-// ─── !pinterest / !pinterest2 ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// ─── !pinterest ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function handlePinterest(sock, msg, jid, caption) {
   const query = caption.replace(/^[!.](pinterest2?)\s*/i, '').trim();
   if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .pinterest <nome ou link>' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.pinterest <nome ou link>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  const isLink = /^(https?:\/\/|www\.)/i.test(query) || /pinterest\.com/i.test(query);
 
-  if (isLink) {
-    try {
-      const data = await fetchJson(`https://api.lolhuman.xyz/api/pinterest?apikey=galanggg&url=${encodeURIComponent(query)}`);
-      if (!data?.result) {
-        await sock.sendMessage(jid, { text: '❌ Não consegui baixar.' }, { quoted: msg });
+  const isLink = /^https?:\/\//i.test(query) || /pinterest\.com/i.test(query);
+
+  try {
+    if (isLink) {
+      const data = await fetchJson(`${BASE}/pinterest?apikey=${API_KEY}&url=${encodeURIComponent(query)}`);
+      const imgUrl = data?.result;
+
+      if (!imgUrl) {
+        await sendError(sock, jid, msg, '❌ Não consegui baixar essa imagem.');
         return;
       }
 
-      await sendMetaCard(sock, jid, msg, {
-        title: query,
-        thumbnail: data.result || null
-      }, query);
+      const buf = await fetchBuffer(imgUrl);
+      await sock.sendMessage(jid, { image: buf }, { quoted: msg });
+    } else {
+      // Pesquisa por termo
+      const data = await fetchJson(
+        `${BASE}/google/image?apikey=${API_KEY}&query=${encodeURIComponent(query + ' pinterest')}`
+      );
 
-      const imgBuffer = await fetchBuffer(data.result);
-      await sock.sendMessage(jid, { image: imgBuffer }, { quoted: msg });
-      await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-    } catch (e) {
-      await sock.sendMessage(jid, { text: '❌ Erro ao baixar Pinterest.' }, { quoted: msg });
-    }
-    return;
-  }
+      if (!data?.result?.length) {
+        await sendError(sock, jid, msg, '❌ Nenhuma imagem encontrada.');
+        return;
+      }
 
-  await sendMetaCard(sock, jid, msg, { title: `Resultados para "${query}"` }, query);
-  try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/google/image?apikey=galanggg&query=${encodeURIComponent(query)}`);
-    if (!data?.result?.length) {
-      await sock.sendMessage(jid, { text: '❌ Nenhuma imagem encontrada.' }, { quoted: msg });
-      return;
+      let sent = 0;
+      for (const img of data.result.slice(0, 3)) {
+        try {
+          const buf = await fetchBuffer(img);
+          await sock.sendMessage(jid, { image: buf }, { quoted: msg });
+          sent++;
+        } catch { /* tenta próximo */ }
+      }
+
+      if (sent === 0) {
+        await sendError(sock, jid, msg, '❌ Nenhuma imagem pôde ser enviada.');
+        return;
+      }
     }
 
-    for (const img of data.result.slice(0, 3)) {
-      try {
-        const imgBuffer = await fetchBuffer(img);
-        await sock.sendMessage(jid, { image: imgBuffer }, { quoted: msg });
-      } catch { }
-    }
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao buscar imagens.' }, { quoted: msg });
+    console.error('[pinterest]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar Pinterest.');
   }
 }
 
-// ─── !spotify ───────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// ─── !spotify ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function handleSpotify(sock, msg, jid, caption) {
   const link = caption.replace(/^[!.]spotify\s*/i, '').trim();
   if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .spotify <link>' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.spotify <link>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/spotify?apikey=galanggg&url=${encodeURIComponent(link)}`);
-    
-    if (!data?.result?.preview_url) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar. (preview não disponível)' }, { quoted: msg });
+    const data = await fetchJson(`${BASE}/spotify?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
+
+    const previewUrl = data?.result?.preview_url;
+    if (!previewUrl) {
+      await sendError(sock, jid, msg, '❌ Preview não disponível para essa faixa.');
       return;
     }
 
-    const title = data.result.name || 'Spotify';
-    const artist = data.result.artist || 'Unknown';
+    const title  = data.result.name   || 'Spotify';
+    const artist = data.result.artist || 'Desconhecido';
+
     await sendMetaCard(sock, jid, msg, {
       title,
-      uploader: artist,
+      uploader:  artist,
       thumbnail: data.result.thumbnail || null,
-      duration: data.result.duration || null
+      duration:  data.result.duration  || null,
     }, link);
 
-    const audioBuffer = await fetchBuffer(data.result.preview_url);
-    await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-    await sock.sendMessage(jid, { text: `🎵 *${title}* - ${artist}` }, { quoted: msg });
+    const buf = await fetchBuffer(previewUrl);
+    await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar Spotify.' }, { quoted: msg });
+    console.error('[spotify]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar Spotify.');
   }
 }
 
-// ─── !soundcloud / !sou ndcloud ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// ─── !soundcloud ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function handleSoundCloud(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.](soundcloud|sou\s*ndcloud)\s*/i, '').trim();
+  const link = caption.replace(/^[!.]soundcloud\s*/i, '').trim();
   if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .soundcloud <link>' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.soundcloud <link>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/soundcloud?apikey=galanggg&url=${encodeURIComponent(link)}`);
-    
-    if (!data?.result?.download) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar.' }, { quoted: msg });
+    const data = await fetchJson(`${BASE}/soundcloud?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
+
+    const downloadUrl = data?.result?.download || data?.result?.downloadUrl;
+    if (!downloadUrl) {
+      await sendError(sock, jid, msg, '❌ Não consegui baixar essa faixa.');
       return;
     }
 
     await sendMetaCard(sock, jid, msg, {
-      title: data.result.title || null,
+      title:    data.result.title    || null,
       uploader: data.result.uploader || data.result.artist || null,
       duration: data.result.duration || null,
-      thumbnail: data.result.thumbnail || null
+      thumbnail: data.result.thumbnail || null,
     }, link);
 
-    const audioBuffer = await fetchBuffer(data.result.download);
-    await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+    const buf = await fetchBuffer(downloadUrl);
+    await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar SoundCloud.' }, { quoted: msg });
+    console.error('[soundcloud]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar SoundCloud.');
   }
 }
 
-// ─── !gimage ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// ─── !gimage ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function handleGImage(sock, msg, jid, caption) {
   const query = caption.replace(/^[!.]gimage\s*/i, '').trim();
   if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .gimage <termo>' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.gimage <termo>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  await sendMetaCard(sock, jid, msg, { title: `Resultados para "${query}"` }, query);
-
   try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/google/image?apikey=galanggg&query=${encodeURIComponent(query)}`);
-    
+    const data = await fetchJson(
+      `${BASE}/google/image?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
+    );
+
     if (!data?.result?.length) {
-      await sock.sendMessage(jid, { text: '❌ Nenhuma imagem encontrada.' }, { quoted: msg });
+      await sendError(sock, jid, msg, '❌ Nenhuma imagem encontrada.');
       return;
     }
 
+    let sent = 0;
     for (const img of data.result.slice(0, 3)) {
       try {
-        const imgBuffer = await fetchBuffer(img);
-        await sock.sendMessage(jid, { image: imgBuffer }, { quoted: msg });
-      } catch { }
+        const buf = await fetchBuffer(img);
+        await sock.sendMessage(jid, { image: buf }, { quoted: msg });
+        sent++;
+      } catch { /* tenta próximo */ }
     }
+
+    if (sent === 0) {
+      await sendError(sock, jid, msg, '❌ Não consegui baixar as imagens.');
+      return;
+    }
+
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao buscar imagens.' }, { quoted: msg });
+    console.error('[gimage]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao buscar imagens.');
   }
 }
 
-// ─── !pesquisayt ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// ─── !pesquisayt ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function handlePesquisaYT(sock, msg, jid, caption) {
   const query = caption.replace(/^[!.]pesquisayt\s*/i, '').trim();
   if (!query) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .pesquisayt <termo>' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.pesquisayt <termo>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  await sendMetaCard(sock, jid, msg, { title: `Resultados para "${query}"` }, query);
-
   try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/youtube/search?apikey=galanggg&query=${encodeURIComponent(query)}`);
-    
+    const data = await fetchJson(
+      `${BASE}/youtube/search?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
+    );
+
     if (!data?.result?.length) {
-      await sock.sendMessage(jid, { text: '❌ Nenhum vídeo encontrado.' }, { quoted: msg });
+      await sendError(sock, jid, msg, '❌ Nenhum vídeo encontrado.');
       return;
     }
 
-    let resultado = `🔍 *Resultados para: "${query}"*\n\n`;
-    
-    for (let i = 0; i < Math.min(5, data.result.length); i++) {
-      const video = data.result[i];
-      resultado += `${i + 1}. *${video.title}*\n`;
-      resultado += `   URL: ${video.url}\n`;
-      resultado += `   \n`;
-    }
+    let texto = `🔍 *Resultados para "${query}"*\n\n`;
+    data.result.slice(0, 5).forEach((v, i) => {
+      texto += `*${i + 1}.* ${v.title}\n`;
+      if (v.duration) texto += `⏱️ ${v.duration}  `;
+      if (v.views)    texto += `👁️ ${Number(v.views).toLocaleString('pt-BR')} views`;
+      texto += `\n🔗 ${v.url}\n\n`;
+    });
 
-    await sock.sendMessage(jid, { text: resultado }, { quoted: msg });
+    await sock.sendMessage(jid, { text: texto.trim() }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao pesquisar.' }, { quoted: msg });
+    console.error('[pesquisayt]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao pesquisar no YouTube.');
   }
 }
 
-// ─── !twitch ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// ─── !twitch ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function handleTwitch(sock, msg, jid, caption) {
   const link = caption.replace(/^[!.]twitch\s*/i, '').trim();
   if (!link) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite: .twitch <link>' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Digite: *.twitch <link>*' }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/twitch?apikey=galanggg&url=${encodeURIComponent(link)}`);
-    
-    if (!data?.result?.video_url) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui baixar.' }, { quoted: msg });
+    const data = await fetchJson(`${BASE}/twitch?apikey=${API_KEY}&url=${encodeURIComponent(link)}`);
+
+    const videoUrl = data?.result?.video_url || data?.result?.downloadUrl;
+    if (!videoUrl) {
+      await sendError(sock, jid, msg, '❌ Não consegui baixar esse clipe.');
       return;
     }
 
     await sendMetaCard(sock, jid, msg, {
-      title: data.result.title || null,
+      title:    data.result.title     || null,
       thumbnail: data.result.thumbnail || null,
-      duration: data.result.duration || null
+      duration: data.result.duration  || null,
     }, link);
 
-    const vidBuffer = await fetchBuffer(data.result.video_url);
-    if (vidBuffer.length < 64 * 1024 * 1024) {
-      await sock.sendMessage(jid, { video: vidBuffer, mimetype: 'video/mp4' }, { quoted: msg });
-    } else {
-      await sock.sendMessage(jid, { text: '❌ Vídeo muito grande.' }, { quoted: msg });
-    }
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao baixar Twitch.' }, { quoted: msg });
-  }
-}
-
-// ─── !wallpapers / !wallpaper-animes / !wallpaper-carros ─────────────────────
-async function handleWallpapers(sock, msg, jid, category = 'wallpapers') {
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-
-  let query = 'wallpaper';
-  if (category === 'animes') query = 'anime wallpaper 4k';
-  else if (category === 'carros') query = 'car wallpaper 4k';
-  await sendMetaCard(sock, jid, msg, { title: `Resultados para "${query}"` }, query);
-
-  try {
-    
-
-    const data = await fetchJson(`https://api.lolhuman.xyz/api/google/image?apikey=galanggg&query=${encodeURIComponent(query)}`);
-    
-    if (!data?.result?.length) {
-      await sock.sendMessage(jid, { text: '❌ Nenhum wallpaper encontrado.' }, { quoted: msg });
+    const buf = await safeFetch(videoUrl);
+    if (!buf) {
+      await sendError(sock, jid, msg, '❌ Vídeo muito grande (máx 64 MB).');
       return;
     }
 
-    for (const img of data.result.slice(0, 2)) {
-      try {
-        const imgBuffer = await fetchBuffer(img);
-        await sock.sendMessage(jid, { image: imgBuffer }, { quoted: msg });
-      } catch { }
-    }
+    await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao buscar wallpapers.' }, { quoted: msg });
+    console.error('[twitch]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao baixar Twitch.');
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ─── !wallpapers ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handleWallpapers(sock, msg, jid, category = 'wallpapers') {
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  const queries = {
+    animes:     'anime wallpaper 4k',
+    carros:     'car wallpaper 4k',
+    wallpapers: 'wallpaper 4k',
+  };
+  const query = queries[category] || 'wallpaper 4k';
+
+  try {
+    const data = await fetchJson(
+      `${BASE}/google/image?apikey=${API_KEY}&query=${encodeURIComponent(query)}`
+    );
+
+    if (!data?.result?.length) {
+      await sendError(sock, jid, msg, '❌ Nenhum wallpaper encontrado.');
+      return;
+    }
+
+    let sent = 0;
+    for (const img of data.result.slice(0, 3)) {
+      try {
+        const buf = await fetchBuffer(img);
+        await sock.sendMessage(jid, { image: buf }, { quoted: msg });
+        sent++;
+      } catch { /* tenta próximo */ }
+    }
+
+    if (sent === 0) {
+      await sendError(sock, jid, msg, '❌ Não consegui baixar os wallpapers.');
+      return;
+    }
+
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (e) {
+    console.error('[wallpapers]', e.message);
+    await sendError(sock, jid, msg, '❌ Erro ao buscar wallpapers.');
+  }
+}
+
+// ─── Exports ─────────────────────────────────────────────────────────────────
 module.exports = {
   handlePlay,
   handlePlayVideo,
@@ -742,5 +784,4 @@ module.exports = {
   handlePesquisaYT,
   handleTwitch,
   handleWallpapers,
-  setLogger,
 };

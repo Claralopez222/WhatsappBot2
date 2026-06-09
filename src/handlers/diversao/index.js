@@ -210,9 +210,6 @@ module.exports = {
   handlePetRank,
   handlePets,
   handleAbrigo,
-  petSystem,
-  petData,
-  shelterData,
   initPetScheduler,
   registerActiveGroup,
 

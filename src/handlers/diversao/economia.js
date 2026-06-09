@@ -636,6 +636,7 @@ async function handleExtrato(sock, msg, jid) {
 // ─── !garimpar ────────────────────────────────────────────────────────────────
 
 const GARIMPO_COOLDOWN_MS = 60 * 60 * 1000;
+const garimpoCache = new Map(); // userId → timestamp (cache local para evitar race condition)
 
 function formatarTempoGarimpo(ms) {
   const totalSec = Math.ceil(ms / 1000);
@@ -649,14 +650,11 @@ async function handleGarimpar(sock, msg, jid) {
   const idGrupo = jid;
   const agora   = Date.now();
 
-  // Cooldown salvo na CarteiraGrupo via campo ultimoGarimpo no Usuario global
-  // (mantemos no Usuario para não duplicar cooldowns por grupo)
-  const userGlobal = await Usuario.findOne({ idWhatsApp: userId });
-  const ultimoGarimpo = userGlobal?.ultimoGarimpo ? new Date(userGlobal.ultimoGarimpo).getTime() : 0;
-  const tempoPassado  = agora - ultimoGarimpo;
-
-  if (tempoPassado < GARIMPO_COOLDOWN_MS) {
-    const restante = GARIMPO_COOLDOWN_MS - tempoPassado;
+  // ── Verificar cooldown no cache local primeiro (evita double-tap e chamada desnecessária ao banco)
+  const cacheLocal = garimpoCache.get(userId) || 0;
+  const tempoPassadoCache = agora - cacheLocal;
+  if (cacheLocal > 0 && tempoPassadoCache < GARIMPO_COOLDOWN_MS) {
+    const restante = GARIMPO_COOLDOWN_MS - tempoPassadoCache;
     await sock.sendMessage(jid, {
       text:
         `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n` +
@@ -666,25 +664,42 @@ async function handleGarimpar(sock, msg, jid) {
     return;
   }
 
+  // ── Verificar cooldown no banco (para persistir entre reinicializações do bot)
+  const userGlobal = await Usuario.findOne({ idWhatsApp: userId }).lean();
+  const ultimoGarimpo = userGlobal?.ultimoGarimpo ? new Date(userGlobal.ultimoGarimpo).getTime() : 0;
+  const tempoPassado  = agora - ultimoGarimpo;
+
+  if (tempoPassado < GARIMPO_COOLDOWN_MS) {
+    const restante = GARIMPO_COOLDOWN_MS - tempoPassado;
+    garimpoCache.set(userId, ultimoGarimpo); // sincroniza cache com banco
+    await sock.sendMessage(jid, {
+      text:
+        `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n` +
+        `⛏️ Você já garimpou recentemente!\n\n` +
+        `⏰ Próximo garimpo em: *${formatarTempoGarimpo(restante)}*`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Marcar cooldown imediatamente (antes do banco, evita race condition)
+  garimpoCache.set(userId, agora);
+
   try {
     const ouro = Math.floor(Math.random() * 100) + 30; // 30–129 gold
 
-    // Atualizar cooldown no Usuario global
+    // Atualizar cooldown e missão de gold no Usuario global
+    await prepareDailyMissionState(userId);
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      { $set: { ultimoGarimpo: new Date() } },
+      {
+        $set: { ultimoGarimpo: new Date() },
+        $inc: { 'dailyMissions.progress.gold500': ouro },
+      },
       { upsert: true }
     );
 
-    // Creditar na carteira do grupo + missão diária
-    await prepareDailyMissionState(userId);
+    // Creditar na carteira do grupo
     const carteira = await alterarGold(userId, idGrupo, ouro, 'Garimpo');
-
-    // Missão de gold (ainda no Usuario global)
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      { $inc: { 'dailyMissions.progress.gold500': ouro } }
-    );
 
     await sock.sendMessage(jid, {
       text:
@@ -696,6 +711,8 @@ async function handleGarimpar(sock, msg, jid) {
         `⏰ Próximo garimpo em: *1 hora*`,
     }, { quoted: msg });
   } catch (e) {
+    // Se der erro, desfaz o cache para o usuário poder tentar de novo
+    garimpoCache.delete(userId);
     console.error('⚠️ Erro handleGarimpar:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao garimpar! Tente novamente.' }, { quoted: msg });
   }

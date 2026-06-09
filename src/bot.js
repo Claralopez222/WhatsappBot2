@@ -303,24 +303,10 @@ function getSenderName(msg) {
 }
 
 async function startBot() {
-  // 1ï¸âƒ£ MongoDB PRIMEIRO
-  try {
-    const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/piroquinhas';
-    mongoose.set('strictQuery', false);
-    await mongoose.connect(mongoUri);
-    console.log('âœ… MongoDB conectado');
-    await diversaoHandler.initializePersistedData();
-    await loadRelationshipsFromDb();
-  } catch (e) {
-    console.error('âŒ Erro ao inicializar MongoDB:', e.message);
-    process.exit(1); // para nÃ£o continuar sem banco
-  }
-
-  // 2ï¸âƒ£ Auth e versÃ£o DEPOIS do MongoDB
   const { state, saveCreds } = await useMongoAuthState();
   const { version }          = await fetchLatestBaileysVersion();
 
-  console.log(`\nðŸ¤– Iniciando bot com Baileys v${version.join('.')}\n`);
+  console.log(`\n🤖 Iniciando bot com Baileys v${version.join('.')}\n`);
 
   const sock = makeWASocket({
     version,
@@ -1051,4 +1037,14 @@ app.get('/', (req, res) => res.send('Bot Online!'));
 app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));
 
 // â”€â”€â”€ Iniciar (apenas uma vez) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-startBot().catch(err => console.error('âŒ Erro crÃ­tico na inicializaÃ§Ã£o:', err));
+async function main() {
+  const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/piroquinhas';
+  mongoose.set('strictQuery', false);
+  await mongoose.connect(mongoUri);
+  console.log('✅ MongoDB conectado');
+  await diversaoHandler.initializePersistedData();
+  await loadRelationshipsFromDb();
+  startBot();
+}
+
+main().catch(err => console.error('❌ Erro crítico na inicialização:', err));

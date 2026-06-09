@@ -647,26 +647,37 @@ async function handleTempo(sock, msg, content, jid, author, contactNames) {
 
 async function handleAntiLink(sock, msg, content, jid, antiLinkGroups, saveData) {
   if (!somenteGrupo(jid)) {
-    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+    await sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
+    return;
   }
   if (!await checkAdmin(sock, msg, jid, 'antilink')) return;
 
   const textMsg = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+  const ativo = antiLinkGroups.has(jid);
 
   if (textMsg.includes('on') || textMsg.includes('ativ')) {
+    if (ativo) {
+      await sock.sendMessage(jid, { text: 'O anti-link já tá ativado aqui 😅' }, { quoted: msg });
+      return;
+    }
     antiLinkGroups.add(jid);
     saveData();
     await sock.sendMessage(jid, {
-      text: '🔗✅ *Anti-Link ATIVADO!*\n_Links serão deletados e o usuário removido._',
+      text: '🔗 Anti-link ativado! Quem mandar link leva ban.',
     }, { quoted: msg });
+
   } else if (textMsg.includes('off') || textMsg.includes('desativ')) {
+    if (!ativo) {
+      await sock.sendMessage(jid, { text: 'O anti-link já tá desativado 😅' }, { quoted: msg });
+      return;
+    }
     antiLinkGroups.delete(jid);
     saveData();
-    await sock.sendMessage(jid, { text: '🔗❌ *Anti-Link DESATIVADO!*' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '🔗 Anti-link desativado.' }, { quoted: msg });
+
   } else {
-    const status = antiLinkGroups.has(jid) ? '✅ *Ativado*' : '❌ *Desativado*';
     await sock.sendMessage(jid, {
-      text: `🔗 *Anti-Link* — ${status}\n\n▸ *!antilink on* → ativar\n▸ *!antilink off* → desativar`,
+      text: `🔗 Anti-link tá ${ativo ? '✅ ativado' : '❌ desativado'} aqui.\n\n_!antilink on para ativar_\n_!antilink off para desativar_`,
     }, { quoted: msg });
   }
 }
@@ -955,37 +966,7 @@ async function handleBemVindo(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── Handler interno chamado pelo bot.js ao detectar novo membro ─
-async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
-  const cfg = bemVindoGroups.get(jid);
-  if (!cfg?.ativo) return;
-
-  const numero = novoMembro.split('@')[0].split(':')[0];
-  const mencao = numero ? `@${numero}` : nomeDisplay;
-  const mensagem = cfg.mensagem.replace(/\{nome\}/gi, mencao);
-
-  await sock.sendMessage(jid, {
-    text: mensagem,
-    mentions: [novoMembro],
-  });
-}
-
-  // ── Status ────────────────────────────────────────────────────
-  if (args === 'status') {
-    const cfg = bemVindoGroups.get(jid);
-    if (!cfg?.ativo) {
-      await sock.sendMessage(jid, {
-        text: `👋 *Boas-vindas*\n\nStatus: ❌ Desativado\n\n_Use *!bemvindo* para ativar._`,
-      }, { quoted: msg });
-    } else {
-      await sock.sendMessage(jid, {
-        text: `👋 *Boas-vindas*\n\nStatus: ✅ Ativado\n\n_Mensagem atual:_\n${cfg.mensagem}`,
-      }, { quoted: msg });
-    }
-    return;
-  }
-
-  // ── Ativar / Personalizar ─────────────────────────────────────
+// ── Ativar / Personalizar ─────────────────────────────────────
   const mensagem = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim()
     || `👋 Bem-vindo(a) ao grupo, {nome}! 🎉\n_Leia as regras e divirta-se!_`;
 
@@ -993,8 +974,7 @@ async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
 
   await sock.sendMessage(jid, {
     text:
-      `✅ Boas-vindas ativado!\n\n` +
-      `${mensagem}\n\n` +
+      `✅ Ativado! Toda vez que alguém entrar vou mandar:\n\n${mensagem}\n\n` +
       `_Use {nome} para mencionar quem entrou._\n` +
       `_!bemvindo off para desativar._`,
   }, { quoted: msg });
@@ -1038,7 +1018,6 @@ async function handleLinkGrupo(sock, msg, jid) {
     await sock.sendMessage(jid, { text: '❌ Não consegui obter o link. O bot é admin?' }, { quoted: msg });
   }
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !apagarmsg ───────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

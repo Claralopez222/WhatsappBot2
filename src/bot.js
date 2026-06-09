@@ -10,11 +10,12 @@ const fs       = require('fs');
 // ─── Dependências externas ────────────────────────────────────
 const {
   default: makeWASocket,
-  useMultiFileAuthState,
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
+
+const { useMongoAuthState } = require('./mongoAuthState');
 
 const { Boom }  = require('@hapi/boom');
 const pino      = require('pino');
@@ -307,7 +308,7 @@ function getSenderName(msg) {
 // ═══════════════════════════════════════════════════════════════
 
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
+  const { state, saveCreds } = await useMongoAuthState();
   const { version }          = await fetchLatestBaileysVersion();
 
   console.log(`\n🤖 Iniciando bot com Baileys v${version.join('.')}\n`);

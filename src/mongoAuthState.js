@@ -1,59 +1,45 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { initAuthCreds, proto, BufferJSON } = require('@whiskeysockets/baileys');
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 const authSchema = new mongoose.Schema({
   _id:  { type: String, required: true },
-  data: { type: mongoose.Schema.Types.Mixed, required: true },
+  data: { type: String, required: true }, // JSON string
 }, { timestamps: true });
 
 const AuthData = mongoose.models.AuthData || mongoose.model('AuthData', authSchema);
-
-// ─── Helper: serializa/deserializa buffers e Uint8Arrays ─────────────────────
-
-function serialize(obj) {
-  return JSON.parse(JSON.stringify(obj, (_, v) => {
-    if (v instanceof Uint8Array || Buffer.isBuffer(v)) {
-      return { __type: 'Buffer', data: Array.from(v) };
-    }
-    return v;
-  }));
-}
-
-function deserialize(obj) {
-  return JSON.parse(JSON.stringify(obj), (_, v) => {
-    if (v && v.__type === 'Buffer' && Array.isArray(v.data)) {
-      return Buffer.from(v.data);
-    }
-    return v;
-  });
-}
 
 // ─── useMongoAuthState ────────────────────────────────────────────────────────
 
 async function useMongoAuthState() {
   async function readData(id) {
-    const doc = await AuthData.findById(id).lean();
-    if (!doc) return null;
-    return deserialize(doc.data);
+    try {
+      const doc = await AuthData.findById(id).lean();
+      if (!doc) return null;
+      return JSON.parse(doc.data, BufferJSON.reviver);
+    } catch {
+      return null;
+    }
   }
 
   async function writeData(id, data) {
+    const json = JSON.stringify(data, BufferJSON.replacer);
     await AuthData.findByIdAndUpdate(
       id,
-      { data: serialize(data) },
+      { data: json },
       { upsert: true, new: true }
     );
   }
 
   async function removeData(id) {
-    await AuthData.findByIdAndDelete(id);
+    try {
+      await AuthData.findByIdAndDelete(id);
+    } catch {}
   }
 
-  // Carrega creds ou inicializa vazias
-  const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
   let creds = await readData('creds');
   if (!creds) creds = initAuthCreds();
 
@@ -64,7 +50,10 @@ async function useMongoAuthState() {
         async get(type, ids) {
           const result = {};
           await Promise.all(ids.map(async (id) => {
-            const val = await readData(`${type}-${id}`);
+            let val = await readData(`${type}-${id}`);
+            if (type === 'app-state-sync-key' && val) {
+              val = proto.Message.AppStateSyncKeyData.fromObject(val);
+            }
             result[id] = val;
           }));
           return result;

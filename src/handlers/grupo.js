@@ -377,8 +377,8 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     if (fs.existsSync(BAN_IMAGE_PATH)) {
       await sock.sendMessage(jid, {
         image:    fs.readFileSync(BAN_IMAGE_PATH),
-        caption:  `🔨 *${nome}* foi banido(a) do grupo! Tchau! 👋`,
-        mentions: [targetJid],
+caption:  `🔨 @${targetJid.split('@')[0]} foi banido(a) do grupo! Tchau! 👋`,
+mentions: [targetJid],
       });
     }
 

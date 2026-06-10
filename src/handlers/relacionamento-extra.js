@@ -228,6 +228,7 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
   }, { quoted: msg });
 }
 
+// ─── !statuscasal ───
 async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
   const found = findRelByJid(senderJid, relacionamentos);
   if (!found) {
@@ -236,7 +237,7 @@ async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
   }
 
   const { key, rel } = found;
-  const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
+  const parcJid  = rel.nomeA === author ? rel.jidB : rel.jidA;
   const xp = getXpCasais().get(key) || 0;
   const desde = rel.desde ? Date.now() - rel.desde : 0;
   const dias = Math.floor(desde / (1000 * 60 * 60 * 24));
@@ -268,7 +269,7 @@ async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
 
   let texto =
     `💑 *STATUS ÉPICO DO CASAL*\n\n` +
-    `👥 *${author}* ${rel.tipo === 'namoro' ? '💕' : '💍'} *${parceiro}*\n` +
+    `👥 *@${senderJid.split('@')[0]}* ${rel.tipo === 'namoro' ? '💕' : '💍'} *@${parcJid.split('@')[0]}*\n` +
     `💎 Tipo: *${rel.tipo === 'namoro' ? 'NAMORANDO 🌟' : 'CASADOS 👰'}*\n` +
     `⏰ Tempo junto: *${dias}d ${horas}h* (Não se largam!)\n\n` +
     `${nivelEmoji} NÍVEL: *${nivel}*\n` +
@@ -280,7 +281,10 @@ async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
     texto += `\n\n🏆 *CONQUISTAS:*\n` + conquistas.map(c => `   ✅ ${c}`).join('\n');
   }
 
-  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  await sock.sendMessage(jid, {
+    text: texto,
+    mentions: [senderJid, parcJid].filter(Boolean),
+  }, { quoted: msg });
 }
 
 async function handleMeuPar(sock, msg, jid, author, senderJid, relacionamentos) {
@@ -346,6 +350,7 @@ async function handleXpDobro(sock, msg, jid, author, senderJid, relacionamentos)
   }, { quoted: msg });
 }
 
+// ─── Comandos extras relacionados a relacionamento ────────────
 async function handleAniversarioCasal(sock, msg, jid, author, senderJid, relacionamentos) {
   const found = findRelByJid(senderJid, relacionamentos);
   if (!found) {
@@ -461,6 +466,7 @@ async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, r
   }, { quoted: msg });
 }
 
+// ─── !rankcasais ───
 async function handleRankCasais(sock, msg, jid, relacionamentos) {
   if (relacionamentos.size === 0) {
     await sock.sendMessage(jid, {

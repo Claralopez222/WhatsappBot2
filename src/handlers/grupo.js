@@ -855,8 +855,8 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     const nome = contactNames[targetJid] || targetJid.split('@')[0];
     await sock.sendMessage(jid, {
       text: acao === 'promote'
-        ? `⬆️ *${nome}* foi promovido(a) a admin! 👑`
-        : `⬇️ *${nome}* perdeu o admin! 📉`,
+        ? `⬆️ *@${targetJid.split('@')[0]}* foi promovido(a) a admin! 👑`
+        : `⬇️ *@${targetJid.split('@')[0]}* perdeu o admin! 📉`,
       mentions: [targetJid],
     }, { quoted: msg });
   } catch (err) {

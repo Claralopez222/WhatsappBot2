@@ -48,31 +48,32 @@ const carteiraGrupoSchema = new mongoose.Schema(
     historicoSujo:            { type: Boolean, default: false },
 
     // ── Roubo — ataque (isolado por grupo) ───────────────────────
-
-    // Map de itens de ataque comprados: { dinamite: 2, mascara: 1, ... }
     itensRoubo: {
       type:    Map,
       of:      { type: Number, min: 0 },
       default: {},
     },
-
-    // Slug do item de ataque atualmente equipado (null = nenhum)
     equiparoubo: { type: String, default: null },
-
-    // Timestamp da última tentativa de roubo (cooldown)
-    ultimoRoubo: { type: Date, default: null },
+    ultimoRoubo: { type: Date,   default: null },
 
     // ── Segurança — defesa (isolada por grupo) ───────────────────
-
-    // Map de itens de defesa comprados: { cofre: 1, alarme: 2, ... }
     itensSec: {
       type:    Map,
       of:      { type: Number, min: 0 },
       default: {},
     },
-
-    // Slug do item de defesa atualmente ativo (null = nenhum)
     equiparsec: { type: String, default: null },
+
+    // ── Empréstimo ───────────────────────────────────────────────
+    emprestimo: {
+      ativo:             { type: Boolean, default: false },
+      valor:             { type: Number,  default: 0 },
+      vencimento:        { type: Date,    default: null },
+      solicitadoEm:      { type: Date,    default: null },
+      prazo:             { type: Number,  default: 7 },
+      quitadoEm:         { type: Date,    default: null },
+      proximoEmprestimo: { type: Date,    default: null },
+    },
 
     // ── Histórico de gold ────────────────────────────────────────
     goldHistory: {
@@ -93,10 +94,6 @@ carteiraGrupoSchema.index({ idGrupo: 1, xp: -1 });
 
 // ─── Métodos de instância ─────────────────────────────────────────────────────
 
-/**
- * Adiciona uma entrada ao histórico de gold mantendo no máximo `limite` entradas.
- * Não salva o documento — chame .save() depois se necessário.
- */
 carteiraGrupoSchema.methods.registrarGold = function (tipo, item, amount, limite = 50) {
   this.goldHistory.push({ type: tipo, item, amount });
   if (this.goldHistory.length > limite) {

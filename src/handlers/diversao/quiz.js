@@ -58,7 +58,7 @@ async function syncQuizPointsFromDB(userId) {
   }
 }
 
-async function saveQuizPointsToDB(userId, pontos) {
+async function saveQuizPointsToDB(userId, pontos, groupJid) {
   if (!userId) return;
   try {
     await Usuario.findOneAndUpdate(
@@ -66,6 +66,13 @@ async function saveQuizPointsToDB(userId, pontos) {
       { $set: { quizPoints: pontos } },
       { upsert: true, new: true }
     );
+    if (groupJid) {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: groupJid },
+        { $set: { quizPoints: pontos } },
+        { upsert: true, new: true }
+      );
+    }
   } catch (e) {
     console.error('⚠️ Erro ao salvar pontos quiz no MongoDB:', e.message);
   }
@@ -77,21 +84,21 @@ async function changeGold(userId, amount, groupJid) {
     return 0;
   }
   try {
-    if (amount > 0) await prepareDailyMissionState(userId);
-    const update = { $inc: { gold: amount } };
-    if (amount > 0) update['$inc']['dailyMissions.progress.gold500'] = amount;
-
     if (groupJid) {
       await CarteiraGrupo.findOneAndUpdate(
         { idWhatsApp: userId, idGrupo: groupJid },
-        update,
+        { $inc: { gold: amount } },
         { upsert: true, new: true }
       );
     }
 
+    if (amount > 0) await prepareDailyMissionState(userId);
+    const userUpdate = { $inc: { gold: amount } };
+    if (amount > 0) userUpdate['$inc']['dailyMissions.progress.gold500'] = amount;
+
     const user = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      update,
+      userUpdate,
       { upsert: true, new: true }
     );
     console.log(`✅ Gold alterado: ${userId} → ${amount} (novo saldo: ${user?.gold})`);
@@ -325,7 +332,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
         resolvedJid = results[0].jid;
       }
     } catch {
-      resolvedJid = senderJid; // mantém o original se falhar
+      resolvedJid = senderJid;
     }
   }
 
@@ -367,9 +374,9 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     );
 
     if (acertou) {
-      const pts = (pontosMap.get(resolvedJid) || 0) + 10;  // ← corrigido
-      pontosMap.set(resolvedJid, pts);                      // ← corrigido
-      await saveQuizPointsToDB(resolvedJid, pts);           // ← corrigido
+      const pts = (pontosMap.get(resolvedJid) || 0) + 10;
+      pontosMap.set(resolvedJid, pts);
+      await saveQuizPointsToDB(resolvedJid, pts, jid);
       const goldReward = 15;
       await changeGold(resolvedJid, goldReward, jid);
 
@@ -386,7 +393,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       await sock.sendMessage(jid, {
         text:
           `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n` +
-          `💰 *+10 pontos!* Total: *${pts} pts* ☁️\n` +
+          `💰 *+10 pontos!* Total: *${pts} pts*\n` +
           `💵 *+${goldReward} gold!*`,
       }, { quoted: msg });
     } else {
@@ -538,36 +545,22 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
   }
 
   try {
-    const membros = await CarteiraGrupo.find({ idGrupo: jid }).lean();
-    if (!membros.length) {
-      await sock.sendMessage(jid, {
-        text: '📭 Nenhum membro registrado neste grupo! Joga *!quiz* primeiro!',
-      }, { quoted: msg });
-      return;
-    }
+    const sorted = await CarteiraGrupo.find({ idGrupo: jid, quizPoints: { $gt: 0 } })
+      .sort({ quizPoints: -1 })
+      .limit(10)
+      .lean();
 
-    const idsMembros = membros.map(m => m.idWhatsApp);
-
-    const usuarios = await Usuario.find({
-      idWhatsApp: { $in: idsMembros },
-      quizPoints:  { $exists: true, $gt: 0 },
-    }).lean();
-
-    if (!usuarios.length) {
+    if (!sorted.length) {
       await sock.sendMessage(jid, {
         text: '📭 Nenhum ponto registrado neste grupo! Joga *!quiz* primeiro!',
       }, { quoted: msg });
       return;
     }
 
-    const sorted = usuarios
-      .sort((a, b) => b.quizPoints - a.quizPoints)
-      .slice(0, 10);
-
     let texto = `🏆 *RANKING DE QUIZ — ESTE GRUPO* 🏆\n\n`;
     sorted.forEach((u, i) => {
       const nome = resolverNome(u.idWhatsApp, contactNames);
-      texto += `${MEDALS[i]} *${nome}* — ${u.quizPoints} pts ☁️\n`;
+      texto += `${MEDALS[i]} *${nome}* — ${u.quizPoints} pts\n`;
     });
     texto += `\n_Joga *!quiz* pra subir!_`;
 

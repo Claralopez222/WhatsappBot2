@@ -1,19 +1,31 @@
 const path = require('path');
 
 const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
-
-const {
-  xpCasais,
-  xpBonus,
-  ciumentosMap,
-  bloqueados,
-  findRelByJid,
-  temXpBonus,
-  formatarTempo,
-  handleCarinh,
-} = require(path.join(__dirname, 'relacionamento'));
-
 const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils'));
+
+// ─── Lazy require para quebrar dependência circular ────────────
+// relacionamento.js importa este arquivo via Object.assign, então
+// se importarmos relacionamento.js no topo os exports ainda estão
+// vazios nesse momento. A função abaixo resolve o módulo apenas na
+// primeira chamada real, quando o ciclo já foi concluído.
+let _rel = null;
+function rel() {
+  if (!_rel) _rel = require(path.join(__dirname, 'relacionamento'));
+  return _rel;
+}
+
+function findRelByJid(jid, relacionamentos) { return rel().findRelByJid(jid, relacionamentos); }
+function temXpBonus(key)                    { return rel().temXpBonus(key); }
+function formatarTempo(ms)                  { return rel().formatarTempo(ms); }
+async function handleCarinh(...args)        { return rel().handleCarinh(...args); }
+
+// Os Maps são objetos — precisamos acessá-los via getter, não copiar
+// a referência no topo. Por isso substituímos os usos diretos de
+// xpCasais/xpBonus/ciumentosMap/bloqueados pelos wrappers abaixo.
+function getXpCasais()     { return rel().xpCasais; }
+function getXpBonus()      { return rel().xpBonus; }
+function getCiumentosMap() { return rel().ciumentosMap; }
+function getBloqueados()   { return rel().bloqueados; }
 
 async function handleFlores(sock, msg, jid, author, senderJid, relacionamentos) {
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'flores', '🌹', 'enviou um buquê de rosas');
@@ -60,8 +72,8 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
   }
 
   const pessoaJid = mentions[0];
-  const { rel } = found;
-  const parceiroJid = rel.jidA === senderJid ? rel.jidB : rel.jidA;
+  const { rel: relData } = found;
+  const parceiroJid = relData.jidA === senderJid ? relData.jidB : relData.jidA;
 
   if (pessoaJid !== parceiroJid) {
     await sock.sendMessage(jid, { text: '😂 Ué! Você tá tentando presentear outra pessoa? Que história é essa?!' }, { quoted: msg });
@@ -100,7 +112,7 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
     const { ITENS_LOJA } = require('./diversao/economia');
     const nomeAmigavel = ITENS_LOJA[itemNome]?.nome || itemNome;
 
-    const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
+    const parceiro = relData.nomeA === author ? relData.nomeB : relData.nomeA;
     const mensagem = `🎁 *${author}* presenteou *${parceiro}* com *${nomeAmigavel}*! 💕\n\n_"É pra você, meu amor!"_ 🥰`;
 
     await sock.sendMessage(jid, {
@@ -108,9 +120,9 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
       mentions: [pessoaJid],
     }, { quoted: msg });
 
-    const key = rel.jidA < rel.jidB ? `${rel.jidA}_${rel.jidB}` : `${rel.jidB}_${rel.jidA}`;
-    const xpAtual = (xpCasais.get(key) || 0) + 5;
-    xpCasais.set(key, xpAtual);
+    const key = relData.jidA < relData.jidB ? `${relData.jidA}_${relData.jidB}` : `${relData.jidB}_${relData.jidA}`;
+    const xpAtual = (getXpCasais().get(key) || 0) + 5;
+    getXpCasais().set(key, xpAtual);
 
   } catch (e) {
     console.error('⚠️ Erro ao presentear:', e.message);
@@ -161,8 +173,8 @@ async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos
     `🎸 *${author}* canta pro mundo:\n\n_"EU AMO ESSE(A) CARA(A)! QUEM NÃO GOSTOU, PROBLEMA SUA! É MEU(MINHA) AMOR E PRONTO!" 🎵🔥_`,
   ];
 
-  const xpAtual = (xpCasais.get(key) || 0) + 5;
-  xpCasais.set(key, xpAtual);
+  const xpAtual = (getXpCasais().get(key) || 0) + 5;
+  getXpCasais().set(key, xpAtual);
 
   await sock.sendMessage(jid, {
     text: declaracoes[Math.floor(Math.random() * declaracoes.length)] + `\n\n💰 *+5 XP DE AMOR!* Total: *${xpAtual} XP* 🚀`,
@@ -177,8 +189,8 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
     return;
   }
 
-  if (ciumentosMap.has(senderJid)) {
-    const restante = ciumentosMap.get(senderJid) - Date.now();
+  if (getCiumentosMap().has(senderJid)) {
+    const restante = getCiumentosMap().get(senderJid) - Date.now();
     if (restante > 0) {
       await sock.sendMessage(jid, {
         text: `⏰ CALMA LÁ! Você acabou de usar ciúme! Próxima vez em *${formatarTempo(restante)}*! Vai aprender quando é a hora certa! 😤`,
@@ -186,7 +198,7 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
       return;
     }
   }
-  ciumentosMap.set(senderJid, Date.now() + 30 * 60 * 1000);
+  getCiumentosMap().set(senderJid, Date.now() + 30 * 60 * 1000);
 
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid || [];
@@ -207,8 +219,8 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
     `💢 *${author}* IGNOROU *${parceiro}* O DIA TODO por causa de *${suspeito}*!\n\n_Depois voltaram a namorar com um abraço apertado. 😔💕_`,
   ];
 
-  const xpAtual = Math.max(0, (xpCasais.get(key) || 0) - 2);
-  xpCasais.set(key, xpAtual);
+  const xpAtual = Math.max(0, (getXpCasais().get(key) || 0) - 2);
+  getXpCasais().set(key, xpAtual);
 
   await sock.sendMessage(jid, {
     text: cenas[Math.floor(Math.random() * cenas.length)] + `\n\n⚠️ *-2 XP* por CIÚME CEGO! Total: *${xpAtual} XP* 😤`,
@@ -225,7 +237,7 @@ async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
 
   const { key, rel } = found;
   const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
-  const xp = xpCasais.get(key) || 0;
+  const xp = getXpCasais().get(key) || 0;
   const desde = rel.desde ? Date.now() - rel.desde : 0;
   const dias = Math.floor(desde / (1000 * 60 * 60 * 24));
   const horas = Math.floor((desde % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -305,7 +317,7 @@ async function handleXpDobro(sock, msg, jid, author, senderJid, relacionamentos)
 
   const { key, rel } = found;
   if (temXpBonus(key)) {
-    const b = xpBonus.get(key);
+    const b = getXpBonus().get(key);
     const restante = b.expiry - Date.now();
     await sock.sendMessage(jid, {
       text: `⏰ O XP Duplo já está ativo! Expira em *${formatarTempo(restante)}*.`,
@@ -313,7 +325,7 @@ async function handleXpDobro(sock, msg, jid, author, senderJid, relacionamentos)
     return;
   }
 
-  const xpAtual = xpCasais.get(key) || 0;
+  const xpAtual = getXpCasais().get(key) || 0;
   if (xpAtual < 30) {
     await sock.sendMessage(jid, {
       text: `❌ Você precisa de pelo menos *30 XP* para ativar o XP Duplo!\n_Vocês têm: *${xpAtual} XP*_`,
@@ -322,8 +334,8 @@ async function handleXpDobro(sock, msg, jid, author, senderJid, relacionamentos)
   }
 
   const novoXp = xpAtual - 30;
-  xpCasais.set(key, novoXp);
-  xpBonus.set(key, { ativo: true, expiry: Date.now() + 2 * 60 * 60 * 1000 });
+  getXpCasais().set(key, novoXp);
+  getXpBonus().set(key, { ativo: true, expiry: Date.now() + 2 * 60 * 60 * 1000 });
 
   const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
   const parcJid = rel.nomeA === author ? rel.jidB : rel.jidA;
@@ -355,8 +367,8 @@ async function handleAniversarioCasal(sock, msg, jid, author, senderJid, relacio
   if (meses >= 1) marcos.push(`📅 *${meses} mês(es) juntos!*`);
   if (semanas >= 1) marcos.push(`🗓️ *${semanas} semana(s) juntos!*`);
 
-  const xpAtual = (xpCasais.get(key) || 0) + 20;
-  xpCasais.set(key, xpAtual);
+  const xpAtual = (getXpCasais().get(key) || 0) + 20;
+  getXpCasais().set(key, xpAtual);
 
   let texto = `🎉 *ANIVERSÁRIO DO CASAL* 🎉\n\n`;
   texto += `💑 *${author}* e *${parceiro}*\n\n`;
@@ -402,8 +414,8 @@ async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, r
     return;
   }
 
-  const xpA = xpCasais.get(foundA.key) || 0;
-  const xpB = xpCasais.get(foundB.key) || 0;
+  const xpA = getXpCasais().get(foundA.key) || 0;
+  const xpB = getXpCasais().get(foundB.key) || 0;
 
   const nomesCasal1 = `${foundA.rel.nomeA} & ${foundA.rel.nomeB}`;
   const nomesCasal2 = `${foundB.rel.nomeA} & ${foundB.rel.nomeB}`;
@@ -415,8 +427,8 @@ async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, r
   if (scoreA > scoreB) {
     const ganho = Math.min(20, Math.floor(xpB * 0.1));
     const perda = ganho;
-    xpCasais.set(foundA.key, xpA + ganho);
-    xpCasais.set(foundB.key, Math.max(0, xpB - perda));
+    getXpCasais().set(foundA.key, xpA + ganho);
+    getXpCasais().set(foundB.key, Math.max(0, xpB - perda));
     resultado =
       `🏆 *${nomesCasal1}* VENCEU o duelo!\n\n` +
       `💰 *+${ganho} XP* para os campeões!\n` +
@@ -425,8 +437,8 @@ async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, r
   } else if (scoreB > scoreA) {
     const ganho = Math.min(20, Math.floor(xpA * 0.1));
     const perda = ganho;
-    xpCasais.set(foundB.key, xpB + ganho);
-    xpCasais.set(foundA.key, Math.max(0, xpA - perda));
+    getXpCasais().set(foundB.key, xpB + ganho);
+    getXpCasais().set(foundA.key, Math.max(0, xpA - perda));
     resultado =
       `🏆 *${nomesCasal2}* VENCEU o duelo!\n\n` +
       `💰 *+${ganho} XP* para os campeões!\n` +
@@ -434,8 +446,8 @@ async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, r
       `_Que reviravolta! 😱_`;
   } else {
     resultado = `🤝 *EMPATE!* Ambos os casais são igualmente incríveis! +3 XP para todos!\n\n💰 *+3 XP* para ambos!`;
-    xpCasais.set(foundA.key, xpA + 3);
-    xpCasais.set(foundB.key, xpB + 3);
+    getXpCasais().set(foundA.key, xpA + 3);
+    getXpCasais().set(foundB.key, xpB + 3);
   }
 
   await sock.sendMessage(jid, {
@@ -458,7 +470,7 @@ async function handleRankCasais(sock, msg, jid, relacionamentos) {
   }
 
   const lista = [...relacionamentos.entries()].map(([key, rel]) => {
-    const xp = xpCasais.get(key) || 0;
+    const xp = getXpCasais().get(key) || 0;
     const diasJuntos = rel.desde ? Math.floor((Date.now() - rel.desde) / (1000 * 60 * 60 * 24)) : 0;
     const score = xp + diasJuntos * 2;
     return { nomeA: rel.nomeA, nomeB: rel.nomeB, xp, diasJuntos, score, tipo: rel.tipo };
@@ -490,7 +502,7 @@ async function handleDesafioCasal(sock, msg, jid, author, senderJid, relacioname
 
   const { key, rel } = found;
 
-  if (bloqueados.has(senderJid)) {
+  if (getBloqueados().has(senderJid)) {
     return await sock.sendMessage(jid, { text: '⛔ Você está de castigo! Sem comando de desafio! 🚫' }, { quoted: msg });
   }
 
@@ -509,8 +521,8 @@ async function handleDesafioCasal(sock, msg, jid, author, senderJid, relacioname
   // BUGFIX: regex era \\+(\u0434+)\\sXP (caractere cirílico) — corrigido para /\+(\d+)\s*XP/
   if (temXpBonus(key)) {
     const xpGanho = parseInt(desafio.match(/\+(\d+)\s*XP/)?.[1] || '10');
-    xpCasais.set(key, (xpCasais.get(key) || 0) + xpGanho);
-    xpBonus.delete(key);
+    getXpCasais().set(key, (getXpCasais().get(key) || 0) + xpGanho);
+    getXpBonus().delete(key);
 
     return await sock.sendMessage(jid, {
       text: desafio + '\n\n🚀 *BÔNUS APLICADO!* Vocês ganharam XP DOBRADO nesse desafio! 🎉',
@@ -535,14 +547,14 @@ async function handleCompetçaoCasais(sock, msg, jid, author, senderJid, relacio
       key: k,
       nomeA: r.nomeA,
       nomeB: r.nomeB,
-      xp: xpCasais.get(k) || 0,
+      xp: getXpCasais().get(k) || 0,
     });
   });
   ranking.sort((a, b) => b.xp - a.xp);
 
   const posicao = ranking.findIndex(r => r.key === key) + 1;
 
-  const xpAtual = xpCasais.get(key) || 0;
+  const xpAtual = getXpCasais().get(key) || 0;
   const nivel = getNivelInfo(xpAtual);
 
   let msg_texto = '💑 *COMPETIÇÃO ENTRE CASAIS*\n\n';
@@ -568,7 +580,7 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
 
   const { key, rel } = found;
 
-  if (bloqueados.has(senderJid)) {
+  if (getBloqueados().has(senderJid)) {
     return await sock.sendMessage(jid, { text: '⛔ Vocês estão de castigo! 🚫' }, { quoted: msg });
   }
 
@@ -587,8 +599,8 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
 
   // BUGFIX: regex era \\+(\u0434+)\\sXP — corrigido para /\+(\d+)\s*XP/
   const xpGanho = parseInt(surp.match(/\+(\d+)\s*XP/)?.[1] || '20');
-  const xpAtual = (xpCasais.get(key) || 0) + xpGanho;
-  xpCasais.set(key, xpAtual);
+  const xpAtual = (getXpCasais().get(key) || 0) + xpGanho;
+  getXpCasais().set(key, xpAtual);
 
   // BUGFIX: era mentions: [jidPedinte, senderJid] — jidPedinte não existe neste escopo
   await sock.sendMessage(jid, {
@@ -606,7 +618,7 @@ async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos)
 
   const { key, rel } = found;
 
-  if (bloqueados.has(senderJid)) {
+  if (getBloqueados().has(senderJid)) {
     return await sock.sendMessage(jid, { text: '⛔ Castigo! Sem fun! 🚫' }, { quoted: msg });
   }
 
@@ -625,8 +637,8 @@ async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos)
 
   // BUGFIX: regex era \\+(\u0434+)\\sXP — corrigido para /\+(\d+)\s*XP/
   const xpGanho = parseInt(domingo.match(/\+(\d+)\s*XP/)?.[1] || '20');
-  const xpAtual = (xpCasais.get(key) || 0) + xpGanho;
-  xpCasais.set(key, xpAtual);
+  const xpAtual = (getXpCasais().get(key) || 0) + xpGanho;
+  getXpCasais().set(key, xpAtual);
 
   await sock.sendMessage(jid, {
     text: domingo + `\n\n💰 *+${xpGanho} XP*! Total do casal: *${xpAtual} XP*`,

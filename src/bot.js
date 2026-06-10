@@ -39,7 +39,6 @@ const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversa
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
 const pescaHandler          = require('./handlers/diversao/pesca');
-const pescaHandler = require('./handlers/diversao/pesca');
 const { handleEmprestimo, handlePayEmprestimo, handleDivida, verificarInadimplente } = require('./handlers/diversao/emprestimo'); // ← NOVO
 const { initPetScheduler, registerActiveGroup } = require(path.join(__dirname, 'handlers', 'diversao'));
 const { initQuizRankingScheduler } = require(path.join(__dirname, 'handlers', 'quizRanking')); // ← NOVO

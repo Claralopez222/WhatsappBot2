@@ -18,47 +18,115 @@ const EMPRESTIMO_CONFIG = {
 
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
+/** Limite máximo de gold emprestável por nível mínimo atingido. */
 const LIMITE_POR_NIVEL = {
-  1:   200,
-  2:   300,
-  3:   400,
-  4:   450,
-  5:   500,
-  6:   600,
-  7:   700,
-  8:   800,
-  9:   900,
-  10:  1000,
-  15:  1500,
-  20:  2000,
-  25:  2500,
-  30:  3000,
-  35:  3500,
-  40:  4000,
-  45:  4500,
-  50:  5000,
-  55:  5500,
-  60:  6000,
-  65:  6500,
-  70:  7000,
-  75:  7500,
-  80:  8000,
-  85:  8500,
-  90:  9000,
-  95:  9500,
-  100: 10000,
-  110: 11000,
-  120: 12000,
-  130: 13000,
-  140: 14000,
-  150: 15000,
+  1:   200,  2:   300,  3:   400,  4:   450,  5:   500,
+  6:   600,  7:   700,  8:   800,  9:   900,  10:  1000,
+  15:  1500, 20:  2000, 25:  2500, 30:  3000, 35:  3500,
+  40:  4000, 45:  4500, 50:  5000, 55:  5500, 60:  6000,
+  65:  6500, 70:  7000, 75:  7500, 80:  8000, 85:  8500,
+  90:  9000, 95:  9500, 100: 10000, 110: 11000, 120: 12000,
+  130: 13000, 140: 14000, 150: 15000,
 };
 
 // Níveis pré-ordenados (decrescente) para evitar reordenação a cada chamada
 const NIVEIS_ORDENADOS = Object.keys(LIMITE_POR_NIVEL).map(Number).sort((a, b) => b - a);
 
+// ─── Mensagens ────────────────────────────────────────────────────────────────
+
+const MSGS = {
+  ajuda: () =>
+    `💸 *EMPRÉSTIMO* 💸\n\n` +
+    `*USO:* !emprestimo <valor> [prazo]\n\n` +
+    `*PRAZOS DISPONÍVEIS:* 3 · 5 · 7 dias\n` +
+    `*JUROS:* 20% fixo + 5%/dia após vencimento\n` +
+    `*MULTA:* 10% extra ao vencer\n\n` +
+    `Exemplo: *!emprestimo 500 7*`,
+
+  prazoInvalido: () =>
+    `⚠️ Prazo inválido! Escolha: *${EMPRESTIMO_CONFIG.prazosDias.join('*, *')}* dias.`,
+
+  valorMinimo: () =>
+    `⚠️ Valor mínimo: *${EMPRESTIMO_CONFIG.minValor} gold*`,
+
+  valorMaximo: () =>
+    `⚠️ Valor máximo: *${EMPRESTIMO_CONFIG.maxValor} gold*`,
+
+  inadimplente: () =>
+    `🚫 *ACESSO BLOQUEADO*\n\n` +
+    `Você possui um empréstimo *vencido e não pago!*\n\n` +
+    `Use *!pay emprestimo* para quitar sua dívida primeiro.`,
+
+  cooldown: (tempo) =>
+    `⏳ *COOLDOWN ATIVO*\n\n` +
+    `Você quitou um empréstimo recentemente.\n` +
+    `Próximo disponível em: *${tempo}*`,
+
+  emprestimoAtivo: (divida) =>
+    `⚠️ *EMPRÉSTIMO ATIVO*\n\n` +
+    `Você já possui um empréstimo em aberto!\n\n` +
+    `💰 Dívida atual: *${divida} gold*\n\n` +
+    `Use *!pay emprestimo* para quitar.`,
+
+  limiteExcedido: (level, limite) =>
+    `⚠️ *LIMITE EXCEDIDO*\n\n` +
+    `Seu nível (${level}) permite até *${limite} gold*.\n\n` +
+    `Suba de nível para aumentar seu limite!`,
+
+  aprovado: (valor, juros, totalDever, prazoArg, vencimento) =>
+    `✅ *EMPRÉSTIMO APROVADO!* ✅\n\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `💸 Valor recebido:  *${valor} gold*\n` +
+    `📈 Juros (20%):     *${juros} gold*\n` +
+    `💰 Total a pagar:   *${totalDever} gold*\n` +
+    `⏰ Prazo:           *${prazoArg} dias*\n` +
+    `📅 Vencimento:      *${vencimento.toLocaleDateString('pt-BR')}*\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `⚠️ _Após vencer: +10% multa e +5%/dia!_\n\n` +
+    `Use *!pay emprestimo* para quitar.`,
+
+  semEmprestimo: () =>
+    `✅ Você não possui empréstimos ativos!`,
+
+  saldoInsuficiente: (saldoAtual, divida) =>
+    `⚠️ *SALDO INSUFICIENTE*\n\n` +
+    `💰 Seu saldo:    *${saldoAtual} gold*\n` +
+    `💸 Dívida total: *${divida} gold*\n\n` +
+    `Faltam: *${divida - saldoAtual} gold*`,
+
+  quitado: (divida, saldoRestante) =>
+    `✅ *EMPRÉSTIMO QUITADO!* ✅\n\n` +
+    `💸 Valor pago:       *${divida} gold*\n` +
+    `💰 Saldo restante:   *${saldoRestante} gold*\n\n` +
+    `⏳ Próximo empréstimo em: *24 horas*\n\n` +
+    `_Obrigado por pagar em dia!_ 🏆`,
+
+  quitadoAutomatico: (divida) =>
+    `✅ Seu empréstimo de *${divida} gold* foi quitado automaticamente!`,
+
+  semDividas: () =>
+    `✅ *Você não possui dívidas ativas!*\n\nUse *!emprestimo <valor> [prazo]* para solicitar.`,
+
+  situacao: (emp, divida, atrasado, diasAtraso, tempoRestante, saldo) =>
+    `📋 *SITUAÇÃO DO EMPRÉSTIMO* 📋\n\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `💸 Valor original:  *${emp.valor} gold*\n` +
+    `💰 Total a pagar:   *${divida} gold*\n` +
+    `📅 Vencimento:      *${new Date(emp.vencimento).toLocaleDateString('pt-BR')}*\n` +
+    (atrasado
+      ? `⚠️ Status: *ATRASADO (${diasAtraso} dia${diasAtraso > 1 ? 's' : ''})*\n`
+      : `✅ Status: *Em dia*\n⏰ Vence em: *${tempoRestante}*\n`) +
+    `━━━━━━━━━━━━━━━━\n` +
+    `💎 Seu saldo: *${saldo} gold*\n\n` +
+    `Use *!pay emprestimo* para quitar.`,
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Retorna o limite de empréstimo para o nível informado.
+ * Caso nenhum limiar seja atingido, retorna o valor mínimo configurado.
+ */
 function getLimitePorNivel(level) {
   for (const n of NIVEIS_ORDENADOS) {
     if (level >= n) return LIMITE_POR_NIVEL[n];
@@ -66,17 +134,20 @@ function getLimitePorNivel(level) {
   return EMPRESTIMO_CONFIG.minValor;
 }
 
+/**
+ * Calcula o total da dívida considerando juros fixos e, se vencido,
+ * multa por atraso + juros diários.
+ */
 function calcularDivida(emprestimo) {
-  const vencimentoTs = new Date(emprestimo.vencimento).getTime();
+  const valorBase    = emprestimo?.valor ?? 0;
+  const vencimentoTs = new Date(emprestimo?.vencimento).getTime();
 
-  // Protege contra datas inválidas no banco
   if (isNaN(vencimentoTs)) {
-    console.error('[emprestimo] calcularDivida: vencimento inválido', emprestimo.vencimento);
-    return emprestimo.valor ?? 0;
+    console.error('[emprestimo] calcularDivida: vencimento inválido', emprestimo?.vencimento);
+    return valorBase;
   }
 
   const agora     = Date.now();
-  const valorBase = emprestimo.valor;
   const jurosBase = Math.floor(valorBase * EMPRESTIMO_CONFIG.jurosTaxa);
 
   if (agora <= vencimentoTs) {
@@ -90,6 +161,7 @@ function calcularDivida(emprestimo) {
   return valorBase + jurosBase + multa + jurosDiario;
 }
 
+/** Formata milissegundos em string legível (ex: "1d 3h", "2h 5min"). */
 function formatarTempo(ms) {
   if (ms <= 0) return '0min';
 
@@ -102,16 +174,82 @@ function formatarTempo(ms) {
   return `${m}min`;
 }
 
+/** Envia mensagem de erro padrão. */
 async function enviarErro(sock, msg, jid, texto) {
   await sock.sendMessage(jid, { text: `❌ *Erro:* ${texto}` }, { quoted: msg });
 }
 
+/** Extrai o ID do usuário da mensagem. */
 function getUserId(msg) {
   return msg.key.participant || msg.key.remoteJid;
 }
 
-// ─── Verificar inadimplência ──────────────────────────────────────────────────
+// ─── Operações de banco reutilizáveis ────────────────────────────────────────
 
+/**
+ * Cria o empréstimo na carteira do usuário de forma atômica.
+ * Retorna o documento atualizado.
+ */
+async function _criarEmprestimo(userId, idGrupo, valor, prazoArg) {
+  const vencimento = new Date(Date.now() + prazoArg * MS_POR_DIA);
+
+  return CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: userId, idGrupo },
+    {
+      $inc: { gold: valor },
+      $set: {
+        emprestimo: {
+          ativo:        true,
+          valor,
+          vencimento,
+          solicitadoEm: new Date(),
+          prazo:        prazoArg,
+        },
+      },
+      $push: {
+        goldHistory: {
+          $each:  [{ type: 'recebido', item: `Empréstimo (${prazoArg} dias)`, amount: valor }],
+          $slice: -50,
+        },
+      },
+    },
+    { upsert: true, new: true }
+  );
+}
+
+/**
+ * Quita o empréstimo de forma atômica — só age se `emprestimo.ativo === true`
+ * (evita duplo pagamento em corridas de requisição).
+ * Retorna o documento atualizado ou `null` se já estava inativo.
+ */
+async function _quitarEmprestimo(userId, idGrupo, divida, item = 'Quitação de empréstimo') {
+  return CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: userId, idGrupo, 'emprestimo.ativo': true, gold: { $gte: divida } },
+    {
+      $inc: { gold: -divida },
+      $set: {
+        'emprestimo.ativo':             false,
+        'emprestimo.quitadoEm':         new Date(),
+        'emprestimo.proximoEmprestimo': new Date(Date.now() + EMPRESTIMO_CONFIG.cooldownMs),
+      },
+      $push: {
+        goldHistory: {
+          $each:  [{ type: 'gasto', item, amount: divida }],
+          $slice: -50,
+        },
+      },
+    },
+    { new: true }
+  );
+}
+
+// ─── Verificações exportáveis ────────────────────────────────────────────────
+
+/**
+ * Retorna `true` se o usuário possuir empréstimo ativo e vencido.
+ * @param {string} userId
+ * @param {string} idGrupo
+ */
 async function verificarInadimplente(userId, idGrupo) {
   try {
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).lean();
@@ -125,37 +263,25 @@ async function verificarInadimplente(userId, idGrupo) {
   }
 }
 
-// ─── Desconto automático ──────────────────────────────────────────────────────
-
+/**
+ * Se o usuário possuir saldo suficiente para quitar a dívida ativa,
+ * desconta automaticamente e retorna a mensagem de confirmação.
+ * Retorna `null` caso não haja dívida ou saldo insuficiente.
+ * @param {string} userId
+ * @param {string} idGrupo
+ */
 async function verificarDescontoAutomatico(userId, idGrupo) {
   try {
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo });
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).lean();
     if (!carteira?.emprestimo?.ativo) return null;
 
-    const divida     = calcularDivida(carteira.emprestimo);
-    const saldoAtual = carteira.gold ?? 0;
+    const divida = calcularDivida(carteira.emprestimo);
 
-    if (saldoAtual < divida) return null;
+    // _quitarEmprestimo já valida `gold >= divida` na query (atômico)
+    const atualizada = await _quitarEmprestimo(userId, idGrupo, divida, 'Quitação automática de empréstimo');
+    if (!atualizada) return null;
 
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo },
-      {
-        $inc: { gold: -divida },
-        $set: {
-          'emprestimo.ativo':             false,
-          'emprestimo.quitadoEm':         new Date(),
-          'emprestimo.proximoEmprestimo': new Date(Date.now() + EMPRESTIMO_CONFIG.cooldownMs),
-        },
-        $push: {
-          goldHistory: {
-            $each:  [{ type: 'gasto', item: 'Quitação automática de empréstimo', amount: divida }],
-            $slice: -50,
-          },
-        },
-      }
-    );
-
-    return `✅ Seu empréstimo de *${divida} gold* foi quitado automaticamente!`;
+    return MSGS.quitadoAutomatico(divida);
   } catch (err) {
     console.error('[emprestimo] verificarDescontoAutomatico:', err);
     return null;
@@ -164,66 +290,52 @@ async function verificarDescontoAutomatico(userId, idGrupo) {
 
 // ─── !emprestimo ──────────────────────────────────────────────────────────────
 
+/**
+ * Processa o comando `!emprestimo <valor> [prazo]`.
+ */
 async function handleEmprestimo(sock, msg, jid, caption) {
   const userId = getUserId(msg);
   const args   = caption.trim().split(/\s+/);
 
+  // Exibe ajuda se não houver argumentos
   if (args.length < 2 || !args[1]) {
-    await sock.sendMessage(jid, {
-      text:
-        `💸 *EMPRÉSTIMO* 💸\n\n` +
-        `*USO:* !emprestimo <valor> [prazo]\n\n` +
-        `*PRAZOS DISPONÍVEIS:* 3 · 5 · 7 dias\n` +
-        `*JUROS:* 20% fixo + 5%/dia após vencimento\n` +
-        `*MULTA:* 10% extra ao vencer\n\n` +
-        `Exemplo: *!emprestimo 500 7*`,
-    }, { quoted: msg });
+    await sock.sendMessage(jid, { text: MSGS.ajuda() }, { quoted: msg });
     return;
   }
 
   const valor    = parseInt(args[1], 10);
   const prazoArg = args[2] ? parseInt(args[2], 10) : 7;
 
+  // Validações de entrada
   if (isNaN(valor) || valor <= 0) {
     await enviarErro(sock, msg, jid, 'Informe um valor numérico válido.');
     return;
   }
 
   if (!EMPRESTIMO_CONFIG.prazosDias.includes(prazoArg)) {
-    await sock.sendMessage(jid, {
-      text: `⚠️ Prazo inválido! Escolha: *3*, *5* ou *7* dias.`,
-    }, { quoted: msg });
+    await sock.sendMessage(jid, { text: MSGS.prazoInvalido() }, { quoted: msg });
     return;
   }
 
   if (valor < EMPRESTIMO_CONFIG.minValor) {
-    await sock.sendMessage(jid, {
-      text: `⚠️ Valor mínimo: *${EMPRESTIMO_CONFIG.minValor} gold*`,
-    }, { quoted: msg });
+    await sock.sendMessage(jid, { text: MSGS.valorMinimo() }, { quoted: msg });
     return;
   }
 
   if (valor > EMPRESTIMO_CONFIG.maxValor) {
-    await sock.sendMessage(jid, {
-      text: `⚠️ Valor máximo: *${EMPRESTIMO_CONFIG.maxValor} gold*`,
-    }, { quoted: msg });
+    await sock.sendMessage(jid, { text: MSGS.valorMaximo() }, { quoted: msg });
     return;
   }
 
   try {
-    // ── Verificar inadimplência ANTES de tudo
+    // 1. Inadimplência — bloqueia qualquer novo empréstimo
     const inadimplente = await verificarInadimplente(userId, jid);
     if (inadimplente) {
-      await sock.sendMessage(jid, {
-        text:
-          `🚫 *ACESSO BLOQUEADO*\n\n` +
-          `Você possui um empréstimo *vencido e não pago!*\n\n` +
-          `Use *!pay emprestimo* para quitar sua dívida primeiro.`,
-      }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.inadimplente() }, { quoted: msg });
       return;
     }
 
-    // ── Buscar nível e carteira em paralelo
+    // 2. Buscar nível e carteira em paralelo
     const [usuario, carteira] = await Promise.all([
       Usuario.findOne({ idWhatsApp: userId }).select('level').lean(),
       CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean(),
@@ -232,84 +344,39 @@ async function handleEmprestimo(sock, msg, jid, caption) {
     const level  = usuario?.level ?? 1;
     const limite = getLimitePorNivel(level);
 
-    // ── Cooldown pós-quitação
+    // 3. Cooldown pós-quitação
     if (carteira?.emprestimo?.proximoEmprestimo) {
       const liberacao = new Date(carteira.emprestimo.proximoEmprestimo).getTime();
       if (!isNaN(liberacao) && Date.now() < liberacao) {
         await sock.sendMessage(jid, {
-          text:
-            `⏳ *COOLDOWN ATIVO*\n\n` +
-            `Você quitou um empréstimo recentemente.\n` +
-            `Próximo disponível em: *${formatarTempo(liberacao - Date.now())}*`,
+          text: MSGS.cooldown(formatarTempo(liberacao - Date.now())),
         }, { quoted: msg });
         return;
       }
     }
 
-    // ── Empréstimo já ativo
+    // 4. Empréstimo já ativo
     if (carteira?.emprestimo?.ativo) {
       const divida = calcularDivida(carteira.emprestimo);
-      await sock.sendMessage(jid, {
-        text:
-          `⚠️ *EMPRÉSTIMO ATIVO*\n\n` +
-          `Você já possui um empréstimo em aberto!\n\n` +
-          `💰 Dívida atual: *${divida} gold*\n\n` +
-          `Use *!pay emprestimo* para quitar.`,
-      }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.emprestimoAtivo(divida) }, { quoted: msg });
       return;
     }
 
-    // ── Limite por nível
+    // 5. Limite por nível
     if (valor > limite) {
-      await sock.sendMessage(jid, {
-        text:
-          `⚠️ *LIMITE EXCEDIDO*\n\n` +
-          `Seu nível (${level}) permite até *${limite} gold*.\n\n` +
-          `Suba de nível para aumentar seu limite!`,
-      }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.limiteExcedido(level, limite) }, { quoted: msg });
       return;
     }
 
-    // ── Criar empréstimo
+    // 6. Criar empréstimo
+    await _criarEmprestimo(userId, jid, valor, prazoArg);
+
     const vencimento = new Date(Date.now() + prazoArg * MS_POR_DIA);
     const juros      = Math.floor(valor * EMPRESTIMO_CONFIG.jurosTaxa);
     const totalDever = valor + juros;
 
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: jid },
-      {
-        $inc: { gold: valor },
-        $set: {
-          emprestimo: {
-            ativo:        true,
-            valor,
-            vencimento,
-            solicitadoEm: new Date(),
-            prazo:        prazoArg,
-          },
-        },
-        $push: {
-          goldHistory: {
-            $each:  [{ type: 'recebido', item: `Empréstimo (${prazoArg} dias)`, amount: valor }],
-            $slice: -50,
-          },
-        },
-      },
-      { upsert: true }
-    );
-
     await sock.sendMessage(jid, {
-      text:
-        `✅ *EMPRÉSTIMO APROVADO!* ✅\n\n` +
-        `━━━━━━━━━━━━━━━━\n` +
-        `💸 Valor recebido:  *${valor} gold*\n` +
-        `📈 Juros (20%):     *${juros} gold*\n` +
-        `💰 Total a pagar:   *${totalDever} gold*\n` +
-        `⏰ Prazo:           *${prazoArg} dias*\n` +
-        `📅 Vencimento:      *${vencimento.toLocaleDateString('pt-BR')}*\n` +
-        `━━━━━━━━━━━━━━━━\n` +
-        `⚠️ _Após vencer: +10% multa e +5%/dia!_\n\n` +
-        `Use *!pay emprestimo* para quitar.`,
+      text: MSGS.aprovado(valor, juros, totalDever, prazoArg, vencimento),
     }, { quoted: msg });
 
   } catch (err) {
@@ -320,6 +387,9 @@ async function handleEmprestimo(sock, msg, jid, caption) {
 
 // ─── !pay emprestimo ──────────────────────────────────────────────────────────
 
+/**
+ * Processa o comando `!pay emprestimo`.
+ */
 async function handlePayEmprestimo(sock, msg, jid) {
   const userId = getUserId(msg);
 
@@ -327,9 +397,7 @@ async function handlePayEmprestimo(sock, msg, jid) {
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
 
     if (!carteira?.emprestimo?.ativo) {
-      await sock.sendMessage(jid, {
-        text: `✅ Você não possui empréstimos ativos!`,
-      }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.semEmprestimo() }, { quoted: msg });
       return;
     }
 
@@ -337,42 +405,21 @@ async function handlePayEmprestimo(sock, msg, jid) {
     const saldoAtual = carteira.gold ?? 0;
 
     if (saldoAtual < divida) {
-      await sock.sendMessage(jid, {
-        text:
-          `⚠️ *SALDO INSUFICIENTE*\n\n` +
-          `💰 Seu saldo:    *${saldoAtual} gold*\n` +
-          `💸 Dívida total: *${divida} gold*\n\n` +
-          `Faltam: *${divida - saldoAtual} gold*`,
-      }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.saldoInsuficiente(saldoAtual, divida) }, { quoted: msg });
       return;
     }
 
-    const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: jid },
-      {
-        $inc: { gold: -divida },
-        $set: {
-          'emprestimo.ativo':             false,
-          'emprestimo.quitadoEm':         new Date(),
-          'emprestimo.proximoEmprestimo': new Date(Date.now() + EMPRESTIMO_CONFIG.cooldownMs),
-        },
-        $push: {
-          goldHistory: {
-            $each:  [{ type: 'gasto', item: 'Quitação de empréstimo', amount: divida }],
-            $slice: -50,
-          },
-        },
-      },
-      { new: true }
-    );
+    // Quitação atômica — condição `ativo: true` + `gold >= divida` na query
+    const atualizada = await _quitarEmprestimo(userId, jid, divida);
+
+    if (!atualizada) {
+      // Só ocorre se houve corrida de requisições e outro processo quitou antes
+      await sock.sendMessage(jid, { text: MSGS.semEmprestimo() }, { quoted: msg });
+      return;
+    }
 
     await sock.sendMessage(jid, {
-      text:
-        `✅ *EMPRÉSTIMO QUITADO!* ✅\n\n` +
-        `💸 Valor pago:       *${divida} gold*\n` +
-        `💰 Saldo restante:   *${carteiraAtualizada.gold} gold*\n\n` +
-        `⏳ Próximo empréstimo em: *24 horas*\n\n` +
-        `_Obrigado por pagar em dia!_ 🏆`,
+      text: MSGS.quitado(divida, atualizada.gold),
     }, { quoted: msg });
 
   } catch (err) {
@@ -383,6 +430,9 @@ async function handlePayEmprestimo(sock, msg, jid) {
 
 // ─── !divida ──────────────────────────────────────────────────────────────────
 
+/**
+ * Exibe a situação atual do empréstimo ativo do usuário.
+ */
 async function handleDivida(sock, msg, jid) {
   const userId = getUserId(msg);
 
@@ -390,9 +440,7 @@ async function handleDivida(sock, msg, jid) {
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
 
     if (!carteira?.emprestimo?.ativo) {
-      await sock.sendMessage(jid, {
-        text: `✅ *Você não possui dívidas ativas!*\n\nUse *!emprestimo <valor> [prazo]* para solicitar.`,
-      }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.semDividas() }, { quoted: msg });
       return;
     }
 
@@ -405,18 +453,7 @@ async function handleDivida(sock, msg, jid) {
     const tempoRestante = atrasado ? null : formatarTempo(vencimentoTs - agora);
 
     await sock.sendMessage(jid, {
-      text:
-        `📋 *SITUAÇÃO DO EMPRÉSTIMO* 📋\n\n` +
-        `━━━━━━━━━━━━━━━━\n` +
-        `💸 Valor original:  *${emp.valor} gold*\n` +
-        `💰 Total a pagar:   *${divida} gold*\n` +
-        `📅 Vencimento:      *${new Date(emp.vencimento).toLocaleDateString('pt-BR')}*\n` +
-        (atrasado
-          ? `⚠️ Status: *ATRASADO (${diasAtraso} dia${diasAtraso > 1 ? 's' : ''})*\n`
-          : `✅ Status: *Em dia*\n⏰ Vence em: *${tempoRestante}*\n`) +
-        `━━━━━━━━━━━━━━━━\n` +
-        `💎 Seu saldo: *${carteira.gold ?? 0} gold*\n\n` +
-        `Use *!pay emprestimo* para quitar.`,
+      text: MSGS.situacao(emp, divida, atrasado, diasAtraso, tempoRestante, carteira.gold ?? 0),
     }, { quoted: msg });
 
   } catch (err) {

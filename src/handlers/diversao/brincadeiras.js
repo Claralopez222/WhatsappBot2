@@ -92,7 +92,7 @@ async function handleNazista(sock, msg, content, jid, author, contactNames) {
   const display = mentionedJid ? nome : author;
   const caption = `${emoji} *NAZÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`;
 
-  const imagemPath = path.join(__dirname, '..', '..', 'Audio-Image', 'imagenaz2.jpg');
+  const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagenaz2.webp');
 
 
   try {
@@ -135,6 +135,7 @@ async function handleLesbica(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
+// ─── !aura
 async function handleAura(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
@@ -154,7 +155,8 @@ async function handleAura(sock, msg, content, jid, author, contactNames) {
   const display = mentionedJid ? nome : author;
   const caption = `${emoji} *AURA DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`;
 
-  const imagemPath = path.join(__dirname, '..', '..', 'Audio-Image', imagemNome);
+  const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', imagemNome);
+  console.log('📁 PATH AURA:', imagemPath);
 
 
   try {

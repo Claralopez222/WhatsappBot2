@@ -996,10 +996,6 @@ async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, sav
 
 const Usuario = require('./models/Usuario');
 
-'use strict';
-
-const Usuario = require('./models/Usuario');
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !reportar ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

@@ -1,4 +1,7 @@
 // ─── Helpers
+const fs   = require('fs');
+const path = require('path');
+
 function getAlvo(contextInfo, senderJid, contactNames) {
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
   const alvoJid = mentionedJid || senderJid;
@@ -77,21 +80,33 @@ async function handleNazista(sock, msg, content, jid, author, contactNames) {
   const pct = Math.floor(Math.random() * 101);
 
   let emoji, frase;
-  if (pct <= 10)      { emoji = '🕊️'; frase = 'Pacifista! Nem mata mosquito!'; }
-  else if (pct <= 30) { emoji = '📰'; frase = 'Só fica reclamando das coisas nas redes sociais.'; }
-  else if (pct <= 50) { emoji = '⚖️'; frase = 'Equilibrado(a), mas com ideias bem fortes.'; }
-  else if (pct <= 70) { emoji = '😤'; frase = 'Autoritário(a) pra caramba! Cuidado com esse(a)!'; }
-  else if (pct <= 89) { emoji = '⚔️'; frase = 'Caralho! Muito radical! Quase um ditador(a)!'; }
-  else if (pct <= 99) { emoji = '🦅'; frase = 'Praticamente um(a) ditador(a)! Faltou pouco!'; }
-  else                { emoji = '💀'; frase = '100%! Ditador(a) confirmado(a)! Se cuida!'; }
+  if (pct <= 10)      { emoji = '🕊️'; frase = 'Pacifista total! Abraça árvore e chora com filme de cachorro.'; }
+  else if (pct <= 30) { emoji = '📰'; frase = 'Só reclama nas redes sociais mas não faz nada. O terrorismo doméstico é postar story.'; }
+  else if (pct <= 50) { emoji = '⚖️'; frase = 'Equilibrado(a) na teoria, mas fica com raiva quando cortam na fila. Perigoso(a) em dia ruim.'; }
+  else if (pct <= 70) { emoji = '😤'; frase = 'Autoritário(a) pra caralho! Manda no grupo da família com mão de ferro. Ninguém discute.'; }
+  else if (pct <= 89) { emoji = '⚔️'; frase = 'RADICAL DEMAIS! Quer ser ditador(a) do condomínio. O vizinho já tem medo de fazer barulho.'; }
+  else if (pct <= 99) { emoji = '🦅'; frase = 'Quase um ditador(a) declarado(a)! Só falta o bigodinho e o discurso de 3 horas.'; }
+  else                { emoji = '💀'; frase = '100% NAZISTA CONFIRMADO(A)! Tá fichado(a) na história. Que vergonha da humanidade! ☠️'; }
 
-  const barra = buildBar(pct, '🟥');
+  const barra   = buildBar(pct, '🟥');
   const display = mentionedJid ? nome : author;
+  const caption = `${emoji} *NAZÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`;
 
-  await sock.sendMessage(jid, {
-    text: `${emoji} *NAZÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
-    mentions: mentionedJid ? [alvoJid] : [],
-  }, { quoted: msg });
+  const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagenaz2.jpg');
+
+  try {
+    const imageBuffer = fs.readFileSync(imagemPath);
+    await sock.sendMessage(jid, {
+      image: imageBuffer,
+      caption,
+      mentions: mentionedJid ? [alvoJid] : [],
+    }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid, {
+      text: caption,
+      mentions: mentionedJid ? [alvoJid] : [],
+    }, { quoted: msg });
+  }
 }
 
 // ─── !lesbica
@@ -119,29 +134,41 @@ async function handleLesbica(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// ─── !aura
 async function handleAura(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
   const pct = Math.floor(Math.random() * 101);
 
-  let emoji, frase, barEmoji;
-  if (pct <= 10)      { emoji = '💀'; frase = 'Aura MORTA! Nem Deus salva! 👹';          barEmoji = '🟥'; }
-  else if (pct <= 30) { emoji = '😈'; frase = 'Aura podre! Cheira mal daqui! 🤢';        barEmoji = '🟧'; }
-  else if (pct <= 50) { emoji = '😐'; frase = 'Aura neutra. Nem frio nem quente.';       barEmoji = '🟨'; }
-  else if (pct <= 70) { emoji = '🌿'; frase = 'Aura ok! Mas pode melhorar! 💪';          barEmoji = '🟩'; }
-  else if (pct <= 89) { emoji = '✨'; frase = 'Aura brilhante! Que energia boa! ☀️';     barEmoji = '🟩'; }
-  else if (pct <= 99) { emoji = '🌟'; frase = 'Aura ÉPICA! Ilumina qualquer sala! 🙌';   barEmoji = '🟦'; }
-  else                { emoji = '👼'; frase = 'AURA MÁXIMA! Santo(a) confirmado(a)! 🙏'; barEmoji = '🟦'; }
+  let emoji, frase, barEmoji, imagemNome;
+  if (pct <= 10)      { emoji = '💀'; frase = 'Aura MORTA! Nem Deus salva! 👹';          barEmoji = '🟥'; imagemNome = 'imageaura5.jpg'; }
+  else if (pct <= 30) { emoji = '😈'; frase = 'Aura podre! Cheira mal daqui! 🤢';        barEmoji = '🟧'; imagemNome = 'imageaura8.jpg'; }
+  else if (pct <= 50) { emoji = '😐'; frase = 'Aura neutra. Nem frio nem quente.';       barEmoji = '🟨'; imagemNome = 'imageaura3.jpg'; }
+  else if (pct <= 70) { emoji = '🌿'; frase = 'Aura ok! Mas pode melhorar! 💪';          barEmoji = '🟩'; imagemNome = 'imageaura2.jpg'; }
+  else if (pct <= 89) { emoji = '✨'; frase = 'Aura brilhante! Que energia boa! ☀️';     barEmoji = '🟩'; imagemNome = 'imageaura6.jpg'; }
+  else if (pct <= 99) { emoji = '🌟'; frase = 'Aura ÉPICA! Ilumina qualquer sala! 🙌';   barEmoji = '🟦'; imagemNome = 'imageaura7.jpg'; }
+  else                { emoji = '👼'; frase = 'AURA MÁXIMA! Santo(a) confirmado(a)! 🙏'; barEmoji = '🟦'; imagemNome = 'imageaura.jpg';  }
 
-  const barra = buildBar(pct, barEmoji);
+  const barra   = buildBar(pct, barEmoji);
   const display = mentionedJid ? nome : author;
+  const caption = `${emoji} *AURA DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`;
 
-  await sock.sendMessage(jid, {
-    text: `${emoji} *AURA DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
-    mentions: mentionedJid ? [alvoJid] : [],
-  }, { quoted: msg });
+  const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', imagemNome);
+
+  try {
+    const imageBuffer = fs.readFileSync(imagemPath);
+    await sock.sendMessage(jid, {
+      image: imageBuffer,
+      caption,
+      mentions: mentionedJid ? [alvoJid] : [],
+    }, { quoted: msg });
+  } catch {
+    // fallback sem imagem
+    await sock.sendMessage(jid, {
+      text: caption,
+      mentions: mentionedJid ? [alvoJid] : [],
+    }, { quoted: msg });
+  }
 }
 
 // ─── !dado

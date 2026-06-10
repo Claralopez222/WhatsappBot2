@@ -206,7 +206,6 @@ async function savePet(userId, petObj) {
 async function getPet(userId) {
   const cached = petCache.get(userId);
   if (cached) {
-    // Invalida se TTL expirou para recalcular o decaimento
     if (Date.now() - cached.cachedAt < PET_CACHE_TTL_MS) {
       return cached.pet ? aplicarDecaimento(cached.pet) : null;
     }
@@ -216,8 +215,28 @@ async function getPet(userId) {
   try {
     const user = await Usuario.findOne({ idWhatsApp: userId }).lean();
     const pet  = user?.pet ?? null;
-    petCache.set(userId, { pet, cachedAt: Date.now() });
-    return pet ? aplicarDecaimento(pet) : null;
+    if (!pet) {
+      petCache.set(userId, { pet: null, cachedAt: Date.now() });
+      return null;
+    }
+
+    const petDecaido = aplicarDecaimento(pet);
+
+    const mudou =
+      petDecaido.fullness  !== pet.fullness  ||
+      petDecaido.energy    !== pet.energy    ||
+      petDecaido.happiness !== pet.happiness;
+
+    if (mudou) {
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: userId },
+        { $set: { pet: { ...petDecaido, lastInteraction: pet.lastInteraction } } },
+        { upsert: true }
+      );
+    }
+
+    petCache.set(userId, { pet: petDecaido, cachedAt: Date.now() });
+    return petDecaido;
   } catch (e) {
     console.error('[Pets] getPet:', e.message);
     return null;

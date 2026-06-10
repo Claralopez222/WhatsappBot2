@@ -9,6 +9,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
 
 // ═══════════════════════════════════════════════════════════════
@@ -234,7 +235,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
 
   if (pedidosPendentes.has(alvoJid)) {
     await sock.sendMessage(jid, {
-      text: `⏳ *${nomeAlvo}* já tem um pedido pendente aguardando resposta.`,
+      text: `⏳ @${alvoJid.split('@')[0]} já tem um pedido pendente aguardando resposta.`,
       mentions: [alvoJid],
     }, { quoted: msg });
     return;
@@ -244,12 +245,27 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
 
   const tipoEmoji = tipo === 'casamento' ? '💍' : '💝';
   const tipoVerbo = tipo === 'casamento' ? 'casar' : 'namorar';
-  const mensagem =
-    `${tipoEmoji} *${author}* está pedindo *${nomeAlvo}* in ${tipo}!\n\n` +
+  const caption =
+    `${tipoEmoji} *${author}* está pedindo @${alvoJid.split('@')[0]} em ${tipo}!\n\n` +
     `@${alvoJid.split('@')[0]}, você aceita ${tipoVerbo} com *${author}*? 🥺\n\n` +
     `Use *!euaceito* ou *!eurecuso*\n_⏰ Expira em 5 minutos_`;
 
-  await sock.sendMessage(jid, { text: mensagem, mentions: [alvoJid] }, { quoted: msg });
+  const imagemNome = Date.now() % 2 === 0 ? 'imagecasal.jpg' : 'imagecasal2.jpg';
+  const imagemPath = path.join(__dirname, '..', 'Audio-Image', imagemNome);
+
+  try {
+    const imageBuffer = fs.readFileSync(imagemPath);
+    await sock.sendMessage(jid, {
+      image: imageBuffer,
+      caption,
+      mentions: [alvoJid],
+    }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid, {
+      text: caption,
+      mentions: [alvoJid],
+    }, { quoted: msg });
+  }
 
   setTimeout(() => {
     if (pedidosPendentes.has(alvoJid)) {

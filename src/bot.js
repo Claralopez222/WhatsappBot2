@@ -1,13 +1,13 @@
 /**
- * WhatsApp Sticker Bot â€” Piroquinhas
- * bot.js principal â€” roteador completo
+ * WhatsApp Sticker Bot – Piroquinhas
+ * bot.js principal – roteador completo
  */
 
-// â”€â”€â”€ Core Node.js (SEMPRE PRIMEIRO) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Core Node.js (SEMPRE PRIMEIRO) ──────────────────────────────────────────
 const path     = require('path');
 const fs       = require('fs');
 
-// â”€â”€â”€ DependÃªncias externas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Dependências externas ────────────────────────────────────────────────────
 const {
   default: makeWASocket,
   DisconnectReason,
@@ -22,11 +22,11 @@ const pino      = require('pino');
 const QRCode    = require('qrcode');
 const mongoose  = require('mongoose');
 
-// â”€â”€â”€ Models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Models ───────────────────────────────────────────────────────────────────
 const Usuario       = require(path.join(__dirname, 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
 
-// â”€â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Handlers ─────────────────────────────────────────────────────────────────
 const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
 const figurinhaHandler      = require(path.join(__dirname, 'handlers', 'figurinha'));
 const diversaoHandler       = require(path.join(__dirname, 'handlers', 'diversao'));
@@ -38,10 +38,13 @@ const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidad
 const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversario'));
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
+const pescaHandler          = require('./handlers/diversao/pesca');
 const pescaHandler = require('./handlers/diversao/pesca');
+const { handleEmprestimo, handlePayEmprestimo, handleDivida, verificarInadimplente } = require('./handlers/diversao/emprestimo'); // ← NOVO
 const { initPetScheduler, registerActiveGroup } = require(path.join(__dirname, 'handlers', 'diversao'));
+const { initQuizRankingScheduler } = require(path.join(__dirname, 'handlers', 'quizRanking')); // ← NOVO
 
-// â”€â”€â”€ Silenciar logs de sessÃ£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Silenciar logs de sessão ─────────────────────────────────────────────────
 const _log = console.log.bind(console);
 const _err = console.error.bind(console);
 const NOISE = [
@@ -70,17 +73,17 @@ const isNoise = (...args) => {
 console.log   = (...a) => { if (!isNoise(...a)) _log(...a); };
 console.error = (...a) => { if (!isNoise(...a)) _err(...a); };
 
-// â”€â”€â”€ DiretÃ³rios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Diretórios ───────────────────────────────────────────────────────────────
 const SESSION_DIR = path.resolve(__dirname, '../session');
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
 
-// â”€â”€â”€ PersistÃªncia â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Persistência ─────────────────────────────────────────────────────────────
 const DATA_FILE = path.resolve(__dirname, '../data.json');
 
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  } catch (e) { console.log('âš ï¸ Erro ao carregar data.json:', e.message); }
+  } catch (e) { console.log('⚠️ Erro ao carregar data.json:', e.message); }
   return {
     msgCount:       {},
     stickerCount:   {},
@@ -142,12 +145,13 @@ setInterval(saveData, 60 * 1000);
 process.on('SIGINT',  () => { saveData(); process.exit(); });
 process.on('SIGTERM', () => { saveData(); process.exit(); });
 
-// â”€â”€â”€ Estado Global â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Estado Global ────────────────────────────────────────────────────────────
 const logger           = pino({ level: 'silent' });
 const contactNames     = {};
 const mutedUsers       = new Map();
 const pendingMusic     = new Map();
 const prefixMap        = new Map();
+const activeGroups     = new Set(); // ← NOVO
 const relacionamentos  = new Map(Object.entries(_savedData.relacionamentos || {}));
 const pedidosPendentes = new Map();
 const pinnedMessages   = new Map(Object.entries(_savedData.pinnedMessages || {}));
@@ -349,7 +353,7 @@ async function startBot() {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
 
-  // â”€â”€ Mensagens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ // ── Mensagens ─────────────────────────────────────────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify' && type !== 'append') return;
     for (const msg of messages) {
@@ -361,13 +365,13 @@ async function startBot() {
 
       if (_isPrivate) {
         const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-        console.log(`ðŸ“© Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
+        console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
       }
 
       try {
         if (!_isPrivate) {
           const remetente  = msg.key.participant || msg.key.remoteJid;
-          const nomeDoCara = msg.pushName || 'UsuÃ¡rio do Zap';
+          const nomeDoCara = msg.pushName || 'Usuário do Zap';
 
           await prepareDailyMissionState(remetente);
 
@@ -391,9 +395,14 @@ async function startBot() {
         }
 
         await handleMessage(sock, msg);
-        if (_jid.endsWith('@g.us')) registerActiveGroup(_jid);
+
+        if (_jid.endsWith('@g.us')) {
+          registerActiveGroup(_jid);
+          activeGroups.add(_jid); // ← NOVO
+        }
+
       } catch (err) {
-        console.error('âŒ Erro no processamento da mensagem:', err.message);
+        console.error('❌ Erro no processamento da mensagem:', err.message);
       }
     }
   });
@@ -432,6 +441,7 @@ async function startBot() {
       botJid = sock.user?.id || null;
       console.log(`✅ Bot conectado! JID: ${botJid}\n`);
       initPetScheduler(sock);
+      initQuizRankingScheduler(sock, activeGroups);
     }
   });
 } // fim de startBot()
@@ -646,6 +656,12 @@ if (matchCmd(cmdWord, 'gold'))
     { await diversaoHandler.handleExtrato(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
     { await diversaoHandler.handleGarimpar(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'emprestimo') || matchCmdStart(cmd, 'emprestimo '))
+  { await handleEmprestimo(sock, msg, jid, caption); return; }
+if (matchCmdStart(cmd, 'pay emprestimo'))
+  { await handlePayEmprestimo(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'divida'))
+  { await handleDivida(sock, msg, jid); return; }
 
   // â”€â”€ MISSÃ•ES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes') || matchCmd(cmdWord, 'missÃµes'))

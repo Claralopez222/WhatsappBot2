@@ -949,12 +949,12 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   }
   await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
 
-  // ── Resultado
-  const [r1, r2, r3]      = sortearSlots();
-  const { mult, label }   = calcularMultiplicador(r1, r2, r3);
-  const premio            = Math.floor(aposta * mult);
-  const lucroLiq          = premio - aposta;
-  const saldoFallback     = carteiraDebitada.gold + lucroLiq;
+// ── Resultado
+  const [r1, r2, r3]    = sortearSlots();
+  const { mult, label } = calcularMultiplicador(r1, r2, r3);
+  const premio          = Math.floor(aposta * mult);
+  const lucroLiq        = premio - aposta;
+  const saldoFallback   = carteiraDebitada.gold; // ← CORRIGIDO
 
   const saldoFinal = await creditarPremioEMissao(
     senderJid, jid, premio, `Slots (${mult}x)`, lucroLiq, saldoFallback
@@ -995,6 +995,7 @@ function buildPista(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal) {
   return pista;
 }
 
+/// ── !corrida ────────────────────────────────────────────────────────
 async function handleCorrida(sock, msg, jid, senderJid, caption) {
   const args    = caption.trim().split(/\s+/);
   const escolha = parseInt(args[1]); // 1–4
@@ -1026,11 +1027,11 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   }
 
   // ── Resultado
-  const vencedorIdx  = Math.floor(Math.random() * CORRIDA_BICHOS.length);
-  const ganhou       = escolhaIdx === vencedorIdx;
-  const premio       = ganhou ? aposta * CORRIDA_MULT : 0;
-  const lucroLiq     = premio - aposta;
-  const saldoFallback = carteiraDebitada.gold + lucroLiq;
+  const vencedorIdx   = Math.floor(Math.random() * CORRIDA_BICHOS.length);
+  const ganhou        = escolhaIdx === vencedorIdx;
+  const premio        = ganhou ? aposta * CORRIDA_MULT : 0;
+  const lucroLiq      = premio - aposta;
+  const saldoFallback = carteiraDebitada.gold; // ← CORRIGIDO
 
   const saldoFinal = await creditarPremioEMissao(
     senderJid, jid, premio, `Corrida (${CORRIDA_BICHOS[escolhaIdx]})`, lucroLiq, saldoFallback

@@ -9,7 +9,7 @@
  */
 
 const path = require('path');
-const fs = require('fs');
+const fs   = require('fs');
 const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
 
 // ═══════════════════════════════════════════════════════════════
@@ -39,7 +39,6 @@ function isBloqueado(jid) {
   return true;
 }
 
-// Retorna os minutos restantes de bloqueio arredondados para cima
 function minutosRestantes(jid) {
   if (!bloqueados.has(jid)) return 0;
   return Math.ceil((bloqueados.get(jid) - Date.now()) / (1000 * 60));
@@ -125,8 +124,8 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   }
   diariosUsados.set(diarioKey, true);
 
-  const bonus  = temXpBonus(key) ? xpValor : 0;
-  const ganho  = xpValor + bonus;
+  const bonus   = temXpBonus(key) ? xpValor : 0;
+  const ganho   = xpValor + bonus;
   const xpAtual = (xpCasais.get(key) || 0) + ganho;
   xpCasais.set(key, xpAtual);
 
@@ -145,14 +144,14 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 // ═══════════════════════════════════════════════════════════════
 
 async function handleRelacionamento(sock, msg, content, jid, author, tipo, relacionamentos, pedidosPendentes, contactNames) {
-  const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const contextInfo = content.extendedTextMessage?.contextInfo;
+  const senderJid    = msg.key.participant || msg.key.remoteJid;
+  const contextInfo  = content.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid || [];
 
   if (mentionedJid.length === 0) {
-    const exemplos = tipo === 'casamento' ? 
-      ['Marca aí, seu(ua) indeciso(a)! 😤', 'MARCA UM JUIZ AGORA! 💍'] :
-      ['Bora! Não tem tímido aqui! 😏', 'Marca agora ou tá com medo? 👀'];
+    const exemplos = tipo === 'casamento'
+      ? ['Marca aí, seu(ua) indeciso(a)! 😤', 'MARCA UM JUIZ AGORA! 💍']
+      : ['Bora! Não tem tímido aqui! 😏', 'Marca agora ou tá com medo? 👀'];
     await sock.sendMessage(jid, {
       text: `${exemplos[Math.floor(Math.random() * exemplos.length)]}\nExemplo: *!${tipo === 'casamento' ? 'casar' : 'namorar'} @fulano*`,
     }, { quoted: msg });
@@ -163,7 +162,11 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   const nomeAlvo = contactNames[alvoJid] || alvoJid.split('@')[0];
 
   if (alvoJid.split('@')[0] === senderJid.split('@')[0]) {
-    const frases = ['😅 Narcisista demais! Procura alguém de verdade!', '🤡 Casamento consigo mesmo? Tá ouvindo voz?', '💀 Auto-sabotagem extrema detected!'];
+    const frases = [
+      '😅 Narcisista demais! Procura alguém de verdade!',
+      '🤡 Casamento consigo mesmo? Tá ouvindo voz?',
+      '💀 Auto-sabotagem extrema detected!',
+    ];
     await sock.sendMessage(jid, {
       text: frases[Math.floor(Math.random() * frases.length)],
     }, { quoted: msg });
@@ -181,6 +184,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     }, { quoted: msg });
     return;
   }
+
   if (isBloqueado(alvoJid)) {
     const frases = [
       `🚫 *${nomeAlvo}* tá em RECLUSÃO! O término ainda tá fresco! Volta em *${minutosRestantes(alvoJid)} minuto(s)* seu(ua) insensível! 😤`,
@@ -193,7 +197,6 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  // Verifica se já estão juntos
   if (getRelacionamento(senderJid, alvoJid, relacionamentos)) {
     const frases = [
       `💑 Vocês JÁ são um casal! Quer renovar os votos? 💍 Use *!renovar*!`,
@@ -206,7 +209,6 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  // Verifica se algum já está comprometido
   const jaSender = findRelByJid(senderJid, relacionamentos);
   if (jaSender) {
     const frases = [
@@ -219,6 +221,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     }, { quoted: msg });
     return;
   }
+
   const jaAlvo = findRelByJid(alvoJid, relacionamentos);
   if (jaAlvo) {
     const frases = [
@@ -277,9 +280,10 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     }
   }, 5 * 60 * 1000);
 }
+
 // ═══════════════════════════════════════════════════════════════
-// ─── ACEITAR OU RECUSAR PEDIDO ─────────────────────────────────
-// ═══════════════════════════════════════════════════════════════  
+// ─── ACEITAR OU RECUSAR PEDIDO ────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 
 async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames) {
   const pedido = pedidosPendentes.get(senderJid);
@@ -289,7 +293,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
   }
   pedidosPendentes.delete(senderJid);
 
-  const nomeAlvo    = msg.pushName || contactNames[senderJid] || senderJid.split('@')[0];
+  const nomeAlvo = msg.pushName || contactNames[senderJid] || senderJid.split('@')[0];
   const { jidPedinte, nomePedinte, jid: jidOrigem, tipo } = pedido;
   const key = relKey(senderJid, jidPedinte);
 
@@ -339,7 +343,7 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
   }
   pedidosPendentes.delete(senderJid);
 
-  const { jidPedinte, nomePedinte, jid: jidOrigem } = pedido;
+  const { jidPedinte, jid: jidOrigem } = pedido;
 
   const frases = [
     `💔 @${senderJid.split('@')[0]} COM TODA FORÇA recusou @${jidPedinte.split('@')[0]}! DESTRUÍDO(A)! 😭😭😭`,
@@ -365,33 +369,46 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
     });
   }
 }
+
 // ═══════════════════════════════════════════════════════════════
-// ─── COMANDOS DIÁRIOS ─────────────────────────────────────────
+// ─── EXPORTS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-module.exports = {
-  relKey,
-  xpCasais,
-  bloqueados,
-  diariosUsados,
-  ciumentosMap,
-  xpBonus,
-  hoje,
-  isBloqueado,
-  diasRestantes: minutosRestantes, // Mantém compatibilidade com o nome antigo caso outros arquivos chamem
-  minutosRestantes,
-  getRelacionamento,
-  findRelByJid,
-  temXpBonus,
-  formatarTempo,
-  handleCarinh,
-  handleRelacionamento,
-  handleResposta,
-  handleEuAceito,
-  handleEuRecuso,
-  handleCancelarPedido,
-  handleCancelarCasamento,
-  handleTerminar,
-};
+
+// Os requires dos sub-módulos VÊM ANTES do module.exports
+// para que handleCancelarPedido, handleCancelarCasamento,
+// handleTerminar e handleResposta (se existirem nos sub-módulos)
+// já estejam disponíveis quando o Object.assign rodar.
 const relacionamentoExtra = require(path.join(__dirname, 'relacionamento-extra'));
 const relacionamentoFixar = require(path.join(__dirname, 'relacionamento-fixar'));
-Object.assign(module.exports, relacionamentoExtra, relacionamentoFixar);
+
+module.exports = Object.assign(
+  {
+    // ── estado compartilhado ──
+    relKey,
+    xpCasais,
+    bloqueados,
+    diariosUsados,
+    ciumentosMap,
+    xpBonus,
+
+    // ── helpers ──
+    hoje,
+    isBloqueado,
+    minutosRestantes,
+    diasRestantes: minutosRestantes, // alias de compatibilidade
+    getRelacionamento,
+    syncCasamentoToDb,
+    clearCasamentoDb,
+    findRelByJid,
+    temXpBonus,
+    formatarTempo,
+
+    // ── handlers deste arquivo ──
+    handleCarinh,
+    handleRelacionamento,
+    handleEuAceito,
+    handleEuRecuso,
+  },
+  relacionamentoExtra,
+  relacionamentoFixar,
+);

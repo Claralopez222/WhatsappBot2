@@ -71,7 +71,7 @@ async function saveQuizPointsToDB(userId, pontos) {
   }
 }
 
-async function changeGold(userId, amount) {
+async function changeGold(userId, amount, groupJid) {
   if (!userId || userId.endsWith('@lid')) {
     console.warn('⚠️ changeGold ignorado: jid inválido:', userId);
     return 0;
@@ -80,6 +80,15 @@ async function changeGold(userId, amount) {
     if (amount > 0) await prepareDailyMissionState(userId);
     const update = { $inc: { gold: amount } };
     if (amount > 0) update['$inc']['dailyMissions.progress.gold500'] = amount;
+
+    if (groupJid) {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: groupJid },
+        update,
+        { upsert: true, new: true }
+      );
+    }
+
     const user = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       update,
@@ -362,7 +371,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       pontosMap.set(resolvedJid, pts);                      // ← corrigido
       await saveQuizPointsToDB(resolvedJid, pts);           // ← corrigido
       const goldReward = 15;
-      await changeGold(resolvedJid, goldReward);
+      await changeGold(resolvedJid, goldReward, jid);
 
       try {
         await prepareDailyMissionState(resolvedJid);

@@ -241,17 +241,17 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
     await sock.sendMessage(jid, { text: '⚠️ Erro ao buscar saldo!' }, { quoted: msg });
   }
 }
-// ─── !loja (sem mudanças visuais) ────────────────────────────────────────────
-
 async function handleLoja(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
   const texto =
     `🛒 *LOJA PIROQUINHAS* 🛒\n\n` +
-    `🍔 *COMIDA*\n🍕 Pizza — 50 gold\n🍔 Hamburger — 40 gold\n🍗 Frango — 35 gold\n🍫 Chocolate — 25 gold\n\n` +
-    `🐾 *PETS*\n🐶 Cachorro — 100 gold\n🐱 Gato — 100 gold\n🐰 Coelho — 80 gold\n\n` +
-    `💕 *CASAL*\n💐 Flores — 60 gold\n💌 Carta de amor — 80 gold\n💎 Anel — 500 gold\n\n` +
-    `✨ *ESTILO*\n👕 Camiseta — 50 gold\n👖 Calça — 60 gold\n👟 Sapato — 70 gold\n\n` +
-    `💻 *TECNOLOGIA*\n📱 Celular — 200 gold\n💾 Memória USB — 150 gold\n🖥️ Computador — 500 gold\n\n` +
+    `📂 *CATEGORIAS DISPONÍVEIS*\n\n` +
+    `🍔 *COMIDA* → ${P}lojafood\n` +
+    `🐾 *PETS* → ${P}lojapet\n` +
+    `💕 *CASAL* → ${P}lojacasal\n` +
+    `💻 *TECNOLOGIA* → ${P}lojatec\n` +
+    `🎣 *VARAS DE PESCA* → ${P}lojavara\n` +
+    `🪱 *ISCAS* → ${P}lojaisca\n\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `*COMO COMPRAR?*\n  ${P}buy <nome_item>\n\n` +
     `*SEUS ITENS?*\n  ${P}inventario\n\n` +

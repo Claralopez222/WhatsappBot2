@@ -251,7 +251,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     `Use *!euaceito* ou *!eurecuso*\n_⏰ Expira em 5 minutos_`;
 
   const imagemNome = Date.now() % 2 === 0 ? 'imagecasal.jpg' : 'imagecasal2.jpg';
-  const imagemPath = path.join(__dirname, '..', 'Audio-Image', imagemNome);
+  const imagemPath = path.join(__dirname, '..', '..', 'Audio-Image', imagemNome);
 
   try {
     const imageBuffer = fs.readFileSync(imagemPath);
@@ -277,10 +277,9 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     }
   }, 5 * 60 * 1000);
 }
-
 // ═══════════════════════════════════════════════════════════════
-// ─── ACEITAR / RECUSAR / CANCELAR ─────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── ACEITAR OU RECUSAR PEDIDO ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════  
 
 async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames) {
   const pedido = pedidosPendentes.get(senderJid);
@@ -312,11 +311,24 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
     `🌟 UAUUU! Contra todos os prognósticos, *${nomePedinte}* ganhou o coração de *${nomeAlvo}*! Que surpresa! 😱`,
   ];
   const idx = tipo === 'namoro' ? [1, 3][Math.floor(Math.random() * 2)] : [0, 2][Math.floor(Math.random() * 2)];
+  const caption = frases[idx] + '\n\n💪 *Ganhem XP juntos com os comandos! Um casal fraco não vira lenda!*';
 
-  await sock.sendMessage(jidOrigem || jid, {
-    text: frases[idx] + '\n\n💪 *Ganhem XP juntos com os comandos! Um casal fraco não vira lenda!*',
-    mentions: [senderJid, jidPedinte],
-  });
+  const imagemNome = Date.now() % 2 === 0 ? 'imagecasal.jpg' : 'imagecasal2.jpg';
+  const imagemPath = path.join(__dirname, '..', '..', 'Audio-Image', imagemNome);
+
+  try {
+    const imageBuffer = fs.readFileSync(imagemPath);
+    await sock.sendMessage(jidOrigem || jid, {
+      image: imageBuffer,
+      caption,
+      mentions: [senderJid, jidPedinte],
+    });
+  } catch {
+    await sock.sendMessage(jidOrigem || jid, {
+      text: caption,
+      mentions: [senderJid, jidPedinte],
+    });
+  }
 }
 
 async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames) {
@@ -327,84 +339,32 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
   }
   pedidosPendentes.delete(senderJid);
 
-  const nomeAlvo = msg.pushName || contactNames[senderJid] || senderJid.split('@')[0];
   const { jidPedinte, nomePedinte, jid: jidOrigem } = pedido;
 
   const frases = [
-    `💔 *${nomeAlvo}* COM TODA FORÇA recusou *${nomePedinte}*! DESTRUÍDA! 😭😭😭`,
-    `🚫 *${nomeAlvo}* não quer nem saber! *${nomePedinte}* saiu de ré levando o balde d'agua! 🪣`,
-    `😒 Que MANCADA! *${nomePedinte}* tomou um fora espetacular de *${nomeAlvo}*! AHAHAHA! 😂`,
-    `🤡 CANCELAMENTO! *${nomePedinte}* é PERSONA NON GRATA na vida de *${nomeAlvo}*! 🚷`,
+    `💔 @${senderJid.split('@')[0]} COM TODA FORÇA recusou @${jidPedinte.split('@')[0]}! DESTRUÍDO(A)! 😭😭😭`,
+    `🚫 @${senderJid.split('@')[0]} não quer nem saber! @${jidPedinte.split('@')[0]} saiu de ré levando o balde d'agua! 🪣`,
+    `😒 Que MANCADA! @${jidPedinte.split('@')[0]} tomou um fora espetacular de @${senderJid.split('@')[0]}! AHAHAHA! 😂`,
+    `🤡 CANCELAMENTO! @${jidPedinte.split('@')[0]} é PERSONA NON GRATA na vida de @${senderJid.split('@')[0]}! 🚷`,
   ];
 
-  await sock.sendMessage(jidOrigem || jid, {
-    text: frases[Math.floor(Math.random() * frases.length)],
-    mentions: [senderJid, jidPedinte],
-  });
-}
+  const caption = frases[Math.floor(Math.random() * frases.length)];
+  const imagemPath = path.join(__dirname, '..', '..', 'Audio-Image', 'imagecasal4.jpg');
 
-async function handleCancelarPedido(sock, msg, jid, senderJid, pedidosPendentes, contactNames) {
-  let foundAlvoJid = null;
-  for (const [alvoJid, pedido] of pedidosPendentes) {
-    if (pedido.jidPedinte === senderJid) { foundAlvoJid = alvoJid; break; }
-  }
-  if (!foundAlvoJid) {
-    await sock.sendMessage(jid, { text: '⚠️ Você não tem nenhum pedido ativo para cancelar.' }, { quoted: msg });
-    return;
-  }
-  const pedido = pedidosPendentes.get(foundAlvoJid);
-  pedidosPendentes.delete(foundAlvoJid);
-  const nomeAlvo = contactNames[foundAlvoJid] || foundAlvoJid.split('@')[0];
-  await sock.sendMessage(jid, {
-    text: `🚫 *${pedido.nomePedinte}* cancelou o pedido para *${nomeAlvo}*. Ficou com medo? 😂`,
-    mentions: [foundAlvoJid],
-  }, { quoted: msg });
-}
-
-async function handleCancelarCasamento(sock, msg, jid, author, senderJid, relacionamentos) {
-  const found = findRelByJid(senderJid, relacionamentos);
-  if (!found) {
-    await sock.sendMessage(jid, { text: '🤷 Você não está em nenhum relacionamento.' }, { quoted: msg });
-    return;
-  }
-
-  const { key, rel } = found;
-  relacionamentos.delete(key);
-  xpCasais.delete(key);
-  xpBonus.delete(key);
-  await clearCasamentoDb(rel.jidA, rel.jidB);
-
-  // Define o bloqueio para 30 minutos (30 minutos * 60 segundos * 1000 milissegundos)
-  const trintaMinutos = Date.now() + 30 * 60 * 1000;
-  bloqueados.set(rel.jidA, trintaMinutos);
-  bloqueados.set(rel.jidB, trintaMinutos);
-
-  const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
-  const frases   = [
-    `💔💔 *${author}* TACOU TUDO PRA CIMA E DIVORCIOU DE *${parceiro}*! GUERRA CIVIL! 🔨\n⚠️ *AMBOS ESTÃO BLOQUEADOS POR 30 MINUTOS*! 🚫`,
-    `🤡 O RELACIONAMENTO EXPLODIU! *${author}* e *${parceiro}* não se suportam mais!\n💳 PROCESSO EM ANDAMENTO! Ambos suspensos por *30 minutos*! 🚫`,
-    `😭 TRAGÉDIA! *${author}* largou *${parceiro}* feito banana podre!\n💀 *30 MINUTOS DE RECLUSÃO* para ambos pensarem no que fizeram! 🚫`,
-    `💳🔨 DIVÓRCIO CONSUMADO! *${author}* e *${parceiro}* se odeiam agora!\n🚫 ESTÃO BLOQUEADOS POR *30 MINUTOS* pra esfriar essa raiva! 😤`,
-  ];
-  await sock.sendMessage(jid, {
-    text: frases[Math.floor(Math.random() * frases.length)],
-  }, { quoted: msg });
-}
-
-async function handleTerminar(sock, msg, content, jid, author, relacionamentos) {
-  await handleCancelarCasamento(sock, msg, jid, author, msg.key.participant || msg.key.remoteJid, relacionamentos);
-}
-
-async function handleResposta(sock, msg, jid, senderJid, resposta, relacionamentos, pedidosPendentes, contactNames) {
-  const pedido = pedidosPendentes.get(senderJid);
-  if (!pedido) return;
-  if (resposta === 'sim') {
-    await handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames);
-  } else {
-    await handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames);
+  try {
+    const imageBuffer = fs.readFileSync(imagemPath);
+    await sock.sendMessage(jidOrigem || jid, {
+      image: imageBuffer,
+      caption,
+      mentions: [senderJid, jidPedinte],
+    });
+  } catch {
+    await sock.sendMessage(jidOrigem || jid, {
+      text: caption,
+      mentions: [senderJid, jidPedinte],
+    });
   }
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── COMANDOS DIÁRIOS ─────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

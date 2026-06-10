@@ -34,8 +34,8 @@ async function handleBeijo(sock, msg, jid, author, senderJid, relacionamentos) {
 async function handleAbraco(sock, msg, jid, author, senderJid, relacionamentos) {
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'abraco', '🤗', 'deu um abraço apertado');
 }
+
 async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption = '') {
-  // Se não houver caption com item específico, usar comportamento aleatório antigo
   const temCaption = caption.toLowerCase().trim();
   if (!temCaption.includes('presente') || temCaption.split(/\s+/).length < 2) {
     const presentes = ['um anel de ouro 💍', 'um perfume importado 🌸', 'um ursinho de pelúcia 🧸', 'chocolates Ferrero 🍫', 'um colar lindo 📿'];
@@ -44,18 +44,15 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
     return;
   }
 
-  // Verificar se está em relacionamento
   const found = findRelByJid(senderJid, relacionamentos);
   if (!found) {
     await sock.sendMessage(jid, { text: '💔 Você não está em um relacionamento! Não pode presentear ninguém agora! 😒' }, { quoted: msg });
     return;
   }
 
-  // Parse: !presente <item> @pessoa
   const parts = temCaption.split(/\s+/).filter(p => p.trim());
   const itemNome = parts[1]?.toLowerCase() || '';
-  
-  // Verificar @mention
+
   const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
   if (mentions.length === 0) {
     await sock.sendMessage(jid, { text: '⚠️ Você precisa mencionar a pessoa! Use: *!presente <item> @pessoa*\nExemplo: *!presente flores @esposa*' }, { quoted: msg });
@@ -65,14 +62,12 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
   const pessoaJid = mentions[0];
   const { rel } = found;
   const parceiroJid = rel.jidA === senderJid ? rel.jidB : rel.jidA;
-  
-  // Validar se a pessoa mencionada é o parceiro
+
   if (pessoaJid !== parceiroJid) {
     await sock.sendMessage(jid, { text: '😂 Ué! Você tá tentando presentear outra pessoa? Que história é essa?!' }, { quoted: msg });
     return;
   }
 
-  // Buscar usuário e verificar inventário
   try {
     const user = await Usuario.findOne({ idWhatsApp: senderJid });
     if (!user) {
@@ -84,13 +79,12 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
     const quantidadeItem = inventorio.get(itemNome) || 0;
 
     if (quantidadeItem === 0) {
-      await sock.sendMessage(jid, { 
-        text: `❌ Você não tem *${itemNome}* no inventário!\n\nUse *!inventario* para ver seus itens.` 
+      await sock.sendMessage(jid, {
+        text: `❌ Você não tem *${itemNome}* no inventário!\n\nUse *!inventario* para ver seus itens.`
       }, { quoted: msg });
       return;
     }
 
-    // Remover item do inventário
     const novaQuantidade = quantidadeItem - 1;
     if (novaQuantidade === 0) {
       inventorio.delete(itemNome);
@@ -103,7 +97,6 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
       { inventory: inventorio }
     );
 
-    // Pegar nome do item na loja para mensagem bonitinha
     const { ITENS_LOJA } = require('./diversao/economia');
     const nomeAmigavel = ITENS_LOJA[itemNome]?.nome || itemNome;
 
@@ -112,10 +105,9 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
 
     await sock.sendMessage(jid, {
       text: mensagem,
-      mentions: pessoaJid ? [pessoaJid] : [],
+      mentions: [pessoaJid],
     }, { quoted: msg });
 
-    // Adicionar XP ao casal
     const key = rel.jidA < rel.jidB ? `${rel.jidA}_${rel.jidB}` : `${rel.jidB}_${rel.jidA}`;
     const xpAtual = (xpCasais.get(key) || 0) + 5;
     xpCasais.set(key, xpAtual);
@@ -125,21 +117,25 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
     await sock.sendMessage(jid, { text: '⚠️ Erro ao processar o presente!' }, { quoted: msg });
   }
 }
+
 async function handleJantar(sock, msg, jid, author, senderJid, relacionamentos) {
   const restaurantes = ['num restaurante chique 🍷', 'num jantar a luz de vela 🕯️', 'num rodízio japonês 🍣', 'numa churrascaria premium 🥩', 'numa pizzaria italiana 🍕'];
   const r = restaurantes[Math.floor(Math.random() * restaurantes.length)];
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'jantar', '🍽️', `levou num jantar ${r}`);
 }
+
 async function handleCinemaRel(sock, msg, jid, author, senderJid, relacionamentos) {
   const filmes = ['um romance 💕', 'terror e ficou com medo 😱', 'comédia e não parou de rir 😂', 'ação e roubou a pipoca 🍿', 'um drama e os dois choraram 😭'];
   const f = filmes[Math.floor(Math.random() * filmes.length)];
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'cinema', '🎬', `levou ao cinema assistir ${f}`);
 }
+
 async function handleViajar(sock, msg, jid, author, senderJid, relacionamentos) {
   const destinos = ['Paris 🗼', 'Maldivas 🏝️', 'Roma 🏛️', 'Tokyo 🗾', 'Cancún 🌊', 'Gramado ❄️'];
   const d = destinos[Math.floor(Math.random() * destinos.length)];
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'viajar', '✈️', `planejou uma viagem para ${d}`, 10);
 }
+
 async function handleSerenata(sock, msg, jid, author, senderJid, relacionamentos) {
   const musicas = ['a música favorita deles 🎵', '"Evidências" do Chitãozinho 🎸', 'uma balada romântica 🎶', '"Pra Você" toda desafinada 😂', '"Can\'t Help Falling in Love" ❤️'];
   const m = musicas[Math.floor(Math.random() * musicas.length)];
@@ -481,32 +477,41 @@ async function handleRankCasais(sock, msg, jid, relacionamentos) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
+// ─── BUGFIX: ordem dos argumentos corrigida (senderJid, relacionamentos)
+// ─── BUGFIX: regex de XP corrigida de \u0434+ para \d+
+// ─── BUGFIX: jidPedinte removido (não existe neste escopo)
+
 async function handleDesafioCasal(sock, msg, jid, author, senderJid, relacionamentos) {
-  const rel = findRelByJid(relacionamentos, jid, author);
-  if (!rel) {
-    return await sock.sendMessage(jid, { text: '❌ Vocês n\u00e3o s\u00e3o um casal ainda, seu(ua) solteiro(a)! \ud83d\ude2d' }, { quoted: msg });
+  // BUGFIX: era findRelByJid(relacionamentos, jid, author) — ordem errada
+  const found = findRelByJid(senderJid, relacionamentos);
+  if (!found) {
+    return await sock.sendMessage(jid, { text: '❌ Vocês não são um casal ainda, seu(ua) solteiro(a)! 😭' }, { quoted: msg });
   }
-  if (bloqueados.has(jid + author)) {
-    return await sock.sendMessage(jid, { text: '⛔ Vocês est\u00e3o de castigo! Sem comando de desafio!\ud83d\udeab' }, { quoted: msg });
+
+  const { key, rel } = found;
+
+  if (bloqueados.has(senderJid)) {
+    return await sock.sendMessage(jid, { text: '⛔ Você está de castigo! Sem comando de desafio! 🚫' }, { quoted: msg });
   }
 
   const desafios = [
-    '💑 *DESAFIO: Complimento de 5 palavras* - Cada um tem que dar um elogio de ATE 5 palavras pro outro! +15 XP 🎁',
-    '🤐 *DESAFIO: Silêncio Apaixonado* - Vocês t\u00e3o 30 min SEM falar sobre NADA chato. Só assuntos legais! +20 XP 📱',
+    '💑 *DESAFIO: Complimento de 5 palavras* - Cada um tem que dar um elogio de ATÉ 5 palavras pro outro! +15 XP 🎁',
+    '🤐 *DESAFIO: Silêncio Apaixonado* - Vocês têm 30 min SEM falar sobre NADA chato. Só assuntos legais! +20 XP 📱',
     '🎵 *DESAFIO: Música do Casal* - Escolham uma música que define o relacionamento de vocês! +25 XP 🎧',
-    '📸 *DESAFIO: Selfie no Espelho* - Tirem uma selfie no espelho juntos (ou descrevam) + +15 XP 🤳',
+    '📸 *DESAFIO: Selfie no Espelho* - Tirem uma selfie no espelho juntos (ou descrevam)! +15 XP 🤳',
     '💬 *DESAFIO: Piada de Casal* - Um conta uma piada pro outro. Se o outro rir, +18 XP 😂',
     '🎭 *DESAFIO: Imitar o(a) Parceiro(a)* - Vocês IMITAM um ao outro exagerando! +12 XP 🤣',
-    '🏃 *DESAFIO: Corrida de Abraços* - Que abraça mais forte em 30 segundos ganha +17 XP 🤗',
+    '🏃 *DESAFIO: Corrida de Abraços* - Que abraça mais forte em 30 segundos ganha! +17 XP 🤗',
   ];
 
   const desafio = desafios[Math.floor(Math.random() * desafios.length)];
-  
-  if (temXpBonus(jid, 'desafio')) {
-    const xpGanho = parseInt(desafio.match(/\\+(\u0434+)\\sXP/)?.[1] || '10');
-    xpCasais.set(jid, (xpCasais.get(jid) || 0) + xpGanho);
-    xpBonus.delete(jid + 'desafio');
-    
+
+  // BUGFIX: regex era \\+(\u0434+)\\sXP (caractere cirílico) — corrigido para /\+(\d+)\s*XP/
+  if (temXpBonus(key)) {
+    const xpGanho = parseInt(desafio.match(/\+(\d+)\s*XP/)?.[1] || '10');
+    xpCasais.set(key, (xpCasais.get(key) || 0) + xpGanho);
+    xpBonus.delete(key);
+
     return await sock.sendMessage(jid, {
       text: desafio + '\n\n🚀 *BÔNUS APLICADO!* Vocês ganharam XP DOBRADO nesse desafio! 🎉',
     }, { quoted: msg });
@@ -516,32 +521,36 @@ async function handleDesafioCasal(sock, msg, jid, author, senderJid, relacioname
 }
 
 async function handleCompetçaoCasais(sock, msg, jid, author, senderJid, relacionamentos) {
-  const rel = findRelByJid(relacionamentos, jid, author);
-  if (!rel) {
-    return await sock.sendMessage(jid, { text: '❌ Vocês n\u00e3o s\u00e3o um casal! \ud83d\ude2d' }, { quoted: msg });
+  // BUGFIX: era findRelByJid(relacionamentos, jid, author) — ordem errada
+  const found = findRelByJid(senderJid, relacionamentos);
+  if (!found) {
+    return await sock.sendMessage(jid, { text: '❌ Vocês não são um casal! 😭' }, { quoted: msg });
   }
 
+  const { key, rel } = found;
+
   const ranking = [];
-  relacionamentos.forEach((r) => {
+  relacionamentos.forEach((r, k) => {
     ranking.push({
+      key: k,
       nomeA: r.nomeA,
       nomeB: r.nomeB,
-      xp: xpCasais.get(r.jidA + r.jidB) || 0,
+      xp: xpCasais.get(k) || 0,
     });
   });
   ranking.sort((a, b) => b.xp - a.xp);
 
-  const posicao = ranking.findIndex((r) => (r.nomeA === rel.nomeA && r.nomeB === rel.nomeB) || (r.nomeA === rel.nomeB && r.nomeB === rel.nomeA)) + 1;
+  const posicao = ranking.findIndex(r => r.key === key) + 1;
 
-  const xpAtual = xpCasais.get(jid) || 0;
+  const xpAtual = xpCasais.get(key) || 0;
   const nivel = getNivelInfo(xpAtual);
 
-  let msg_texto = '\u{1F491} *COMPETIÇÃO ENTRE CASAIS*\n\n';
+  let msg_texto = '💑 *COMPETIÇÃO ENTRE CASAIS*\n\n';
   msg_texto += `🏆 *RANKING DE XP:*\n`;
 
   ranking.slice(0, 5).forEach((r, i) => {
-    const emoji = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
-    msg_texto += `${emoji} #${i + 1}: *${r.nomeA}* 💑 *${r.nomeB}* - ${r.xp} XP\n`;
+    const emoji = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    msg_texto += `${emoji} *${r.nomeA}* 💑 *${r.nomeB}* - ${r.xp} XP\n`;
   });
 
   msg_texto += `\n👤 *VOCÊ ESTÁ EM #${posicao}* (${xpAtual} XP - ${nivel.nome})\n`;
@@ -551,56 +560,78 @@ async function handleCompetçaoCasais(sock, msg, jid, author, senderJid, relacio
 }
 
 async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos) {
-  const rel = findRelByJid(relacionamentos, jid, author);
-  if (!rel) {
-    return await sock.sendMessage(jid, { text: '❌ Você n\u00e3o tem parceiro pra surpreender! \ud83d\ude2d' }, { quoted: msg });
-  }
-  if (bloqueados.has(jid + author)) {
-    return await sock.sendMessage(jid, { text: '⛔ Vocês est\u00e3o de castigo!\ud83d\udeab' }, { quoted: msg });
+  // BUGFIX: era findRelByJid(relacionamentos, jid, author) — ordem errada
+  const found = findRelByJid(senderJid, relacionamentos);
+  if (!found) {
+    return await sock.sendMessage(jid, { text: '❌ Você não tem parceiro pra surpreender! 😭' }, { quoted: msg });
   }
 
+  const { key, rel } = found;
+
+  if (bloqueados.has(senderJid)) {
+    return await sock.sendMessage(jid, { text: '⛔ Vocês estão de castigo! 🚫' }, { quoted: msg });
+  }
+
+  const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
+  const parcJid  = rel.nomeA === author ? rel.jidB  : rel.jidA;
+
   const surpresas = [
-    `\ud83c\udf88 *SURPRESA MEGA*: *${rel.nomeA === author ? rel.nomeB : rel.nomeA}* recebeu uma SURPRESA MEGA de *${author}*! Só pode ser bom! \ud83d\ude0f +25 XP!`,
-    `\ud83c\udfa5 *SURPRESA CINEMATOGRÁFICA*: Uma cena de romance foi preparada! Velas, música e tudo! +30 XP! \ud83d\udc95`,
-    `\ud83c\udf1f *SURPRESA NOTURNA*: Piquenique na madrugada com seu amor! Que ousadia! +35 XP! 🌙`,
-    `\ud83c\udf80 *SURPRESA FESTA*: Tem festa secreta pro casal! Bebidas, música e romantismo! +28 XP! 🎉`,
-    `\ud83d\udc3b *SURPRESA CARINHO TOTAL*: Massagem, banho de espuma, candles e MUITO carinho! +32 XP! \ud83d\udca6`,
+    `🎈 *SURPRESA MEGA*: *${parceiro}* recebeu uma SURPRESA MEGA de *${author}*! Só pode ser bom! 😏 +25 XP!`,
+    `🎥 *SURPRESA CINEMATOGRÁFICA*: Uma cena de romance foi preparada! Velas, música e tudo! +30 XP! 💕`,
+    `🌟 *SURPRESA NOTURNA*: Piquenique na madrugada com seu amor! Que ousadia! +35 XP! 🌙`,
+    `🎀 *SURPRESA FESTA*: Tem festa secreta pro casal! Bebidas, música e romantismo! +28 XP! 🎉`,
+    `🐻 *SURPRESA CARINHO TOTAL*: Massagem, banho de espuma, velas e MUITO carinho! +32 XP! 💦`,
   ];
 
   const surp = surpresas[Math.floor(Math.random() * surpresas.length)];
-  const xpGanho = parseInt(surp.match(/\\+(\u0434+)\\sXP/)?.[1] || '20');
-  
-  xpCasais.set(jid, (xpCasais.get(jid) || 0) + xpGanho);
 
+  // BUGFIX: regex era \\+(\u0434+)\\sXP — corrigido para /\+(\d+)\s*XP/
+  const xpGanho = parseInt(surp.match(/\+(\d+)\s*XP/)?.[1] || '20');
+  const xpAtual = (xpCasais.get(key) || 0) + xpGanho;
+  xpCasais.set(key, xpAtual);
+
+  // BUGFIX: era mentions: [jidPedinte, senderJid] — jidPedinte não existe neste escopo
   await sock.sendMessage(jid, {
-    text: surp,
-    mentions: [jidPedinte, senderJid],
+    text: surp + `\n\n💰 *+${xpGanho} XP*! Total do casal: *${xpAtual} XP*`,
+    mentions: [parcJid, senderJid].filter(Boolean),
   }, { quoted: msg });
 }
 
 async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos) {
-  const rel = findRelByJid(relacionamentos, jid, author);
-  if (!rel) {
-    return await sock.sendMessage(jid, { text: '❌ Você está sozinho(a)! \ud83d\ude2d' }, { quoted: msg });
-  }
-  if (bloqueados.has(jid + author)) {
-    return await sock.sendMessage(jid, { text: '⛔ Castigo! Sem fun! \ud83d\udeab' }, { quoted: msg });
+  // BUGFIX: era findRelByJid(relacionamentos, jid, author) — ordem errada
+  const found = findRelByJid(senderJid, relacionamentos);
+  if (!found) {
+    return await sock.sendMessage(jid, { text: '❌ Você está sozinho(a)! 😭' }, { quoted: msg });
   }
 
+  const { key, rel } = found;
+
+  if (bloqueados.has(senderJid)) {
+    return await sock.sendMessage(jid, { text: '⛔ Castigo! Sem fun! 🚫' }, { quoted: msg });
+  }
+
+  const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
+  const parcJid  = rel.nomeA === author ? rel.jidB  : rel.jidA;
+
   const domingos = [
-    `☕ *DOMINGO DE CAFÉ E SÉRIE*: Vocês vão passar o domingo inteiro comendo e assistindo série! +22 XP! \ud83d\udcfa`,
+    `☕ *DOMINGO DE CAFÉ E SÉRIE*: Vocês vão passar o domingo inteiro comendo e assistindo série! +22 XP! 📺`,
     `🏠 *DOMINGO DE LIMPEZA*: Vocês limpam a casa JUNTOS (com música alta claro!) e depois... bora pro sofá! +18 XP! 🧹`,
-    `👨‍🍳 *DOMINGO DE COZINHA*: Vocês preparam um almoço gourmet juntos! Que romántico! +26 XP! 🍝`,
+    `👨‍🍳 *DOMINGO DE COZINHA*: Vocês preparam um almoço gourmet juntos! Que romântico! +26 XP! 🍝`,
     `🛏️ *DOMINGO DE PREGUIÇA*: Vocês ficam a MANHÃ toda na cama sem fazer NADA! +20 XP! 😴`,
     `🎮 *DOMINGO GAMER*: Vocês jogam um jogo multiplayer juntos! Battle royale de casais! +24 XP! 🎮`,
   ];
 
   const domingo = domingos[Math.floor(Math.random() * domingos.length)];
-  const xpGanho = parseInt(domingo.match(/\\+(\u0434+)\\sXP/)?.[1] || '20');
-  
-  xpCasais.set(jid, (xpCasais.get(jid) || 0) + xpGanho);
 
-  await sock.sendMessage(jid, { text: domingo }, { quoted: msg });
+  // BUGFIX: regex era \\+(\u0434+)\\sXP — corrigido para /\+(\d+)\s*XP/
+  const xpGanho = parseInt(domingo.match(/\+(\d+)\s*XP/)?.[1] || '20');
+  const xpAtual = (xpCasais.get(key) || 0) + xpGanho;
+  xpCasais.set(key, xpAtual);
+
+  await sock.sendMessage(jid, {
+    text: domingo + `\n\n💰 *+${xpGanho} XP*! Total do casal: *${xpAtual} XP*`,
+    mentions: [parcJid].filter(Boolean),
+  }, { quoted: msg });
 }
 
 module.exports = {

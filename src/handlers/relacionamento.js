@@ -199,7 +199,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
 
   if (getRelacionamento(senderJid, alvoJid, relacionamentos)) {
     const frases = [
-      `💑 Vocês JÁ são um casal! Quer renovar os votos? 💍 Use *!renovar*!`,
+      `😂 Vocês já tão juntos, mas quer fazer um evento de renovação de votos? Que romântico... ou dramático!`,
       `😒 Tá querendo propor NOVAMENTE? Já era pra ter pedido em outro lugar!`,
       `😂 Vocês já tão tão casadinhos que nem precisa mais disso!`,
     ];

@@ -37,21 +37,17 @@ const usuarioSchema = new mongoose.Schema({
     lastPlayed:{ type: Date,   default: null },
   },
 
-  // ─── SISTEMA DE INVESTIMENTO BANCO ───────────────────────────────────────
+  // ─── SISTEMA DE INVESTIMENTO BANCO ───────────────────────────
   bank: {
     amount:          { type: Number, default: 0 },
     interest:        { type: Number, default: 0 },
     startDate:       { type: String, default: null },
     lastDepositDate: { type: String, default: null },
     depositedToday:  { type: Number, default: 0 },
-    // Histórico dos últimos 10 resgates
-    historico: {
-      type:    Array,
-      default: [],
-    },
+    historico:       { type: Array,  default: [] },
   },
 
-  // ─── SISTEMA DE MISSÕES DIÁRIAS ──────────────────────────────────────────
+  // ─── SISTEMA DE MISSÕES DIÁRIAS ──────────────────────────────
   dailyMissions: {
     date: { type: String, default: null },
     progress: {
@@ -80,13 +76,20 @@ const usuarioSchema = new mongoose.Schema({
     },
   },
 
-  // ─── SISTEMA DE ROUBO ────────────────────────────────────────────────────
-  itensRoubo: { type: Map, of: Number, default: {} },
-  itensSec:   { type: Map, of: Number, default: {} },
-
+  // ─── SISTEMA DE ROUBO ────────────────────────────────────────
+  itensRoubo:  { type: Map, of: Number, default: {} },
+  itensSec:    { type: Map, of: Number, default: {} },
   equiparoubo: { type: String, default: null },
   equiparsec:  { type: String, default: null },
   ultimoRoubo: { type: Date,   default: null },
+
+  // ─── SISTEMA DE ADVERTÊNCIAS ─────────────────────────────────
+  // Chave: jid do grupo → valor: número de advertências
+  warnings: {
+    type:    Map,
+    of:      Number,
+    default: {},
+  },
 
 }, {
   timestamps: true,

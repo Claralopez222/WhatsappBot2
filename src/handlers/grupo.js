@@ -252,18 +252,12 @@ function clearMuted(groupJid) {
 function getMutedSet(groupJid) {
   return new Set(mutedUsers.get(groupJid) ?? []);
 }
+'use strict';
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !ban ──────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-/**
- * @param {object}   sock
- * @param {object}   msg
- * @param {object}   content
- * @param {string}   jid          JID do grupo
- * @param {string}   botJid
- * @param {object}   contactNames  { [jid]: nome }
- */
 async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
@@ -287,10 +281,9 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
       return;
     }
 
-    // Exclui: admins, o bot e o próprio remetente (inclusive linked devices via @lid)
+    // Exclui apenas o bot e o próprio remetente — admins são incluídos
     const targets = meta.participants
       .filter(p => {
-        if (p.admin) return false;
         if (isBotJid(p.id, botJid)) return false;
         const base    = normalizeJidBase(p.id);
         const baseLid = normalizeJidBase(p.lid || '');
@@ -300,7 +293,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
 
     if (targets.length === 0) {
       await sock.sendMessage(jid, {
-        text: '⚠️ Nenhum membro não-admin para remover.',
+        text: '⚠️ Nenhum membro para remover.',
       }, { quoted: msg });
       return;
     }
@@ -313,8 +306,6 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
 
     for (let i = 0; i < targets.length; i += 5) {
       const lote = targets.slice(i, i + 5);
-
-      // Tenta remover o lote inteiro primeiro; se falhar, tenta um a um
       try {
         await sock.groupParticipantsUpdate(jid, lote, 'remove');
         ok += lote.length;
@@ -330,11 +321,9 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
         }
       }
 
-      // Pausa entre lotes para não sobrecarregar a API
       if (i + 5 < targets.length) await new Promise(r => setTimeout(r, 1500));
     }
 
-    // Remove os banidos do mute para não deixar entradas mortas
     for (const t of targets) unmuteUser(jid, t);
 
     await sock.sendMessage(jid, {
@@ -342,7 +331,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
         `✅ *Ban em massa concluído!*\n\n` +
         `🔨 Removidos: *${ok}*` +
         `${fail > 0 ? `\n❌ Falhas: *${fail}*` : ''}\n` +
-        `_(Admins e o bot foram preservados)_`,
+        `_(O bot foi preservado)_`,
     }, { quoted: msg });
     return;
   }
@@ -361,28 +350,23 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  if (await isProtectedTarget(sock, jid, targetJid, botJid)) {
-    await sock.sendMessage(jid, {
-      text: isBotJid(targetJid, botJid)
-        ? '🤖 Não é possível banir o bot!'
-        : '👑 Não é possível banir um admin.',
-    }, { quoted: msg });
+  // ─── Apenas o bot é protegido ────────────────────────────────
+  if (isBotJid(targetJid, botJid)) {
+    await sock.sendMessage(jid, { text: '🤖 Não é possível banir o bot!' }, { quoted: msg });
     return;
   }
 
   try {
     const nome = contactNames[targetJid] || targetJid.split('@')[0];
 
-    // Envia imagem de ban se disponível
     if (fs.existsSync(BAN_IMAGE_PATH)) {
       await sock.sendMessage(jid, {
         image:    fs.readFileSync(BAN_IMAGE_PATH),
-caption:  `🔨 @${targetJid.split('@')[0]} foi banido(a) do grupo! Tchau! 👋`,
-mentions: [targetJid],
+        caption:  `🔨 @${targetJid.split('@')[0]} foi banido(a) do grupo! Tchau! 👋`,
+        mentions: [targetJid],
       });
     }
 
-    // Envia áudio de ban se disponível
     if (fs.existsSync(BAN_AUDIO_PATH)) {
       await sock.sendMessage(jid, {
         audio:    fs.readFileSync(BAN_AUDIO_PATH),
@@ -391,12 +375,9 @@ mentions: [targetJid],
       });
     }
 
-    // Pequena pausa para que as mensagens cheguem antes do ban
     await new Promise(r => setTimeout(r, 1500));
 
     await sock.groupParticipantsUpdate(jid, [targetJid], 'remove');
-
-    // Limpa mute residual para não deixar entradas mortas no Map
     unmuteUser(jid, targetJid);
   } catch (err) {
     console.error('[handleBan] Erro ao remover:', err.message);
@@ -406,23 +387,12 @@ mentions: [targetJid],
   }
 }
 
+module.exports = { handleBan };
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !mute ────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-/**
- * Muta um membro (ou todos os não-admins) do grupo.
- * O estado é gerenciado pelo Map interno `mutedUsers`, isolado por grupo.
- * O parâmetro legado `_mutedUsers` foi removido da assinatura — atualize
- * as chamadas no bot.js para não passá-lo.
- *
- * @param {object} sock
- * @param {object} msg
- * @param {object} content
- * @param {string} jid
- * @param {string} botJid
- * @param {object} contactNames
- */
 async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
@@ -446,9 +416,9 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
       return;
     }
 
+    // Exclui apenas o bot e o próprio remetente — admins são incluídos
     const targets = meta.participants
       .filter(p => {
-        if (p.admin) return false;
         if (isBotJid(p.id, botJid)) return false;
         const base    = normalizeJidBase(p.id);
         const baseLid = normalizeJidBase(p.lid || '');
@@ -458,7 +428,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
 
     if (targets.length === 0) {
       await sock.sendMessage(jid, {
-        text: '⚠️ Nenhum membro não-admin para mutar.',
+        text: '⚠️ Nenhum membro para mutar.',
       }, { quoted: msg });
       return;
     }
@@ -480,12 +450,9 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  if (await isProtectedTarget(sock, jid, targetJid, botJid)) {
-    await sock.sendMessage(jid, {
-      text: isBotJid(targetJid, botJid)
-        ? '🤖 Não é possível mutar o bot.'
-        : '👑 Não é possível mutar um admin.',
-    }, { quoted: msg });
+  // ─── Apenas o bot é protegido ────────────────────────────────
+  if (isBotJid(targetJid, botJid)) {
+    await sock.sendMessage(jid, { text: '🤖 Não é possível mutar o bot.' }, { quoted: msg });
     return;
   }
 
@@ -506,6 +473,8 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     mentions: [targetJid],
   });
 }
+
+module.exports = { handleMute };
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !desmute ─────────────────────────────────────────────────
@@ -796,6 +765,8 @@ async function handleFecharAbrir(sock, msg, jid, fechar) {
   }
 }
 
+'use strict';
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !promover / !rebaixar ─────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -820,12 +791,18 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     }
 
     const alvos = acao === 'promote'
-      ? meta.participants.filter(p => !p.admin && !isBotJid(p.id, botJid)).map(p => p.id)
-      : meta.participants.filter(p =>
-          p.admin &&
-          !isBotJid(p.id, botJid) &&
-          p.id !== senderJid
-        ).map(p => p.id);
+      // Promover: todos os não-admins exceto o bot
+      ? meta.participants
+          .filter(p => !p.admin && !isBotJid(p.id, botJid))
+          .map(p => p.id)
+      // Rebaixar: todos os admins exceto o bot e o próprio remetente
+      : meta.participants
+          .filter(p =>
+            p.admin &&
+            !isBotJid(p.id, botJid) &&
+            p.id !== senderJid
+          )
+          .map(p => p.id);
 
     if (alvos.length === 0) {
       await sock.sendMessage(jid, {
@@ -854,10 +831,13 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     return;
   }
 
+  // ── Ação individual ────────────────────────────────────────
   const targetJid = await resolveTargetJid(sock, msg, content, jid);
   if (!targetJid) {
     await sock.sendMessage(jid, { text: '⚠️ Marque alguém ou use @all.' }, { quoted: msg }); return;
   }
+
+  // ─── Apenas o bot é protegido ────────────────────────────────
   if (isBotJid(targetJid, botJid)) {
     await sock.sendMessage(jid, {
       text: acao === 'promote'
@@ -865,6 +845,7 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
         : '🤖 Não é possível rebaixar o bot.',
     }, { quoted: msg }); return;
   }
+
   if (acao === 'demote' && targetJid === senderJid) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se rebaixar.' }, { quoted: msg }); return;
   }
@@ -883,6 +864,8 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     await sock.sendMessage(jid, { text: '❌ Não consegui alterar. O bot é admin?' }, { quoted: msg });
   }
 }
+
+module.exports = { handlePromoverRebaixar };
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !tempo ────────────────────────────────────────────────────
@@ -1009,11 +992,19 @@ async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, sav
   }
 }
 
+'use strict';
+
+const Usuario = require('./models/Usuario');
+
+'use strict';
+
+const Usuario = require('./models/Usuario');
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !reportar ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid) {
+async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
   }
@@ -1033,27 +1024,32 @@ async function handleReportar(sock, msg, content, jid, warnings, contactNames, s
     await sock.sendMessage(jid, { text: '🤡 Você não pode se reportar.' }, { quoted: msg }); return;
   }
 
-  if (await isProtectedTarget(sock, jid, reportedJid, botJid)) {
-    await sock.sendMessage(jid, {
-      text: isBotJid(reportedJid, botJid)
-        ? '🤖 Não é possível reportar o bot.'
-        : '👑 Não é possível reportar um admin.',
-    }, { quoted: msg }); return;
+  // ─── Apenas o bot é protegido ────────────────────────────────
+  if (isBotJid(reportedJid, botJid)) {
+    await sock.sendMessage(jid, { text: '🤖 Não é possível reportar o bot.' }, { quoted: msg }); return;
   }
 
-  if (!warnings.has(jid)) warnings.set(jid, new Map());
-  const groupWarnings = warnings.get(jid);
-  const current       = (groupWarnings.get(reportedJid) || 0) + 1;
-  groupWarnings.set(reportedJid, current);
-  saveData();
+  // ─── Incrementa advertência no MongoDB ───────────────────────
+  const groupKey = jid.replace(/\./g, '_');
 
-  const nome = contactNames[reportedJid] || reportedJid.split('@')[0];
+  const usuario = await Usuario.findOneAndUpdate(
+    { idWhatsApp: reportedJid },
+    { $inc: { [`warnings.${groupKey}`]: 1 } },
+    { upsert: true, new: true },
+  );
+
+  const current = usuario.warnings.get(groupKey) || 0;
+  const nome    = contactNames[reportedJid] || reportedJid.split('@')[0];
 
   if (current >= 3) {
     try {
       await sock.groupParticipantsUpdate(jid, [reportedJid], 'remove');
-      groupWarnings.delete(reportedJid);
-      saveData();
+
+      await Usuario.updateOne(
+        { idWhatsApp: reportedJid },
+        { $unset: { [`warnings.${groupKey}`]: '' } },
+      );
+
       await sock.sendMessage(jid, {
         text: `🚫 *${nome}* foi removido(a)!\n\n_Motivo: 3 advertências acumuladas. Mereceu!_ 👋`,
         mentions: [reportedJid],
@@ -1080,6 +1076,8 @@ async function handleReportar(sock, msg, content, jid, warnings, contactNames, s
     });
   }
 }
+
+module.exports = { handleReportar };
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !grupinfo ────────────────────────────────────────────────

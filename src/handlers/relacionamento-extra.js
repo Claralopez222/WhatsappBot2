@@ -1,7 +1,8 @@
 const path = require('path');
 
 const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
-const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils'));
+const { getNivelInfo }      = require(path.join(__dirname, '..', 'utils', 'levelUtils'));
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // ─── Lazy require para quebrar dependência circular ────────────
 let _rel = null;
@@ -21,11 +22,6 @@ function getCiumentosMap() { return rel().ciumentosMap; }
 function getBloqueados()   { return rel().bloqueados; }
 
 // ─── Mapa: comando → item obrigatório no inventário ────────────
-//
-// Cada entrada define qual itemKey (da !lojacasal) o usuário precisa
-// ter no inventário para usar aquele comando. O item é CONSUMIDO (−1)
-// ao ser usado com sucesso.
-//
 const ITEM_NECESSARIO = {
   flores:   { key: 'flores',   nome: 'Flores 🌹'                },
   doces:    { key: 'morango',  nome: 'Morango com Chocolate 🍓'  },
@@ -40,13 +36,9 @@ const ITEM_NECESSARIO = {
 };
 
 // ─── Helper: verifica E consome 1 unidade do item (atômico) ───
-//
-// Retorna true  → item consumido, pode prosseguir.
-// Retorna false → mensagem de erro já enviada, abortar handler.
-//
 async function _checkConsumeItem(sock, msg, jid, senderJid, comando) {
   const itemInfo = ITEM_NECESSARIO[comando];
-  if (!itemInfo) return true; // comando não exige item
+  if (!itemInfo) return true;
 
   const { key, nome } = itemInfo;
 
@@ -281,10 +273,6 @@ async function handleSerenata(sock, msg, jid, author, senderJid, relacionamentos
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'serenata', '🎤', `fez uma serenata cantando ${m}`, 8);
 }
 
-// ─── Handlers sem item obrigatório ────────────────────────────
-
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-
 // !declarar
 async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos) {
   // ── Normaliza o ID de quem enviou o comando ──
@@ -358,8 +346,6 @@ async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos
   }, { quoted: msg });
 }
 
-// !ciumento
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // !ciumento
 async function handleCiumento(sock, msg, content, jid, author, senderJid, relacionamentos) {
@@ -465,9 +451,6 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
   }, { quoted: msg });
 }
 
-// ─── !statu ───────────────────────────────────────────────────
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-
 // !status / !statu
 async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
   // Normaliza o ID de quem enviou o comando
@@ -569,9 +552,6 @@ async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
     mentions: [senderJidNormalizado, parcJid].filter(Boolean),
   }, { quoted: msg });
 }
-
-// !meupar
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // !meupar
 async function handleMeuPar(sock, msg, jid, author, senderJid, relacionamentos) {
@@ -750,9 +730,6 @@ async function handleAniversarioCasal(sock, msg, jid, author, senderJid, relacio
 }
 
 // !duelodecasais
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-
-// !duelodecasais
 async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, relacionamentos) {
   // ── Normaliza o ID de quem enviou o comando ──
   const senderJidNormalizado = jidNormalizedUser(senderJid);
@@ -895,11 +872,6 @@ async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, r
   }, { quoted: msg });
 }
 
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-
-// !rankcasais
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-
 // !rankcasais
 async function handleRankCasais(sock, msg, jid, relacionamentos) {
   if (!relacionamentos || relacionamentos.size === 0) {
@@ -1004,9 +976,6 @@ async function handleRankCasais(sock, msg, jid, relacionamentos) {
 
   await sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
 }
-
-// handleDesafioCasal
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // !desafiocasal
 async function handleDesafioCasal(sock, msg, jid, author, senderJid, relacionamentos) {
@@ -1215,8 +1184,6 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
   }, { quoted: msg });
 }
 
-// handleDomingo
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // !domingo
 async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos) {

@@ -349,8 +349,6 @@ async function handleLetra(sock, msg, jid, caption) {
 }
 
 // ─── !perfil ─────────────────────────────────────────────────────────────────
-const path = require('path');
-const fs = require('fs');
 
 // Constantes de Mapeamento
 const PET_EMOJIS = {

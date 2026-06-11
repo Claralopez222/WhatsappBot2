@@ -164,7 +164,6 @@ async function handleProcurarEmprego(sock, msg, jid) {
   if (!ctx) return;
   const { userId, groupId } = ctx;
 
-  // Verificar horário
   if (!dentroDoHorario()) {
     const falta = msParaAbertura();
     return reply(sock, jid, msg,
@@ -187,6 +186,21 @@ async function handleProcurarEmprego(sock, msg, jid) {
       );
     }
 
+    // ── Verificar cooldown de demissão voluntária ──
+    if (carteira.demissaoVoluntariaAte) {
+      const bloqueio = new Date(carteira.demissaoVoluntariaAte).getTime();
+      if (Date.now() < bloqueio) {
+        const falta = bloqueio - Date.now();
+        return reply(sock, jid, msg,
+          `⏳ *AGUARDE PARA SE REEMPREGAR*\n\n` +
+          `Você pediu demissão recentemente.\n` +
+          `O mercado estará disponível novamente em: *${formatMs(falta)}*\n\n` +
+          `_Pense bem antes de pedir demissão da próxima vez!_`
+        );
+      }
+    }
+
+    // ── Histórico sujo ──
     if (carteira.historicoSujo) {
       const aprovado = Math.random() < 0.30;
       if (!aprovado) {
@@ -209,6 +223,7 @@ async function handleProcurarEmprego(sock, msg, jid) {
           totalTrabalhosComSucesso: 0,
           ultimoTrabalho:           null,
           historicoSujo:            false,
+          demissaoVoluntariaAte:    null, // limpa o bloqueio ao ser contratado
         },
       },
       { upsert: true }
@@ -229,6 +244,7 @@ async function handleProcurarEmprego(sock, msg, jid) {
     return reply(sock, jid, msg, '⚠️ Erro ao procurar emprego! Tente novamente.');
   }
 }
+
 
 // ─── !trabalhar / !work ──────────────────────────────────────────────────────
 
@@ -541,6 +557,9 @@ async function handleDemitir(sock, msg, jid) {
 
     const cargo = resolverCargo(carteira.empregoAtual);
 
+    // Cooldown de 30min para recontratação após demissão voluntária
+    const bloqueioAte = new Date(Date.now() + 30 * 60 * 1000);
+
     await CarteiraGrupo.findOneAndUpdate(
       filtro(userId, groupId),
       {
@@ -548,7 +567,7 @@ async function handleDemitir(sock, msg, jid) {
           empregoAtual:             null,
           totalTrabalhosComSucesso: 0,
           ultimoTrabalho:           null,
-          // Saída voluntária NÃO suja o histórico
+          demissaoVoluntariaAte:    bloqueioAte, // ← novo campo
         },
       }
     );
@@ -556,8 +575,9 @@ async function handleDemitir(sock, msg, jid) {
     return reply(sock, jid, msg,
       `👋 *VOCÊ PEDIU DEMISSÃO!*\n\n` +
       `Cargo encerrado: *${cargo?.nome ?? carteira.empregoAtual}*\n\n` +
-      `✅ Seu histórico foi preservado (saída voluntária).\n` +
-      `Use *!procuraremprego* quando quiser voltar ao mercado.`
+      `✅ Histórico preservado (saída voluntária).\n` +
+      `⏳ Você poderá se reempregar em *30 minutos*.\n\n` +
+      `_O mercado precisa de um tempo para novas vagas aparecerem..._`
     );
 
   } catch (e) {

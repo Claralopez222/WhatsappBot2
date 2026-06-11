@@ -40,35 +40,95 @@ async function handleGay(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// ─── !sexo
-async function handleSexo(sock, msg, content, jid, author, contactNames) {
+// ─── !gay
+async function handleGay(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
-  const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-
-  if (!mentionedJid) {
-    await sock.sendMessage(jid, {
-      text: '⚠️ Marca alguém!\nExemplo: *!sexo @fulano*',
-    }, { quoted: msg });
-    return;
-  }
-
-  if (mentionedJid.split('@')[0] === senderJid.split('@')[0]) {
-    await sock.sendMessage(jid, { text: '😂 Sozinho(a) não conta! 💀' }, { quoted: msg });
-    return;
-  }
-
-  const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
   const pct = Math.floor(Math.random() * 101);
 
-  let comentario;
-  if (pct < 30)      comentario = `*${author}* tentou chegar em *${nomeAlvo}* e levou um fora memorável! 😭`;
-  else if (pct < 70) comentario = `*${author}* e *${nomeAlvo}* tiveram um momento, mas nada de mais! 😏`;
-  else               comentario = `*${author}* e *${nomeAlvo}* fizeram bastante barulho essa noite... que escândalo! 🔥`;
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '🧢',
+      frases: [
+        `Praticamente hétero, mas aquele olhar pro amigo foi longo demais, *${display}*. 👀`,
+        `*${display}* jura que é 100% hétero... mas salvou umas fotos "por acidente". 🧢`,
+        `Quase zero, *${display}*. Quase. Aquele crush no colega de sala não conta, né? 😏`,
+        `*${display}* disse "não sou gay de jeito nenhum" e ajustou o cabelo no espelho por 10 minutos. 💅`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🌈',
+      frases: [
+        `*${display}* é curioso(a), né? Não precisa esconder, aqui é um lugar seguro. 😏`,
+        `Um pouco curioso(a)... *${display}* pesquisou umas coisas no modo anônimo semana passada. 🌈`,
+        `*${display}* disse "eu só estava testando" mas ninguém acreditou. 😂`,
+        `Baixo, mas não zero. *${display}* sabe muito bem do que estamos falando. 👀`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🏳️‍🌈',
+      frases: [
+        `Na metade! *${display}* tá em cima do muro e o muro tá adorando. 😂`,
+        `*${display}* é 50/50. Um dia hétero, outro dia "depende da vibe". 🏳️‍🌈`,
+        `Meio a meio! *${display}* não escolhe time, joga pelos dois lados. ⚽`,
+        `*${display}* na exata metade. Admite logo, porra, o grupo já sabe. 😅`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '💅',
+      frases: [
+        `*${display}* tá saindo do armário aos poucos. A porta tá aberta, vai lá! 🚪`,
+        `Acima da média! *${display}* ainda finge, mas cada vez menos. 💅`,
+        `*${display}* chegou na festa e foi direto pra fila errada. Sem reclamar. 🎉`,
+        `O armário de *${display}* tá com a dobradiça solta faz tempo. Empurra mais um pouco. 😂`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '👨‍❤️‍👨',
+      frases: [
+        `Quase assumido(a)! *${display}* falta pouco, caralho! 🏳️‍🌈`,
+        `*${display}* já tem a bandeirinha escondida na gaveta. É só uma questão de tempo. 🌈`,
+        `Alto demais pra fingir, *${display}*. O grupo inteiro já sabe, menos você. 😏`,
+        `*${display}* gritou "EU NÃO SOU GAY" e o autocorreto mudou pra "SOU GAY". 📱💀`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '🌈✨',
+      frases: [
+        `Praticamente confirmado(a)! *${display}*, larga essa farsa! 🎉`,
+        `*${display}* tá com 99% e ainda vai dizer "é fase". Vai, né. 😂`,
+        `Quase 100%! *${display}* só não assumiu porque o Wi-Fi caiu na hora. 🏳️‍🌈✨`,
+        `*${display}* comprou ingresso pra Parada do Orgulho "só pra ver como é". Com fantasia. 💅🎊`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🏆🌈',
+      frases: [
+        `100% GAY! Parabéns *${display}*, campeão(ã) absoluto(a)! Orgulhe-se! 🎊`,
+        `MÁXIMO HISTÓRICO! *${display}* zerou o hetero e não olhou pra trás! 🏆🌈`,
+        `*${display}* chegou nos 100% e o grupo inteiro aplaudiu de pé. 👏🌈`,
+        `100%! *${display}* não é do armário, é da vitrine iluminada com confete! 🎉🏆`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct);
 
   await sock.sendMessage(jid, {
-    text: `💋 *CIFRA DE ATRAÇÃO: ${pct}%*\n\n${comentario}`,
-    mentions: [mentionedJid],
+    text: `${faixa.emoji} *GAYÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
 
@@ -113,24 +173,83 @@ async function handleNazista(sock, msg, content, jid, author, contactNames) {
 // ─── !lesbica
 async function handleLesbica(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
-  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
   const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
-  const pct = Math.floor(Math.random() * 101);
-
-  let emoji, frase;
-  if (pct <= 10)      { emoji = '👩';      frase = 'Hétero assumida! Nem cogita! 💁‍♀️'; }
-  else if (pct <= 30) { emoji = '🌸';      frase = 'Um olhar aqui, outro ali... curiosidade né? 👀'; }
-  else if (pct <= 50) { emoji = '🌈';      frase = 'Na metade do caminho! Admite logo! 😏'; }
-  else if (pct <= 70) { emoji = '💅';      frase = 'Bastante assumida! A vibe não mente! 💋'; }
-  else if (pct <= 89) { emoji = '👭';      frase = 'Quase 100%! Falta só confirmar oficialmente! 🏳️‍🌈'; }
-  else if (pct <= 99) { emoji = '🌈✨';    frase = 'Praticamente confirmada! Para de enrolar! 🎉'; }
-  else                { emoji = '🏆👭';    frase = '100%! Rainha absoluta! Orgulhe-se! 🎊'; }
-
-  const barra = buildBar(pct);
+  const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
+  const faixas = [
+    {
+      max: 10, emoji: '👩',
+      frases: [
+        'Hétero assumida! Nem cogita! 💁‍♀️',
+        'Straight raiz! Nem em sonho! 😂',
+        'Mais hétero impossível. Tá tudo bem. 🙂',
+        'Zero por cento. Completamente no time oposto. 🚫',
+      ],
+    },
+    {
+      max: 30, emoji: '🌸',
+      frases: [
+        'Um olhar aqui, outro ali... curiosidade né? 👀',
+        'Acha algumas mulheres "bonitas demais"... só isso, né? 😏',
+        'Ainda tá na fase de "admiro muito ela". Claro. 🌸',
+        'Segue muita conta feminina no Insta "por estética". Tá bom. 📱',
+      ],
+    },
+    {
+      max: 50, emoji: '🌈',
+      frases: [
+        'Na metade do caminho! Admite logo! 😏',
+        'Fifty-fifty! O armário tá entreaberto! 🚪',
+        'Nem hétero nem assumida. Vibes no meio do caminho! 🤔',
+        'Tá na dúvida existencial. O coração sabe a resposta. 💭',
+      ],
+    },
+    {
+      max: 70, emoji: '💅',
+      frases: [
+        'Bastante assumida! A vibe não mente! 💋',
+        'O jeito que olha pra algumas mulheres já entregou tudo. 👀',
+        'O grupo já sabe. Só falta você admitir. 😂',
+        'A playlist do Spotify já denunciou faz tempo. 🎵',
+      ],
+    },
+    {
+      max: 89, emoji: '👭',
+      frases: [
+        'Quase 100%! Falta só confirmar oficialmente! 🏳️‍🌈',
+        'Praticamente saindo do armário ao vivo! A porta tá aberta! 🚪✨',
+        'O grupo todo já sabe. É só uma questão de tempo. ⏳',
+        'Ninguém acredita mais que é "só amizade". 😂',
+      ],
+    },
+    {
+      max: 99, emoji: '🌈✨',
+      frases: [
+        'Praticamente confirmada! Para de enrolar! 🎉',
+        'Quase lá! O universo tá gritando. Ouve! 🌈',
+        'Para de fingir que não é. O grupo tá esperando o anúncio oficial. 📢',
+        'Só falta o post no Instagram com arco-íris. 🏳️‍🌈✨',
+      ],
+    },
+    {
+      max: 101, emoji: '🏆👭',
+      frases: [
+        '100%! Rainha absoluta! Orgulhe-se! 🎊',
+        'CONFIRMADA! Ícone lésbico do grupo! 👑🌈',
+        '100% e sem arrependimento! Hall da fama! 🏆',
+        'Lenda viva! O grupo inteiro te respeita! 👏🌈',
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct);
+
   await sock.sendMessage(jid, {
-    text: `${emoji} *LESBÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    text: `${faixa.emoji} *LESBÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
@@ -207,25 +326,48 @@ async function handle8ball(sock, msg, jid, caption) {
   }
 
   const respostas = [
+    // ✅ Sim
     '✅ Sim, com certeza!',
-    '✅ Sem dúvida!',
+    '✅ Sem dúvida nenhuma!',
     '✅ Muito provável!',
     '✅ Pode apostar que sim!',
+    '✅ O universo confirma: sim!',
+    '✅ Tá escrito nas estrelas. Vai acontecer!',
+    '✅ Com toda certeza do mundo!',
+    '✅ Sim! Não perde tempo e vai lá!',
+    '✅ A bola 8 diz: ACONTECE!',
+    '✅ Favorável. Vai em frente sem medo!',
+
+    // 🤔 Talvez
     '🤔 Talvez... vai saber.',
     '🤔 Pergunte novamente mais tarde.',
     '🤔 Quem sabe? O futuro é incerto.',
     '🤔 As forças do universo estão confusas.',
+    '🤔 Depende de você. A bola não garante nada.',
+    '🤔 Nem sim, nem não. O destino é preguiçoso hoje.',
+    '🤔 As energias cósmicas estão indecisas. Tenta de novo.',
+    '🤔 Possível, mas não garantido. Segura a ansiedade.',
+    '🤔 A resposta existe, mas a bola não tá com vontade de dar.',
+    '🤔 Cinquenta por cento pra cada lado. Cara ou coroa?',
+
+    // ❌ Não
     '❌ Não, definitivamente não.',
     '❌ Não é provável.',
     '❌ Esqueça essa ideia.',
     '❌ As estrelas dizem que não.',
+    '❌ Jamais. Nem tenta.',
+    '❌ A bola 8 ri da sua pergunta. Não vai rolar.',
+    '❌ Não acontece nem em universo paralelo.',
+    '❌ Pode tirar o cavalinho da chuva.',
+    '❌ O destino disse não e bateu a porta na sua cara.',
+    '❌ Nem com muita fé isso vai funcionar.',
   ];
 
   const resp = respostas[Math.floor(Math.random() * respostas.length)];
   await sock.sendMessage(jid, { text: `🎱 *${resp}*` }, { quoted: msg });
 }
 
-// ─── !ship ────────────────────────────────────────────────────────────────────
+// ─── !ship
 async function handleShip(sock, msg, content, jid, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const mencionados = contextInfo?.mentionedJid || [];
@@ -244,30 +386,97 @@ async function handleShip(sock, msg, content, jid, contactNames) {
   const nome1 = contactNames?.[jid1] || `@${jid1.split('@')[0]}`;
   const nome2 = contactNames?.[jid2] || `@${jid2.split('@')[0]}`;
 
-  // Nome do casal combinado
-  const metade1 = nome1.slice(0, Math.ceil(nome1.length / 2));
-  const metade2 = nome2.slice(Math.floor(nome2.length / 2));
+  const metade1  = nome1.slice(0, Math.ceil(nome1.length / 2));
+  const metade2  = nome2.slice(Math.floor(nome2.length / 2));
   const nomeShip = (metade1 + metade2).toLowerCase();
 
-  const pct    = Math.floor(Math.random() * 101);
-  const barra  = buildBar(pct, '💘');
+  const pct   = Math.floor(Math.random() * 101);
+  const barra = buildBar(pct, '💘');
 
-  const { emoji, comentario } =
-    pct <= 10  ? { emoji: '💀', comentario: 'Nem em universo paralelo... é um desastre!' } :
-    pct <= 25  ? { emoji: '😬', comentario: 'Muito difícil... melhor nem tentar!' } :
-    pct <= 40  ? { emoji: '🤷', comentario: 'Tem mais chance de virar amizade do que namoro.' } :
-    pct <= 55  ? { emoji: '🤝', comentario: 'Uma amizade improvável, mas possível!' } :
-    pct <= 70  ? { emoji: '👀', comentario: 'Esse ship tem potencial, alguém incentiva!' } :
-    pct <= 85  ? { emoji: '🔥', comentario: 'Tá pegando fogo esse ship! Vai em frente!' } :
-    pct <= 95  ? { emoji: '💍', comentario: 'SHIP CONFIRMADO! Alguém avisa logo!' } :
-                 { emoji: '👑', comentario: 'AMOR PERFEITO! Feitos um pro outro! 🌹' };
+  const faixas = [
+    {
+      max: 10, emoji: '💀',
+      frases: [
+        'Nem em universo paralelo... é um desastre total!',
+        'A bola 8 chorou de pena. Não vai rolar jamais.',
+        'Incompatíveis no nível molecular. Esquece.',
+        'O próprio Cupido jogou o arco fora ao ver esse ship.',
+      ],
+    },
+    {
+      max: 25, emoji: '😬',
+      frases: [
+        'Muito difícil... melhor nem tentar!',
+        'Tem mais chance de cair um raio. Desiste.',
+        'Seria necessário um milagre. E milagres são raros.',
+        'O grupo torce, mas a matemática diz não.',
+      ],
+    },
+    {
+      max: 40, emoji: '🤷',
+      frases: [
+        'Tem mais chance de virar amizade do que namoro.',
+        'Dá pra ser colega de trabalho no máximo.',
+        'Nada de mais. Talvez uns dois dias de conversa.',
+        'Ship fraquinho. Existe esperança, mas pouca.',
+      ],
+    },
+    {
+      max: 55, emoji: '🤝',
+      frases: [
+        'Uma amizade improvável, mas possível!',
+        'Pode rolar algo, mas alguém vai ter que se esforçar muito.',
+        'Na média. Com dedicação pode evoluir!',
+        'Nem ótimo, nem ruim. Depende da vibe do dia.',
+      ],
+    },
+    {
+      max: 70, emoji: '👀',
+      frases: [
+        'Esse ship tem potencial! Alguém incentiva!',
+        'Tem algo aí. Só falta o empurrãozinho certo.',
+        'A faísca existe. Alguém precisa soprar.',
+        'O grupo já tá vendo o que eles não viram ainda.',
+      ],
+    },
+    {
+      max: 85, emoji: '🔥',
+      frases: [
+        'Tá pegando fogo esse ship! Vai em frente!',
+        'Quente demais! Só falta oficializar!',
+        'Combinação explosiva. O grupo aprova com entusiasmo.',
+        'Deu match nos astros. Não desperdiça isso!',
+      ],
+    },
+    {
+      max: 95, emoji: '💍',
+      frases: [
+        'SHIP CONFIRMADO! Alguém avisa logo!',
+        'Isso é praticamente um noivado. Falta só o anel.',
+        'Nível casamento civil. O cartório tá esperando.',
+        'O universo inteiro torce por esse casal. Não decepciona!',
+      ],
+    },
+    {
+      max: 101, emoji: '👑',
+      frases: [
+        'AMOR PERFEITO! Feitos um pro outro! 🌹',
+        'ALMAS GÊMEAS CONFIRMADAS! Isso é raro demais!',
+        'Nível épico! Esse ship vai entrar pra história do grupo!',
+        '100%! O destino já escolheu. É inevitável. 💫',
+      ],
+    },
+  ];
+
+  const faixa    = faixas.find(f => pct < f.max);
+  const comentario = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
 
   await sock.sendMessage(jid, {
     text:
       `💘 *SHIP* 💘\n\n` +
       `*${nome1}* 💞 *${nome2}*\n` +
       `🏷️ *Nome do casal:* _${nomeShip}_\n\n` +
-      `${barra} *${pct}%* ${emoji}\n\n` +
+      `${barra} *${pct}%* ${faixa.emoji}\n\n` +
       `💬 _${comentario}_`,
     mentions: [jid1, jid2],
   }, { quoted: msg });
@@ -391,7 +600,7 @@ async function handleElogio(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// ─── !crush ───────────────────────────────────────────────────────────────────
+// ─── !crush ──────────────────────────────────────────────────────────────────
 async function handleCrush(sock, msg, content, jid, author, contactNames) {
   const contextInfo  = content?.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
@@ -414,22 +623,81 @@ async function handleCrush(sock, msg, content, jid, author, contactNames) {
   const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
   const chance   = Math.floor(Math.random() * 101);
 
-  const { emoji, resposta } =
-    chance <= 10  ? { emoji: '💀', resposta: 'Nem em sonho vai rolar... Desiste logo!' } :
-    chance <= 25  ? { emoji: '💔', resposta: 'Não vai rolar. Parte pra próxima! 😬' } :
-    chance <= 45  ? { emoji: '🤷', resposta: 'Talvez! Ninguém sabe. Tenta a sorte! 😅' } :
-    chance <= 65  ? { emoji: '💕', resposta: 'Tem uma boa chance! Vai lá falar com ele(a)! 👀' } :
-    chance <= 85  ? { emoji: '🔥', resposta: 'Tá pegando fogo! Só falta dar o primeiro passo!' } :
-    chance <= 99  ? { emoji: '💍', resposta: 'Casamento confirmado pelo universo! 😍✨' } :
-                    { emoji: '👑', resposta: 'ALMA GÊMEA! Escritos nas estrelas! 🌟' };
+  const faixas = [
+    {
+      max: 10, emoji: '💀',
+      frases: [
+        'Nem em sonho vai rolar... Desiste logo!',
+        'O universo gargalhou quando você pensou nisso. 😭',
+        `${nomeAlvo} nem sabe que você existe nesse nível. 💀`,
+        'Zero chance. Nem com muito esforço. Parte pra próxima.',
+      ],
+    },
+    {
+      max: 25, emoji: '💔',
+      frases: [
+        'Não vai rolar. Parte pra próxima! 😬',
+        `${nomeAlvo} te vê como... nada. Infelizmente. 😅`,
+        'A chance é tão pequena que nem aparece no gráfico.',
+        'Amor não correspondido clássico. Chora e segue em frente.',
+      ],
+    },
+    {
+      max: 45, emoji: '🤷',
+      frases: [
+        'Talvez! Ninguém sabe. Tenta a sorte! 😅',
+        'Cinquenta por cento de esperança, cinquenta de decepção.',
+        `${nomeAlvo} pode até ter notado você. Ou não. Vai saber.`,
+        'Incerto. O destino tá de mau humor hoje.',
+      ],
+    },
+    {
+      max: 65, emoji: '💕',
+      frases: [
+        `Tem uma boa chance! Vai lá falar com ${nomeAlvo}! 👀`,
+        'A energia tá favorável! Só falta você tomar coragem.',
+        `${nomeAlvo} provavelmente já te notou. Aproveita! 😏`,
+        'Dá pra rolar sim! Para de procrastinar e age logo!',
+      ],
+    },
+    {
+      max: 85, emoji: '🔥',
+      frases: [
+        'Tá pegando fogo! Só falta dar o primeiro passo!',
+        `${nomeAlvo} tá esperando sem saber que tá esperando. Corre!`,
+        'A faísca já existe. Só falta você soprar. 🔥',
+        'Quente demais! O grupo todo já viu que tem clima!',
+      ],
+    },
+    {
+      max: 99, emoji: '💍',
+      frases: [
+        'Casamento confirmado pelo universo! 😍✨',
+        `${nomeAlvo} e você foram feitos um pro outro. Fica claro.`,
+        'Nível noivado. Só falta o anel e a festa. 💍',
+        'O destino já decidiu. Você só precisa aparecer.',
+      ],
+    },
+    {
+      max: 101, emoji: '👑',
+      frases: [
+        'ALMA GÊMEA! Escritos nas estrelas! 🌟',
+        `${nomeAlvo} é sua pessoa. Sem discussão. O cosmos confirmou.`,
+        '100%! Isso é raro demais. Não desperdiça essa chance! 👑',
+        'Amor épico nível filme. O grupo inteiro vai vibrar com isso. 🎊',
+      ],
+    },
+  ];
 
-  const barra = buildBar(chance, '💘');
+  const faixa  = faixas.find(f => chance < f.max);
+  const resposta = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra  = buildBar(chance, '💘');
 
   await sock.sendMessage(jid, {
     text:
       `💘 *CRUSH REPORT* 💘\n\n` +
       `*${author}* tem crush em *${nomeAlvo}*\n\n` +
-      `${barra} *${chance}%* ${emoji}\n\n` +
+      `${barra} *${chance}%* ${faixa.emoji}\n\n` +
       `💬 _${resposta}_`,
     mentions: [mentionedJid],
   }, { quoted: msg });
@@ -488,7 +756,7 @@ async function handleCantada(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// ─── !safadeza ────────────────────────────────────────────────────────────────
+// ─── !safadeza ───────────────────────────────────────────────────────────────
 async function handleSafadeza(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
@@ -496,27 +764,103 @@ async function handleSafadeza(sock, msg, content, jid, author, contactNames) {
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
-  const { emoji, frase } =
-    pct <= 10  ? { emoji: '😇', frase: 'Santinho(a)! Nem sabe o que é safadeza!' } :
-    pct <= 25  ? { emoji: '🥺', frase: 'Inocentinho(a) demais! Precisa se soltar!' } :
-    pct <= 40  ? { emoji: '😊', frase: 'Certinho(a) por fora, mas tem um olhar suspeito! 👀' } :
-    pct <= 55  ? { emoji: '😏', frase: 'Na média! Safado(a) na medida certa!' } :
-    pct <= 70  ? { emoji: '🔥', frase: 'Bastante safado(a)! Todo mundo já desconfia!' } :
-    pct <= 84  ? { emoji: '😈', frase: 'Muito safado(a)! Uma lenda viva do grupo!' } :
-    pct <= 92  ? { emoji: '👹', frase: 'Nível absurdo! Deveria ter vergonha... mas não tem!' } :
-    pct <= 99  ? { emoji: '☠️', frase: 'PERIGO EXTREMO! Fuja enquanto é tempo!' } :
-                 { emoji: '🏆', frase: '100% SAFADO(A)! Campeão(ã) absoluto(a) do grupo! 🎊' };
+  const faixas = [
+    {
+      max: 10, emoji: '😇',
+      frases: [
+        'Santinho(a)! Nem sabe o que é safadeza!',
+        'Puro(a) como água de nascente. Impressionante.',
+        'Inocente demais. O grupo te protege. 🕊️',
+        'Zero safadeza. Nem por acidente.',
+      ],
+    },
+    {
+      max: 25, emoji: '🥺',
+      frases: [
+        'Inocentinho(a) demais! Precisa se soltar!',
+        'Tem um potencial aí escondido, mas ainda não acordou.',
+        'Certinho(a) na teoria. Na prática... talvez. 👀',
+        'Ainda na fase de corar com piada de duplo sentido.',
+      ],
+    },
+    {
+      max: 40, emoji: '😊',
+      frases: [
+        'Certinho(a) por fora, mas tem um olhar suspeito! 👀',
+        'Na rua é educado(a), mas no zap já mandou umas coisas... 😏',
+        'Parece inocente mas o histórico de conversa diz outra coisa.',
+        'Safadinho(a) envergonhado(a). O pior tipo. 😂',
+      ],
+    },
+    {
+      max: 55, emoji: '😏',
+      frases: [
+        'Na média! Safado(a) na medida certa!',
+        'Nem santo(a) nem demônio. Um equilíbrio suspeito.',
+        'Safadeza controlada. Sabe a hora certa de liberar.',
+        'O grupo já desconfia mas não tem prova ainda.',
+      ],
+    },
+    {
+      max: 70, emoji: '🔥',
+      frases: [
+        'Bastante safado(a)! Todo mundo já desconfia!',
+        'Safadeza em nível avançado. O grupo já sabe de tudo.',
+        'Tá no top 3 mais safados(as) do grupo facilmente.',
+        'Ninguém se surpreende mais com as histórias dessa pessoa. 😂',
+      ],
+    },
+    {
+      max: 84, emoji: '😈',
+      frases: [
+        'Muito safado(a)! Uma lenda viva do grupo!',
+        'Nível lendário. As histórias já viraram folclore.',
+        'Devia ter um aviso de conteúdo adulto antes de falar.',
+        'O grupo usa como referência de safadeza. Orgulho duvidoso. 🏅',
+      ],
+    },
+    {
+      max: 92, emoji: '👹',
+      frases: [
+        'Nível absurdo! Deveria ter vergonha... mas não tem!',
+        'Safadeza que assusta até os mais experientes do grupo.',
+        'Ultrapassou limites que nem sabíamos que existiam.',
+        'A psicologia ainda não tem nome pra esse nível. 💀',
+      ],
+    },
+    {
+      max: 99, emoji: '☠️',
+      frases: [
+        'PERIGO EXTREMO! Fuja enquanto é tempo!',
+        'Safadeza biónica. Um fenômeno da natureza.',
+        'Nem o diabo acredita no que essa pessoa já fez.',
+        'O grupo considera colocar uma placa de aviso antes de responder. ☠️',
+      ],
+    },
+    {
+      max: 101, emoji: '🏆',
+      frases: [
+        '100% SAFADO(A)! Campeão(ã) absoluto(a) do grupo! 🎊',
+        'Hall da fama da safadeza. Intocável. Lendário(a).',
+        'Número um. Inigualável. O grupo nunca viu igual.',
+        'RECORDE MUNDIAL! Precisam criar uma categoria nova só pra essa pessoa. 👑',
+      ],
+    },
+  ];
 
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
   const barra = buildBar(pct, '🟥');
 
   await sock.sendMessage(jid, {
     text:
-      `${emoji} *SAFADÔMETRO DE ${display.toUpperCase()}* ${emoji}\n\n` +
+      `${faixa.emoji} *SAFADÔMETRO DE ${display.toUpperCase()}* ${faixa.emoji}\n\n` +
       `${barra} *${pct}%*\n\n` +
       `💬 _${frase}_`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
+
 // ─── !tiro
 async function handleTiro(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
@@ -703,18 +1047,49 @@ async function handleBaterFalta(sock, msg, content, jid, author, contactNames) {
 
   if (!mentionedJid) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Marca quem bateu falta!\nExemplo: *!baterfalta @fulano*',
+      text: '⚠️ Marca quem tá na barreira!\nExemplo: *!baterfalta @fulano*',
     }, { quoted: msg });
     return;
   }
 
   const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
-  const resultado = Math.random();
-  let texto;
 
-  if (resultado < 0.33)      texto = `⚽ *GOL!* *${author}* bateu a falta e mandou direto pra rede! 🥅🔥\n\n_${nomeAlvo} não tinha chance!_`;
-  else if (resultado < 0.66) texto = `😬 *NA TRAVE!* *${author}* bateu a falta e acertou a trave! Quase!\n\n_${nomeAlvo} suspirou de alívio!_`;
-  else                       texto = `🙈 *PRA FORA!* *${author}* bateu a falta e mandou nas arquibancadas! 😂\n\n_${nomeAlvo} saiu rindo!_`;
+  const resultados = [
+    // ⚽ Gol
+    {
+      chance: 0.33,
+      frases: [
+        `⚽ *GOL!* *${author}* bateu colocado no ângulo e o goleiro nem viu! 🥅🔥\n\n_${nomeAlvo} ficou plantado olhando a bola entrar._`,
+        `⚽ *GOLAÇO!* *${author}* cobrou no cantinho e não teve defesa! 🏆\n\n_${nomeAlvo} jogou o boné no chão de raiva._`,
+        `⚽ *GOL DE PLACA!* *${author}* mandou uma bomba no ângulo! 🔥\n\n_${nomeAlvo} nem se mexeu. Humilhação total._`,
+        `⚽ *GOL!* *${author}* enganou a barreira e mandou rasteiro! 🥅\n\n_${nomeAlvo} mergulhou pro lado errado. Clássico._`,
+      ],
+    },
+    // 😬 Trave
+    {
+      chance: 0.66,
+      frases: [
+        `😬 *NA TRAVE!* *${author}* bateu e a bola beijou o poste! Que azar! 😩\n\n_${nomeAlvo} suspirou de alívio e agradeceu aos céus._`,
+        `😬 *TRAVESSÃO!* *${author}* levantou a bola e acertou em cheio na madeira! 😤\n\n_${nomeAlvo} saiu correndo antes do rebote._`,
+        `😬 *NA TRAVE E SAIU!* Que crueldade com *${author}*! 😭\n\n_${nomeAlvo} riu na cara dura._`,
+        `😬 *QUASE!* *${author}* bateu colocado mas a trave salvou *${nomeAlvo}*! 😱\n\n_Milímetros de diferença. A vida é cruel._`,
+      ],
+    },
+    // 🙈 Fora
+    {
+      chance: 1.01,
+      frases: [
+        `🙈 *PRA FORA!* *${author}* bateu e a bola foi parar no estacionamento! 😂\n\n_${nomeAlvo} saiu rindo e nem olhou pra trás._`,
+        `🙈 *NAS ARQUIBANCADAS!* *${author}* chutou com tanta força que a bola sumiu! 🚀\n\n_${nomeAlvo} perguntou se precisava de ajuda._`,
+        `🙈 *QUE HORROR!* *${author}* escorregou na hora de bater e mandou no corner! 😭\n\n_${nomeAlvo} bateu palma com pena._`,
+        `🙈 *MANDOU PRO UNIVERSO!* *${author}* arrancou o chute e errou o alvo por 3 metros! 🌌\n\n_${nomeAlvo} tirou foto pra mandar no grupo._`,
+      ],
+    },
+  ];
+
+  const sorteio = Math.random();
+  const resultado = resultados.find(r => sorteio < r.chance);
+  const texto = resultado.frases[Math.floor(Math.random() * resultado.frases.length)];
 
   await sock.sendMessage(jid, {
     text: `⚽ *BATER FALTA* ⚽\n\n${texto}`,
@@ -722,7 +1097,7 @@ async function handleBaterFalta(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// ─── !eununca ─────────────────────────────────────────────────────────────────
+// ─── !eununca
 async function handleEuNunca(sock, msg, content, jid) {
   const frases = [
     // 😅 Cotidiano
@@ -746,6 +1121,16 @@ async function handleEuNunca(sock, msg, content, jid) {
     'Eu nunca fiz as unhas e estraguei logo em seguida. 💅',
     'Eu nunca cantei errado uma música por anos sem perceber. 🎵',
     'Eu nunca mandei mensagem pra pessoa errada. 😰',
+    'Eu nunca fiz uma lista de tarefas só pra riscar tudo sem fazer. ✅',
+    'Eu nunca coloquei o alarme 10 vezes e ignorei todos. ⏰',
+    'Eu nunca fingi que não estava em casa quando bateram na porta. 🚪',
+    'Eu nunca abri a geladeira sem fome só pra olhar. 🧊',
+    'Eu nunca perdi chave de casa e culpei outra pessoa. 🔑',
+    'Eu nunca prometei acordar cedo e dormiu até o meio-dia. 🌞',
+    'Eu nunca deixei louça pra lavar "depois" por mais de dois dias. 🍽️',
+    'Eu nunca inventei que o celular estava sem bateria. 🔋',
+    'Eu nunca fingiu ter lido um livro pra parecer culto. 📚',
+    'Eu nunca saí sem guarda-chuva achando que não ia chover. ☔',
 
     // 😏 Relacionamentos
     'Eu nunca fiquei com mais de uma pessoa no mesmo dia. 💘',
@@ -756,6 +1141,12 @@ async function handleEuNunca(sock, msg, content, jid) {
     'Eu nunca fiquei com o ex(a) depois de terminar. 🔁',
     'Eu nunca dei like sem querer em foto antiga de alguém que eu stalkeava. 😱',
     'Eu nunca inventei que tava doente pra não ver alguém. 🤒',
+    'Eu nunca mandei áudio apaixonado e me arrependi na hora que enviou. 💌',
+    'Eu nunca escrevi uma mensagem longa e apaguei tudo antes de mandar. 🗑️',
+    'Eu nunca fingi não me importar quando me importava demais. 💔',
+    'Eu nunca pesquisei o(a) ex nas redes sociais às 2 da manhã. 🌙',
+    'Eu nunca dei unfollow e follow de novo na mesma semana. 🔄',
+    'Eu nunca fiquei com alguém do grupo e não contou pra ninguém. 🤐',
 
     // 🍻 Balada / Festa
     'Eu nunca bebi e fiz algo que me arrependi no dia seguinte. 🍺',
@@ -765,6 +1156,11 @@ async function handleEuNunca(sock, msg, content, jid) {
     'Eu nunca chorei bêbado(a) sem motivo aparente. 😭',
     'Eu nunca mandei mensagem comprometedora de madrugada. 🌙',
     'Eu nunca jurei que não ia beber e bebeu assim mesmo. 🍻',
+    'Eu nunca saí pra "só tomar uma" e voltou de manhã. ☀️',
+    'Eu nunca dormi na casa de alguém sem planejar. 🛋️',
+    'Eu nunca liguei pra alguém bêbado(a) e fingiu que não lembrava no dia seguinte. 📞',
+    'Eu nunca vomitei no banheiro de uma festa e voltei a dançar logo depois. 🕺🤢',
+    'Eu nunca perdi o celular na balada e entrou em pânico. 😱',
 
     // 💻 Tech / Redes sociais
     'Eu nunca postei foto editada demais e disse que era natural. 📸',
@@ -773,6 +1169,10 @@ async function handleEuNunca(sock, msg, content, jid) {
     'Eu nunca criei conta fake só pra ver o perfil de alguém. 🕵️',
     'Eu nunca comprei seguidores. 📊',
     'Eu nunca deletei foto por ter pouco like. 🗑️',
+    'Eu nunca postei story só pra uma pessoa específica ver. 👁️',
+    'Eu nunca pesquisei meu próprio nome no Google. 🔍',
+    'Eu nunca fiz print de conversa pra mostrar pros amigos. 📲',
+    'Eu nunca apaguei comentário meu depois de 2 minutos com vergonha. 😳',
 
     // 🏫 Escola / Trabalho
     'Eu nunca copiei tarefa de alguém na última hora. 📝',
@@ -780,6 +1180,11 @@ async function handleEuNunca(sock, msg, content, jid) {
     'Eu nunca mandei mensagem pro chefe dizendo que tava doente estando saudável. 🤧',
     'Eu nunca colei na prova. ✏️',
     'Eu nunca fiz trabalho em grupo sozinho enquanto os outros sumiam. 😤',
+    'Eu nunca entrei em reunião com câmera desligada e fui fazer outra coisa. 💻',
+    'Eu nunca mandei e-mail errado pro chefe. 📧',
+    'Eu nunca adiou um prazo e inventou uma desculpa criativa. 📅',
+    'Eu nunca pesquisou resposta de prova no banheiro. 🚽📱',
+    'Eu nunca fingiu estar trabalhando quando o chefe passou perto. 🖥️',
   ];
 
   const frase = frases[Math.floor(Math.random() * frases.length)];
@@ -790,6 +1195,11 @@ async function handleEuNunca(sock, msg, content, jid) {
     '😂 Quem se identificou, bebe dobrado!',
     '🫵 Tô te olhando... bebe!',
     '🍻 Quem já fez levanta a mão... e bebe!',
+    '🫣 Olha nos olhos e diz que nunca fez. Vai. Eu espero.',
+    '😈 Mentiroso(a) bebe dois!',
+    '🤡 Tá me enganando? Bebe logo!',
+    '💀 Quem fez e não admite, bebe três!',
+    '👀 O grupo inteiro sabe quem fez. Bebe.',
   ];
 
   const reacao = reacoes[Math.floor(Math.random() * reacoes.length)];
@@ -830,19 +1240,42 @@ async function handlePpt(sock, msg, jid, caption) {
   }
 
   const emojis = { pedra: '🪨', papel: '📄', tesoura: '✂️' };
-  let resultado;
 
+  const resultados = {
+    empate: [
+      '🤝 *EMPATE!* Pensamos igual! Somos a mesma pessoa?',
+      '🤝 *EMPATE!* Sincronizados demais. Assustador.',
+      '🤝 *EMPATE!* Nenhum de nós dois tem criatividade hoje.',
+      '🤝 *EMPATE!* O universo não quis decidir agora.',
+    ],
+    vitoria: [
+      '🏆 *VOCÊ GANHOU!* Tá me humilhando? Parabéns. 😤',
+      '🏆 *VOCÊ GANHOU!* Sorte de iniciante. Tô de olho em você. 👀',
+      '🏆 *VOCÊ GANHOU!* Dessa vez foi. Da próxima não escapa. 😤',
+      '🏆 *VOCÊ GANHOU!* Aceito a derrota com desonra total. 💀',
+    ],
+    derrota: [
+      '💀 *VOCÊ PERDEU!* Isso foi constrangedor. Tenta de novo! 😂',
+      '💀 *VOCÊ PERDEU!* Previsível demais! Li sua mente. 🧠',
+      '💀 *VOCÊ PERDEU!* Até eu fiquei com dó. Vai de novo! 😬',
+      '💀 *VOCÊ PERDEU!* Não era difícil... mas conseguiu errar. 😂',
+    ],
+  };
+
+  let tipo;
   if (jogador === bot) {
-    resultado = '🤝 *EMPATE!* Pensamos igual!';
+    tipo = 'empate';
   } else if (
     (jogador === 'pedra'   && bot === 'tesoura') ||
     (jogador === 'papel'   && bot === 'pedra')   ||
     (jogador === 'tesoura' && bot === 'papel')
   ) {
-    resultado = '🏆 *VOCÊ GANHOU!* Parabéns!';
+    tipo = 'vitoria';
   } else {
-    resultado = '💀 *VOCÊ PERDEU!* Tenta de novo!';
+    tipo = 'derrota';
   }
+
+  const resultado = resultados[tipo][Math.floor(Math.random() * resultados[tipo].length)];
 
   await sock.sendMessage(jid, {
     text: `✂️ *PEDRA, PAPEL E TESOURA* 🪨\n\nVocê: ${emojis[jogador]} *${jogador.toUpperCase()}*\nBot: ${emojis[bot]} *${bot.toUpperCase()}*\n\n${resultado}`,
@@ -854,25 +1287,49 @@ async function handleVerdadeOuDesafio(sock, msg, jid) {
   const tipo = Math.random() > 0.5 ? 'VERDADE' : 'DESAFIO';
 
   const verdades = [
-    'Qual é seu maior medo?',
-    'Você já mentiu para alguém importante na sua vida?',
-    'Qual é seu segredo mais obscuro?',
+    'Qual é seu maior medo e por quê você nunca fala sobre ele?',
+    'Você já mentiu pra alguém importante e nunca contou? O que foi?',
+    'Qual é o segredo mais pesado que você carrega?',
     'Você teria coragem de confessar algo ruim que fez aqui agora?',
     'Qual foi a maior besteira que você já fez por alguém?',
-    'Você já fingiu gostar de alguém por interesse?',
-    'Qual é a coisa mais estranha que você já fez sozinho(a)?',
-    'Você já passou vergonha por causa de alguém desse grupo?',
+    'Você já fingiu gostar de alguém só por interesse?',
+    'Qual é a coisa mais estranha que você já fez estando completamente sozinho(a)?',
+    'Você já passou vergonha por causa de alguém desse grupo? Conta!',
+    'Qual foi a última vez que você chorou e por quê?',
+    'Você já teve inveja de alguém do grupo? De quem e por quê?',
+    'Qual é a mentira que você mais repete pra se safar de situações?',
+    'Se pudesse apagar uma memória, qual seria?',
+    'Tem alguém nesse grupo que você não suporta? Não precisa falar o nome... mas pode. 😏',
+    'Qual foi a decisão mais arrependida da sua vida?',
+    'Você já foi o(a) vilão(ã) de uma história? Conta o que aconteceu.',
+    'Qual é o pior pensamento que você já teve sobre alguém desse grupo?',
+    'Se todos soubessem de uma coisa sua, você sairia do grupo?',
+    'Qual foi a vez que você ficou mais com ciúme na vida?',
+    'Você já fingiu ser alguém que não é pra impressionar alguém? Funcionou?',
+    'O que você faz quando está sozinho(a) que jamais admitiria em público?',
   ];
 
   const desafios = [
-    'Mande uma mensagem criativa para alguém do grupo agora!',
-    'Cante uma música inteira aqui no grupo! 🎤',
-    'Mude sua foto de perfil por 1 hora.',
-    'Escreva um elogio sincero para cada pessoa do grupo.',
-    'Mande um áudio gritando o nome de quem te pediu esse desafio.',
-    'Fique 10 minutos sem usar o celular.',
-    'Mande uma selfie feia aqui agora.',
-    'Escreva uma declaração dramática de amor para o grupo.',
+    'Mande uma mensagem aleatória e estranha pro último contato do seu WhatsApp agora! 📲',
+    'Cante pelo menos 30 segundos de uma música aqui no grupo! 🎤',
+    'Mude sua foto de perfil por 1 hora pra uma foto feia sua. Sem filtro.',
+    'Escreva um elogio sincero e exagerado pra cada pessoa que responder essa mensagem.',
+    'Mande um áudio gritando o nome de quem te pediu esse desafio pelo menos 3 vezes.',
+    'Fique 15 minutos sem usar o celular. O grupo vai fiscalizar. ⏱️',
+    'Mande uma selfie com a pior expressão de cara que você conseguir fazer. Agora.',
+    'Escreva uma declaração dramática de amor pra esse grupo. Capriche. 💌',
+    'Mande um áudio imitando alguém do grupo sem falar o nome. O grupo adivinha quem é.',
+    'Poste nos seus stories uma foto enviada por alguém do grupo. Sem ver antes.',
+    'Mande uma mensagem pra alguém de fora do grupo dizendo "precisamos conversar" e some por 5 minutos.',
+    'Imite um animal por áudio até alguém do grupo adivinhar qual é.',
+    'Fale um elogio pra pessoa que você menos fala nesse grupo.',
+    'Mande uma foto do lugar mais bagunçado da sua casa agora. Sem arrumar.',
+    'Escreva uma resenha dramática do último filme ou série que assistiu usando só emojis.',
+    'Diga três verdades sobre você que ninguém do grupo sabe.',
+    'Mande um áudio em inglês inventando uma história aleatória por pelo menos 20 segundos.',
+    'Peça pra alguém do grupo escolher sua foto de perfil por 30 minutos.',
+    'Mande o print da sua tela inicial do celular sem apagar nada.',
+    'Chame alguém do grupo de apelido ridículo até a próxima mensagem.',
   ];
 
   const lista = tipo === 'VERDADE' ? verdades : desafios;
@@ -887,20 +1344,37 @@ async function handleVerdadeOuDesafio(sock, msg, jid) {
 // ─── !confissao
 async function handleConfissao(sock, msg, jid) {
   const confissoes = [
-    'Confesse algo ruim que você fez recentemente!',
-    'Qual é sua confissão mais vergonhosa?',
-    'Diga algo que ninguém aqui sabe sobre você.',
-    'Qual foi sua maior gafe na vida?',
-    'Confesse algo que você nunca teve coragem de falar.',
-    'Qual foi a mentira mais absurda que você já contou?',
-    'Confesse algo que você faz escondido e teria vergonha de admitir.',
-    'O que você fez de errado e nunca pediu desculpa?',
+    'Confesse algo ruim que você fez recentemente e não contou pra ninguém.',
+    'Qual é sua confissão mais vergonhosa? Chegou a hora.',
+    'Diga algo que ninguém aqui sabe sobre você. Pode ser qualquer coisa.',
+    'Qual foi sua maior gafe? Conta com detalhes.',
+    'Confesse algo que você nunca teve coragem de falar em voz alta.',
+    'Qual foi a mentira mais absurda que você já contou e quase funcionou?',
+    'Confesse algo que você faz escondido e teria vergonha de admitir publicamente.',
+    'O que você fez de errado e nunca pediu desculpas? Chegou a hora.',
+    'Qual foi a última vez que você fez algo e torceu pra ninguém descobrir?',
+    'Confesse: você já julgou alguém do grupo injustamente? O que pensou?',
+    'Qual é o hábito mais vergonhoso que você tem e não consegue largar?',
+    'Confesse algo que você faz em casa que jamais faria na frente de outras pessoas.',
+    'Qual foi a situação mais constrangedora da sua vida? Detalhes.',
+    'Você já roubou algo? Não precisa ser grande coisa. Pode ser uma caneta. Confessa.',
+    'Qual é o pensamento mais estranho que você já teve no meio da madrugada?',
   ];
 
   const confissao = confissoes[Math.floor(Math.random() * confissoes.length)];
 
+  const encerramentos = [
+    '💬 Responda aqui, sem julgamentos!',
+    '👀 O grupo inteiro tá esperando...',
+    '🫣 Pode falar. O que acontece no grupo, fica no grupo.',
+    '😈 Coragem. É agora ou nunca.',
+    '🤐 Solte essa verdade. Tá pesando, né?',
+  ];
+
+  const encerramento = encerramentos[Math.floor(Math.random() * encerramentos.length)];
+
   await sock.sendMessage(jid, {
-    text: `🤐 *CONFISSÃO* 🤐\n\n_${confissao}_\n\n💬 Responda aqui, sem julgamentos!`,
+    text: `🤐 *CONFISSÃO* 🤐\n\n_${confissao}_\n\n${encerramento}`,
   }, { quoted: msg });
 }
 
@@ -912,22 +1386,36 @@ async function handleJulgamento(sock, msg, jid, author, content, contactNames) {
   const display = mentionedJid ? nome : author;
 
   const julgamentos = [
-    { emoji: '😇', texto: 'Uma pessoa incrível que todo mundo deveria conhecer!' },
-    { emoji: '🧐', texto: 'Tem vibes de alguém misterioso que guarda segredos pesados.' },
-    { emoji: '🤡', texto: 'O(A) mais engraçado(a) do grupo, mesmo sem querer!' },
-    { emoji: '👑', texto: 'Nasceu pra ser famoso(a). O mundo ainda vai saber disso.' },
-    { emoji: '🔥', texto: 'Atraente e sabe disso. Perigoso(a).' },
-    { emoji: '🦥', texto: 'Preguiçoso(a) demais, mas com um charme inexplicável.' },
-    { emoji: '🐉', texto: 'Tem uma energia de chefe final de videogame.' },
-    { emoji: '🎭', texto: 'Ator/Atriz nato(a). Ninguém sabe quando é real.' },
-    { emoji: '🧠', texto: 'Inteligente demais pro próprio bem. Sabe de tudo.' },
-    { emoji: '🌪️', texto: 'Um caos ambulante, mas de um jeito adorável.' },
+    { emoji: '😇', texto: `*${display}* é uma pessoa incrível que todo mundo deveria conhecer. Suspeito, mas ok.` },
+    { emoji: '🧐', texto: `*${display}* guarda segredos pesados. Aquele olhar diz muito. Demais, inclusive.` },
+    { emoji: '🤡', texto: `*${display}* é o(a) mais engraçado(a) do grupo, mesmo sem querer. Especialmente sem querer.` },
+    { emoji: '👑', texto: `*${display}* nasceu pra ser famoso(a). O mundo ainda não descobriu, mas tá chegando lá.` },
+    { emoji: '🔥', texto: `*${display}* é atraente e sabe muito bem disso. Perigoso(a) demais pra esse grupo.` },
+    { emoji: '🦥', texto: `*${display}* é preguiçoso(a) no limite, mas com um charme inexplicável que salva tudo.` },
+    { emoji: '🐉', texto: `*${display}* tem energia de chefe final de videogame. Ninguém derrota fácil.` },
+    { emoji: '🎭', texto: `*${display}* é ator/atriz nato(a). Ninguém do grupo sabe quando é real ou performance.` },
+    { emoji: '🧠', texto: `*${display}* sabe de tudo e usa isso pra bem ou pra mal, dependendo do humor do dia.` },
+    { emoji: '🌪️', texto: `*${display}* é um caos ambulante, mas de um jeito que o grupo não consegue viver sem.` },
+    { emoji: '🐺', texto: `*${display}* parece quieto(a), mas tá sempre observando tudo. Cuidado.` },
+    { emoji: '🎯', texto: `*${display}* fala pouco, mas quando fala acerta em cheio. Cruel e eficiente.` },
+    { emoji: '🧲', texto: `*${display}* atrai confusão sem perceber. Os problemas chegam sozinhos.` },
+    { emoji: '🫠', texto: `*${display}* parece que tá bem, mas por dentro é uma novela das nove completa.` },
+    { emoji: '🦊', texto: `*${display}* é mais esperto(a) do que aparenta. Muito mais. Cuidado com esse(a).` },
   ];
 
   const { emoji, texto } = julgamentos[Math.floor(Math.random() * julgamentos.length)];
 
+  const veredictos = [
+    '_Julgamento arbitrário e definitivo. Sem recurso! 😂_',
+    '_O tribunal decidiu. Não cabe apelação. 🔨_',
+    '_Isso é a verdade e ponto final. 💀_',
+    '_Assine embaixo. É isso mesmo. 📋_',
+  ];
+
+  const veredicto = veredictos[Math.floor(Math.random() * veredictos.length)];
+
   await sock.sendMessage(jid, {
-    text: `⚖️ *JULGAMENTO DE ${display.toUpperCase()}* ⚖️\n\n${emoji} ${texto}\n\n_Julgamento arbitrário e definitivo. Sem recurso! 😂_`,
+    text: `⚖️ *JULGAMENTO DE ${display.toUpperCase()}* ⚖️\n\n${emoji} ${texto}\n\n${veredicto}`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
@@ -940,12 +1428,16 @@ async function handlePodre(sock, msg, jid, author, content, contactNames) {
   const display = mentionedJid ? nome : author;
 
   const insultos = [
-    'Podre demais! Até o lixo te rejeitaria! 🗑️',
-    'Que nível de podridão! Impressionante! 🤢',
-    'Podre com orgulho! Uma lenda da podridão! 💀',
-    'Tão podre que até o esgoto ficou com nojo! 🚽',
-    'Completamente podre! Hall da fama da podridão! 😒',
-    'Podridão no nível máximo! Parabéns! 🏆',
+    `Podre demais! Até o lixo revirou o nariz pra *${display}*! 🗑️`,
+    `*${display}* tão podre que o esgoto entrou em greve. 🚽`,
+    `Que nível de podridão, *${display}*! Isso é quase uma conquista! 🤢`,
+    `*${display}* podre com orgulho! Uma lenda da podridão que o grupo vai lembrar por anos! 💀`,
+    `Completamente podre! *${display}* entrou pro hall da fama da imundície! 😒`,
+    `Podridão no nível máximo! *${display}* superou todas as expectativas! 🏆`,
+    `*${display}* tão podre que até o detergente desistiu. 🧴`,
+    `A podridão de *${display}* foi catalogada pela ciência. Material raro. 🔬`,
+    `*${display}* podre desde sempre, mas hoje bateu recorde pessoal. Parabéns. 🎊`,
+    `Nem a maldição consegue chegar perto de *${display}*. Muito podre. 😈`,
   ];
 
   const insulto = insultos[Math.floor(Math.random() * insultos.length)];
@@ -962,20 +1454,77 @@ async function handleFrango(sock, msg, jid, author, content, contactNames) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
   const pct = Math.floor(Math.random() * 101);
-
-  let emoji, frase;
-  if (pct <= 20)      { emoji = '🦁'; frase = 'Sem franguice! Corajoso(a) pra caramba! 🔥'; }
-  else if (pct <= 40) { emoji = '🐓'; frase = 'Quase nada de franguice. Tem moral! 💪'; }
-  else if (pct <= 60) { emoji = '🐔'; frase = 'Meio a meio. Tem coragem quando quer! 😅'; }
-  else if (pct <= 80) { emoji = '🐣'; frase = 'Bastante frango(a)! Foge de qualquer desafio! 😂'; }
-  else if (pct <= 99) { emoji = '🐥'; frase = 'MUITO frango(a)! Tem medo da própria sombra! 💀'; }
-  else                { emoji = '🍗'; frase = '100% FRANGO! Virou nugget de tanto medo! 😭'; }
-
-  const barra = buildBar(pct, '🟨');
   const display = mentionedJid ? nome : author;
 
+  const faixas = [
+    {
+      max: 21,
+      emoji: '🦁',
+      frases: [
+        `*${display}* não tem nada de frango! Parte pra cima de qualquer coisa! 🔥`,
+        `Zero franguice! *${display}* encararia o diabo de olho no olho. 😈`,
+        `*${display}* ri na cara do perigo. Assustador. 🦁`,
+        `Corajoso(a) demais! *${display}* faz desafio por esporte. Respeito total. 💪`,
+      ],
+    },
+    {
+      max: 41,
+      emoji: '🐓',
+      frases: [
+        `*${display}* tem moral! Pouco frango, muito charme. 💪`,
+        `Quase nada de franguice! *${display}* hesita às vezes, mas vai assim mesmo. 🐓`,
+        `*${display}* pensa dois segundos antes de encarar, mas encarar enfrenta. Respeito. 😤`,
+        `Baixo índice de frango! *${display}* sabe quando lutar e quando fugir. 😅`,
+      ],
+    },
+    {
+      max: 61,
+      emoji: '🐔',
+      frases: [
+        `*${display}* é meio a meio! Corajoso(a) quando quer, frango quando convém. 😅`,
+        `50/50! *${display}* enfrenta os desafios... pequenos. Os grandes, depende do dia. 🐔`,
+        `*${display}* tem coragem seletiva. Funciona quando não tem público. 😂`,
+        `Na metade! *${display}* toparia o desafio, mas precisava de um tempinho pra pensar. 🤔`,
+      ],
+    },
+    {
+      max: 81,
+      emoji: '🐣',
+      frases: [
+        `*${display}* foge de desafio mais rápido que entrega de Uber na chuva! 😂`,
+        `Bastante frango(a)! *${display}* viu o desafio e já tava planejando a desculpa. 🐣`,
+        `*${display}* fica branco(a) de medo com qualquer coisa fora do roteiro. 💀`,
+        `Alto nível de franguice! *${display}* pesquisou "como sair de uma situação" antes de responder. 😬`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '🐥',
+      frases: [
+        `MUITO frango(a)! *${display}* tem medo da própria sombra em dia nublado! 💀`,
+        `*${display}* levou susto com notificação de desconhecido. Frango clínico. 😭`,
+        `Nível crítico! *${display}* foge antes do perigo aparecer. Reflexo de frango puro. 🐥`,
+        `*${display}* assistiu o trailer do desafio e já desistiu. Impressionante. 😂`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🍗',
+      frases: [
+        `100% FRANGO! *${display}* virou nugget de tanto medo! Passado, empanado e frito! 😭`,
+        `RECORDE HISTÓRICO! *${display}* é o maior frango que esse grupo já viu! 🏆🍗`,
+        `*${display}* chegou nos 100%! Até o frango de granja ficou com vergonha. 💀`,
+        `Máximo absoluto! *${display}* não é frango, é galinheiro inteiro! 🐔🐔🐔`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct, '🟨');
+
   await sock.sendMessage(jid, {
-    text: `${emoji} *FRANGUÍMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    text: `${faixa.emoji} *FRANGUÍMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
@@ -988,22 +1537,39 @@ async function handleMaldizer(sock, msg, jid, author, content, contactNames) {
   const display = mentionedJid ? nome : author;
 
   const maldicoes = [
-    'Você pisará em LEGO todo dia pelo resto da vida! 😱',
-    'Condenado(a) a ter wifi lento pra sempre! 📵',
-    'Seus carregadores sempre vão quebrar na hora errada! 🔌',
-    'Uma música chata vai ficar presa na sua cabeça eternamente! 🎵',
-    'Você sempre vai errar a cama ao se jogar nela! 🛏️',
-    'Sua bateria vai chegar a 1% sempre sem carregador por perto! 🔋',
-    'Todo sorvete seu vai cair antes de dar a primeira lambida! 🍦',
-    'Você sempre vai chegar um minuto atrasado(a) pra tudo! ⏰',
-    'Seus fones sempre vão enrolar do nada! 🎧',
-    'Você vai morder a língua uma vez por dia! 😬',
+    `*${display}* vai pisar em LEGO descalço(a) todo dia pelo resto da vida! 😱`,
+    `*${display}* está condenado(a) a ter Wi-Fi lento exatamente na hora de mandar mensagem importante! 📵`,
+    `Os carregadores de *${display}* vão quebrar sempre na hora mais crítica! 🔌`,
+    `Uma música irritante vai ficar presa na cabeça de *${display}* por toda a eternidade! 🎵`,
+    `*${display}* vai errar a cama toda vez que se jogar nela de noite! 🛏️`,
+    `A bateria de *${display}* vai sempre chegar a 1% longe de qualquer tomada! 🔋`,
+    `Todo sorvete de *${display}* vai cair antes da primeira lambida! 🍦`,
+    `*${display}* vai chegar um minuto atrasado(a) pra tudo pelo resto da vida! ⏰`,
+    `Os fones de *${display}* vão enrolar do nada pra sempre! 🎧`,
+    `*${display}* vai morder a língua pelo menos uma vez por dia! 😬`,
+    `*${display}* sempre vai mandar mensagem pra pessoa errada no pior momento! 📱`,
+    `O dedo mindinho de *${display}* vai encontrar cada quina de móvel existente! 🦶`,
+    `*${display}* vai abrir embalagem de salgadinho e ela vai rasgar pelo lado errado pra sempre! 🍿`,
+    `*${display}* sempre vai esquecer o que ia falar exatamente quando abrir a boca! 🗣️`,
+    `Toda vez que *${display}* deitar pra dormir, vai lembrar de uma vergonha de 10 anos atrás! 😳`,
+    `*${display}* vai sempre colocar a roupa ao contrário na pressa! 👕`,
+    `O último biscoito do pacote de *${display}* vai sempre quebrar dentro da embalagem! 🍪`,
   ];
 
   const maldicao = maldicoes[Math.floor(Math.random() * maldicoes.length)];
 
+  const encerramentos = [
+    '_Que o universo tenha piedade! 💀_',
+    '_Está lançada. Sem volta. ☠️_',
+    '_O destino anotou. Boa sorte. 🔮_',
+    '_Rezem por *' + display + '*. Vai precisar. 😈_',
+    '_Nem simpatia resolve isso. 💀_',
+  ];
+
+  const encerramento = encerramentos[Math.floor(Math.random() * encerramentos.length)];
+
   await sock.sendMessage(jid, {
-    text: `🔮 *MALDIÇÃO DE ${display.toUpperCase()}* 🔮\n\n☠️ _${maldicao}_\n\n_Que o universo tenha piedade! 💀_`,
+    text: `🔮 *MALDIÇÃO DE ${display.toUpperCase()}* 🔮\n\n☠️ _${maldicao}_\n\n${encerramento}`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
@@ -1016,22 +1582,36 @@ async function handleFortuna(sock, msg, jid, author, content, contactNames) {
   const display = mentionedJid ? nome : author;
 
   const fortunas = [
-    { emoji: '💎', texto: 'Você encontrará riqueza em um lugar inesperado.' },
-    { emoji: '😊', texto: 'Uma grande alegria chegará sem avisar.' },
-    { emoji: '✨', texto: 'O destino conspira completamente a seu favor.' },
-    { emoji: '🌟', texto: 'Algo bom está prestes a acontecer. Fique atento(a)!' },
-    { emoji: '🍀', texto: 'A sorte está do seu lado hoje. Aproveite!' },
-    { emoji: '❤️', texto: 'Alguém especial vai aparecer em breve.' },
-    { emoji: '📈', texto: 'Uma oportunidade única está chegando. Não deixe passar!' },
-    { emoji: '🎁', texto: 'Uma surpresa agradável está a caminho.' },
-    { emoji: '🌙', texto: 'A noite te reserva algo especial.' },
-    { emoji: '🤝', texto: 'Uma velha amizade vai se renovar.' },
+    { emoji: '💎', texto: `*${display}* encontrará riqueza em um lugar completamente inesperado. Fique atento(a).` },
+    { emoji: '😊', texto: `Uma alegria enorme está chegando pra *${display}* sem avisar. Prepare o coração.` },
+    { emoji: '✨', texto: `O destino conspira completamente a favor de *${display}* agora. Não desperdice.` },
+    { emoji: '🌟', texto: `Algo muito bom está prestes a acontecer com *${display}*. O universo já decidiu.` },
+    { emoji: '🍀', texto: `A sorte está do lado de *${display}* hoje. Tudo que tentar vai fluir. Aproveite.` },
+    { emoji: '❤️', texto: `Alguém especial vai aparecer na vida de *${display}* em breve. Os sinais já estão aí.` },
+    { emoji: '📈', texto: `Uma oportunidade única está chegando pra *${display}*. Quem hesitar vai perder.` },
+    { emoji: '🎁', texto: `Uma surpresa agradável está a caminho de *${display}*. Pode ser hoje mesmo.` },
+    { emoji: '🌙', texto: `A noite reserva algo especial pra *${display}*. Não duerma cedo.` },
+    { emoji: '🤝', texto: `Uma velha amizade vai se renovar na vida de *${display}*. Talvez mais do que amizade.` },
+    { emoji: '🚀', texto: `*${display}* está prestes a dar um salto que vai surpreender todo mundo, inclusive você.` },
+    { emoji: '🌊', texto: `Uma onda de mudança está chegando pra *${display}*. Surfe ou afunda. A escolha é sua.` },
+    { emoji: '🎯', texto: `*${display}* vai acertar em cheio em algo que tentou antes e não deu certo. Tente de novo.` },
+    { emoji: '🦋', texto: `Uma transformação silenciosa está acontecendo com *${display}*. Em breve todos vão notar.` },
+    { emoji: '🔑', texto: `*${display}* vai encontrar a resposta que procura onde menos espera. Preste atenção.` },
   ];
 
   const { emoji, texto } = fortunas[Math.floor(Math.random() * fortunas.length)];
 
+  const encerramentos = [
+    '_O universo falou. Acredite._',
+    '_O biscoito nunca mente. Confie._',
+    '_Está escrito. É pra acontecer._',
+    '_Guarda essa mensagem. Você vai lembrar dela._',
+  ];
+
+  const encerramento = encerramentos[Math.floor(Math.random() * encerramentos.length)];
+
   await sock.sendMessage(jid, {
-    text: `🥠 *BISCOITO DA FORTUNA DE ${display.toUpperCase()}* 🥠\n\n${emoji} _${texto}_\n\n_O universo falou! Acredite!_`,
+    text: `🥠 *BISCOITO DA FORTUNA DE ${display.toUpperCase()}* 🥠\n\n${emoji} _${texto}_\n\n${encerramento}`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
@@ -1052,18 +1632,722 @@ async function handleCompatibilidade(sock, msg, content, jid, author, contactNam
   const pct = Math.floor(Math.random() * 101);
   const barra = buildBar(pct, '❤️');
 
-  let emoji, comentario;
-  if (pct <= 10)      { emoji = '💔'; comentario = 'Incompatíveis demais! Nem como amigos funciona! 😬'; }
-  else if (pct <= 30) { emoji = '😅'; comentario = 'Bem diferentes, mas quem sabe com muito esforço...'; }
-  else if (pct <= 50) { emoji = '🤝'; comentario = 'Dá pra ser amigos! Romance é arriscado. 😅'; }
-  else if (pct <= 70) { emoji = '💕'; comentario = 'Boa compatibilidade! Vocês se combinam! 😊'; }
-  else if (pct <= 89) { emoji = '💖'; comentario = 'Excelente match! Isso tem futuro! 🔥'; }
-  else if (pct <= 99) { emoji = '💗'; comentario = 'Quase almas gêmeas! Não deixa escapar! 😍'; }
-  else                { emoji = '💑'; comentario = '100%! Almas gêmeas confirmadas! Casem logo! ✨'; }
+  const faixas = [
+    {
+      max: 11,
+      emoji: '💔',
+      frases: [
+        `Incompatíveis demais! *${author}* e *${nomeAlvo}* nem como vizinhos funcionariam. 😬`,
+        `O universo disse não. *${author}* e *${nomeAlvo}* são forças opostas que não se atraem. 💔`,
+        `*${author}* e *${nomeAlvo}* juntos? Os astros riram e voltaram a dormir. 😂`,
+        `Menos de 10%! *${author}* e *${nomeAlvo}* dariam errado em qualquer dimensão paralela. 💀`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '😅',
+      frases: [
+        `*${author}* e *${nomeAlvo}* são bem diferentes... mas impossível nunca é, né? Com muito esforço. 😅`,
+        `Baixa compatibilidade. *${author}* e *${nomeAlvo}* precisariam de milagre e terapia. 🙏`,
+        `*${author}* e *${nomeAlvo}* têm potencial zero, mas o coração é teimoso. Boa sorte. 😬`,
+        `Difícil, mas não impossível. *${author}* e *${nomeAlvo}* só precisam de paciência infinita. ☕`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🤝',
+      frases: [
+        `*${author}* e *${nomeAlvo}* dão uma boa amizade! Romance é arriscado demais pra esse nível. 😅`,
+        `50/50! *${author}* e *${nomeAlvo}* se dão bem, mas um relacionamento seria uma aposta. 🎲`,
+        `*${author}* e *${nomeAlvo}* têm química de colega de trabalho. Funciona no horário comercial. 🤝`,
+        `Na metade! *${author}* e *${nomeAlvo}* provavelmente já tiveram uma discussão estranha. Convivem bem assim mesmo. 😂`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '💕',
+      frases: [
+        `Boa compatibilidade! *${author}* e *${nomeAlvo}* se combinam mais do que admitem. 😊`,
+        `*${author}* e *${nomeAlvo}* têm futuro! Alguém precisa dar o primeiro passo. 💕`,
+        `Acima da média! *${author}* e *${nomeAlvo}* provavelmente já pensaram nisso antes. 👀`,
+        `*${author}* e *${nomeAlvo}* se completam de um jeito que o grupo já percebeu faz tempo. 😏`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '💖',
+      frases: [
+        `Excelente match! *${author}* e *${nomeAlvo}* têm tudo pra dar muito certo! 🔥`,
+        `*${author}* e *${nomeAlvo}* são compatíveis demais. Alguém tá fingindo não perceber. 💖`,
+        `Alto nível! *${author}* e *${nomeAlvo}* foram feitos um pro outro e tão enrolando. 😤`,
+        `*${author}* e *${nomeAlvo}* combinam tanto que dá inveja. O grupo aprova. 👏`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '💗',
+      frases: [
+        `Quase almas gêmeas! *${author}* e *${nomeAlvo}* não pode deixar escapar isso! 😍`,
+        `99%! *${author}* e *${nomeAlvo}* foram separados no nascimento e o destino quer reunir. 💗`,
+        `*${author}* e *${nomeAlvo}* têm compatibilidade absurda! O 1% restante é só frescura. 😂`,
+        `Praticamente perfeitos! *${author}* e *${nomeAlvo}* tão perdendo tempo separados. 💀`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '💑',
+      frases: [
+        `100%! Almas gêmeas confirmadas! *${author}* e *${nomeAlvo}* casem logo! ✨`,
+        `MÁXIMO ABSOLUTO! *${author}* e *${nomeAlvo}* foram escritos nas estrelas. Literalmente. 🌟`,
+        `*${author}* e *${nomeAlvo}* são 100% compatíveis. O grupo vai ao casamento? 💒`,
+        `Perfeitos um pro outro! *${author}* e *${nomeAlvo}* precisam parar de enrolar agora. 💑`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const comentario = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
 
   await sock.sendMessage(jid, {
-    text: `💕 *COMPATIBILIDADE* 💕\n\n*${author}* ${emoji} *${nomeAlvo}*\n\n${barra} *${pct}%*\n\n_${comentario}_`,
+    text: `💕 *COMPATIBILIDADE* 💕\n\n*${author}* ${faixa.emoji} *${nomeAlvo}*\n\n${barra} *${pct}%*\n\n_${comentario}_`,
     mentions: [mentionedJid],
+  }, { quoted: msg });
+}
+
+// ─── !trans
+async function handleTrans(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const pct     = Math.floor(Math.random() * 101);
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '🚹',
+      frases: [
+        `*${display}* cisgênero raiz! Nem cogita, nem questiona! 💁`,
+        `*${display}* é tão cis que acha que gênero é só duas opções. 😐`,
+        `Zero trans! *${display}* nunca parou pra pensar nisso um segundo. 🚹`,
+        `*${display}* ouviu falar de identidade de gênero e mudou de assunto. 💁`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🌸',
+      frases: [
+        `*${display}* tem uma curiosidade escondida que nunca admitiu pra ninguém. 👀`,
+        `Baixo, mas não zero! *${display}* já ficou na frente do espelho por tempo demais. 🌸`,
+        `*${display}* disse "não é comigo isso" mas pesquisou no modo anônimo depois. 😏`,
+        `Uma pontinha de curiosidade ali! *${display}* sabe do que estamos falando. 👀`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🌈',
+      frases: [
+        `*${display}* na metade! O armário tá entreaberto e a luz entrou. 😏`,
+        `50/50! *${display}* já teve uns pensamentos que guardou bem guardados. 🌈`,
+        `*${display}* tá no meio do caminho. A transformação tá acontecendo devagar. ✨`,
+        `Metade do caminho! *${display}* sabe mais sobre si mesmo(a) do que conta. 😌`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '💅',
+      frases: [
+        `*${display}* já entregou a vibe há muito tempo, o grupo só não falou ainda. ✨`,
+        `Bastante trans! *${display}* tem uma energia que não passa despercebida. 💅`,
+        `*${display}* já ensaiou esse papo mentalmente várias vezes. Chegou a hora. 🌟`,
+        `A vibe de *${display}* já contou tudo antes mesmo de abrir a boca. 😏`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '🦋',
+      frases: [
+        `*${display}* quase 100%! A transformação é inevitável, é só questão de tempo. 🌟`,
+        `*${display}* tá com 80 e poucos% e ainda tenta fingir que não. O grupo vê tudo. 🦋`,
+        `Quase lá! *${display}* só precisa de um empurrãozinho pra ser quem é de verdade. ✨`,
+        `*${display}* tá na beira do penhasco da autenticidade. Pula logo! 🦋`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '🏳️‍⚧️',
+      frases: [
+        `Praticamente confirmado(a)! *${display}*, para de enrolar e se assume! 🎉`,
+        `99%! *${display}* só não assumiu porque ainda tá escolhendo o nome. 😂`,
+        `*${display}* com 99%! O único 1% que falta é a coragem de falar em voz alta. 🏳️‍⚧️`,
+        `*${display}* quase no topo! O grupo inteiro já sabe, só você ainda não disse. 🎊`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '👑',
+      frases: [
+        `100% TRANS! *${display}* é rainha/rei absoluto(a)! Orgulhe-se! 🎊`,
+        `MÁXIMO! *${display}* chegou no 100% e o armário virou pó! 👑`,
+        `*${display}* zerou o transômetro! Lenda confirmada! O grupo aplaude! 👏🌈`,
+        `100%! *${display}* não é do armário, é da passarela! 🎉👑`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct);
+
+  await sock.sendMessage(jid, {
+    text: `${faixa.emoji} *TRANSÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
+  }, { quoted: msg });
+}
+
+// ─── !corno
+async function handleCorno(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const pct     = Math.floor(Math.random() * 101);
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '😇',
+      frases: [
+        `*${display}* fidelíssimo(a)! Nem em pensamento trai! 🕊️`,
+        `Zero corno! *${display}* é leal até demais. Assustador. 😇`,
+        `*${display}* nem sabe o que é isso. Inocência absoluta. 🕊️`,
+        `*${display}* tão fiel que o parceiro(a) nem merece. 😇`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🤔',
+      frases: [
+        `*${display}* tem uns olhares suspeitos mas nada confirmado ainda... 👀`,
+        `Baixo, mas não zero! *${display}* já flertou por cima sem contar pra ninguém. 🤔`,
+        `*${display}* disse "somos só amigos" com muita convicção. Demais, até. 😏`,
+        `O chifre de *${display}* ainda é invisível, mas tem quem jure que viu um brotinho. 🌱`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '👀',
+      frases: [
+        `*${display}* na média! O chifre tá nascendo devagarzinho! 🌱`,
+        `50/50! *${display}* tem umas situações inexplicáveis no histórico. 👀`,
+        `*${display}* jura que foi só um momento fraco. Todo mundo diz isso. 😬`,
+        `Na metade! *${display}* tá no caminho clássico do corno moderno. 😂`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '🦌',
+      frases: [
+        `Chifre já aparecendo! O grupo sabe de tudo menos *${display}*! 😂`,
+        `*${display}* já tem o chifre visível e ainda acha que ninguém notou. 🦌`,
+        `O grupo todo já viu o chifre de *${display}*. Falta avisar o(a) próprio(a). 😅`,
+        `*${display}* tá com chifre e carrega o celular do parceiro(a) sem questionar. 💀`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '🐂',
+      frases: [
+        `CORNO(A) ASSUMIDO(A)! Os chifres de *${display}* já tão enormes! 🍵`,
+        `*${display}* entrou no nível avançado! Já precisou abaixar a cabeça pra passar na porta. 😂`,
+        `Alto nível! *${display}* tem chifre de fazer inveja em boi de fazenda. 🐂`,
+        `*${display}* já virou referência no assunto dentro do grupo. Tragicamente. 💀`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '☠️',
+      frases: [
+        `*${display}* precisa de capacete especial por causa do tamanho dos chifres! 💀`,
+        `99%! *${display}* é lenda viva! O chifre já aparece no Google Maps. ☠️`,
+        `*${display}* quase no topo! Os chifres já têm nome e sobrenome. 😂`,
+        `*${display}* tá com 99% e ainda manda "boa noite amor" todo dia. Respeito torto. 💀`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🏆',
+      frases: [
+        `100% CORNO(A)! *${display}* é campeão(ã) absoluto(a) do chifre! Hall da fama! 🎊`,
+        `RECORDE HISTÓRICO! *${display}* zerou o cornômetro! O grupo chora de respeito. 🏆`,
+        `*${display}* chegou nos 100%! Os chifres já têm página própria na internet. 💀🎊`,
+        `Máximo absoluto! *${display}* não carrega chifre, carrega um galho de árvore na cabeça. 🌳😂`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct, '🟫');
+
+  await sock.sendMessage(jid, {
+    text: `🦌 *CORNÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
+  }, { quoted: msg });
+}
+
+// ─── !peitudo
+async function handlePeitudo(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const pct     = Math.floor(Math.random() * 101);
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '🫓',
+      frases: [
+        `*${display}* plano(a) como prancha de surf! A tábua de passar roupa chora de inveja! 😂`,
+        `*${display}* tão plano(a) que o nível de pedreiro usa como referência. 😭`,
+        `Zero! *${display}* não tem nada ali, mas carrega com dignidade. Respeito. 🫓`,
+        `*${display}* é aerodimânimco(a) pelo menos! Sem resistência nenhuma ali. 😂`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🍑',
+      frases: [
+        `*${display}* quase nada, mas tem um potencial enorme aí! 👀`,
+        `Pouco, mas presente! *${display}* tá no início da jornada. 🍑`,
+        `*${display}* tem o suficiente pra despertar a imaginação de alguém. 😏`,
+        `Tem ali, sim! *${display}* não precisa reclamar, precisa de sutiã com certo. 👀`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🍈',
+      frases: [
+        `*${display}* na média! Nem muito nem pouco, tá equilibrado(a). 🍈`,
+        `Mediano! *${display}* não impressiona, mas não decepciona. Respeitável. 😌`,
+        `*${display}* na curva da normalidade! Sem reclamações do público. 😄`,
+        `50/50! *${display}* tem exatamente o que precisa ter. Eficiente. 🍈`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '🍉',
+      frases: [
+        `*${display}* considerável! O grupo já notou e fingiu que não! 😏`,
+        `Acima da média! *${display}* tem mais que o básico e todo mundo sabe. 🍉`,
+        `*${display}* tá bem servido(a)! Nem precisa forçar a barra pra aparecer. 😄`,
+        `O peitômetro aprova *${display}*! Bem acima da concorrência. 👏`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '🎯',
+      frases: [
+        `*${display}* muito abençoado(a)! A natureza foi generosa demais! 🙌`,
+        `*${display}* tá no nível que causa distração visual involuntária. 😅`,
+        `Alto nível! *${display}* precisa de engenharia estrutural séria. 🏗️`,
+        `*${display}* tão abençoado(a) que até os inimigos param pra olhar. 😂`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '🏋️',
+      frases: [
+        `ABSURDO! *${display}* precisa de suporte estrutural que a engenharia ainda não inventou! 💀`,
+        `*${display}* tá em 99%! As costas pedem socorro toda manhã! 😭`,
+        `*${display}* quase no máximo! Causa impacto ambiental de tão abençoado(a). 💀`,
+        `99%! *${display}* precisou reforçar o rodapé da casa por segurança. 😂`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🏆',
+      frases: [
+        `100% PEITUDO(A)! *${display}* é lenda confirmada do grupo! 🎊`,
+        `MÁXIMO HISTÓRICO! *${display}* zerou o peitômetro! A natureza se superou! 🏆`,
+        `*${display}* chegou nos 100%! Patrimônio imaterial da humanidade. 🎊`,
+        `100%! *${display}* deveria ter placa de "cuidado, curva perigosa". 😂🏆`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct, '🟪');
+
+  await sock.sendMessage(jid, {
+    text: `${faixa.emoji} *PEITÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
+  }, { quoted: msg });
+}
+
+// ─── !pauzudo
+async function handlePauzudo(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const cm      = Math.floor(Math.random() * 31) + 5;
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 9,
+      emoji: '🔍',
+      frases: [
+        `*${display}* precisa de lupa pra achar! Nem a ciência confirma a existência! 😭`,
+        `*${display}* com ${cm}cm! O microscópio tá disponível se precisar. 🔬`,
+        `Pequeno mas honesto! *${display}* carrega com dignidade o que a natureza deu. 😅`,
+        `*${display}* com ${cm}cm! Dizem que o que importa é a technique. Dizem. 😬`,
+      ],
+    },
+    {
+      max: 13,
+      emoji: '🌭',
+      frases: [
+        `*${display}* com ${cm}cm! Modesto, mas presente e funcionando! 😅`,
+        `*${display}* na faixa do razoável! Sem vergonha, sem ostentação. 🌭`,
+        `${cm}cm pra *${display}*! Cumpre o papel com dedicação. 😄`,
+        `*${display}* não impressiona no papel, mas dizem que ao vivo é melhor. 🌭`,
+      ],
+    },
+    {
+      max: 17,
+      emoji: '🍌',
+      frases: [
+        `*${display}* com ${cm}cm! Na média nacional, sem reclamações registradas! 🍌`,
+        `${cm}cm! *${display}* tá exatamente onde a estatística esperava. Confiável. 😌`,
+        `*${display}* na curva normal! Nem surpreende nem decepciona. Sólido. 🍌`,
+        `${cm}cm pra *${display}*! A média existe por causa de pessoas assim. 😄`,
+      ],
+    },
+    {
+      max: 22,
+      emoji: '🥖',
+      frases: [
+        `*${display}* com ${cm}cm! Acima da média e o pessoal do grupo já comentou! 😏`,
+        `${cm}cm! *${display}* tá bem servido(a) e sabe disso. 🥖`,
+        `*${display}* acima da concorrência com ${cm}cm! Sem precisar anunciar. 😏`,
+        `${cm}cm pra *${display}*! A natureza foi um pouco mais generosa aqui. 👌`,
+      ],
+    },
+    {
+      max: 28,
+      emoji: '🏗️',
+      frases: [
+        `ABSURDO! *${display}* com ${cm}cm! A natureza foi muito generosa demais! 🙌`,
+        `*${display}* chegou nos ${cm}cm! Isso é quase problema logístico. 😂`,
+        `${cm}cm! *${display}* precisa de aviso prévio antes de entrar em qualquer lugar. 😅`,
+        `*${display}* com ${cm}cm! A física newtoniana precisa ser revisada. 🏗️`,
+      ],
+    },
+    {
+      max: 34,
+      emoji: '☠️',
+      frases: [
+        `*${display}* com ${cm}cm! Nível lendário! Precisa de licença especial pra circular! 💀`,
+        `${cm}cm! *${display}* virou mito urbano! O grupo vai contar isso pra netos! 😱`,
+        `*${display}* com ${cm}cm! Isso é patrimônio, não é órgão. ☠️`,
+        `${cm}cm! *${display}* deveria pagar IPTU por isso. Ocupa área demais. 💀`,
+      ],
+    },
+    {
+      max: 999,
+      emoji: '🏆',
+      frases: [
+        `*${display}* com ${cm}cm! Entrou pro hall da fama da humanidade! 🎊`,
+        `${cm}cm! *${display}* é fenômeno da natureza! A ciência quer estudar! 🏆`,
+        `*${display}* com ${cm}cm! Isso não é biologia, isso é arquitetura! 🎊`,
+        `${cm}cm pra *${display}*! Lenda confirmada. O grupo nunca mais vai ser o mesmo. 👑`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => cm < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(Math.round((cm / 35) * 100), '🟦');
+
+  await sock.sendMessage(jid, {
+    text: `${faixa.emoji} *PAUZÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${cm} cm*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
+  }, { quoted: msg });
+}
+
+// ─── !bundudo
+async function handleBundudo(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const pct     = Math.floor(Math.random() * 101);
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '🫓',
+      frases: [
+        `*${display}* plano(a) como tábua de passar roupa! A cadeira sente falta de contato. 😂`,
+        `*${display}* não tem nada ali atrás! Desce escada sentado(a) e nem sente. 😭`,
+        `Zero bunda! *${display}* de costas some de vista. Tragédia silenciosa. 💀`,
+        `*${display}* tão plano(a) atrás que parece renderizado(a) em baixa resolução. 😂`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🍑',
+      frases: [
+        `*${display}* tem uma promessa ali atrás! Precisa trabalhar mais, mas tem base. 💪`,
+        `Pouco, mas surgindo! *${display}* precisa de agachamento e fé. 🍑`,
+        `*${display}* tem o embrião de uma bunda. Potencial enorme! 😏`,
+        `Tem alguma coisa nascendo ali! *${display}* não desiste e vai chegar lá. 💪`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🫐',
+      frases: [
+        `*${display}* na média! Passável no agachamento e no rolê. 🫐`,
+        `50/50! *${display}* não chama atenção mas tampona a cadeira direitinho. 😄`,
+        `*${display}* mediano(a)! A bunda existe, cumpre o papel, sem drama. 😌`,
+        `Na média! *${display}* não vai virar meme mas também não decepciona. 🫐`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '🎯',
+      frases: [
+        `*${display}* bundão(ona) considerável! O grupo já aprovou sem falar nada! 👏`,
+        `Acima da média! *${display}* quando vira de costas o ambiente muda. 😏`,
+        `*${display}* bem servido(a) atrás! Preenche qualquer cadeira com autoridade. 🎯`,
+        `O bundômetro aprova *${display}*! Tá acima da concorrência e sabe. 😏`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '🏋️',
+      frases: [
+        `*${display}* muito abençoado(a)! Preenche qualquer cadeira e ainda sobra! 🙌`,
+        `*${display}* tá no nível que causa distração quando anda à frente. 😅`,
+        `Alto nível! *${display}* precisa de calça personalizada, nenhuma serve direito. 😂`,
+        `*${display}* tão bem servido(a) que a calça jeans chora na hora de vestir. 💀`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '🚨',
+      frases: [
+        `PERIGOSO(A)! *${display}* causa acidente de trânsito só de atravessar a rua! 💀`,
+        `*${display}* com 99%! A calça nunca fechou direito na vida toda. 😭`,
+        `*${display}* quase no máximo! O sismógrafo registra quando senta. 😂`,
+        `99%! *${display}* precisaria de alvará pra circular em área pública. 🚨`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🏆',
+      frases: [
+        `100% BUNDUDO(A)! *${display}* é patrimônio nacional declarado! 🎊`,
+        `MÁXIMO! *${display}* zerou o bundômetro! A humanidade agradece. 🏆`,
+        `*${display}* chegou nos 100%! Isso não é bunda, é obra de arte. 🎊`,
+        `100%! *${display}* quando entra num cômodo, a bunda entra primeiro e apresenta o dono(a). 😂👑`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct, '🟤');
+
+  await sock.sendMessage(jid, {
+    text: `🍑 *BUNDÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
+  }, { quoted: msg });
+}
+
+// ─── !gordo
+async function handleGordo(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const pct     = Math.floor(Math.random() * 101);
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '🥢',
+      frases: [
+        `*${display}* magrelo(a) demais! Some de vista se ficar de lado! 😭`,
+        `*${display}* tão magro(a) que o vento leva! Come alguma coisa pelo amor de Deus! 😱`,
+        `Zero gordura! *${display}* é basicamente esqueleto com pele fina. Come! 😭`,
+        `*${display}* tão fino(a) que escorrega pelo ralo. Alguém chama o SAMU. 💀`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🥗',
+      frases: [
+        `*${display}* fitness! Provavelmente conta caloria, macros e dorme cedo. 🏃`,
+        `*${display}* na linha! Aquele tipo que lê rótulo de tudo antes de comer. 🥗`,
+        `Magro(a) e saudável! *${display}* é chato(a) na mesa mas bonito(a) no espelho. 😂`,
+        `*${display}* treina, come clean e julga o resto do grupo em silêncio. 🥗`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🍔',
+      frases: [
+        `*${display}* na média! Come bem, sem exagero, sem culpa. Equilíbrio raro. 🍔`,
+        `*${display}* normal! Faz dieta segunda-feira e esquece na terça. Humano. 😄`,
+        `Mediano(a)! *${display}* tem um relacionamento complicado com a balança. 😅`,
+        `*${display}* 50/50! Semana que conta caloria, fim de semana que esquece tudo. 😂`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '🍕',
+      frases: [
+        `*${display}* já tá no caminho! O rodízio chama pelo nome! 😏`,
+        `*${display}* acima da média! A calça tá apertando mas ainda fecha. 🍕`,
+        `*${display}* tá engordando com classe! A barriguinha apareceu mas tem charme. 😄`,
+        `O garçom do rodízio já reconhece *${display}* de longe. Frequência suspeita. 😂`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '🌮',
+      frases: [
+        `*${display}* gorducho(a) gostoso(a)! Cheinho(a) de vida e sem remorso! 🤭`,
+        `*${display}* tá bem servido(a)! O buffet já reserva um espaço especial. 😂`,
+        `*${display}* no nível saudável! Aquela gordura boa, de quem curte a vida. 🌮`,
+        `*${display}* tem mais pra amar! O grupo concorda por unanimidade. 🤭`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '🐘',
+      frases: [
+        `*${display}* bota o buffet no prejuízo toda vez que aparece! 💀`,
+        `*${display}* com 99%! A cadeira faz uma oração antes de receber. 😭`,
+        `*${display}* quase no máximo! O elevador pede por gentileza. 💀`,
+        `*${display}* 99%! A silhueta já tem CEP próprio. Imponente. 😂`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🏆',
+      frases: [
+        `100% GORDO(A)! *${display}* é lenda dos rodízios! Patrimônio da culinária! 🎊`,
+        `MÁXIMO HISTÓRICO! *${display}* zerou o gordômetro! A balança pediu demissão. 🏆`,
+        `*${display}* chegou nos 100%! Tem mesa cativa em todo restaurante da cidade. 🎊`,
+        `100%! *${display}* não entra no quarto, o quarto é que se abre pra receber. 😂👑`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct, '🟠');
+
+  await sock.sendMessage(jid, {
+    text: `${faixa.emoji} *GORDÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
+  }, { quoted: msg });
+}
+
+// ─── !cuzudo
+async function handleCuzudo(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const pct     = Math.floor(Math.random() * 101);
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '🍑',
+      frases: [
+        `*${display}* certinho(a)! Nada fora do padrão por aqui. 😇`,
+        `Zero! *${display}* é pequeno(a) e delicado(a) como deve ser. 🕊️`,
+        `*${display}* tão fechado(a) que nem o vento passa. Respeitável. 😂`,
+        `*${display}* apertadinho(a) demais! A natureza foi precisa aqui. 💁`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🫐',
+      frases: [
+        `*${display}* quase nada. Pequeno(a) mas já dá pra notar algo. 👀`,
+        `*${display}* levemente acima do mínimo. Discreto(a), passável. 😏`,
+        `Pouco, mas já existe! *${display}* tem um tamanho que o grupo não esperava. 😬`,
+        `*${display}* no começo da escala. A natureza foi econômica aqui. 😅`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🍩',
+      frases: [
+        `*${display}* na média! Nem pequeno(a) nem grande. Equilibrado(a). 😌`,
+        `50/50! *${display}* tá exatamente onde a estatística colocaria. Neutro. 😄`,
+        `*${display}* mediano(a)! A natureza não exagerou nem economizou. 🍩`,
+        `Na metade! *${display}* é o padrão. Não surpreende, não decepciona. 😂`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '🌀',
+      frases: [
+        `*${display}* acima da média! O grupo já notou e fingiu que não. 😂`,
+        `*${display}* considerável! A natureza foi um pouco mais generosa aqui. 🌀`,
+        `*${display}* tá bem servido(a) nessa área! Sem reclamações registradas. 😏`,
+        `O cuzômetro aprova *${display}*! Acima do esperado. 👀`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '🕳️',
+      frases: [
+        `*${display}* bem acima da média! Isso é quase um fenômeno natural. 😱`,
+        `*${display}* tá no nível que causa surpresa involuntária. Alto nível. 🕳️`,
+        `A natureza foi generosa demais com *${display}* nessa região específica. 😂`,
+        `*${display}* tá no top! O tamanho impressiona quem não esperava. 💀`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '🌋',
+      frases: [
+        `ABSURDO! *${display}* com 99%! Isso é geográfico, não é anatômico! 💀`,
+        `*${display}* quase no máximo! A NASA estuda isso como possível buraco negro. 😂`,
+        `*${display}* 99%! Tem câmera de ré que entra ali sem tocar nas paredes. ☠️`,
+        `*${display}* quase zerou! O IBGE pediu pra cadastrar como acidente geográfico. 💀`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🏆',
+      frases: [
+        `100% CUZUDO(A)! *${display}* é patrimônio geológico nacional! 🎊`,
+        `MÁXIMO! *${display}* zerou o cuzômetro! A NASA quer estudar esse fenômeno! 🏆`,
+        `*${display}* chegou nos 100%! Isso não é anatomia, é arquitetura. 🎊`,
+        `100%! *${display}* tem a maior cratera já registrada pelo grupo. Lenda. 😂👑`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct, '🟥');
+
+  await sock.sendMessage(jid, {
+    text: `${faixa.emoji} *CUZÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }
 
@@ -1101,4 +2385,11 @@ module.exports = {
   handleMaldizer,
   handleFortuna,
   handleCompatibilidade,
+  handleTrans,
+  handleCorno,
+  handlePeitudo,
+  handlePauzudo,
+  handleBundudo,
+  handleGordo,
+  handleCuzudo,
 };

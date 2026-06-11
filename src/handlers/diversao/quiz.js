@@ -8,18 +8,31 @@
  */
 
 const path = require('path');
-const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { prepareDailyMissionState } = require('./missoes');
-const { handleBanco, handleResgatar } = require('./banco');
-
-
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
+
 const quizState      = new Map(); // senderJid → { r, timeout }
 const pontosMap      = new Map(); // senderJid → pts (cache)
 const quizDailyCount = new Map(); // "senderJid_YYYY-MM-DD" → número de quizzes jogados hoje
 
+// ✅ recentQuizMap substitui global.recentQuiz: escopo de módulo, sem vazamento
+// entre workers, sem crescimento ilimitado de global
+const recentQuizMap  = new Map(); // senderJid → string[] (últimas perguntas sorteadas)
+
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+// ✅ Limpeza periódica de quizDailyCount — remove entradas de dias anteriores
+// para evitar crescimento ilimitado da Map em processos de longa duração
+const _dailyCleanup = setInterval(() => {
+  const hoje = new Date().toISOString().split('T')[0];
+  for (const key of quizDailyCount.keys()) {
+    if (!key.endsWith(hoje)) quizDailyCount.delete(key);
+  }
+}, 60 * 60 * 1_000); // a cada hora
+
+if (_dailyCleanup.unref) _dailyCleanup.unref();
 
 // ─── UTILITÁRIOS ─────────────────────────────────────────────────────────────
 
@@ -49,7 +62,10 @@ function getTodayKey(senderJid) {
 async function syncQuizPointsFromDB(userId) {
   if (!userId) return;
   try {
-    const user = await Usuario.findOne({ idWhatsApp: userId }).lean();
+    const user = await Usuario.findOne(
+      { idWhatsApp: userId },
+      { quizPoints: 1 }   // ✅ projection — evita trazer o documento inteiro
+    ).lean();
     if (user && typeof user.quizPoints === 'number') {
       pontosMap.set(userId, user.quizPoints);
     }
@@ -58,21 +74,26 @@ async function syncQuizPointsFromDB(userId) {
   }
 }
 
-async function saveQuizPointsToDB(userId, pontos, groupJid) {
+async function saveQuizPointsToDB(userId, groupJid) {
   if (!userId) return;
   try {
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      { $set: { quizPoints: pontos } },
-      { upsert: true, new: true }
-    );
+    const ops = [
+      Usuario.findOneAndUpdate(
+        { idWhatsApp: userId },
+        { $inc: { quizPoints: 10 } },
+        { upsert: true }
+      ),
+    ];
     if (groupJid) {
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: groupJid },
-        { $set: { quizPoints: pontos } },
-        { upsert: true, new: true }
+      ops.push(
+        CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp: userId, idGrupo: groupJid },
+          { $inc: { quizPoints: 10 } },
+          { upsert: true }
+        )
       );
     }
+    await Promise.all(ops);
   } catch (e) {
     console.error('⚠️ Erro ao salvar pontos quiz no MongoDB:', e.message);
   }
@@ -84,25 +105,36 @@ async function changeGold(userId, amount, groupJid) {
     return 0;
   }
   try {
+    // ✅ prepareDailyMissionState + CarteiraGrupo disparados em paralelo
+    // quando aplicável — sem dependência entre si
+    const prepOps = [];
+
     if (groupJid) {
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: groupJid },
-        { $inc: { gold: amount } },
-        { upsert: true, new: true }
+      prepOps.push(
+        CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp: userId, idGrupo: groupJid },
+          { $inc: { gold: amount } },
+          { upsert: true }   // ✅ new: true removido — valor de retorno não é usado
+        )
       );
     }
+    if (amount > 0) {
+      prepOps.push(prepareDailyMissionState(userId));
+    }
+    if (prepOps.length > 0) await Promise.all(prepOps);
 
-    if (amount > 0) await prepareDailyMissionState(userId);
-    const userUpdate = { $inc: { gold: amount } };
-    if (amount > 0) userUpdate['$inc']['dailyMissions.progress.gold500'] = amount;
+    // ✅ $inc montado de uma vez — MongoDB rejeita dois $inc separados
+    const incPayload = { gold: amount };
+    if (amount > 0) incPayload['dailyMissions.progress.gold500'] = amount;
 
     const user = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      userUpdate,
+      { $inc: incPayload },
       { upsert: true, new: true }
     );
+
     console.log(`✅ Gold alterado: ${userId} → ${amount} (novo saldo: ${user?.gold})`);
-    return user?.gold || 0;
+    return user?.gold ?? 0;   // ✅ ?? em vez de || — evita retornar 0 quando gold é 0 válido
   } catch (e) {
     console.error('⚠️ Erro ao alterar gold:', e.message);
     return 0;
@@ -113,7 +145,7 @@ async function changeGold(userId, amount, groupJid) {
 
 const perguntasQuiz = [
   // ── FUTEBOL ───────────────────────────────────────────────────────────────
-  { p: '⚽ Qual clube brasileiro foi tricampeão da Copa Libertadores?', r: 'independiente', d: 'Futebol' },
+  { p: '⚽ Qual clube brasileiro foi tricampeão da Copa Libertadores?', r: 'sao paulo', d: 'Futebol' },
   { p: '⚽ Qual jogador ganhou mais Copas do Mundo como jogador?', r: 'pele', d: 'Futebol' },
   { p: '⚽ Em que ano o Brasil conquistou sua primeira Copa do Mundo?', r: '1958', d: 'Futebol' },
   { p: '⚽ Qual foi o artilheiro da Copa do Mundo de 2006?', r: 'miroslav klose', d: 'Futebol' },
@@ -320,13 +352,12 @@ const perguntasQuiz = [
 ];
 
 async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
-  await syncQuizPointsFromDB(senderJid);
 
-  // ── Resolver @lid para jid real
+  // ── Resolver @lid para jid real ANTES de qualquer operação de estado
   let resolvedJid = senderJid;
   if (senderJid?.endsWith('@lid')) {
     try {
-      const number = senderJid.split('@')[0].split(':')[0];
+      const number  = senderJid.split('@')[0].split(':')[0];
       const results = await sock.onWhatsApp(number);
       if (results?.length > 0 && results[0].jid) {
         resolvedJid = results[0].jid;
@@ -335,6 +366,8 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       resolvedJid = senderJid;
     }
   }
+
+  await syncQuizPointsFromDB(resolvedJid);
 
   // ── Verificar se está respondendo uma pergunta ativa
   if (quizState.has(senderJid)) {
@@ -346,20 +379,10 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       msg.message?.ephemeralMessage?.message?.conversation ||
       msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text || '';
 
+    // Ignora comandos durante quiz ativo
+    if (/^[!.,\/@]/.test(textoRaw)) return;
+
     const resposta = normalize(textoRaw);
-    const correta  = normalize(state.r);
-
-    if (
-      textoRaw.startsWith('!') ||
-      textoRaw.startsWith('.') ||
-      textoRaw.startsWith('/') ||
-      textoRaw.startsWith(',')
-    ) {
-      return;
-    }
-
-    clearTimeout(state.timeout);
-    quizState.delete(senderJid);
 
     if (!resposta.trim()) {
       await sock.sendMessage(jid, {
@@ -368,27 +391,37 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       return;
     }
 
-    const respostasValidas = correta.split('/').map(r => r.trim()).filter(Boolean);
-    const acertou = respostasValidas.some(rv =>
-      resposta.includes(rv) || rv.includes(resposta)
+    clearTimeout(state.timeout);
+    quizState.delete(senderJid);
+
+    const effectiveJid = state.resolvedJid ?? resolvedJid;
+    const correta = normalize(state.r);
+
+    const respostasValidas = correta
+      .split(/[\/|]/)
+      .map(r => r.trim())
+      .filter(Boolean);
+
+    const acertou = resposta.length >= 2 && respostasValidas.some(rv =>
+      resposta === rv ||
+      resposta.includes(rv) ||
+      rv.includes(resposta)
     );
 
     if (acertou) {
-      const pts = (pontosMap.get(resolvedJid) || 0) + 10;
-      pontosMap.set(resolvedJid, pts);
-      await saveQuizPointsToDB(resolvedJid, pts, jid);
-      const goldReward = 15;
-      await changeGold(resolvedJid, goldReward, jid);
+      // ✅ pontosMap só pra exibição — DB usa $inc direto (sem depender do cache global)
+      const pts = (pontosMap.get(effectiveJid) || 0) + 10;
+      pontosMap.set(effectiveJid, pts);
 
-      try {
-        await prepareDailyMissionState(resolvedJid);
-        await Usuario.findOneAndUpdate(
-          { idWhatsApp: resolvedJid },
+      const goldReward = 15;
+      await Promise.all([
+        saveQuizPointsToDB(effectiveJid, jid),
+        changeGold(effectiveJid, goldReward, jid),
+        Usuario.findOneAndUpdate(
+          { idWhatsApp: effectiveJid },
           { $inc: { 'dailyMissions.progress.quiz5': 1 } }
-        );
-      } catch (e) {
-        console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message);
-      }
+        ).catch(e => console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message)),
+      ]);
 
       await sock.sendMessage(jid, {
         text:
@@ -396,6 +429,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
           `💰 *+10 pontos!* Total: *${pts} pts*\n` +
           `💵 *+${goldReward} gold!*`,
       }, { quoted: msg });
+
     } else {
       await sock.sendMessage(jid, {
         text:
@@ -407,7 +441,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   }
 
   // ── Verificar limite diário de 10 quiz
-  const todayKey  = getTodayKey(senderJid);
+  const todayKey  = getTodayKey(resolvedJid);
   const quizCount = quizDailyCount.get(todayKey) || 0;
 
   if (quizCount >= 10) {
@@ -417,9 +451,10 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // ── Filtrar por categoria
+ // ── Filtrar por categoria
+  // ✅ Prefixos múltiplos removidos com replace global — cobre "!!", "!.", etc.
   const cmdRaw   = caption.trim().toLowerCase().split(' ')[0];
-  const cmdClean = cmdRaw.replace(/^[!.,\/@]/, '');
+  const cmdClean = cmdRaw.replace(/^[!.,\/@]+/, '');
 
   const categoriaMap = {
     quizfut:  q => q.d === 'Futebol',
@@ -444,34 +479,42 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   quizDailyCount.set(todayKey, quizCount + 1);
 
   // ── Sortear pergunta sem repetir recentemente
-  if (!global.recentQuiz)            global.recentQuiz = {};
-  if (!global.recentQuiz[senderJid]) global.recentQuiz[senderJid] = [];
+  // ✅ recentQuizMap usa resolvedJid — evita que usuário @lid tenha histórico
+  //    duplicado e burle a proteção de repetição
+  const recentes = recentQuizMap.get(resolvedJid) ?? [];
 
-  let q;
-  let tentativas = 0;
-  do {
-    q = perguntasFiltradas[Math.floor(Math.random() * perguntasFiltradas.length)];
-    tentativas++;
-  } while (
-    global.recentQuiz[senderJid].includes(q.p) &&
-    tentativas < 20 &&
-    perguntasFiltradas.length > 2
-  );
+  // ✅ Lógica de sorteio reescrita: pool sem recentes calculado uma vez,
+  //    evitando loop cego com tentativas — mais eficiente e sem risco de
+  //    repetir quando todas as perguntas já foram vistas
+  const naoRecentes = perguntasFiltradas.filter(p => !recentes.includes(p.p));
+  const pool        = naoRecentes.length > 0 ? naoRecentes : perguntasFiltradas;
+  const q           = pool[Math.floor(Math.random() * pool.length)];
 
-  global.recentQuiz[senderJid].push(q.p);
-  if (global.recentQuiz[senderJid].length > 5) global.recentQuiz[senderJid].shift();
+  recentes.push(q.p);
+  // ✅ Janela de recentes proporcional ao tamanho do pool da categoria —
+  //    evita bloquear quase todas as perguntas em categorias pequenas
+  const janelaRecentes = Math.min(5, Math.floor(perguntasFiltradas.length / 2));
+  while (recentes.length > janelaRecentes) recentes.shift();
+  recentQuizMap.set(resolvedJid, recentes);
 
   // ── Timeout de 30s
+  // ✅ author e q capturados no closure no momento do sorteio — sem risco
+  //    de stale caso a variável externa mude antes dos 30s expirarem
+  const authorSnapshot = author;
+  const respostaCorreta = q.r;
+
   const timeout = setTimeout(() => {
     if (quizState.has(senderJid)) {
       quizState.delete(senderJid);
       sock.sendMessage(jid, {
-        text: `⏰ *Tempo esgotado*, *${author}*!\n\n✅ Resposta correta: *${q.r}* 😬`,
-      }).catch(() => {});
+        text: `⏰ *Tempo esgotado*, *${authorSnapshot}*!\n\n✅ Resposta correta: *${respostaCorreta}* 😬`,
+      }, { quoted: msg }).catch(() => {});
     }
-  }, 30000);
+  }, 30_000);
 
-  quizState.set(senderJid, { r: q.r, timeout });
+  // ✅ quizState salva resolvedJid junto para evitar dessincronização
+  //    de pontos quando senderJid é @lid
+  quizState.set(senderJid, { r: q.r, resolvedJid, timeout });
 
   const restantes = 10 - quizCount - 1;
 
@@ -579,8 +622,6 @@ module.exports = {
   handleQuiz,
   handlePontos,
   handleRankJogos,
-  handleBanco,
-  handleResgatar,
   changeGold,
   quizState,
   perguntasQuiz,

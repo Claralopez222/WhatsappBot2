@@ -42,6 +42,8 @@ const pescaHandler          = require('./handlers/diversao/pesca');
 const { handleEmprestimo, handlePayEmprestimo, handleDivida, verificarInadimplente } = require('./handlers/diversao/emprestimo'); // ← NOVO
 const { initPetScheduler, registerActiveGroup } = require(path.join(__dirname, 'handlers', 'diversao'));
 const { initQuizRankingScheduler } = require(path.join(__dirname, 'handlers', 'quizRanking')); // ← NOVO
+const { handleRankGold } = require('./handlers/diversao/economia'); // ajusta o nome do arquivo onde colocou a função
+
 
 // ─── Silenciar logs de sessão ─────────────────────────────────────────────────
 const _log = console.log.bind(console);
@@ -912,6 +914,13 @@ if (matchCmd(cmdWord, 'alteradores'))
   if (matchCmdStart(cmd, 'crush'))         { await diversaoHandler.handleCrush(sock, msg, content, jid, author); return; }
   if (matchCmdStart(cmd, 'cantada'))       { await diversaoHandler.handleCantada(sock, msg, content, jid, author); return; }
   if (matchCmdStart(cmd, 'safadeza'))      { await diversaoHandler.handleSafadeza(sock, msg, content, jid, author); return; }
+  if (matchCmdStart(cmd, 'trans'))         { await diversaoHandler.handleTrans(sock, msg, content, jid, author, contactNames); return; }
+if (matchCmdStart(cmd, 'corno'))         { await diversaoHandler.handleCorno(sock, msg, content, jid, author, contactNames); return; }
+if (matchCmdStart(cmd, 'peitudo'))       { await diversaoHandler.handlePeitudo(sock, msg, content, jid, author, contactNames); return; }
+if (matchCmdStart(cmd, 'pauzudo'))       { await diversaoHandler.handlePauzudo(sock, msg, content, jid, author, contactNames); return; }
+if (matchCmdStart(cmd, 'bundudo'))       { await diversaoHandler.handleBundudo(sock, msg, content, jid, author, contactNames); return; }
+if (matchCmdStart(cmd, 'gordo'))         { await diversaoHandler.handleGordo(sock, msg, content, jid, author, contactNames); return; }
+if (matchCmdStart(cmd, 'cuzudo'))        { await diversaoHandler.handleCuzudo(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'tiro'))          { await diversaoHandler.handleTiro(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'morte'))         { await diversaoHandler.handleMorte(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'maldizer'))      { await diversaoHandler.handleMaldizer(sock, msg, content, jid, author); return; }
@@ -951,6 +960,8 @@ if (matchCmd(cmdWord, 'historicobanco')) { await diversaoHandler.handleHistorico
   if (matchCmdStart(cmd, 'mute'))         { await grupoHandler.handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
   if (matchCmdStart(cmd, 'desmute'))      { await grupoHandler.handleDesmute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
   if (matchCmdStart(cmd, 'ranking'))      { await grupoHandler.handleRanking(sock, msg, jid, msgCount); return; }
+  if (matchCmd(cmdWord, 'rankgold'))
+  { await handleRankGold(sock, msg, jid, contactNames); return; }
   if (matchCmdStart(cmd, 'sorteio'))      { await grupoHandler.handleSorteio(sock, msg, content, jid, contactNames); return; }
   if (matchCmdStart(cmd, 'enquete'))      { await grupoHandler.handleEnquete(sock, msg, jid, caption); return; }
   if (matchCmdStart(cmd, 'todos'))        { await grupoHandler.handleTodos(sock, msg, jid, caption); return; }

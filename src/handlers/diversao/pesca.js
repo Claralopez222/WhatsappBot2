@@ -223,19 +223,14 @@ async function handlePescar(sock, msg, jid) {
       );
     }
 
-    // ── Registrar cooldown imediatamente (evita duplo clique) ─────────────
+    // ── Registrar cooldown + consumir isca num único roundtrip ────────────
     await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: userId, idGrupo: groupId },
-      { $set: { ultimaPesca: new Date() } }
+      {
+        $set: { ultimaPesca: new Date() },
+        ...(iscaKey ? { $inc: { [`itensPesca.${iscaKey}`]: -1 } } : {}),
+      }
     );
-
-    // ── Consumir 1 isca ───────────────────────────────────────────────────
-    if (iscaKey) {
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: groupId },
-        { $inc: { [`itensPesca.${iscaKey}`]: -1 } }
-      );
-    }
 
     const varaNome = VARAS_PESCA[varaKey].nome;
     const iscaNome = iscaKey ? ISCAS[iscaKey].nome : null;
@@ -309,13 +304,13 @@ async function handlePescar(sock, msg, jid) {
       `📦 *${item.nome}*\n` +
       `🏷️ Raridade: *${rarLabel}*\n`;
 
-    if (item.gold > 0)  resultado += `💰 *+${item.gold} gold* (neste grupo)\n`;
-    if (ehDesc)         resultado += `\n🗑️ _Só lixo desta vez..._\n`;
-    else if (ehLixo)    resultado += `\n📥 _Item adicionado ao inventário do grupo._\n`;
-    else                resultado += `\n📥 _Item adicionado ao inventário do grupo._\n`;
+    if (item.gold > 0) resultado += `💰 *+${item.gold} gold* (neste grupo)\n`;
 
-    if (precoVenda && !ehLixo) {
-      resultado += `💵 _Venda por: *${precoVenda} gold* → !venderpesca ${item.key}_\n`;
+    if (ehDesc)   resultado += `\n🗑️ _Só lixo desta vez..._\n`;
+    else          resultado += `\n📥 _Item adicionado ao inventário do grupo._\n`;
+
+    if (precoVenda && !ehLixo && !ehDesc) {
+      resultado += `💵 _Venda por: *${precoVenda} gold* → !sellpesca ${item.key}_\n`;
     }
 
     const reacao = reacoes[item.raridade] ?? '';
@@ -343,7 +338,7 @@ async function handleVaras(sock, msg, jid) {
     texto +=
       `${vara.nome}\n` +
       `   💵 Preço: *${vara.preco} gold*\n` +
-      `   📈 Bonus raridade: *+${vara.bonus_raridade}*\n` +
+      `   📈 Bônus raridade: *+${vara.bonus_raridade}*\n` +
       `   🎯 Reduz falha: *-${vara.reduce_falha}%*\n` +
       `   🛒 \`!comprar ${key}\`\n\n`;
   }
@@ -353,7 +348,7 @@ async function handleVaras(sock, msg, jid) {
     `🪱 Ver iscas: *!iscas*\n` +
     `🎣 Pescar agora: *!pescar*`;
 
-  return sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  return reply(sock, jid, msg, texto);
 }
 
 // ─── !iscas ───────────────────────────────────────────────────────────────────
@@ -365,7 +360,7 @@ async function handleIscas(sock, msg, jid) {
     texto +=
       `${isca.nome}\n` +
       `   💵 Preço: *${isca.preco} gold*\n` +
-      `   📈 Bonus raridade: *+${isca.bonus_raridade}*\n` +
+      `   📈 Bônus raridade: *+${isca.bonus_raridade}*\n` +
       `   🎯 Reduz falha: *-${isca.reduce_falha}%*\n` +
       `   🛒 \`!comprar ${key}\`\n\n`;
   }
@@ -375,7 +370,7 @@ async function handleIscas(sock, msg, jid) {
     `💡 _A isca é consumida a cada pesca!_\n` +
     `🎣 Ver varas: *!varas*`;
 
-  return sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  return reply(sock, jid, msg, texto);
 }
 
 // ─── !inventariopesca ─────────────────────────────────────────────────────────
@@ -395,61 +390,80 @@ async function handleInventarioPesca(sock, msg, jid) {
       .findOne({ idWhatsApp: userId, idGrupo: groupId })
       .lean();
 
-    if (!carteira) {
-      return reply(sock, jid, msg,
-        `🎣 *INVENTÁRIO VAZIO NESTE GRUPO*\n\n` +
-        `Compre uma vara: *!varas*\n` +
-        `Compre uma isca: *!iscas*\n` +
-        `Então: *!pescar*`
-      );
-    }
+    const semItens =
+      `🎣 *SEU INVENTÁRIO DE PESCA ESTÁ VAZIO*\n\n` +
+      `Compre uma vara: *!varas*\n` +
+      `Compre uma isca: *!iscas*\n` +
+      `Então: *!pescar*`;
 
-    const inv    = carteira.itensPesca ?? {};
+    if (!carteira) return reply(sock, jid, msg, semItens);
+
+    // Suporte a Map Mongoose e objeto plano
+    const invRaw = carteira.itensPesca;
+    const inv    = invRaw instanceof Map
+      ? Object.fromEntries(invRaw)
+      : (invRaw ?? {});
+
     const chaves = Object.keys(inv).filter(k => (inv[k] ?? 0) > 0);
+    if (chaves.length === 0) return reply(sock, jid, msg, semItens);
 
-    if (chaves.length === 0) {
-      return reply(sock, jid, msg,
-        `🎣 *SEU INVENTÁRIO DE PESCA ESTÁ VAZIO*\n\n` +
-        `Compre uma vara: *!varas*\n` +
-        `Compre uma isca: *!iscas*\n` +
-        `Então: *!pescar*`
-      );
-    }
+    const varas    = chaves.filter(k =>  VARAS_PESCA[k]);
+    const iscas    = chaves.filter(k =>  ISCAS[k]);
+    const pescados = chaves.filter(k => !VARAS_PESCA[k] && !ISCAS[k]);
 
     let texto = `🎣 *INVENTÁRIO DE PESCA* _(neste grupo)_\n\n`;
 
-    const varas    = chaves.filter(k => VARAS_PESCA[k]);
-    const iscas    = chaves.filter(k => ISCAS[k]);
-    const pescados = chaves.filter(k => !VARAS_PESCA[k] && !ISCAS[k]);
-
     if (varas.length > 0) {
+      // Destaca a vara que será usada na próxima pesca
+      const melhorVara = selecionarMelhorVara(carteira);
       texto += `🪝 *VARAS*\n`;
-      for (const k of varas) texto += `   ${VARAS_PESCA[k].nome} × ${inv[k]}\n`;
+      for (const k of varas) {
+        const ativa = k === melhorVara ? ' ✅ _(ativa)_' : '';
+        texto += `   ${VARAS_PESCA[k].nome} × ${inv[k]}${ativa}\n`;
+      }
       texto += '\n';
     }
 
     if (iscas.length > 0) {
+      // Destaca a isca que será usada na próxima pesca
+      const melhorIsca = selecionarMelhorIsca(carteira);
       texto += `🪱 *ISCAS*\n`;
-      for (const k of iscas) texto += `   ${ISCAS[k].nome} × ${inv[k]}\n`;
+      for (const k of iscas) {
+        const ativa = k === melhorIsca ? ' ✅ _(próxima)_' : '';
+        texto += `   ${ISCAS[k].nome} × ${inv[k]}${ativa}\n`;
+      }
       texto += '\n';
     }
 
     if (pescados.length > 0) {
       texto += `📦 *ITENS PESCADOS*\n`;
       for (const k of pescados) {
-        const info        = CATALOGO_PESCA[k];
-        const nome        = info?.nome ?? k;
-        const precoVenda  = info?.gold > 0 ? Math.floor(info.gold * CONFIG_PESCA.PERCENTUAL_VENDA) : null;
-        const vendaLabel  = precoVenda ? ` _(venda: ${precoVenda}g → !venderpesca ${k})_` : '';
+        const info       = CATALOGO_PESCA[k];
+        const nome       = info?.nome ?? k;
+        const goldBase   = info?.gold ?? 0;
+        const precoVenda = goldBase > 0
+          ? Math.floor(goldBase * CONFIG_PESCA.PERCENTUAL_VENDA)
+          : null;
+        const vendaLabel = precoVenda
+          ? ` _(venda: ${precoVenda}g → !venderpesca ${k})_`
+          : ` _(sem valor)_`;
         texto += `   ${nome} × ${inv[k]}${vendaLabel}\n`;
       }
     }
 
+    // Cooldown restante
+    const agora       = Date.now();
+    const ultimaPesca = carteira.ultimaPesca ? new Date(carteira.ultimaPesca).getTime() : 0;
+    const msRestante  = Math.max(0, CONFIG_PESCA.COOLDOWN_MS - (agora - ultimaPesca));
+    const cooldownStr = msRestante > 0
+      ? `⏳ Próxima pesca em *${formatarTempo(msRestante)}*`
+      : `✅ *Pronto para pescar!*`;
+
     texto +=
       `\n💰 Gold neste grupo: *${carteira.gold ?? 0}*\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `🎣 *!pescar* para pescar novamente!\n` +
-      `💵 *!venderpesca <item> [qtd]* para vender`;
+      `${cooldownStr}\n` +
+      `🎣 *!pescar* · 💵 *!venderpesca <item> [qtd]* · 📊 *!statspesca*`;
 
     return reply(sock, jid, msg, texto);
 
@@ -459,7 +473,7 @@ async function handleInventarioPesca(sock, msg, jid) {
   }
 }
 
-// ─── !sellpesca ─────────────────────────────────────────────────────────────
+// ─── !sellpesca ──────────────────────────────────────────────────────────────
 
 /**
  * !sellpesca <item> [quantidade]
@@ -474,10 +488,10 @@ async function handleVenderPesca(sock, msg, jid, caption) {
     return reply(sock, jid, msg, '🎣 Venda de pesca só funciona em grupos!');
   }
 
-  // Parsear argumentos: !venderpesca <item> [qtd]
-  const partes = caption.trim().split(/\s+/);
-  const itemKey = partes[1]?.toLowerCase();
-  const qtd     = Math.max(1, parseInt(partes[2] ?? '1', 10) || 1);
+  // caption chega sem o comando: "peixe_pequeno 5"
+  const partes  = (caption ?? '').trim().split(/\s+/);
+  const itemKey = partes[0]?.toLowerCase() || null;
+  const qtd     = Math.max(1, parseInt(partes[1] ?? '1', 10) || 1);
 
   if (!itemKey) {
     return reply(sock, jid, msg,
@@ -516,7 +530,10 @@ async function handleVenderPesca(sock, msg, jid, caption) {
       .findOne({ idWhatsApp: userId, idGrupo: groupId })
       .lean();
 
-    const disponivel = carteira?.itensPesca?.[itemKey] ?? 0;
+    // Suporte a Map Mongoose e objeto plano
+    const invRaw     = carteira?.itensPesca;
+    const inv        = invRaw instanceof Map ? Object.fromEntries(invRaw) : (invRaw ?? {});
+    const disponivel = inv[itemKey] ?? 0;
 
     if (disponivel <= 0) {
       return reply(sock, jid, msg,
@@ -529,12 +546,18 @@ async function handleVenderPesca(sock, msg, jid, caption) {
     const precoUnitario = Math.floor(info.gold * CONFIG_PESCA.PERCENTUAL_VENDA);
     const totalGold     = precoUnitario * qtdVender;
 
-    // Debitar itens e creditar gold atomicamente
+    // Debitar itens e creditar gold
     await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: userId, idGrupo: groupId },
       { $inc: { [`itensPesca.${itemKey}`]: -qtdVender } }
     );
     await alterarGold(userId, groupId, totalGold, `Venda pesca: ${info.nome} ×${qtdVender}`);
+
+    // Recarregar saldo atualizado
+    const carteiraAtualizada = await CarteiraGrupo
+      .findOne({ idWhatsApp: userId, idGrupo: groupId })
+      .select('gold')
+      .lean();
 
     return reply(sock, jid, msg,
       `💵 *VENDA REALIZADA!*\n\n` +
@@ -544,7 +567,7 @@ async function handleVenderPesca(sock, msg, jid, caption) {
       `🏆 Total recebido: *+${totalGold} gold*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `📦 Restante no inventário: *${disponivel - qtdVender}×*\n` +
-      `💰 Saldo atual (grupo): *${(carteira.gold ?? 0) + totalGold} gold*`
+      `💰 Saldo atual (grupo): *${carteiraAtualizada?.gold ?? 0} gold*`
     );
 
   } catch (err) {

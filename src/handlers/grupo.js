@@ -579,7 +579,8 @@ function barraProgressoDefault(valor, maximo, tamanho = 10) {
  * @param {Function} [deps.resolverNome]
  */
 
-const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+// correto (sobe um nível)
+const CarteiraGrupo = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
 
 // ─── Helpers internos ─────────────────────────────────────────
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];

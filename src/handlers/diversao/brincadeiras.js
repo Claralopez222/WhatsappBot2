@@ -22,31 +22,6 @@ async function handleGay(sock, msg, content, jid, author, contactNames) {
   const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
   const pct = Math.floor(Math.random() * 101);
 
-  let emoji, frase;
-  if (pct <= 10)      { emoji = '🧢';      frase = 'Praticamente hétero, mas nunca se sabe... 👀'; }
-  else if (pct <= 30) { emoji = '🌈';      frase = 'Um pouco curioso(a) né? Tô de olho em você 😏'; }
-  else if (pct <= 50) { emoji = '🏳️‍🌈'; frase = 'Na metade! Admite logo, porra! 😂'; }
-  else if (pct <= 70) { emoji = '💅';      frase = 'Saindo do armário aos poucos! A porta tá aberta, vai lá! 🚪'; }
-  else if (pct <= 89) { emoji = '👨‍❤️‍👨'; frase = 'Quase assumido(a)! Falta pouco, caralho! 🏳️‍🌈'; }
-  else if (pct <= 99) { emoji = '🌈✨';    frase = 'Praticamente confirmado(a)! Larga essa farsa! 🎉'; }
-  else                { emoji = '🏆🌈';    frase = '100% GAY! Parabéns campeão(ã)! Orgulhe-se! 🎊'; }
-
-  const barra = buildBar(pct);
-  const display = mentionedJid ? nome : author;
-
-  await sock.sendMessage(jid, {
-    text: `${emoji} *GAYÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
-    mentions: mentionedJid ? [alvoJid] : [],
-  }, { quoted: msg });
-}
-
-// ─── !gay
-async function handleGay(sock, msg, content, jid, author, contactNames) {
-  const contextInfo = content.extendedTextMessage?.contextInfo;
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
-  const pct = Math.floor(Math.random() * 101);
-
   const display = mentionedJid ? nome : author;
 
   const faixas = [
@@ -2271,72 +2246,72 @@ async function handleCuzudo(sock, msg, content, jid, author, contactNames) {
   const faixas = [
     {
       max: 11,
-      emoji: '🍑',
+      emoji: '😇',
       frases: [
-        `*${display}* certinho(a)! Nada fora do padrão por aqui. 😇`,
-        `Zero! *${display}* é pequeno(a) e delicado(a) como deve ser. 🕊️`,
-        `*${display}* tão fechado(a) que nem o vento passa. Respeitável. 😂`,
-        `*${display}* apertadinho(a) demais! A natureza foi precisa aqui. 💁`,
+        `*${display}* santinho(a)! Nem sabe o que é isso e vai continuar assim. 😇`,
+        `Zero! *${display}* corou só de ler a pergunta. Inocência pura. 🕊️`,
+        `*${display}* tão recatado(a) que fechou os olhos na cena do filme. 😇`,
+        `*${display}* não tem histórico nessa área. O currículo tá em branco. 😂`,
       ],
     },
     {
       max: 31,
-      emoji: '🫐',
+      emoji: '🤫',
       frases: [
-        `*${display}* quase nada. Pequeno(a) mas já dá pra notar algo. 👀`,
-        `*${display}* levemente acima do mínimo. Discreto(a), passável. 😏`,
-        `Pouco, mas já existe! *${display}* tem um tamanho que o grupo não esperava. 😬`,
-        `*${display}* no começo da escala. A natureza foi econômica aqui. 😅`,
+        `*${display}* discreto(a), mas tem uma história aí que nunca contou pro grupo. 👀`,
+        `*${display}* baixo perfil, mas o olhar entregou que não é tão inocente assim. 🤫`,
+        `*${display}* tem um capítulo escondido no histórico. O grupo desconfia. 😏`,
+        `Pouco, mas não zero! *${display}* sabe mais do que deixa aparecer. 😬`,
       ],
     },
     {
       max: 51,
-      emoji: '🍩',
+      emoji: '😏',
       frases: [
-        `*${display}* na média! Nem pequeno(a) nem grande. Equilibrado(a). 😌`,
-        `50/50! *${display}* tá exatamente onde a estatística colocaria. Neutro. 😄`,
-        `*${display}* mediano(a)! A natureza não exagerou nem economizou. 🍩`,
-        `Na metade! *${display}* é o padrão. Não surpreende, não decepciona. 😂`,
+        `*${display}* na média! O grupo desconfia mas não tem prova concreta ainda. 😏`,
+        `50/50! *${display}* tem umas histórias que conta pela metade e para no clímax. 😂`,
+        `*${display}* mediano(a)! Fez, não arrependeu, mas também não ostenta. 😌`,
+        `Na metade! *${display}* é do tipo que sabe o que fez e não conta pra ninguém. 🤫`,
       ],
     },
     {
       max: 71,
-      emoji: '🌀',
+      emoji: '🔥',
       frases: [
-        `*${display}* acima da média! O grupo já notou e fingiu que não. 😂`,
-        `*${display}* considerável! A natureza foi um pouco mais generosa aqui. 🌀`,
-        `*${display}* tá bem servido(a) nessa área! Sem reclamações registradas. 😏`,
-        `O cuzômetro aprova *${display}*! Acima do esperado. 👀`,
+        `*${display}* já tem fama no pedaço! Todo mundo do grupo já ouviu algo. 😂`,
+        `*${display}* acima da média e sem vergonha nenhuma disso! 🔥`,
+        `*${display}* tem histórias que fariam o grupo tomar água. Conta logo. 😏`,
+        `O cuzômetro não mente! *${display}* tem currículo e experiência confirmada. 😂`,
       ],
     },
     {
       max: 90,
-      emoji: '🕳️',
+      emoji: '😈',
       frases: [
-        `*${display}* bem acima da média! Isso é quase um fenômeno natural. 😱`,
-        `*${display}* tá no nível que causa surpresa involuntária. Alto nível. 🕳️`,
-        `A natureza foi generosa demais com *${display}* nessa região específica. 😂`,
-        `*${display}* tá no top! O tamanho impressiona quem não esperava. 💀`,
+        `*${display}* nível avançado! Uma lenda viva dentro desse grupo! 😈`,
+        `*${display}* tá no alto nível! As histórias que correm por aí são impressionantes. 🔥`,
+        `*${display}* tem currículo extenso e referências excelentes. Impressionante. 😂`,
+        `*${display}* deveria dar palestra. O nível de experiência é incomparável. 😈`,
       ],
     },
     {
       max: 100,
-      emoji: '🌋',
+      emoji: '☠️',
       frases: [
-        `ABSURDO! *${display}* com 99%! Isso é geográfico, não é anatômico! 💀`,
-        `*${display}* quase no máximo! A NASA estuda isso como possível buraco negro. 😂`,
-        `*${display}* 99%! Tem câmera de ré que entra ali sem tocar nas paredes. ☠️`,
-        `*${display}* quase zerou! O IBGE pediu pra cadastrar como acidente geográfico. 💀`,
+        `ABSURDO! *${display}* deveria estar fichado(a) em algum lugar oficial! 💀`,
+        `*${display}* com 99%! Tem um arquivo secreto que ninguém do grupo viu completo. ☠️`,
+        `*${display}* quase no topo! A Interpol já ouviu falar, com certeza. 😂`,
+        `99%! *${display}* tem mais histórias que a Netflix consegue produzir. 💀`,
       ],
     },
     {
       max: 101,
       emoji: '🏆',
       frases: [
-        `100% CUZUDO(A)! *${display}* é patrimônio geológico nacional! 🎊`,
-        `MÁXIMO! *${display}* zerou o cuzômetro! A NASA quer estudar esse fenômeno! 🏆`,
-        `*${display}* chegou nos 100%! Isso não é anatomia, é arquitetura. 🎊`,
-        `100%! *${display}* tem a maior cratera já registrada pelo grupo. Lenda. 😂👑`,
+        `100% CUZUDO(A)! *${display}* campeão(ã) absoluto(a)! Hall da fama eterno! 🎊`,
+        `MÁXIMO! *${display}* zerou o cuzômetro! A humanidade se curva! 🏆`,
+        `*${display}* chegou nos 100%! Isso vai pro livro de recordes do grupo. 🎊`,
+        `100%! *${display}* não tem currículo, tem enciclopédia. Vários volumes. 😂👑`,
       ],
     },
   ];
@@ -2351,9 +2326,119 @@ async function handleCuzudo(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
+// ─── !sexo
+async function handleSexo(sock, msg, content, jid, author, contactNames) {
+  const contextInfo  = content?.extendedTextMessage?.contextInfo;
+  const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
+
+  if (!mentionedJid) {
+    await sock.sendMessage(jid, {
+      text: '🔥 Marca alguém!\nExemplo: *!sexo @fulano*',
+    }, { quoted: msg });
+    return;
+  }
+
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if (mentionedJid.split('@')[0] === senderJid.split('@')[0]) {
+    await sock.sendMessage(jid, {
+      text: '😂 Narcisista! Você não pode fazer isso consigo mesmo(a)! 💀',
+    }, { quoted: msg });
+    return;
+  }
+
+  const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
+  const pct      = Math.floor(Math.random() * 101);
+  const barra    = buildBar(pct, '🟥');
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '😇',
+      frases: [
+        `*${author}* e *${nomeAlvo}* são tão inocentes que dormem de mãos dadas e acham que foi longe demais. 🕊️`,
+        `*${author}* e *${nomeAlvo}* se tocaram por acidente e pediram desculpa três vezes. 😇`,
+        `*${author}* mandou um "oi" pra *${nomeAlvo}* e já achou que era demais. Puro demais pra esse mundo. 💀`,
+        `*${author}* e *${nomeAlvo}* acham que beijo na boca é coisa séria. É quase que literalmente nada rolou. 😂`,
+      ],
+    },
+    {
+      max: 26,
+      emoji: '🥺',
+      frases: [
+        `*${author}* e *${nomeAlvo}* ficaram a sós uma vez e o máximo que rolou foi uma mão no joelho. 😅`,
+        `*${author}* colocou a mão no ombro de *${nomeAlvo}* e os dois ficaram vermelhos. Quase nada. 🥺`,
+        `*${author}* e *${nomeAlvo}* chegaram perto... mas alguém disse "tá tarde" e foi embora. Clássico. 😂`,
+        `*${author}* e *${nomeAlvo}* trocaram um beijo rápido e ficaram uma semana sem se falar de vergonha. 😬`,
+      ],
+    },
+    {
+      max: 46,
+      emoji: '😏',
+      frases: [
+        `*${author}* e *${nomeAlvo}* ficaram num canto escuro da festa. O que rolou lá, ficou lá... ou não. 😏`,
+        `*${author}* e *${nomeAlvo}* "só conversaram" por duas horas com a porta fechada. Tá bom. 👀`,
+        `Rolou um esquenta entre *${author}* e *${nomeAlvo}*, mas alguém deu frio na barriga na hora H. 😂`,
+        `*${author}* e *${nomeAlvo}* foram "só tomar uma água" e voltaram meia hora depois com o cabelo desarrumado. 🔥`,
+      ],
+    },
+    {
+      max: 66,
+      emoji: '🔥',
+      frases: [
+        `*${author}* e *${nomeAlvo}* têm uma história que o grupo inteiro quer ouvir mas nenhum dos dois conta completo. 🔥`,
+        `*${author}* e *${nomeAlvo}* quando ficam no mesmo cômodo o termômetro sobe sozinho. 😅`,
+        `*${author}* e *${nomeAlvo}* já passaram de conversa faz muito tempo. O grupo sabe, só finge que não. 😏`,
+        `*${author}* sumiu com *${nomeAlvo}* numa festa e ninguém perguntou onde foram porque já sabiam. 😂🔥`,
+      ],
+    },
+    {
+      max: 81,
+      emoji: '😈',
+      frases: [
+        `*${author}* e *${nomeAlvo}* têm mais capítulos que a bíblia e nenhum é PG-13. 😈`,
+        `*${author}* e *${nomeAlvo}* quando somem juntos, o grupo já manda mensagem perguntando "vai demorar?". 😂`,
+        `*${author}* e *${nomeAlvo}* têm um histórico tão longo que precisaria de índice remissivo pra organizar. 🔥`,
+        `*${author}* e *${nomeAlvo}* já esgotaram o assunto em todos os cômodos possíveis. Várias vezes. 😈`,
+      ],
+    },
+    {
+      max: 96,
+      emoji: '☠️',
+      frases: [
+        `*${author}* e *${nomeAlvo}* são lendas! As histórias chegaram no grupo antes deles. ☠️`,
+        `*${author}* e *${nomeAlvo}* deveriam pagar royalties pro grupo pelo entretenimento que proporcionam. 💀`,
+        `O que *${author}* e *${nomeAlvo}* já fizeram juntos daria pra envergonhar até quem acha que viu de tudo. 😂☠️`,
+        `*${author}* e *${nomeAlvo}* quebraram recordes que o grupo nem sabia que existiam. A ciência registrou. 💀🔥`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🏆',
+      frases: [
+        `100%! *${author}* e *${nomeAlvo}* são campeões absolutos! O grupo aplaude de pé e com respeito! 🎊🏆`,
+        `RECORDE HISTÓRICO! *${author}* e *${nomeAlvo}* zeraram o medidor! Isso vai pro folclore do grupo pra sempre. 💀`,
+        `*${author}* e *${nomeAlvo}* chegaram nos 100%! Nesse ponto já não tem mais nada a esconder do grupo. 🎊`,
+        `Máximo absoluto! *${author}* e *${nomeAlvo}* não precisam de apresentação. O currículo fala por si só. 😂👑`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+
+  await sock.sendMessage(jid, {
+    text:
+      `${faixa.emoji} *SEXÔMETRO* ${faixa.emoji}\n\n` +
+      `*${author}* 🔥 *${nomeAlvo}*\n\n` +
+      `${barra} *${pct}%*\n\n` +
+      `_${frase}_`,
+    mentions: [mentionedJid],
+  }, { quoted: msg });
+}
+
 module.exports = {
   handleGay,
-  handleSexo,
+  
   handleNazista,
   handleLesbica,
   handleAura,
@@ -2392,4 +2477,5 @@ module.exports = {
   handleBundudo,
   handleGordo,
   handleCuzudo,
+  handleSexo,
 };

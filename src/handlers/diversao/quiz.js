@@ -595,23 +595,45 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
 
     if (!sorted.length) {
       await sock.sendMessage(jid, {
-        text: '📭 Nenhum ponto registrado neste grupo! Joga *!quiz* primeiro!',
+        text:
+          `🏆 *RANKING DE QUIZ — ESTE GRUPO*\n\n` +
+          `📭 Nenhum ponto registrado ainda!\n\n` +
+          `_Use *!quiz* para começar a pontuar!_`,
       }, { quoted: msg });
       return;
     }
 
-    let texto = `🏆 *RANKING DE QUIZ — ESTE GRUPO* 🏆\n\n`;
-    sorted.forEach((u, i) => {
-      const nome = resolverNome(u.idWhatsApp, contactNames);
-      texto += `${MEDALS[i]} *${nome}* — ${u.quizPoints} pts\n`;
-    });
-    texto += `\n_Joga *!quiz* pra subir!_`;
+    const totalPontos = sorted.reduce((s, u) => s + (u.quizPoints || 0), 0);
+    const maxPontos   = sorted[0].quizPoints || 1;
 
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    const linhas = sorted.map((u, i) => {
+      const numero = u.idWhatsApp.split('@')[0].split(':')[0];
+      const pts    = u.quizPoints || 0;
+      const pct    = ((pts / totalPontos) * 100).toFixed(1);
+      const filled = Math.min(Math.round((pts / maxPontos) * 10), 10);
+      const bar    = '█'.repeat(filled) + '░'.repeat(10 - filled);
+      return (
+        `${MEDALS[i]} *@${numero}*\n` +
+        `   ${bar} ${pts} pts (${pct}%)`
+      );
+    });
+
+    const mentions = sorted.map(u => u.idWhatsApp);
+
+    await sock.sendMessage(jid, {
+      text:
+        `🏆 *RANKING DE QUIZ — ESTE GRUPO* 🏆\n\n` +
+        `${linhas.join('\n\n')}\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `🎯 Total de pontos no grupo: *${totalPontos} pts*\n` +
+        `_Use *!quiz* para subir no ranking!_`,
+      mentions,
+    }, { quoted: msg });
+
   } catch (e) {
     console.error('[RankJogos] handleRankJogos:', e.message);
     await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao carregar o ranking.',
+      text: '⚠️ Erro ao carregar o ranking. Tente novamente!',
     }, { quoted: msg });
   }
 }

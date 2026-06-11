@@ -1,350 +1,85 @@
-/**
- * Sistema de Pets — Bot
- * Spawn automático a cada hora no grupo (auto-scheduler integrado)
- *
- * Comandos:
- *   !capturar           — Captura o pet spawado no grupo
- *   !alimentar          — Alimenta seu pet (consome 1x comida do inventário)
- *   !brincar            — Brinca com o pet (ganha nível)
- *   !statuspet          — Status completo do pet
- *   !renomearpet <nome> — Renomeia seu pet
- *   !curar              — Cura o pet (consome 1x remédio do inventário)
- *   !rankpet            — Ranking de pets do servidor
- *   !pets               — Lista todos os pets disponíveis
- *   !abrigo             — Lista pets no abrigo
- *   !abrigo deixar      — Deixa seu pet no abrigo
- *   !abrigo <nome> pegar — Adota um pet do abrigo
- *
- * v3.0 — Correções:
- *   - Auto-scheduler integrado: spawn automático sem dependência externa
- *   - Cache de pet agora invalida corretamente ao aplicar decaimento
- *   - Race condition corrigida: writes atômicos únicos por operação
- *   - handleAbrigo deixar: write unificado (sem dupla gravação)
- *   - Grupos ativos rastreados automaticamente ao receber mensagens
- *   - initPetScheduler exportado para ser chamado no boot do bot
- */
+// ============================================================
+//  PET HANDLERS — capturar / alimentar / brincar / curar
+// ============================================================
 
-'use strict';
-
-const path    = require('path');
-const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-
-let prepareDailyMissionState;
-try {
-  ({ prepareDailyMissionState } = require('./missoes'));
-} catch {
-  prepareDailyMissionState = async () => {};
-}
-
-// ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
-
-const CONFIG = {
-  SPAWN_INTERVAL_MS:   60 * 60 * 1000, // 1 hora
-  COOLDOWN_ALIMENTAR:  10 * 60 * 1000, // 10 min
-  COOLDOWN_BRINCAR:    15 * 60 * 1000, // 15 min
-  COOLDOWN_CURAR:      30 * 60 * 1000, // 30 min
-  NIVEL_MAX:           50,
-  STAT_MAX:            100,
-  STAT_MIN:            0,
-  DECAIMENTO_FOME:     8,
-  DECAIMENTO_ENERGIA:  5,
-  DECAIMENTO_HUMOR:    3,
-};
-
-// ─── CATÁLOGO DE PETS ─────────────────────────────────────────────────────────
-
-const PET_SYSTEM = {
-  // COMUNS (60%)
-  cachorro:    { emoji: '🐶', nome: 'Cachorro',     rarity: 'COMUM',      xpMult: 1.5, pontMult: 1.5, desc: 'Fiel e companheiro para todas as horas.' },
-  gato:        { emoji: '🐱', nome: 'Gato',          rarity: 'COMUM',      xpMult: 1.4, pontMult: 1.4, desc: 'Independente e muito caçador.' },
-  coelho:      { emoji: '🐰', nome: 'Coelho',        rarity: 'COMUM',      xpMult: 1.3, pontMult: 1.3, desc: 'Rápido, fofinho e adora cenouras.' },
-  pinguim:     { emoji: '🐧', nome: 'Pinguim',       rarity: 'COMUM',      xpMult: 1.4, pontMult: 1.4, desc: 'Gosta de frio e anda de um jeito engraçado.' },
-  macaco:      { emoji: '🐵', nome: 'Macaco',        rarity: 'COMUM',      xpMult: 1.6, pontMult: 1.6, desc: 'Super inteligente e muito travesso.' },
-
-  // RAROS (25%)
-  lobo:        { emoji: '🐺', nome: 'Lobo',          rarity: 'RARO',       xpMult: 1.7, pontMult: 1.7, desc: 'O protetor da alcateia selvagem.' },
-  raposa:      { emoji: '🦊', nome: 'Raposa',        rarity: 'RARO',       xpMult: 1.7, pontMult: 1.7, desc: 'Mágica, astuta e muito traiçoeira.' },
-  urso:        { emoji: '🐻', nome: 'Urso',          rarity: 'RARO',       xpMult: 1.8, pontMult: 1.8, desc: 'Forte, robusto e adora um mel.' },
-  coruja:      { emoji: '🦉', nome: 'Coruja',        rarity: 'RARO',       xpMult: 1.8, pontMult: 1.8, desc: 'Símbolo da sabedoria da noite.' },
-  elefante:    { emoji: '🐘', nome: 'Elefante',      rarity: 'RARO',       xpMult: 1.9, pontMult: 1.9, desc: 'Gigante gentil com memória implacável.' },
-  tigre:       { emoji: '🐯', nome: 'Tigre',         rarity: 'RARO',       xpMult: 1.9, pontMult: 1.9, desc: 'Ágil e com garras afiadíssimas.' },
-  girafa:      { emoji: '🦒', nome: 'Girafa',        rarity: 'RARO',       xpMult: 1.5, pontMult: 1.5, desc: 'Observa tudo do alto com elegância.' },
-  leao_marinho:{ emoji: '🦭', nome: 'Leão Marinho',  rarity: 'RARO',       xpMult: 1.6, pontMult: 1.6, desc: 'Adora fazer acrobacias na água.' },
-
-  // ULTRA-RAROS (12%)
-  falcao:      { emoji: '🦅', nome: 'Falcão',        rarity: 'ULTRA-RARO', xpMult: 1.8, pontMult: 1.8, desc: 'Visão cirúrgica e voo extremamente rápido.' },
-  leao:        { emoji: '🦁', nome: 'Leão',          rarity: 'ULTRA-RARO', xpMult: 2.0, pontMult: 2.0, desc: 'O imponente rei da selva africana.' },
-  tubarao:     { emoji: '🦈', nome: 'Tubarão',       rarity: 'ULTRA-RARO', xpMult: 2.0, pontMult: 2.0, desc: 'O maior predador dos oceanos.' },
-
-  // LENDÁRIOS (3%)
-  dragao:      { emoji: '🐉', nome: 'Dragão',        rarity: 'LENDÁRIO',   xpMult: 2.5, pontMult: 2.5, desc: 'Criatura mítica cuspidora de fogo puro.' },
-  fenix:       { emoji: '🔥', nome: 'Fênix',         rarity: 'LENDÁRIO',   xpMult: 3.0, pontMult: 3.0, desc: 'Pássaro lendário que renasce das cinzas.' },
-};
-
-const PET_POOLS = {
-  'COMUM':      Object.entries(PET_SYSTEM).filter(([, p]) => p.rarity === 'COMUM'),
-  'RARO':       Object.entries(PET_SYSTEM).filter(([, p]) => p.rarity === 'RARO'),
-  'ULTRA-RARO': Object.entries(PET_SYSTEM).filter(([, p]) => p.rarity === 'ULTRA-RARO'),
-  'LENDÁRIO':   Object.entries(PET_SYSTEM).filter(([, p]) => p.rarity === 'LENDÁRIO'),
-};
-
-const RARITY_EMOJI = {
-  'COMUM':      '⭐',
-  'RARO':       '🌟',
-  'ULTRA-RARO': '✨',
-  'LENDÁRIO':   '💎',
-};
-
-// ─── ESTADO EM MEMÓRIA ────────────────────────────────────────────────────────
-
-const petCache    = new Map(); // userId  → { pet, cachedAt }
-const spawnedPets = new Map(); // groupId → { type, rarity, spawnedAt }
-const cooldownMap = new Map(); // `${userId}:${action}` → timestamp
-const activeGroups = new Set(); // grupos que receberam mensagem (para o scheduler)
-
-// TTL do cache de pet: 5 minutos — garante que o decaimento seja recalculado periodicamente
-const PET_CACHE_TTL_MS = 5 * 60 * 1000;
-
-const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-
-// ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
-
-function somenteGrupo(jid) {
-  return jid?.endsWith('@g.us') ?? false;
-}
-
-function resolverNome(idWhatsApp, contactNames) {
-  return contactNames?.[idWhatsApp] || idWhatsApp.split('@')[0];
-}
-
-function getUserId(msg) {
-  return msg?.key?.participant || msg?.key?.remoteJid || null;
-}
-
-function reply(sock, jid, msg, text) {
-  return sock.sendMessage(jid, { text }, { quoted: msg });
-}
-
-function clamp(val, min = CONFIG.STAT_MIN, max = CONFIG.STAT_MAX) {
-  return Math.min(max, Math.max(min, val));
-}
-
-function checkCooldown(userId, action, ms) {
-  const key  = `${userId}:${action}`;
-  const last = cooldownMap.get(key) ?? 0;
-  const diff = Date.now() - last;
-  if (diff < ms) return ms - diff;
-  cooldownMap.set(key, Date.now());
-  return 0;
-}
-
-function formatarTempo(ms) {
-  const s = Math.ceil(ms / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h ${m % 60}m`;
-  if (m > 0) return `${m}m ${s % 60}s`;
-  return `${s}s`;
-}
-
-function getHumor(pet) {
-  const media = ((pet.happiness ?? 0) + (pet.energy ?? 0) + (pet.fullness ?? 0)) / 3;
-  if (media >= 80) return '😄 Ótimo';
-  if (media >= 60) return '😊 Bem';
-  if (media >= 40) return '😐 Regular';
-  if (media >= 20) return '😔 Mal';
-  return '😢 Péssimo';
-}
-
-function getRankScore(pet) {
-  if (!pet) return 0;
-  return ((pet.level ?? 1) * 100)
-       + (pet.happiness ?? 0)
-       + (pet.energy    ?? 0)
-       + (pet.fullness  ?? 0);
-}
-
-function aplicarDecaimento(pet) {
-  if (!pet?.lastInteraction) return pet;
-  const horasPassadas = (Date.now() - new Date(pet.lastInteraction).getTime()) / 3600000;
-  if (horasPassadas < 0.1) return pet;
-  return {
-    ...pet,
-    fullness:  clamp(Math.round((pet.fullness  ?? 100) - CONFIG.DECAIMENTO_FOME    * horasPassadas)),
-    energy:    clamp(Math.round((pet.energy    ?? 100) - CONFIG.DECAIMENTO_ENERGIA * horasPassadas)),
-    happiness: clamp(Math.round((pet.happiness ?? 100) - CONFIG.DECAIMENTO_HUMOR   * horasPassadas)),
-  };
-}
-
-// ─── PERSISTÊNCIA ─────────────────────────────────────────────────────────────
+// --------------- helpers internos ---------------------------
 
 /**
- * Salva o pet e invalida o cache do usuário.
- * Sempre atualiza lastInteraction ao salvar.
+ * Garante que um valor numérico fique entre 0 e CONFIG.STAT_MAX.
  */
-async function savePet(userId, petObj) {
-  // Invalida o cache imediatamente
-  petCache.delete(userId);
-
-  const update = petObj
-    ? { $set: { pet: { ...petObj, lastInteraction: new Date().toISOString() } } }
-    : { $unset: { pet: '' } };
-
-  try {
-    await Usuario.findOneAndUpdate({ idWhatsApp: userId }, update, { upsert: true });
-  } catch (e) {
-    console.error('[Pets] savePet:', e.message);
-  }
-}
+const clamp = (val, min = 0, max = CONFIG.STAT_MAX) =>
+  Math.min(max, Math.max(min, val));
 
 /**
- * Retorna o pet com decaimento aplicado.
- * Usa cache com TTL de 5 min para evitar queries repetidas;
- * invalida o cache se o TTL venceu (garante recálculo do decaimento).
+ * Retorna um objeto pet com lastInteraction atualizado para agora.
  */
-async function getPet(userId) {
-  const cached = petCache.get(userId);
-  if (cached) {
-    if (Date.now() - cached.cachedAt < PET_CACHE_TTL_MS) {
-      return cached.pet ? aplicarDecaimento(cached.pet) : null;
-    }
-    petCache.delete(userId);
-  }
+const comTimestamp = (pet) => ({
+  ...pet,
+  lastInteraction: new Date().toISOString(),
+});
 
-  try {
-    const user = await Usuario.findOne({ idWhatsApp: userId }).lean();
-    const pet  = user?.pet ?? null;
-    if (!pet) {
-      petCache.set(userId, { pet: null, cachedAt: Date.now() });
-      return null;
-    }
-
-    const petDecaido = aplicarDecaimento(pet);
-
-    const mudou =
-      petDecaido.fullness  !== pet.fullness  ||
-      petDecaido.energy    !== pet.energy    ||
-      petDecaido.happiness !== pet.happiness;
-
-    if (mudou) {
-      await Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
-        { $set: { pet: { ...petDecaido, lastInteraction: pet.lastInteraction } } },
-        { upsert: true }
-      );
-    }
-
-    petCache.set(userId, { pet: petDecaido, cachedAt: Date.now() });
-    return petDecaido;
-  } catch (e) {
-    console.error('[Pets] getPet:', e.message);
-    return null;
-  }
-}
-
-// ─── SPAWN ────────────────────────────────────────────────────────────────────
-
-function spawnNovoPet(groupId) {
-  const rnd = Math.random() * 100;
-  let raridade;
-  if      (rnd < 60) raridade = 'COMUM';
-  else if (rnd < 85) raridade = 'RARO';
-  else if (rnd < 97) raridade = 'ULTRA-RARO';
-  else               raridade = 'LENDÁRIO';
-
-  const pool     = PET_POOLS[raridade];
-  const [tipo]   = pool[Math.floor(Math.random() * pool.length)];
-  const spawnObj = { type: tipo, rarity: raridade, spawnedAt: Date.now() };
-  spawnedPets.set(groupId, spawnObj);
-  return spawnObj;
-}
-
-function getSpawnAtivo(groupId) {
-  const spawn = spawnedPets.get(groupId);
-  if (!spawn) return null;
-  if (Date.now() - spawn.spawnedAt > CONFIG.SPAWN_INTERVAL_MS) {
-    spawnedPets.delete(groupId);
-    return null;
-  }
-  return spawn;
-}
-
-// ─── AUTO-SCHEDULER ───────────────────────────────────────────────────────────
-
-let _sock = null; // referência ao sock salva no init
+// --------------- !capturar ----------------------------------
 
 /**
- * Registra o grupo como ativo para receber spawns.
- * Chame isso no handler principal de mensagens de grupo.
- *
- * Exemplo no seu index.js / messageHandler:
- *   if (jid.endsWith('@g.us')) registerActiveGroup(jid);
+ * Captura o pet que está ativo no grupo (jid).
+ * Falha se o usuário já tiver um pet ou se não houver spawn ativo.
  */
-function registerActiveGroup(groupJid) {
-  activeGroups.add(groupJid);
-}
-
-/**
- * Dispara o spawn em todos os grupos ativos.
- * Chamado internamente pelo setInterval a cada hora.
- */
-async function _runSpawnCycle() {
-  if (!_sock) return;
-  console.log(`[Pets] Spawn cycle — ${activeGroups.size} grupo(s) ativo(s)`);
-
-  for (const groupJid of activeGroups) {
-    try {
-      await triggerSpawn(_sock, groupJid);
-    } catch (e) {
-      console.error(`[Pets] Erro ao fazer spawn em ${groupJid}:`, e.message);
-    }
-  }
-}
-
-/**
- * Inicializa o scheduler automático de spawn.
- * Chame UMA VEZ no boot do bot, passando o sock.
- *
- * Exemplo no index.js:
- *   const { initPetScheduler } = require('./handlers/pets');
- *   initPetScheduler(sock);
- */
-function initPetScheduler(sock) {
-  if (_sock) {
-    console.warn('[Pets] initPetScheduler chamado mais de uma vez — ignorado.');
-    return;
-  }
-  _sock = sock;
-  console.log('[Pets] Scheduler de spawn iniciado. Intervalo: 1 hora.');
-
-  // Primeiro spawn após 1 hora
-  setInterval(_runSpawnCycle, CONFIG.SPAWN_INTERVAL_MS);
-}
-
-// ─── HANDLERS ─────────────────────────────────────────────────────────────────
-
-// !capturar
 async function handleCapturarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
 
-  const spawn = getSpawnAtivo(jid);
+  const spawn = spawnedPets.get(jid);
   if (!spawn) {
-    return reply(sock, jid, msg, '❌ Nenhum pet apareceu ainda. Aguarde o próximo spawn!');
-  }
-
-  const petExistente = await getPet(userId);
-  if (petExistente) {
-    return reply(sock, jid, msg, '⚠️ Você já tem um pet! Use *!abrigo deixar* para liberá-lo antes de capturar outro.');
+    return reply(
+      sock, jid, msg,
+      '❌ Nenhum pet apareceu por aqui ainda. Aguarde o próximo spawn nos arbustos!',
+    );
   }
 
   const def = PET_SYSTEM[spawn.type];
+  if (!def) {
+    console.error(`[capturar] Tipo de pet desconhecido: ${spawn.type}`);
+    return reply(sock, jid, msg, '❌ Erro interno: tipo de pet inválido.');
+  }
+
+  // 1. Verifica se o usuário já possui um pet ativo
+  let petExistente;
+  try {
+    petExistente = await getPet(userId);
+  } catch (err) {
+    console.error('[capturar] Erro ao buscar pet existente:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao verificar seu pet. Tente novamente!');
+  }
+
+  if (petExistente?.name) {
+    return reply(
+      sock, jid, msg,
+      '⚠️ Você já tem um pet ativo! Use *!abrigo deixar* para liberá-lo antes de tentar capturar outro.',
+    );
+  }
+
+  // 2. Trava de concorrência: Remove o spawn IMEDIATAMENTE para evitar capturas duplas simultâneas
+  spawnedPets.delete(jid);
+
+  // 3. Sistema de taxa de captura com base na raridade
+  // Se não houver taxa definida no PET_SYSTEM, usa padrões de mercado equilibrados
+  const taxasRaridade = { 'COMUM': 0.75, 'RARO': 0.50, 'ULTRA-RARO': 0.30, 'LENDÁRIO': 0.12 };
+  const chanceSucesso = def.catchRate ?? taxasRaridade[spawn.rarity] ?? 0.50;
+  
+  if (Math.random() > chanceSucesso) {
+    return reply(
+      sock, jid, msg,
+      `💨 *O PET FUGIU!*\n\nVocê tentou se aproximar de fininho, mas o *${def.nome}* se assustou e correu para longe! 🌲`
+    );
+  }
+
+  // 4. Instanciação do novo pet capturado
   const novoPet = {
     type:            spawn.type,
     name:            `${def.nome} Selvagem`,
     rarity:          spawn.rarity,
     level:           1,
+    xp:              0,
     happiness:       50,
     energy:          100,
     fullness:        100,
@@ -352,18 +87,36 @@ async function handleCapturarPet(sock, msg, jid) {
     lastInteraction: new Date().toISOString(),
   };
 
-  await savePet(userId, novoPet);
-  spawnedPets.delete(jid);
+  try {
+    // Salva o novo pet na conta do usuário
+    await savePet(userId, novoPet);
+  } catch (err) {
+    console.error('[capturar] Erro ao salvar pet:', err);
+    // Caso dê um erro de banco de dados, devolve o spawn para o grupo não sair no prejuízo
+    spawnedPets.set(jid, spawn); 
+    return reply(sock, jid, msg, '❌ Erro de banco de dados ao guardar o pet na mochila. Tente novamente!');
+  }
 
-  const re = RARITY_EMOJI[spawn.rarity] ?? '⭐';
-  return reply(sock, jid, msg,
-    `${re} *${def.nome}* capturado com sucesso! (${spawn.rarity})\n\n` +
-    `${def.emoji} _${def.desc}_\n\n` +
-    `Use *!statuspet* para ver seus atributos.`
+  // 5. Retorno visual de sucesso para o chat
+  const emoji = RARITY_EMOJI[spawn.rarity] ?? '⭐';
+  const limiteNivel = typeof CONFIG !== 'undefined' && CONFIG.NIVEL_MAX ? CONFIG.NIVEL_MAX : 100;
+
+  return reply(
+    sock, jid, msg,
+    `${emoji} *${def.nome} CAPTURADO!* (${spawn.rarity}) ${emoji}\n\n` +
+    `${def.emoji} _"${def.desc}"_\n\n` +
+    `🏆 Nível: *1* | ✨ XP: *0 / ${limiteNivel > 1 ? '100' : '—'}*\n` +
+    `😊 Felicidade: *50%* | ⚡ Energia: *100%* | 🍽️ Fome: *100%*\n\n` +
+    `💡 Use *!statuspet* para ver as ações disponíveis ou dê um nome para ele com *!nomearpet [nome]*!`,
   );
 }
 
-// !alimentar
+// --------------- !alimentar ---------------------------------
+
+/**
+ * Alimenta o pet do usuário, consumindo 1 unidade de comida do inventário.
+ * Aumenta fullness (+30) e happiness (+10).
+ */
 async function handleAlimentarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
@@ -379,43 +132,66 @@ async function handleAlimentarPet(sock, msg, jid) {
   }
 
   if (pet.fullness >= CONFIG.STAT_MAX) {
-    return reply(sock, jid, msg, `❌ *${pet.name}* está completamente cheio (🍽️ 100%) e recusou a comida!`);
+    return reply(
+      sock, jid, msg,
+      `❌ *${pet.name}* está completamente cheio (🍽️ 100%) e recusou a comida!`,
+    );
   }
 
-  const user = await Usuario.findOne({ idWhatsApp: userId }).lean();
-  const qtdComida = user?.inventory?.comida ?? 0;
-
-  if (qtdComida <= 0) {
-    return reply(sock, jid, msg, '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.');
-  }
-
-  const petAtualizado = {
+  const petAtualizado = comTimestamp({
     ...pet,
     fullness:  clamp(pet.fullness  + 30),
     happiness: clamp(pet.happiness + 10),
-  };
+  });
 
-  // Write atômico único — sem dupla gravação
   petCache.delete(userId);
-  await prepareDailyMissionState(userId);
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId },
-    {
-      $set: { pet: { ...petAtualizado, lastInteraction: new Date().toISOString() } },
-      $inc: { 'inventory.comida': -1, 'dailyMissions.progress.pet10': 1 },
-    },
-    { upsert: true }
-  );
 
-  return reply(sock, jid, msg,
+  let userAtualizado;
+  try {
+    await prepareDailyMissionState(userId);
+    userAtualizado = await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId, 'inventory.comida': { $gt: 0 } },
+      {
+        $set: { pet: petAtualizado },
+        $inc: { 'inventory.comida': -1, 'dailyMissions.progress.pet10': 1 },
+      },
+      { new: true, upsert: false },
+    );
+  } catch (err) {
+    console.error('[alimentar] Erro ao atualizar usuário:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao alimentar o pet. Tente novamente!');
+  }
+
+  if (!userAtualizado) {
+    return reply(
+      sock, jid, msg,
+      '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.',
+    );
+  }
+
+  const qtdRestante = userAtualizado.inventory?.comida ?? 0;
+  const aviso       = qtdRestante === 0
+    ? '\n\n⚠️ _Você ficou sem comida! Compre mais na *!loja*._'
+    : qtdRestante <= 2
+      ? `\n\n⚠️ _Estoque baixo! Só restam ${qtdRestante} comida(s). Compre mais na *!loja*._`
+      : '';
+
+  return reply(
+    sock, jid, msg,
     `🍖 Você alimentou *${petAtualizado.name}*!\n\n` +
-    `😊 Felicidade: ${petAtualizado.happiness}%\n` +
-    `🍽️ Fome: ${petAtualizado.fullness}%\n` +
-    `📦 Comidas restantes: ${qtdComida - 1}`
+    `😊 Felicidade : ${petAtualizado.happiness}%\n` +
+    `🍽️ Fome       : ${petAtualizado.fullness}%\n` +
+    `📦 Comidas restantes: ${qtdRestante}` +
+    aviso,
   );
 }
 
-// !brincar
+// --------------- !brincar -----------------------------------
+
+/**
+ * Faz o usuário brincar com o pet, aumentando nível e felicidade,
+ * mas consumindo energia e fome.
+ */
 async function handleBrincarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
@@ -430,40 +206,100 @@ async function handleBrincarPet(sock, msg, jid) {
     return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
   }
 
-  if (pet.energy < 15) {
-    return reply(sock, jid, msg, `❌ *${pet.name}* está sem energia para brincar! Aguarde ele recuperar (⚡ ${pet.energy}%).`);
+  const ENERGIA_MINIMA = 15;
+  if (pet.energy < ENERGIA_MINIMA) {
+    return reply(
+      sock, jid, msg,
+      `❌ *${pet.name}* está sem energia para brincar! Aguarde ele recuperar (⚡ ${pet.energy}%).`,
+    );
   }
 
-  const petAtualizado = {
+  if (pet.fullness <= 0) {
+    return reply(
+      sock, jid, msg,
+      `❌ *${pet.name}* está com fome demais para brincar! Use *!alimentar* primeiro.`,
+    );
+  }
+
+  // ── Sistema de XP ────────────────────────────────────────────────────────────
+  const def        = PET_SYSTEM[pet.type] ?? { xpMult: 1.0 };
+  const nivelAtual = pet.level ?? 1;
+  const xpAtual    = pet.xp    ?? 0;
+
+  // XP necessário cresce com o nível: 100 * nível atual
+  const xpParaSubir  = nivelAtual * 100;
+  const xpGanho      = Math.round(20 * def.xpMult);
+  const xpNovo       = xpAtual + xpGanho;
+
+  const podeSubir  = nivelAtual < CONFIG.NIVEL_MAX && xpNovo >= xpParaSubir;
+  const novoNivel  = podeSubir ? nivelAtual + 1 : nivelAtual;
+  const xpFinal    = podeSubir ? xpNovo - xpParaSubir : xpNovo;
+  const subiuNivel = novoNivel > nivelAtual;
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const petAtualizado = comTimestamp({
     ...pet,
     happiness: clamp(pet.happiness + 20),
     energy:    clamp(pet.energy    - 15),
     fullness:  clamp(pet.fullness  - 10),
-    level:     Math.min(CONFIG.NIVEL_MAX, (pet.level ?? 1) + 1),
-  };
+    level:     novoNivel,
+    xp:        xpFinal,
+  });
 
-  // Write atômico único
   petCache.delete(userId);
-  await prepareDailyMissionState(userId);
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId },
-    {
-      $set: { pet: { ...petAtualizado, lastInteraction: new Date().toISOString() } },
-      $inc: { 'dailyMissions.progress.pet10': 1 },
-    },
-    { upsert: true }
-  );
 
-  return reply(sock, jid, msg,
+  try {
+    await prepareDailyMissionState(userId);
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      {
+        $set: { pet: petAtualizado },
+        $inc: { 'dailyMissions.progress.pet10': 1 },
+      },
+      { upsert: true },
+    );
+  } catch (err) {
+    console.error('[brincar] Erro ao atualizar usuário:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao brincar com o pet. Tente novamente!');
+  }
+
+  const xpBar      = buildXpBar(xpFinal, podeSubir ? novoNivel * 100 : xpParaSubir);
+  const nivelMsg   = subiuNivel
+    ? `\n\n🎉 *${petAtualizado.name}* subiu para o nível ${petAtualizado.level}!`
+    : '';
+  const fomeAviso  = petAtualizado.fullness <= 20
+    ? `\n⚠️ _${petAtualizado.name} está com fome! Use *!alimentar*._`
+    : '';
+  const energiAviso = petAtualizado.energy <= 20
+    ? `\n⚠️ _${petAtualizado.name} está cansado! Use *!curar* ou aguarde._`
+    : '';
+
+  return reply(
+    sock, jid, msg,
     `🎾 Você brincou com *${petAtualizado.name}*!\n\n` +
-    `😊 Felicidade: ${petAtualizado.happiness}%\n` +
-    `⚡ Energia: ${petAtualizado.energy}%\n` +
-    `🍽️ Fome: ${petAtualizado.fullness}%\n` +
-    `🏆 Nível: ${petAtualizado.level}/${CONFIG.NIVEL_MAX}`
+    `😊 Felicidade : ${petAtualizado.happiness}%\n` +
+    `⚡ Energia    : ${petAtualizado.energy}%\n` +
+    `🍽️ Fome       : ${petAtualizado.fullness}%\n` +
+    `🏆 Nível      : ${petAtualizado.level}/${CONFIG.NIVEL_MAX}\n` +
+    `✨ XP         : +${xpGanho} ${xpBar}` +
+    nivelMsg +
+    fomeAviso +
+    energiAviso,
   );
 }
 
-// !curar
+// Barra de progresso de XP  ex: [████░░░░░░] 40/100
+function buildXpBar(xpAtual, xpTotal, tamanho = 10) {
+  const preenchido = Math.round((xpAtual / xpTotal) * tamanho);
+  const vazio      = tamanho - preenchido;
+  return `[${`█`.repeat(preenchido)}${`░`.repeat(vazio)}] ${xpAtual}/${xpTotal}`;
+}
+
+// --------------- !curar -------------------------------------
+
+/**
+ * Usa um remédio do inventário para recuperar energia (+50) e felicidade (+20) do pet.
+ */
 async function handleCurarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
@@ -478,38 +314,56 @@ async function handleCurarPet(sock, msg, jid) {
     return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
   }
 
-  if (pet.energy >= CONFIG.STAT_MAX && pet.happiness >= CONFIG.STAT_MAX) {
+  const energiaCheia    = pet.energy    >= CONFIG.STAT_MAX;
+  const felicidadeCheia = pet.happiness >= CONFIG.STAT_MAX;
+
+  if (energiaCheia && felicidadeCheia) {
     return reply(sock, jid, msg, `✅ *${pet.name}* já está completamente saudável!`);
   }
 
-  const user   = await Usuario.findOne({ idWhatsApp: userId }).lean();
-  const qtdRem = user?.inventory?.remedio ?? 0;
+  // Avisa o que será curado antes de consumir o remédio
+  const beneficios = [];
+  if (!energiaCheia)    beneficios.push(`⚡ Energia +50`);
+  if (!felicidadeCheia) beneficios.push(`😊 Felicidade +20`);
 
-  if (qtdRem <= 0) {
-    return reply(sock, jid, msg, '❌ Você não tem remédios no inventário! Compre na *!loja*.');
-  }
-
-  const petAtualizado = {
+  const petAtualizado = comTimestamp({
     ...pet,
     energy:    clamp(pet.energy    + 50),
     happiness: clamp(pet.happiness + 20),
-  };
+  });
 
   petCache.delete(userId);
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId },
-    {
-      $set: { pet: { ...petAtualizado, lastInteraction: new Date().toISOString() } },
-      $inc: { 'inventory.remedio': -1 },
-    },
-    { upsert: true }
-  );
 
-  return reply(sock, jid, msg,
-    `💊 Você curou *${petAtualizado.name}*!\n\n` +
-    `⚡ Energia: ${petAtualizado.energy}%\n` +
-    `😊 Felicidade: ${petAtualizado.happiness}%\n` +
-    `📦 Remédios restantes: ${qtdRem - 1}`
+  let userAtualizado;
+  try {
+    userAtualizado = await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId, 'inventory.remedio': { $gt: 0 } },
+      {
+        $set: { pet: petAtualizado },
+        $inc: { 'inventory.remedio': -1 },
+      },
+      { new: true, upsert: false },
+    );
+  } catch (err) {
+    console.error('[curar] Erro ao atualizar usuário:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao curar o pet. Tente novamente!');
+  }
+
+  if (!userAtualizado) {
+    return reply(sock, jid, msg, '❌ Você não tem remédios no inventário! Compre na *!loja*.');
+  }
+
+  const qtdRestante = userAtualizado.inventory?.remedio ?? 0;
+  const aviso       = qtdRestante === 0 ? '\n\n⚠️ _Você ficou sem remédios! Compre mais na *!loja*._' : '';
+
+  return reply(
+    sock, jid, msg,
+    `💊 Você curou *${petAtualizado.name}*!\n` +
+    `${beneficios.join(' | ')}\n\n` +
+    `⚡ Energia    : ${petAtualizado.energy}%\n` +
+    `😊 Felicidade : ${petAtualizado.happiness}%\n` +
+    `📦 Remédios restantes: ${qtdRestante}` +
+    aviso,
   );
 }
 
@@ -518,25 +372,53 @@ async function handleRenomearPet(sock, msg, jid, caption) {
   const userId = getUserId(msg);
   if (!userId) return;
 
-  const novoNome = caption.replace(/renomearpet\s*/i, '').trim();
-  if (!novoNome || novoNome.length < 2 || novoNome.length > 24) {
-    return reply(sock, jid, msg, '⚠️ Nome inválido! Use entre 2 e 24 caracteres.\nExemplo: *!renomearpet Farofa*');
+  const novoNome = caption.replace(/^[!.,/]?renomearpet\s*/i, '').trim();
+
+  if (!novoNome) {
+    return reply(sock, jid, msg, '⚠️ Você precisa informar um nome!\nExemplo: *!renomearpet Farofa*');
   }
 
-  const pet = await getPet(userId);
+  if (novoNome.length < 2 || novoNome.length > 24) {
+    return reply(sock, jid, msg, `⚠️ Nome inválido! Use entre 2 e 24 caracteres. (atual: ${novoNome.length})`);
+  }
+
+  // Bloqueia caracteres especiais / emojis abusivos
+  if (!/^[\w\s\u00C0-\u024F\u{1F300}-\u{1F9FF}]{2,24}$/u.test(novoNome)) {
+    return reply(sock, jid, msg, '⚠️ Nome com caracteres inválidos! Use letras, números e espaços.');
+  }
+
+  let pet;
+  try {
+    pet = await getPet(userId);
+  } catch (err) {
+    console.error('[renomear] Erro ao buscar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
+  }
+
   if (!pet?.name) {
     return reply(sock, jid, msg, '⚠️ Você não tem um pet para renomear!');
   }
 
-  const nomeAntigo   = pet.name;
-  const petAtualizado = { ...pet, name: novoNome };
+  // Evita renomear para o mesmo nome
+  if (pet.name.toLowerCase() === novoNome.toLowerCase()) {
+    return reply(sock, jid, msg, `⚠️ *${pet.name}* já tem esse nome!`);
+  }
+
+  const nomeAntigo    = pet.name;
+  const petAtualizado = comTimestamp({ ...pet, name: novoNome });
 
   petCache.delete(userId);
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId },
-    { $set: { pet: { ...petAtualizado, lastInteraction: new Date().toISOString() } } },
-    { upsert: true }
-  );
+
+  try {
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      { $set: { pet: petAtualizado } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error('[renomear] Erro ao salvar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao renomear. Tente novamente!');
+  }
 
   return reply(sock, jid, msg, `✅ *${nomeAntigo}* agora se chama *${novoNome}*!`);
 }
@@ -546,7 +428,14 @@ async function handleStatusPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
 
-  const pet = await getPet(userId);
+  let pet;
+  try {
+    pet = await getPet(userId);
+  } catch (err) {
+    console.error('[statuspet] Erro ao buscar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
+  }
+
   if (!pet?.name) {
     return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
   }
@@ -556,11 +445,20 @@ async function handleStatusPet(sock, msg, jid) {
   const humor   = getHumor(pet);
   const capData = pet.capturedAt ? new Date(pet.capturedAt).toLocaleDateString('pt-BR') : '?';
 
+  // Barra de XP — consistente com handleBrincarPet
+  const nivelAtual  = pet.level ?? 1;
+  const xpAtual     = pet.xp    ?? 0;
+  const xpParaSubir = nivelAtual * 100;
+  const xpBar       = nivelAtual >= CONFIG.NIVEL_MAX
+    ? '✨ *NÍVEL MÁXIMO*'
+    : `✨ XP: ${buildXpBar(xpAtual, xpParaSubir)} (${xpAtual}/${xpParaSubir})`;
+
   return reply(sock, jid, msg,
     `${def.emoji} *${pet.name}*\n\n` +
     `${re} *${pet.rarity}*\n` +
-    `🏆 Nível: ${pet.level ?? 1}/${CONFIG.NIVEL_MAX}\n` +
-    `💭 Humor: ${humor}\n` +
+    `🏆 Nível : ${nivelAtual}/${CONFIG.NIVEL_MAX}\n` +
+    `${xpBar}\n` +
+    `💭 Humor : ${humor}\n` +
     `━━━━━━━━━━━\n` +
     `😊 Felicidade : ${pet.happiness ?? 0}%\n` +
     `⚡ Energia    : ${pet.energy    ?? 0}%\n` +
@@ -572,7 +470,7 @@ async function handleStatusPet(sock, msg, jid) {
 }
 
 // !rankpet
-async function handlePetRank(sock, msg, jid, contactNames = {}) {
+async function handlePetRank(sock, msg, jid) {
   if (!somenteGrupo(jid)) {
     return reply(sock, jid, msg, '⚠️ Este comando só pode ser usado em grupos.');
   }
@@ -604,18 +502,22 @@ async function handlePetRank(sock, msg, jid, contactNames = {}) {
       );
     }
 
+    const mencoes = ranks.map(entry => ({ id: entry.idWhatsApp }));
+
     const linhas = ranks.map((entry, i) => {
-      const nome = resolverNome(entry.idWhatsApp, contactNames) || entry.nome;
-      const def  = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
-      const re   = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
-      return `${MEDALS[i]} *${nome}* — ${def.emoji} ${entry.pet.name} ${re} Lvl ${entry.pet.level ?? 1}`;
+      const def = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
+      const re  = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
+      return `${MEDALS[i]} @${entry.idWhatsApp.split('@')[0]} — ${def.emoji} ${entry.pet.name} ${re} Lvl ${entry.pet.level ?? 1}`;
     });
 
-    return reply(sock, jid, msg,
-      `🐾 *RANKING DE PETS — ESTE GRUPO* 🐾\n\n` +
-      linhas.join('\n') +
-      `\n\n_Use *!capturar* para entrar no ranking!_`
-    );
+    await sock.sendMessage(jid, {
+      text:
+        `🐾 *RANKING DE PETS — ESTE GRUPO* 🐾\n\n` +
+        linhas.join('\n') +
+        `\n\n_Use *!capturar* para entrar no ranking!_`,
+      mentions: mencoes.map(m => m.id),
+    });
+
   } catch (e) {
     console.error('[Pets] handlePetRank:', e.message);
     return reply(sock, jid, msg, '⚠️ Erro ao carregar o ranking.');
@@ -625,19 +527,29 @@ async function handlePetRank(sock, msg, jid, contactNames = {}) {
 // !pets
 async function handlePets(sock, msg, jid, caption = '') {
   const prefixMatch = caption.match(/^([!.,/])/);
-  const prefix = prefixMatch ? prefixMatch[1] : '!';
+  const prefix      = prefixMatch ? prefixMatch[1] : '!';
 
   const grupos = { 'COMUM': [], 'RARO': [], 'ULTRA-RARO': [], 'LENDÁRIO': [] };
 
   for (const [, pet] of Object.entries(PET_SYSTEM)) {
-    grupos[pet.rarity]?.push(`  ${pet.emoji} *${pet.nome}* — _${pet.desc}_`);
+    if (!pet.rarity || !grupos[pet.rarity]) continue; // ignora raridade desconhecida
+    grupos[pet.rarity].push(`  ${pet.emoji} *${pet.nome}* — _${pet.desc}_`);
   }
 
-  let texto = `🐾 *PETS DA NATUREZA* 🐾\n\n`;
+  // Mostra o spawn ativo do grupo, se houver
+  const spawnAtivo  = getSpawnAtivo(jid);
+  const spawnAviso  = spawnAtivo
+    ? `\n🌿 *UM PET ESTÁ APARECIDO AGORA!* Use *${prefix}capturar* rápido!\n`
+    : '';
+
+  let texto = `🐾 *PETS DA NATUREZA* 🐾\n${spawnAviso}\n`;
+
   for (const [rar, lista] of Object.entries(grupos)) {
+    if (!lista.length) continue; // omite raridade sem nenhum pet
     const re = RARITY_EMOJI[rar] ?? '';
-    texto += `${re} *${rar}*\n${lista.join('\n')}\n\n`;
+    texto += `${re} *${rar}* (${lista.length})\n${lista.join('\n')}\n\n`;
   }
+
   texto += `💡 _Um pet selvagem aparece a cada hora. Use *${prefix}capturar* na hora certa!_`;
 
   return reply(sock, jid, msg, texto);

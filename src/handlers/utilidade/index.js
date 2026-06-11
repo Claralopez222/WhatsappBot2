@@ -349,7 +349,10 @@ async function handleLetra(sock, msg, jid, caption) {
 }
 
 // ─── !perfil ─────────────────────────────────────────────────────────────────
+const path = require('path');
+const fs = require('fs');
 
+// Constantes de Mapeamento
 const PET_EMOJIS = {
   tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',
   lobo: '🐺', urso: '🐻', macaco: '🐵', raposa: '🦊', coelho: '🐰',
@@ -371,6 +374,7 @@ const ITENS_SEGURANCA_NOMES = {
   laser: '🔴 Raios Laser', militares: '🪖 Segurança Militar',
 };
 
+// Helpers de utilidade de JID
 function extractNumber(jidStr) {
   if (!jidStr) return '';
   const raw = jidStr.split('@')[0];
@@ -381,16 +385,18 @@ function isLidJid(jidStr) {
   return jidStr?.endsWith('@lid');
 }
 
+// Handler Principal
 async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
   const contextInfo = content?.extendedTextMessage?.contextInfo
-                   || msg?.message?.extendedTextMessage?.contextInfo;
-  const mentions  = contextInfo?.mentionedJid || [];
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const alvoJid   = mentions[0] || contextInfo?.participant || senderJid;
+                    || msg?.message?.extendedTextMessage?.contextInfo;
+  const mentions    = contextInfo?.mentionedJid || [];
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const alvoJid     = mentions[0] || contextInfo?.participant || senderJid;
 
   let resolvedJid = alvoJid;
   let number      = extractNumber(alvoJid);
 
+  // Tratamento de segurança para contas vinculadas via LID JID
   if (isLidJid(alvoJid)) {
     try {
       const results = await sock.onWhatsApp(number);
@@ -403,15 +409,20 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   }
 
   const nome = contactNames?.[alvoJid] || contactNames?.[resolvedJid] || number;
+  const mentionsList = []; // Guarda os JIDs que precisam ser marcados pelo bot
 
+  // Carregamento de dados de usuário (Banco de Dados)
   let userData = null;
   try {
-    userData = await Usuario?.findOne({ idWhatsApp: resolvedJid });
-    if (!userData && resolvedJid !== alvoJid) {
-      userData = await Usuario?.findOne({ idWhatsApp: alvoJid });
+    if (typeof Usuario !== 'undefined') {
+      userData = await Usuario.findOne({ idWhatsApp: resolvedJid });
+      if (!userData && resolvedJid !== alvoJid) {
+        userData = await Usuario.findOne({ idWhatsApp: alvoJid });
+      }
     }
   } catch {}
 
+  // Carregamento da Economia local do grupo
   let userGold = 0;
   try {
     const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
@@ -419,6 +430,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     userGold = carteira?.gold ?? 0;
   } catch {}
 
+  // Cálculos de Estatísticas de Atividade e Nível
   const msgsRec = msgCount?.get?.(alvoJid)?.count ?? 0;
   const xp      = userData?.xp ?? msgsRec;
   const level   = userData?.level ?? (Math.floor(xp / 50) + 1);
@@ -442,6 +454,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
   } catch {}
 
+  // Metadados do grupo e permissões de Admin
   let isAdmin   = false;
   let groupName = '';
   if (jid.endsWith('@g.us')) {
@@ -452,6 +465,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     } catch {}
   }
 
+  // Dados Financeiros / Banco
   let bankText = '❌ Sem investimento ativo';
   try {
     if (userData?.bank?.amount > 0) {
@@ -462,6 +476,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
+  // Progresso de Missões Diárias
   let missaoText = '';
   try {
     const { dailyMissionDefinitions } = require('./missoes');
@@ -476,6 +491,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
+  // Inventário de Equipamentos Equipados
   let equipRouboText = '❌ Nenhum';
   let equipSecText   = '❌ Nenhum';
   try {
@@ -483,6 +499,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     if (userData?.equiparsec)  equipSecText   = ITENS_SEGURANCA_NOMES[userData.equiparsec] || userData.equiparsec;
   } catch {}
 
+  // Atributos de Pet
   let petText = '❌ Sem pet';
   try {
     if (userData?.pet?.name) {
@@ -493,6 +510,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
+  // Sistema de Aniversários externo
   let birthdayText = '';
   try {
     const dataPath = path.resolve(__dirname, '../../../data.json');
@@ -512,83 +530,116 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
+  // ── SISTEMA DE MARCAÇÃO EM RELACIONAMENTOS ──
   let relStatus = '💔 Solteiro(a)';
   try {
+    let parceiroJid = null;
+
     if (relacionamentos) {
       for (const [k, v] of relacionamentos) {
         if (k.includes(number)) {
-          const partner = v.nomeA === nome ? v.nomeB : v.nomeA;
-          relStatus = v.tipo === 'casamento' ? `💍 Casado(a) com ${partner}` : `❤️ Namorando com ${partner}`;
+          // Extrai o ID do parceiro a partir do mapa ou chaves de relacionamentos
+          parceiroJid = k.find(id => !id.includes(number)) || '';
+          if (parceiroJid && !parceiroJid.endsWith('@s.whatsapp.net')) {
+            parceiroJid = `${parceiroJid}@s.whatsapp.net`;
+          }
+          
+          relStatus = v.tipo === 'casamento' 
+            ? `💍 Casado(a) com @${extractNumber(parceiroJid)}` 
+            : `❤️ Namorando com @${extractNumber(parceiroJid)}`;
           break;
         }
       }
     }
+
     if (relStatus === '💔 Solteiro(a)' && userData?.casadoCom) {
-      const partnerName = contactNames?.[userData.casadoCom]
-        || userData.casadoCom.split('@')[0].split(':')[0];
+      parceiroJid = userData.casadoCom;
+      if (!parceiroJid.includes('@')) {
+        parceiroJid = `${parceiroJid.split(':')[0]}@s.whatsapp.net`;
+      }
+      
       relStatus = userData.casadoTipo === 'namoro'
-        ? `❤️ Namorando com ${partnerName}`
-        : `💍 Casado(a) com ${partnerName}`;
+        ? `❤️ Namorando com @${extractNumber(parceiroJid)}`
+        : `💍 Casado(a) com @${extractNumber(parceiroJid)}`;
+    }
+
+    // Injeta o JID do parceiro na array de menções da mensagem se ele existir
+    if (parceiroJid) {
+      mentionsList.push(parceiroJid);
     }
   } catch {}
 
+  // Coleta de Imagem de Perfil
   let picBuffer = null;
   try {
     const url = await sock.profilePictureUrl(alvoJid, 'image');
-    if (url) picBuffer = await fetchBuffer(url);
+    if (url) picBuffer = await fetchBuffer(url); // Garanta que a função global fetchBuffer existe no escopo
   } catch {}
 
-  const L = [];
-  L.push(`🔎 *PERFIL DO USUÁRIO* 🔎`);
-  L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-  L.push(`👤 *Nome:* ${nome}`);
-  L.push(`📞 *Número:* +${number}`);
+  // Montagem do Layout de Resposta
+  const L = [
+    `🔎 *PERFIL DO USUÁRIO* 🔎`,
+    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
+    `👤 *Nome:* ${nome}`,
+    `📞 *Número:* +${number}`
+  ];
+  
   if (groupName) L.push(`🏠 *Grupo:* ${groupName}`);
   if (jid.endsWith('@g.us')) L.push(`👑 *Admin:* ${isAdmin ? '✅ Sim' : '❌ Não'}`);
-  L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-  L.push(`📊 *ATIVIDADE*`);
-  L.push(`💬 Mensagens: *${msgsRec}*${rankText}`);
-  L.push(`🤖 Comandos:  *${cmdsRec}*`);
-  L.push(`😄 Figurinhas: *${sticks}*`);
-  L.push(`🔁 Total: *${total}*  ${activity}`);
-  L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-  L.push(`⭐ *PROGRESSO*`);
-  L.push(`🏅 Level *${level}*  ·  XP ${xp}/${xpNext} (${xpPct}%)`);
-  L.push(`[${xpBar}]`);
+  
+  L.push(
+    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
+    `📊 *ATIVIDADE*`,
+    `💬 Mensagens: *${msgsRec}*${rankText}`,
+    `🤖 Comandos:  *${cmdsRec}*`,
+    `😄 Figurinhas: *${sticks}*`,
+    `🔁 Total: *${total}*  ${activity}`,
+    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
+    `⭐ *PROGRESSO*`,
+    `🏅 Level *${level}*  ·  XP ${xp}/${xpNext} (${xpPct}%)`,
+    `[${xpBar}]`
+  );
+
   if (missaoText) L.push(`🎯 Missões: ${missaoText}`);
-  L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-  L.push(`💰 *ECONOMIA*`);
-  L.push(`👛 Carteira: *${userGold}g*`);
-  L.push(`🏦 Banco: ${bankText}`);
-  L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-  L.push(`⚔️ *EQUIPAMENTO*`);
-  L.push(`🎭 Roubo:  ${equipRouboText}`);
-  L.push(`🔐 Defesa: ${equipSecText}`);
-  L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-  L.push(`🐾 *PET ATIVO*`);
-  L.push(petText);
+  
+  L.push(
+    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
+    `💰 *ECONOMIA*`,
+    `👛 Carteira: *${userGold}g*`,
+    `🏦 Banco: ${bankText}`,
+    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
+    `⚔️ *EQUIPAMENTO*`,
+    `🎭 Roubo:  ${equipRouboText}`,
+    `🔐 Defesa: ${equipSecText}`,
+    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
+    `🐾 *PET ATIVO*`,
+    petText
+  );
+
   if (birthdayText) {
-    L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-    L.push(`🎂 *ANIVERSÁRIO*`);
-    L.push(birthdayText);
+    L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`, `🎂 *ANIVERSÁRIO*`, birthdayText);
   }
-  L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-  L.push(`💑 *RELACIONAMENTO*`);
-  L.push(relStatus);
-  L.push(`┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-  L.push(`🤖 _Piroquinhas Bot_`);
+
+  L.push(
+    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
+    `💑 *RELACIONAMENTO*`,
+    relStatus,
+    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
+    `🤖 _Piroquinhas Bot_`
+  );
 
   const texto = L.join('\n');
 
+  // Envio Inteligente (com suporte a foto de capa e menções injetadas)
   try {
     if (picBuffer) {
-      await sock.sendMessage(jid, { image: picBuffer, caption: texto }, { quoted: msg });
+      await sock.sendMessage(jid, { image: picBuffer, caption: texto, mentions: mentionsList }, { quoted: msg });
     } else {
-      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+      await sock.sendMessage(jid, { text: texto, mentions: mentionsList }, { quoted: msg });
     }
   } catch (e) {
-    console.error('⚠️ Erro ao enviar perfil:', e.message);
-    try { await sock.sendMessage(jid, { text: texto }, { quoted: msg }); } catch {}
+    console.error('⚠️ Erro ao enviar perfil completo:', e.message);
+    try { await sock.sendMessage(jid, { text: texto, mentions: mentionsList }, { quoted: msg }); } catch {}
   }
 }
 

@@ -253,17 +253,6 @@ async function handleTrabalhar(sock, msg, jid) {
   if (!ctx) return;
   const { userId, groupId } = ctx;
 
-  // Verificar horário
-  if (!dentroDoHorario()) {
-    const falta = msParaAbertura();
-    return reply(sock, jid, msg,
-      `🌙 *FORA DO HORÁRIO COMERCIAL*\n\n` +
-      `Você só pode trabalhar das *${LABEL_HORARIO}*.\n\n` +
-      `⏰ O expediente começa em *${formatMs(falta)}*.\n` +
-      `💡 _Seu ponto não conta fora desse horário!_`
-    );
-  }
-
   try {
     const carteira = await getCarteira(userId, groupId);
 
@@ -277,7 +266,7 @@ async function handleTrabalhar(sock, msg, jid) {
     if (!cargo) {
       await CarteiraGrupo.findOneAndUpdate(
         filtro(userId, groupId),
-        { $set: { empregoAtual: null } }
+        { $set: { empregoAtual: null } } // Corrigido de 'empleoAtual' para 'empregoAtual'
       );
       return reply(sock, jid, msg,
         `⚠️ Cargo inválido detectado. Seu emprego foi resetado.\n` +
@@ -290,16 +279,27 @@ async function handleTrabalhar(sock, msg, jid) {
       ? new Date(carteira.ultimoTrabalho).getTime()
       : null;
 
-    // Primeiro turno
+    // Primeiro turno do jogador — verifica horário antes de liberar
     if (!ultimoTrabalho) {
+      if (!dentroDoHorario()) {
+        const falta = msParaAbertura();
+        return reply(sock, jid, msg,
+          `🌙 *FORA DO HORÁRIO COMERCIAL*\n\n` +
+          `Você só pode trabalhar das *${LABEL_HORARIO}*.\n\n` +
+          `⏰ O expediente começa em *${formatMs(falta)}*.\n` +
+          `💡 _Seu ponto não conta fora desse horário!_`
+        );
+      }
       return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
     }
 
-    const decorrido = agora - ultimoTrabalho;
+    // ── CÁLCULO DE TEMPO CONGELADO ──
+    const tempoForaHorario = calcularTempoForaHorario(ultimoTrabalho, agora);
+    const decorridoEfetivo = (agora - ultimoTrabalho) - tempoForaHorario;
 
-    // Cooldown ativo (< 2h)
-    if (decorrido < TEMPO.COOLDOWN_MS) {
-      const falta = TEMPO.COOLDOWN_MS - decorrido;
+    // 1. Cooldown Ativo baseado APENAS no tempo comercial (O tempo do cooldown para de rodar à noite)
+    if (decorridoEfetivo < TEMPO.COOLDOWN_MS) {
+      const falta = TEMPO.COOLDOWN_MS - decorridoEfetivo;
       return reply(sock, jid, msg,
         `⏳ *TURNO EM ANDAMENTO!*\n\n` +
         `💼 Cargo: *${cargo.nome}*\n` +
@@ -308,26 +308,43 @@ async function handleTrabalhar(sock, msg, jid) {
       );
     }
 
-    // Passou de 2h30 — demissão por justa causa
-    if (decorrido >= TEMPO.DEMISSAO_MS) {
+    // 2. Se o cooldown comercial acabou, mas AGORA estamos fora do horário de trabalho, barra o ponto
+    if (!dentroDoHorario()) {
+      const falta = msParaAbertura();
+      return reply(sock, jid, msg,
+        `🌙 *FORA DO HORÁRIO COMERCIAL*\n\n` +
+        `Você só pode trabalhar das *${LABEL_HORARIO}*.\n\n` +
+        `⏰ O expediente começa em *${formatMs(falta)}*.\n` +
+        `💡 _Seu ponto não conta fora desse horário!_`
+      );
+    }
+
+    // 3. Dentro do horário comercial e Cooldown expirado -> Verifica se estourou a tolerância de demissão
+    if (decorridoEfetivo >= TEMPO.DEMISSAO_MS) {
       await CarteiraGrupo.findOneAndUpdate(
         filtro(userId, groupId),
         {
           $set: {
-            empregoAtual:             null,
+            empregoAtual:            null,
             totalTrabalhosComSucesso: 0,
-            historicoSujo:            true,
+            historicoSujo:           true,
             ultimoTrabalho:           null,
           },
         }
       );
 
-      const horasPassadas = (decorrido / 3_600_000).toFixed(1);
+      const horasPassadas = (decorridoEfetivo / 3_600_000).toFixed(1);
+      const minsPassados  = Math.round((decorridoEfetivo % 3_600_000) / 60_000);
+      const tempoFmt      = minsPassados > 0
+        ? `${horasPassadas}h (${minsPassados}min acumulados em horário comercial)`
+        : `${horasPassadas}h`;
+
       return reply(sock, jid, msg,
         `🔴 *DEMITIDO POR JUSTA CAUSA!*\n\n` +
-        `Você demorou *${horasPassadas}h* para bater o ponto.\n` +
-        `A janela de tolerância era de apenas *${LABEL_JANELA}* após o desbloqueio.\n\n` +
-        `📋 Consequências:\n` +
+        `⏱️ Tempo útil comercial sem bater ponto: *${tempoFmt}*\n` +
+        `📌 Janela de tolerância: *${LABEL_JANELA}* após o cooldown de *${LABEL_COOLDOWN}*\n` +
+        `🌙 _(Períodos fora do horário comercial foram completamente congelados)_\n\n` +
+        `📋 *Consequências:*\n` +
         `  ❌ Cargo perdido: *${cargo.nome}*\n` +
         `  ❌ Progresso zerado\n` +
         `  ⚠️ Histórico sujo ativado *(30% de chance de recontratação)*\n\n` +
@@ -335,56 +352,13 @@ async function handleTrabalhar(sock, msg, jid) {
       );
     }
 
-    // Dentro da janela (2h–2h30) → executar turno
+    // 4. Tudo correto, executa o turno normalmente
     return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
 
   } catch (e) {
     console.error('[Emprego] handleTrabalhar:', e);
     return reply(sock, jid, msg, '⚠️ Erro ao processar turno! Tente novamente.');
   }
-}
-
-async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora) {
-  const salario   = randInt(cargo.salarioMin, cargo.salarioMax);
-  const novosSucc = (carteira.totalTrabalhosComSucesso ?? 0) + 1;
-
-  await Promise.all([
-    CarteiraGrupo.findOneAndUpdate(
-      filtro(userId, groupId),
-      {
-        $set: { ultimoTrabalho: new Date(agora) },
-        $inc: { totalTrabalhosComSucesso: 1 },
-      }
-    ),
-    alterarGold(userId, groupId, salario, `Salário: ${cargo.nome}`),
-  ]);
-
-  const proximoCargo = CARGO_POR_NIVEL[cargo.nivel + 1] ?? null;
-  const podePromover = proximoCargo && novosSucc >= proximoCargo.exigencia;
-
-  let resposta =
-    `✅ *TURNO CONCLUÍDO!*\n\n` +
-    `💼 Cargo: *${cargo.nome}*\n` +
-    `💰 Salário recebido: *+${salario} gold*\n` +
-    `📊 Turnos neste cargo: *${novosSucc}*\n`;
-
-  if (podePromover) {
-    resposta +=
-      `\n🎯 *VOCÊ ESTÁ PRONTO PARA SER PROMOVIDO!*\n` +
-      `Use *!promocao* para subir para *${proximoCargo.nome}*!`;
-  } else if (proximoCargo) {
-    const faltam = proximoCargo.exigencia - novosSucc;
-    resposta += `\n📈 Próxima promoção (*${proximoCargo.nome}*): faltam *${faltam} turno(s)*`;
-  } else {
-    resposta += `\n🏆 _Você está no cargo máximo! Parabéns, lenda._`;
-  }
-
-  resposta +=
-    `\n\n⏰ Próximo turno disponível em *${LABEL_COOLDOWN}*\n` +
-    `⚠️ _Não passe de ${LABEL_DEMISSAO} sem bater o ponto ou você será demitido!_\n` +
-    `🕐 _Lembre: só vale das ${LABEL_HORARIO}!_`;
-
-  return reply(sock, jid, msg, resposta);
 }
 
 // ─── !promocao ────────────────────────────────────────────────────────────────

@@ -1,42 +1,53 @@
-const path = require('path');
-const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-
-const levelEnabledChats = new Set();
-
-async function handleLevelOn(sock, msg, jid, author) {
-  const enabled = levelEnabledChats.has(jid);
-  const text = enabled
-    ? '✅ O sistema de level já está ativado neste chat. Use *!level* para ver seu nível e *!ranklevel* para acompanhar a galera.'
-    : '✅ Sistema de level ativado para este chat! Use *!level* para ver seu nível e *!ranklevel* para acompanhar a galera.';
-  if (!enabled) levelEnabledChats.add(jid);
-  await sock.sendMessage(jid, { text }, { quoted: msg });
-}
-
-async function handleLevel(sock, msg, jid, author, msgCount) {
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const user = await Usuario.findOne({ idWhatsApp: senderJid });
-  const xp = user?.xp || 0;
-  const level = user?.level || Math.floor(xp / 50) + 1;
-  const next = level * 50;
-  const progressPercent = next === 0 ? 100 : Math.min(100, Math.floor((xp / next) * 100));
-  const bar = '█'.repeat(Math.floor(progressPercent / 10)) + '░'.repeat(10 - Math.floor(progressPercent / 10));
-  await sock.sendMessage(jid, {
-    text: `🏅 *LEVEL DE ${author}*\n\n*Level:* ${level}\n*XP:* ${xp}/${next}\n*Progresso:* [${bar}] ${progressPercent}%\n\n_Envie mais mensagens para subir mais rápido!_`,
-  }, { quoted: msg });
-}
-
+/**
+ * Mostra o Top 10 usuários com mais XP ativos no chat atual
+ */
 async function handleRankLevel(sock, msg, jid, contactNames, msgCount) {
-  const topUsers = await Usuario.find().sort({ xp: -1 }).limit(10).lean();
-  const lines = topUsers.map((user, index) => {
-    const nome = user.nome || contactNames[user.idWhatsApp] || user.idWhatsApp.split('@')[0];
-    return `${index + 1}. ${nome} — XP: ${user.xp || 0}`;
-  });
-  const response = '🏆 *Ranking de XP*\n\n' + lines.join('\n');
-  await sock.sendMessage(jid, { text: response }, { quoted: msg });
-}
+  try {
+    // 1. Se for em chat privado, não faz sentido filtrar por grupo
+    if (!jid?.endsWith('@g.us')) {
+      return await sock.sendMessage(jid, { text: '⚠️ Este comando só pode ser usado em grupos.' }, { quoted: msg });
+    }
 
-module.exports = {
-  handleLevelOn,
-  handleLevel,
-  handleRankLevel,
-};
+    // 2. Busca os membros atuais do grupo diretamente do WhatsApp
+    const metadata = await sock.groupMetadata(jid);
+    const membrosAtuais = new Set(metadata.participants.map(p => p.id));
+
+    // 3. Busca uma amostragem maior no banco para garantir o preenchimento do Top 10
+    const candidatos = await Usuario.find().sort({ xp: -1 }).limit(100).lean();
+    
+    // 4. Filtra mantendo apenas quem ainda está presente no grupo
+    const topUsers = candidatos
+      .filter(user => membrosAtuais.has(user.idWhatsApp))
+      .slice(0, 10); // Seleciona apenas os 10 primeiros válidos
+
+    if (topUsers.length === 0) {
+      return await sock.sendMessage(jid, { text: '❌ Nenhum membro ativo do grupo possui registro de XP ainda.' }, { quoted: msg });
+    }
+
+    const mentionsList = [];
+    const lines = topUsers.map((user, index) => {
+      const cleanJid = user.idWhatsApp.split(':')[0].split('@')[0];
+      
+      // Garante o formato correto de JID para a lista de menções do Baileys
+      const fullJid = user.idWhatsApp.includes('@') ? user.idWhatsApp : `${cleanJid}@s.whatsapp.net`;
+      mentionsList.push(fullJid);
+
+      // Ícones de pódio e formatação de alinhamento visual
+      const medals = ['🥇', '🥈', '🥉'];
+      const prefix = medals[index] || `🔹 *${index + 1}.*`;
+
+      return `${prefix} @${cleanJid} — XP: *${user.xp || 0}* (Lvl ${user.level || 1})`;
+    });
+
+    const response = `🏆 *RANKING DE XP — TOP 10 ATIVOS* 🏆\n\n` + lines.join('\n');
+
+    await sock.sendMessage(jid, { 
+      text: response, 
+      mentions: mentionsList 
+    }, { quoted: msg });
+
+  } catch (err) {
+    console.error('[RankLevel] Erro ao carregar ranking:', err);
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao carregar o ranking de níveis. Tente novamente.' }, { quoted: msg });
+  }
+}

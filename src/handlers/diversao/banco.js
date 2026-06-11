@@ -58,6 +58,8 @@ async function getSaldoGrupo(idWhatsApp, idGrupo) {
   return carteiraService.getCarteira(idWhatsApp, idGrupo);
 }
 
+// ─── handleBanco ─────────────────────────────────────────────────────────────
+
 async function handleBanco(sock, msg, jid, caption) {
   // ── Resolver @lid para jid real
   let userId = msg.key.participant || msg.key.remoteJid;
@@ -316,8 +318,16 @@ async function handleBanco(sock, msg, jid, caption) {
  * Salva o histórico de resgate em bank.historico (últimos 10).
  */
 async function handleResgatar(sock, msg, jid) {
-  const userId  = msg.key.participant || msg.key.remoteJid;
+  let userId    = msg.key.participant || msg.key.remoteJid;
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
+
+  if (userId?.endsWith('@lid')) {
+    try {
+      const number = userId.split('@')[0].split(':')[0];
+      const results = await sock.onWhatsApp(number);
+      if (results?.length > 0 && results[0].jid) userId = results[0].jid;
+    } catch {}
+  }
 
   const user = await garantirUsuario(userId);
 

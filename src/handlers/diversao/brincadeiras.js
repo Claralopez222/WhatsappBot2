@@ -2149,88 +2149,88 @@ async function handleGordo(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
   const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
-  const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
+
+  const kg = Math.floor(Math.random() * 271) + 30; // 30kg até 300kg
 
   const faixas = [
     {
-      max: 11,
+      max: 50,
       emoji: '🥢',
       frases: [
-        `*${display}* magrelo(a) demais! Some de vista se ficar de lado! 😭`,
-        `*${display}* tão magro(a) que o vento leva! Come alguma coisa pelo amor de Deus! 😱`,
-        `Zero gordura! *${display}* é basicamente esqueleto com pele fina. Come! 😭`,
-        `*${display}* tão fino(a) que escorrega pelo ralo. Alguém chama o SAMU. 💀`,
+        `*${display}* com apenas *${kg}kg*! Some de vista se ficar de lado! 😭`,
+        `*${display}* tão magro(a) que o vento leva! ${kg}kg é quase invisível! 😱`,
+        `${kg}kg! *${display}* é basicamente esqueleto com pele fina. Come alguma coisa! 😭`,
+        `*${display}* tão fino(a) que escorrega pelo ralo com ${kg}kg. Alguém chama o SAMU. 💀`,
       ],
     },
     {
-      max: 31,
+      max: 70,
       emoji: '🥗',
       frases: [
-        `*${display}* fitness! Provavelmente conta caloria, macros e dorme cedo. 🏃`,
-        `*${display}* na linha! Aquele tipo que lê rótulo de tudo antes de comer. 🥗`,
-        `Magro(a) e saudável! *${display}* é chato(a) na mesa mas bonito(a) no espelho. 😂`,
-        `*${display}* treina, come clean e julga o resto do grupo em silêncio. 🥗`,
-      ],
-    },
-    {
-      max: 51,
-      emoji: '🍔',
-      frases: [
-        `*${display}* na média! Come bem, sem exagero, sem culpa. Equilíbrio raro. 🍔`,
-        `*${display}* normal! Faz dieta segunda-feira e esquece na terça. Humano. 😄`,
-        `Mediano(a)! *${display}* tem um relacionamento complicado com a balança. 😅`,
-        `*${display}* 50/50! Semana que conta caloria, fim de semana que esquece tudo. 😂`,
-      ],
-    },
-    {
-      max: 71,
-      emoji: '🍕',
-      frases: [
-        `*${display}* já tá no caminho! O rodízio chama pelo nome! 😏`,
-        `*${display}* acima da média! A calça tá apertando mas ainda fecha. 🍕`,
-        `*${display}* tá engordando com classe! A barriguinha apareceu mas tem charme. 😄`,
-        `O garçom do rodízio já reconhece *${display}* de longe. Frequência suspeita. 😂`,
+        `*${display}* com ${kg}kg! Fitness total! Provavelmente conta caloria e dorme cedo. 🏃`,
+        `${kg}kg! *${display}* na linha! Aquele tipo que lê rótulo de tudo antes de comer. 🥗`,
+        `*${display}* com ${kg}kg! Magro(a) e saudável, chato(a) na mesa mas bonito(a) no espelho. 😂`,
+        `${kg}kg! *${display}* treina, come clean e julga o resto do grupo em silêncio. 🥗`,
       ],
     },
     {
       max: 90,
+      emoji: '🍔',
+      frases: [
+        `*${display}* com ${kg}kg! Na média! Come bem, sem exagero, sem culpa. Equilíbrio raro. 🍔`,
+        `${kg}kg! *${display}* faz dieta segunda-feira e esquece na terça. Humano. 😄`,
+        `*${display}* com ${kg}kg! Tem um relacionamento complicado com a balança. 😅`,
+        `${kg}kg! Semana que conta caloria, fim de semana que esquece tudo. Clássico *${display}*. 😂`,
+      ],
+    },
+    {
+      max: 110,
+      emoji: '🍕',
+      frases: [
+        `*${display}* com ${kg}kg! O rodízio já chama pelo nome! 😏`,
+        `${kg}kg! A calça tá apertando mas ainda fecha. *${display}* na luta. 🍕`,
+        `*${display}* tá engordando com classe! ${kg}kg com charme. 😄`,
+        `${kg}kg! O garçom do rodízio já reconhece *${display}* de longe. Frequência suspeita. 😂`,
+      ],
+    },
+    {
+      max: 140,
       emoji: '🌮',
       frases: [
-        `*${display}* gorducho(a) gostoso(a)! Cheinho(a) de vida e sem remorso! 🤭`,
-        `*${display}* tá bem servido(a)! O buffet já reserva um espaço especial. 😂`,
-        `*${display}* no nível saudável! Aquela gordura boa, de quem curte a vida. 🌮`,
-        `*${display}* tem mais pra amar! O grupo concorda por unanimidade. 🤭`,
+        `*${display}* com ${kg}kg! Gorducho(a) gostoso(a)! Cheinho(a) de vida e sem remorso! 🤭`,
+        `${kg}kg! O buffet já reserva um espaço especial pra *${display}*. 😂`,
+        `*${display}* com ${kg}kg! Aquela gordura boa, de quem curte a vida. 🌮`,
+        `${kg}kg! *${display}* tem mais pra amar! O grupo concorda por unanimidade. 🤭`,
       ],
     },
     {
-      max: 100,
+      max: 200,
       emoji: '🐘',
       frases: [
-        `*${display}* bota o buffet no prejuízo toda vez que aparece! 💀`,
-        `*${display}* com 99%! A cadeira faz uma oração antes de receber. 😭`,
-        `*${display}* quase no máximo! O elevador pede por gentileza. 💀`,
-        `*${display}* 99%! A silhueta já tem CEP próprio. Imponente. 😂`,
+        `*${display}* com ${kg}kg! Bota o buffet no prejuízo toda vez que aparece! 💀`,
+        `${kg}kg! A cadeira faz uma oração antes de receber *${display}*. 😭`,
+        `*${display}* com ${kg}kg! O elevador já pediu reforço estrutural. 💀`,
+        `${kg}kg! A silhueta de *${display}* já tem CEP próprio. Imponente. 😂`,
       ],
     },
     {
-      max: 101,
+      max: 999,
       emoji: '🏆',
       frases: [
-        `100% GORDO(A)! *${display}* é lenda dos rodízios! Patrimônio da culinária! 🎊`,
-        `MÁXIMO HISTÓRICO! *${display}* zerou o gordômetro! A balança pediu demissão. 🏆`,
-        `*${display}* chegou nos 100%! Tem mesa cativa em todo restaurante da cidade. 🎊`,
-        `100%! *${display}* não entra no quarto, o quarto é que se abre pra receber. 😂👑`,
+        `*${display}* com ABSURDOS ${kg}kg! Lenda dos rodízios! Patrimônio da culinária! 🎊`,
+        `${kg}kg! A balança de *${display}* pediu demissão e foi embora. 🏆`,
+        `*${display}* com ${kg}kg! Tem mesa cativa em todo restaurante da cidade. 🎊`,
+        `${kg}kg! *${display}* não entra no quarto, o quarto é que se abre pra receber. 😂👑`,
       ],
     },
   ];
 
-  const faixa = faixas.find(f => pct < f.max);
+  const faixa = faixas.find(f => kg < f.max);
   const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
-  const barra = buildBar(pct, '🟠');
 
   await sock.sendMessage(jid, {
-    text: `${faixa.emoji} *GORDÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    text: `${faixa.emoji} *GORDÔMETRO DE ${display.toUpperCase()}*\n\n⚖️ *${kg} kg*\n\n_${frase}_`,
     mentions: mentionedJid ? [alvoJid] : [],
   }, { quoted: msg });
 }

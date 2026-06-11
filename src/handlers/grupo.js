@@ -589,52 +589,7 @@ function barraProgresso(valor, maximo, tamanho = 8) {
   return '█'.repeat(preenchido) + '░'.repeat(tamanho - preenchido);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !rankgold ─────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function handleRankGold(sock, msg, jid, contactNames = {}) {
-  if (!jid.endsWith('@g.us')) {
-    await sock.sendMessage(jid, {
-      text: '⚠️ Este comando só pode ser usado em grupos.',
-    }, { quoted: msg });
-    return;
-  }
 
-  try {
-    const top = await CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
-      .sort({ gold: -1 })
-      .limit(10)
-      .lean();
-
-    if (!top?.length) {
-      await sock.sendMessage(jid, {
-        text: 'ℹ️ Nenhum Gold registrado neste grupo ainda!',
-      }, { quoted: msg });
-      return;
-    }
-
-    const totalGold = top.reduce((s, u) => s + (u.gold || 0), 0);
-    const maxGold   = top[0].gold || 1;
-
-    const linhas = top.map((u, i) => {
-      const count = u.gold || 0;
-      const pct   = ((count / totalGold) * 100).toFixed(1);
-      const bar   = barraProgresso(count, maxGold);
-      const nome  = contactNames[u.idWhatsApp] || u.idWhatsApp.split('@')[0];
-      return `${MEDALS[i]} *${nome}*\n   ${bar} ${count} 💰 (${pct}%)`;
-    }).join('\n\n');
-
-    await sock.sendMessage(jid, {
-      text: `💰 *RANKING DE GOLD — ESTE GRUPO*\n\n${linhas}\n\n🏦 Total do Top 10: *${totalGold} Gold*`,
-    }, { quoted: msg });
-
-  } catch (err) {
-    console.error('[handleRankGold] Erro:', err.message);
-    await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao carregar o ranking.',
-    }, { quoted: msg });
-  }
-}
 // ═══════════════════════════════════════════════════════════════
 // ─── !sorteio ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

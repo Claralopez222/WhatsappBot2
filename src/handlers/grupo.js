@@ -1,16 +1,10 @@
-//**
- //* Handler de Grupo — Piroquinhas Bot
- //* Comandos: !ban, !mute, !desmute, !ranking, !sorteio, !enquete, !todos,
- //*           !fechar, !abrir, !promover, !rebaixar, !tempo, !antilink,
- //*           !autosticker, !reportar, !grupinfo, !bemvindo, !linkgrupo,
- //*           !apagarmsg, !slowmode, !antiflood, !listaadm, !listamembros,
- //*           !avisar, !fixargrupo, !menuadm
- 
-
 'use strict';
 
 const fs   = require('fs');
 const path = require('path');
+
+// ─── Import handleRanking do economia ────────────────────────────────────────
+const { handleRanking } = require('./diversao/economia');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── ESTADO GLOBAL (em memória — resetado ao reiniciar o bot) ─
@@ -37,7 +31,6 @@ const mutedUsers = new Map();
 
 const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', 'Audio-Image', 'imageban.jpg');
 const BAN_AUDIO_PATH = path.join(__dirname, '..', '..', 'Audio-Image', 'audioban.mp4');
-
 // ═══════════════════════════════════════════════════════════════
 // ─── UTILS ────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

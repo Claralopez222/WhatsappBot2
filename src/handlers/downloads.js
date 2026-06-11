@@ -23,6 +23,7 @@ const log = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Expande URLs encurtadas comuns (TikTok, Pinterest, Twitter, etc)
 async function expandirUrl(urlEncurtada) {
   const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
   for (const method of ['head', 'get']) {
@@ -77,6 +78,7 @@ function getYtDlpArgs() {
   } catch {}
   return args;
 }
+
 
 async function getYtDlpPath() {
   if (_cachedYtDlpPath) {
@@ -207,6 +209,7 @@ const SIZE_LIMIT = 64 * 1024 * 1024;
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
+// !save
 async function handleSave(sock, msg, jid, caption) {
   let link = caption.replace(/^[!.,\/]*save\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
@@ -308,6 +311,7 @@ async function handleSave(sock, msg, jid, caption) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !saverec
 async function handleSaveRec(sock, msg, jid, caption) {
   let link = caption.replace(/^[!.,\/]*saverec\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
@@ -369,6 +373,7 @@ async function handleSaveRec(sock, msg, jid, caption) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !tiktok
 async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const P = getPrefix(jid);
   let link = caption.replace(/^[!.,\/]*tiktok2?\s*/i, '').trim();
@@ -475,6 +480,7 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !audio
 async function handleAudioDownload(sock, msg, jid, caption) {
   const link = caption.replace(/^[!.,\/]*audio\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
@@ -517,6 +523,7 @@ async function handleAudioDownload(sock, msg, jid, caption) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !som
 async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const P = getPrefix(jid);
   const nome = caption.replace(/^[!.,\/]*(som|play)\s*/i, '').trim();
@@ -650,6 +657,7 @@ async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// Envia o áudio como documento (para baixar)
 async function handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const pending = pendingMusic.get(senderJid);

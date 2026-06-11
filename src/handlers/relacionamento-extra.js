@@ -1276,7 +1276,6 @@ module.exports = {
   handleDueloDeCasais,
   handleRankCasais,
   handleDesafioCasal,
-  handleCompetçaoCasais,
   handleSurpresa,
   handleDomingo,
 };  

@@ -4,7 +4,7 @@ const fs   = require('fs');
 const path = require('path');
 
 // ─── Import handleRanking do economia ────────────────────────────────────────
-const { handleRanking } = require('./diversao/economia');
+
 
 // ═══════════════════════════════════════════════════════════════
 // ─── ESTADO GLOBAL (em memória — resetado ao reiniciar o bot) ─
@@ -535,8 +535,7 @@ async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
 // ─── !ranking ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-
+const CarteiraGrupo = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
 function barraProgresso(valor, maximo, tamanho = 10) {
@@ -554,7 +553,6 @@ async function handleRanking(sock, msg, jid, msgCount = new Map()) {
   }
 
   try {
-    // ── Coletar mensagens do grupo filtradas por membros ativos
     const entradas = [...msgCount.entries()]
       .filter(([id]) => id.endsWith('@s.whatsapp.net') || id.endsWith('@c.us'))
       .map(([id, data]) => ({
@@ -582,10 +580,7 @@ async function handleRanking(sock, msg, jid, msgCount = new Map()) {
       const numero = e.idWhatsApp.split('@')[0].split(':')[0];
       const pct    = ((e.count / totalMsgs) * 100).toFixed(1);
       const bar    = barraProgresso(e.count, maxCount);
-      return (
-        `${MEDALS[i]} *@${numero}*\n` +
-        `   ${bar} ${e.count} msgs (${pct}%)`
-      );
+      return `${MEDALS[i]} *@${numero}*\n   ${bar} ${e.count} msgs (${pct}%)`;
     });
 
     const mentions = entradas.map(e => e.idWhatsApp);
@@ -595,7 +590,8 @@ async function handleRanking(sock, msg, jid, msgCount = new Map()) {
         `📊 *RANKING DE MENSAGENS — ESTE GRUPO* 📊\n\n` +
         `${linhas.join('\n\n')}\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `💬 Total de mensagens: *${totalMsgs}*\n` +
+        `💬 Total: *${totalMsgs}* mensagens\n` +
+        `👥 Participantes no ranking: *${entradas.length}*\n` +
         `_Continue conversando para subir no ranking!_`,
       mentions,
     }, { quoted: msg });

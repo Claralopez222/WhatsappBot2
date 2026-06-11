@@ -474,6 +474,43 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
   }
 }
 
+// !terminar
+async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos) {
+  const found = findRelByJid(senderJid, relacionamentos);
+  if (!found) {
+    await sock.sendMessage(jid, {
+      text: '💔 Você não está em nenhum relacionamento para terminar.',
+    }, { quoted: msg });
+    return;
+  }
+
+  const { key, rel } = found;
+  const parcJid = rel.jidA === senderJid ? rel.jidB : rel.jidA;
+  const tagSelf = `@${senderJid.split('@')[0]}`;
+  const tagParc = `@${parcJid.split('@')[0]}`;
+
+  relacionamentos.delete(key);
+  xpCasais.delete(key);
+  await clearCasamentoDb(senderJid, parcJid);
+
+  const expiry = Date.now() + 10 * 60 * 1000;
+  bloqueados.set(senderJid, expiry);
+  bloqueados.set(parcJid,   expiry);
+
+  const frases = [
+    `💔 ${tagSelf} TERMINOU com ${tagParc}! Drama total! 🎭`,
+    `🚪 ${tagSelf} bateu a porta na cara de ${tagParc}! Sem volta! 😤`,
+    `💀 Fim de linha! ${tagSelf} e ${tagParc} se separaram. RIP ao casal! 🪦`,
+    `😭 ${tagParc} acabou de tomar um pé na bunda de ${tagSelf}! Que vexame! 🤡`,
+  ];
+
+  await sock.sendMessage(jid, {
+    text: frases[Math.floor(Math.random() * frases.length)] +
+      `\n\n⏳ Ambos ficam bloqueados por *10 minutos* antes de se comprometer novamente.`,
+    mentions: [senderJid, parcJid],
+  }, { quoted: msg });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ─── EXPORTS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -512,6 +549,7 @@ module.exports = Object.assign(
     handleRelacionamento,
     handleEuAceito,
     handleEuRecuso,
+    handleCancelarCasamento,
   },
   relacionamentoExtra,
   relacionamentoFixar,

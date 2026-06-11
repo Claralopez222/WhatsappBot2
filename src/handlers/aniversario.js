@@ -4,8 +4,9 @@
  *           !listaniversarios, !sistemaniversario, !menuaniversario
  */
 
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 const DATA_FILE = path.resolve(__dirname, '../../data.json');
 
@@ -26,9 +27,6 @@ function saveBirthdays(birthdays) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
   } catch (e) { console.log('⚠️ Erro ao salvar aniversários:', e.message); }
 }
-
-// ─── !reganiversario ──────────────────────────────────────────────────────────
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // !reganiversario
 async function handleRegAniversario(sock, msg, jid, caption, author, senderJid) {
@@ -104,9 +102,6 @@ async function handleExcluirAniversario(sock, msg, jid, author, senderJid) {
     mentions: [senderJidNormalizado]
   }, { quoted: msg });
 }
-
-// ─── !meuaniversario ──────────────────────────────────────────────────────────
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // !meuaniversario
 async function handleMeuAniversario(sock, msg, jid, author, senderJid) {
@@ -195,9 +190,6 @@ async function handleSistemaAniversario(sock, msg, jid, isGroupAdmin) {
     await sock.sendMessage(chatJid, { text: '❌ Erro ao alterar configuração local no arquivo.' }, { quoted: msg });
   }
 }
-
-// ─── !menuaniversario ─────────────────────────────────────────────────────────
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // !menuaniversario
 async function handleMenuAniversario(sock, msg, jid, getPrefix) {

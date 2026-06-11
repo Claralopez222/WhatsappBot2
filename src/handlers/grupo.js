@@ -1560,7 +1560,7 @@ module.exports = {
   handlePromoverRebaixar,
 
   // Informação e listas
-  handleRanking,
+  
   handleGrupInfo,
   handleListaAdm,
   handleListaMembros,

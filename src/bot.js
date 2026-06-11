@@ -663,42 +663,42 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'menupet'))
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
 
-  // â”€â”€ ECONOMIA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── ECONOMIA ──────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'gold'))
   { await diversaoHandler.handleGold(sock, msg, jid, getPrefix, contactNames); return; }
-  if (matchCmd(cmdWord, 'loja'))
-    { await diversaoHandler.handleLoja(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'lojafood'))
-    { await diversaoHandler.handleLojaFood(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'lojapet'))
-    { await diversaoHandler.handleLojaPet(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'lojatec'))
-    { await diversaoHandler.handleLojaTec(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'lojacasal'))
-    { await diversaoHandler.handleLojaCasal(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'buy'))
-    if (matchCmdStart(cmd, 'give'))
+if (matchCmd(cmdWord, 'loja'))
+  { await diversaoHandler.handleLoja(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'lojafood'))
+  { await diversaoHandler.handleLojaFood(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'lojapet'))
+  { await diversaoHandler.handleLojaPet(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'lojatec'))
+  { await diversaoHandler.handleLojaTec(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'lojacasal'))
+  { await diversaoHandler.handleLojaCasal(sock, msg, jid, getPrefix); return; }
+if (matchCmdStart(cmd, 'give'))
   { await handleGive(sock, msg, jid, caption); return; }
-    { await diversaoHandler.handleComprar(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'vender'))
-    { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'inventario') || matchCmd(cmdWord, 'inv'))
-    { await diversaoHandler.handleInventario(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'usar'))
-    { await diversaoHandler.handleUsarItem(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir'))
-    { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'apostar'))
-    { await diversaoHandler.handleApostar(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'slots'))
-    { await diversaoHandler.handleSlots(sock, msg, jid, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'corrida'))
-    { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'extrato'))
-    { await diversaoHandler.handleExtrato(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
-    { await diversaoHandler.handleGarimpar(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'emprestimo') || matchCmdStart(cmd, 'emprestimo '))
+if (matchCmd(cmdWord, 'buy'))
+  { await diversaoHandler.handleComprar(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'vender'))
+  { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'inventario') || matchCmd(cmdWord, 'inv'))
+  { await diversaoHandler.handleInventario(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'usar'))
+  { await diversaoHandler.handleUsarItem(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir'))
+  { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'apostar'))
+  { await diversaoHandler.handleApostar(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'slots'))
+  { await diversaoHandler.handleSlots(sock, msg, jid, senderJid, caption); return; }
+if (matchCmd(cmdWord, 'corrida'))
+  { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
+if (matchCmd(cmdWord, 'extrato'))
+  { await diversaoHandler.handleExtrato(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
+  { await diversaoHandler.handleGarimpar(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'emprestimo') || matchCmdStart(cmd, 'emprestimo '))
   { await handleEmprestimo(sock, msg, jid, caption); return; }
 if (matchCmdStart(cmd, 'pay emprestimo'))
   { await handlePayEmprestimo(sock, msg, jid); return; }
@@ -901,9 +901,9 @@ if (matchCmd(cmdWord, 'alteradores'))
   if (matchCmd(cmdWord, 'eurecuso'))
     { await relacionamentoHandler.handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames); return; }
   if (matchCmd(cmdWord, 'cancelarpedido'))
-    { await relacionamentoHandler.handleCancelarPedido(sock, msg, jid, senderJid, pedidosPendentes, contactNames); return; }
-  if (matchCmd(cmdWord, 'cancelarcasamento'))
-    { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, author, senderJid, relacionamentos); return; }
+    if (matchCmd(cmdWord, 'terminar'))
+    { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos); return; }
+    { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'flores'))    { await relacionamentoHandler.handleFlores(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'doces'))     { await relacionamentoHandler.handleDoces(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'carta'))     { await relacionamentoHandler.handleCarta(sock, msg, jid, author, senderJid, relacionamentos); return; }

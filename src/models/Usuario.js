@@ -23,8 +23,9 @@ const usuarioSchema = new mongoose.Schema({
     default: {},
   },
 
-  casadoCom:  { type: String, default: null },
-  casadoTipo: { type: String, enum: ['casamento', 'namoro'], default: null },
+  casadoCom:   { type: String, default: null },
+casadoTipo:  { type: String, enum: ['casamento', 'namoro'], default: null },
+casadoDesde: { type: Date,   default: null },
 
   pet: {
     name:      { type: String, default: null },

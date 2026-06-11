@@ -1062,4 +1062,5 @@ module.exports = {
   handleCorrida,
   getSaldoGrupo,   // substitui getSaldoAtual
   ITENS_LOJA,
+  handleRankGold,
 };

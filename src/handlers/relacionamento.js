@@ -48,17 +48,17 @@ function getRelacionamento(a, b, relacionamentos) {
   return relacionamentos.get(relKey(a, b)) || null;
 }
 
-async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento') {
+async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.now()) {
   try {
     await Promise.all([
       Usuario.findOneAndUpdate(
         { idWhatsApp: jidA },
-        { $set: { casadoCom: jidB, casadoTipo: tipo, idWhatsApp: jidA } },
+        { $set: { casadoCom: jidB, casadoTipo: tipo, casadoDesde: desde, idWhatsApp: jidA } },
         { upsert: true, new: true }
       ),
       Usuario.findOneAndUpdate(
         { idWhatsApp: jidB },
-        { $set: { casadoCom: jidA, casadoTipo: tipo, idWhatsApp: jidB } },
+        { $set: { casadoCom: jidA, casadoTipo: tipo, casadoDesde: desde, idWhatsApp: jidB } },
         { upsert: true, new: true }
       ),
     ]);
@@ -295,18 +295,19 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
 
   const nomeAlvo = msg.pushName || contactNames[senderJid] || senderJid.split('@')[0];
   const { jidPedinte, nomePedinte, jid: jidOrigem, tipo } = pedido;
-  const key = relKey(senderJid, jidPedinte);
+  const key  = relKey(senderJid, jidPedinte);
+  const agora = Date.now(); // ← captura uma vez só
 
   relacionamentos.set(key, {
-    tipo: tipo || 'casamento',
+    tipo:  tipo || 'casamento',
     nomeA: nomePedinte,
     nomeB: nomeAlvo,
     jidA:  jidPedinte,
     jidB:  senderJid,
-    desde: Date.now(),
+    desde: agora, // ← mesmo valor que vai pro banco
   });
   xpCasais.set(key, 0);
-  await syncCasamentoToDb(jidPedinte, senderJid, tipo);
+  await syncCasamentoToDb(jidPedinte, senderJid, tipo, agora); // ← passa o desde
 
   const frases = [
     `💍 CARALHOOOOO! *${nomePedinte}* e *${nomeAlvo}* são CASADOS AGORA! Corre gritando que ninguém acreditava! 😂💍`,
@@ -314,7 +315,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
     `🥳 *${nomePedinte}* conseguiu prender *${nomeAlvo}*! Tomara que a corrente segure! 🔐💍`,
     `🌟 UAUUU! Contra todos os prognósticos, *${nomePedinte}* ganhou o coração de *${nomeAlvo}*! Que surpresa! 😱`,
   ];
-  const idx = tipo === 'namoro' ? [1, 3][Math.floor(Math.random() * 2)] : [0, 2][Math.floor(Math.random() * 2)];
+  const idx     = tipo === 'namoro' ? [1, 3][Math.floor(Math.random() * 2)] : [0, 2][Math.floor(Math.random() * 2)];
   const caption = frases[idx] + '\n\n💪 *Ganhem XP juntos com os comandos! Um casal fraco não vira lenda!*';
 
   const imagemNome = Date.now() % 2 === 0 ? 'imagecasal.jpg' : 'imagecasal2.jpg';

@@ -228,7 +228,7 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
   }, { quoted: msg });
 }
 
-// ─── !statuscasal ───
+// ─── !statu ───
 async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
   const found = findRelByJid(senderJid, relacionamentos);
   if (!found) {
@@ -466,7 +466,6 @@ async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, r
   }, { quoted: msg });
 }
 
-// ─── !rankcasais ───
 async function handleRankCasais(sock, msg, jid, relacionamentos) {
   if (relacionamentos.size === 0) {
     await sock.sendMessage(jid, {
@@ -476,23 +475,44 @@ async function handleRankCasais(sock, msg, jid, relacionamentos) {
   }
 
   const lista = [...relacionamentos.entries()].map(([key, rel]) => {
-    const xp = getXpCasais().get(key) || 0;
-    const diasJuntos = rel.desde ? Math.floor((Date.now() - rel.desde) / (1000 * 60 * 60 * 24)) : 0;
+    const xp        = getXpCasais().get(key) || 0;
+    const diasJuntos = rel.desde
+      ? Math.floor((Date.now() - rel.desde) / (1000 * 60 * 60 * 24))
+      : 0;
     const score = xp + diasJuntos * 2;
-    return { nomeA: rel.nomeA, nomeB: rel.nomeB, xp, diasJuntos, score, tipo: rel.tipo };
+    return { ...rel, xp, diasJuntos, score };
   }).sort((a, b) => b.score - a.score).slice(0, 10);
 
-  const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+  if (!lista.length) {
+    await sock.sendMessage(jid, {
+      text: '📭 Nenhum casal cadastrado ainda!',
+    }, { quoted: msg });
+    return;
+  }
 
+  const medals   = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+  const mentions = [];
   let texto = `🏆 *RANKING DOS CASAIS* 🏆\n\n`;
-  lista.forEach((c, i) => {
-    const tipoStr = c.tipo === 'namoro' ? '💝' : '💍';
-    texto += `${medals[i]} ${tipoStr} *${c.nomeA}* 💕 *${c.nomeB}*\n`;
-    texto += `   ⭐ ${c.xp} XP | 📅 ${c.diasJuntos} dia(s)\n\n`;
-  });
-  texto += `_Score = XP + (dias juntos × 2)_\n_Use *!statu* para ver o status completo!_`;
 
-  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  lista.forEach((c, i) => {
+    const tipoEmoji = c.tipo === 'namoro' ? '💝' : '💍';
+    const tagA = c.jidA ? `@${c.jidA.split('@')[0]}` : c.nomeA;
+    const tagB = c.jidB ? `@${c.jidB.split('@')[0]}` : c.nomeB;
+
+    if (c.jidA) mentions.push(c.jidA);
+    if (c.jidB) mentions.push(c.jidB);
+
+    const barraXp    = '⭐'.repeat(Math.min(Math.floor(c.xp / 10), 5)) || '▫️';
+    const diasLabel  = c.diasJuntos === 1 ? 'dia' : 'dias';
+
+    texto +=
+      `${medals[i]} ${tipoEmoji} ${tagA} 💕 ${tagB}\n` +
+      `${barraXp} *${c.xp} XP* · 📅 *${c.diasJuntos} ${diasLabel}* · 🏅 *${c.score} pts*\n\n`;
+  });
+
+  texto += `_Score = XP + (dias juntos × 2)_\n_Use *!statu* pra ver o status completo!_`;
+
+  await sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
 }
 
 // ─── BUGFIX: ordem dos argumentos corrigida (senderJid, relacionamentos)

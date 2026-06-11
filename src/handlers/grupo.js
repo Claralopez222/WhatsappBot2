@@ -578,39 +578,33 @@ function barraProgressoDefault(valor, maximo, tamanho = 10) {
  * @param {Function} [deps.barraProgresso]
  * @param {Function} [deps.resolverNome]
  */
-async function handleRanking(sock, msg, jid, contactNames = {}, deps = {}) {
-  if (!somenteGrupo(jid)) {
+
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+
+// ─── Helpers internos ─────────────────────────────────────────
+const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+function barraProgresso(valor, maximo, tamanho = 8) {
+  const preenchido = Math.round((valor / maximo) * tamanho);
+  return '█'.repeat(preenchido) + '░'.repeat(tamanho - preenchido);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !rankgold ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handleRankGold(sock, msg, jid, contactNames = {}) {
+  if (!jid.endsWith('@g.us')) {
     await sock.sendMessage(jid, {
       text: '⚠️ Este comando só pode ser usado em grupos.',
     }, { quoted: msg });
     return;
   }
 
-  const {
-    CarteiraGrupo,
-    MEDALS         = MEDALS_DEFAULT,
-    barraProgresso = barraProgressoDefault,
-    resolverNome   = (id, names) => names[id] || id.split('@')[0],
-  } = deps;
-
-  if (!CarteiraGrupo) {
-    await sock.sendMessage(jid, {
-      text: '⚠️ Sistema de economia não disponível.',
-    }, { quoted: msg });
-    return;
-  }
-
   try {
-    // Garante que find() retorna um array antes de chamar .lean()
-    const query = CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
+    const top = await CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
       .sort({ gold: -1 })
-      .limit(10);
-
-    if (typeof query.lean !== 'function') {
-      throw new TypeError('CarteiraGrupo.find() não retornou um Query válido do Mongoose.');
-    }
-
-    const top = await query.lean();
+      .limit(10)
+      .lean();
 
     if (!top?.length) {
       await sock.sendMessage(jid, {
@@ -624,10 +618,10 @@ async function handleRanking(sock, msg, jid, contactNames = {}, deps = {}) {
 
     const linhas = top.map((u, i) => {
       const count = u.gold || 0;
-      const pct   = totalGold > 0 ? ((count / totalGold) * 100).toFixed(1) : '0.0';
+      const pct   = ((count / totalGold) * 100).toFixed(1);
       const bar   = barraProgresso(count, maxGold);
-      const nome  = resolverNome(u.idWhatsApp, contactNames);
-      return `${MEDALS[i] ?? `${i + 1}.`} *${nome}*\n   ${bar} ${count} 💰 (${pct}%)`;
+      const nome  = contactNames[u.idWhatsApp] || u.idWhatsApp.split('@')[0];
+      return `${MEDALS[i]} *${nome}*\n   ${bar} ${count} 💰 (${pct}%)`;
     }).join('\n\n');
 
     await sock.sendMessage(jid, {
@@ -635,13 +629,12 @@ async function handleRanking(sock, msg, jid, contactNames = {}, deps = {}) {
     }, { quoted: msg });
 
   } catch (err) {
-    console.error('[handleRanking] Erro:', err.message);
+    console.error('[handleRankGold] Erro:', err.message);
     await sock.sendMessage(jid, {
       text: '⚠️ Erro ao carregar o ranking.',
     }, { quoted: msg });
   }
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !sorteio ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

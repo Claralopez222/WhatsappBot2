@@ -697,6 +697,22 @@ async function triggerSpawn(sock, groupJid) {
   });
 }
 
+const activeGroups = new Set();
+
+function registerActiveGroup(jid) {
+  activeGroups.add(jid);
+}
+
+function initPetScheduler(sock) {
+  setInterval(() => {
+    for (const jid of activeGroups) {
+      triggerSpawn(sock, jid).catch(err =>
+        console.error('[PetScheduler] Erro no spawn:', err)
+      );
+    }
+  }, 60 * 60 * 1000); // 1 hora
+}
+
 // ─── EXPORTAR ─────────────────────────────────────────────────────────────────
 
 module.exports = {

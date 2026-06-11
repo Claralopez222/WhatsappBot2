@@ -1,6 +1,8 @@
 /**
  * Mostra o Top 10 usuários com mais XP ativos no chat atual
  */
+
+// !ranklevel
 async function handleRankLevel(sock, msg, jid, contactNames, msgCount) {
   try {
     // 1. Se for em chat privado, não faz sentido filtrar por grupo

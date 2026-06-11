@@ -28,17 +28,24 @@ function saveBirthdays(birthdays) {
 }
 
 // ─── !reganiversario ──────────────────────────────────────────────────────────
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+
+// !reganiversario
 async function handleRegAniversario(sock, msg, jid, caption, author, senderJid) {
+  // ── Normaliza o ID de quem enviou o comando ──
+  const senderJidNormalizado = jidNormalizedUser(senderJid);
+  const chatJid = jidNormalizedUser(jid);
+
   const dateStr = caption.replace(/^[!.]reganiversario\s*/i, '').trim();
   
   if (!dateStr) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!reganiversario DD/MM/AAAA*\nExemplo: *!reganiversario 20/01/1997*' }, { quoted: msg });
+    await sock.sendMessage(chatJid, { text: '⚠️ Use: *!reganiversario DD/MM/AAAA*\nExemplo: *!reganiversario 20/01/1997*' }, { quoted: msg });
     return;
   }
 
   const dateRegex = /^(\d{2})\/(\d{2})\/(\d{4})$/;
   if (!dateRegex.test(dateStr)) {
-    await sock.sendMessage(jid, { text: '⚠️ Formato inválido! Use: *DD/MM/AAAA*\nExemplo: *20/01/1997*' }, { quoted: msg });
+    await sock.sendMessage(chatJid, { text: '⚠️ Formato inválido! Use: *DD/MM/AAAA*\nExemplo: *20/01/1997*' }, { quoted: msg });
     return;
   }
 
@@ -47,64 +54,90 @@ async function handleRegAniversario(sock, msg, jid, caption, author, senderJid) 
   const monthNum = parseInt(month);
   const yearNum = parseInt(year);
 
-  // Validar data
+  // Validar data real no calendário
   const testDate = new Date(yearNum, monthNum - 1, dayNum);
   if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
-    await sock.sendMessage(jid, { text: '⚠️ Data inválida! Verifique dia/mês/ano.' }, { quoted: msg });
+    await sock.sendMessage(chatJid, { text: '⚠️ Data inválida! Verifique dia/mês/ano.' }, { quoted: msg });
     return;
   }
 
+  // Validação dinâmica do ano com base no ano atual (2026)
   if (yearNum < 1900 || yearNum > 2026) {
-    await sock.sendMessage(jid, { text: '⚠️ Ano deve estar entre 1900 e 2026.' }, { quoted: msg });
+    await sock.sendMessage(chatJid, { text: '⚠️ Ano deve estar entre 1900 e 2026.' }, { quoted: msg });
     return;
   }
 
+  // Salva no JSON usando a chave normalizada pura
   const birthdays = loadBirthdays();
-  birthdays[senderJid] = { date: dateStr, name: author, jid: senderJid };
+  birthdays[senderJidNormalizado] = { date: dateStr, name: author, jid: senderJidNormalizado };
   saveBirthdays(birthdays);
 
+  // Calcula a idade com base no ano vigente (2026)
   const age = 2026 - yearNum;
-  await sock.sendMessage(jid, { text: `✅ Aniversário registrado!\n🎂 *${author}* faz aniversário em *${day}/${month}*\n📅 Idade: *${age} anos* em 2026` }, { quoted: msg });
+  const tagAuthor = `@${senderJidNormalizado.split('@')[0]}`;
+
+  await sock.sendMessage(chatJid, { 
+    text: `✅ Aniversário registrado!\n🎂 ${tagAuthor} faz aniversário em *${day}/${month}*\n📅 Idade: *${age} anos* em 2026`,
+    mentions: [senderJidNormalizado]
+  }, { quoted: msg });
 }
 
-// ─── !excluiraniversario ──────────────────────────────────────────────────────
+// !excluiraniversario
 async function handleExcluirAniversario(sock, msg, jid, author, senderJid) {
+  const senderJidNormalizado = jidNormalizedUser(senderJid);
+  const chatJid = jidNormalizedUser(jid);
+  
   const birthdays = loadBirthdays();
   
-  if (!birthdays[senderJid]) {
-    await sock.sendMessage(jid, { text: '⚠️ Você não tem aniversário registrado.' }, { quoted: msg });
+  if (!birthdays[senderJidNormalizado]) {
+    await sock.sendMessage(chatJid, { text: '⚠️ Você não tem nenhum aniversário registrado.' }, { quoted: msg });
     return;
   }
 
-  delete birthdays[senderJid];
+  delete birthdays[senderJidNormalizado];
   saveBirthdays(birthdays);
   
-  await sock.sendMessage(jid, { text: `✅ Aniversário de *${author}* foi removido!` }, { quoted: msg });
+  const tagAuthor = `@${senderJidNormalizado.split('@')[0]}`;
+
+  await sock.sendMessage(chatJid, { 
+    text: `✅ O aniversário de ${tagAuthor} foi removido com sucesso!`,
+    mentions: [senderJidNormalizado]
+  }, { quoted: msg });
 }
 
 // ─── !meuaniversario ──────────────────────────────────────────────────────────
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+
+// !meuaniversario
 async function handleMeuAniversario(sock, msg, jid, author, senderJid) {
+  const senderJidNormalizado = jidNormalizedUser(senderJid);
+  const chatJid = jidNormalizedUser(jid);
   const birthdays = loadBirthdays();
   
-  if (!birthdays[senderJid]) {
-    await sock.sendMessage(jid, { text: '⚠️ Você não tem aniversário registrado. Use: *!reganiversario DD/MM/AAAA*' }, { quoted: msg });
+  if (!birthdays[senderJidNormalizado]) {
+    await sock.sendMessage(chatJid, { text: '⚠️ Você não tem aniversário registrado. Use: *!reganiversario DD/MM/AAAA*' }, { quoted: msg });
     return;
   }
 
-  const { date, name } = birthdays[senderJid];
+  const { date } = birthdays[senderJidNormalizado];
   const [day, month, year] = date.split('/');
   const age = 2026 - parseInt(year);
+  const tagAuthor = `@${senderJidNormalizado.split('@')[0]}`;
   
-  await sock.sendMessage(jid, { text: `🎂 *${name}*\n📅 Data: *${day}/${month}/${year}*\n📊 Idade: *${age} anos* em 2026` }, { quoted: msg });
+  await sock.sendMessage(chatJid, { 
+    text: `🎂 ${tagAuthor}\n📅 Data: *${day}/${month}/${year}*\n📊 Idade: *${age} anos* em 2026`,
+    mentions: [senderJidNormalizado]
+  }, { quoted: msg });
 }
 
-// ─── !listaniversarios ────────────────────────────────────────────────────────
+// !listaniversarios
 async function handleListAniversarios(sock, msg, jid) {
+  const chatJid = jidNormalizedUser(jid);
   const birthdays = loadBirthdays();
   const list = Object.values(birthdays);
 
   if (list.length === 0) {
-    await sock.sendMessage(jid, { text: '📋 Nenhum aniversário registrado ainda.' }, { quoted: msg });
+    await sock.sendMessage(chatJid, { text: '📋 Nenhum aniversário registrado ainda.' }, { quoted: msg });
     return;
   }
 
@@ -116,20 +149,32 @@ async function handleListAniversarios(sock, msg, jid) {
   });
 
   let texto = `📅 *LISTA DE ANIVERSÁRIOS* 📅\n\n`;
+  const mentions = [];
+
   for (const entry of list) {
     const [day, month, year] = entry.date.split('/');
     const age = 2026 - parseInt(year);
-    texto += `🎂 *${entry.name}* • ${day}/${month}/${year} (${age} anos)\n`;
+    
+    if (entry.jid) {
+      const jidLimpo = jidNormalizedUser(entry.jid);
+      mentions.push(jidLimpo);
+      texto += `🎂 @${jidLimpo.split('@')[0]} • ${day}/${month}/${year} (${age} anos)\n`;
+    } else {
+      texto += `🎂 *${entry.name}* • ${day}/${month}/${year} (${age} anos)\n`;
+    }
   }
 
   texto += `\n📊 Total: *${list.length}* aniversários registrados`;
-  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  
+  await sock.sendMessage(chatJid, { text: texto, mentions }, { quoted: msg });
 }
 
-// ─── !sistemaniversario ───────────────────────────────────────────────────────
+// !sistemaniversario
 async function handleSistemaAniversario(sock, msg, jid, isGroupAdmin) {
+  const chatJid = jidNormalizedUser(jid);
+
   if (!isGroupAdmin) {
-    await sock.sendMessage(jid, { text: '⚠️ Apenas admins podem usar esse comando.' }, { quoted: msg });
+    await sock.sendMessage(chatJid, { text: '⚠️ Apenas admins podem usar esse comando.' }, { quoted: msg });
     return;
   }
 
@@ -138,21 +183,28 @@ async function handleSistemaAniversario(sock, msg, jid, isGroupAdmin) {
     data.groupConfig = data.groupConfig || {};
     data.groupConfig.birthdaySystem = data.groupConfig.birthdaySystem || {};
     
-    const isActive = data.groupConfig.birthdaySystem[jid];
-    data.groupConfig.birthdaySystem[jid] = !isActive;
+    const isActive = data.groupConfig.birthdaySystem[chatJid];
+    data.groupConfig.birthdaySystem[chatJid] = !isActive;
     
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
     
     const status = !isActive ? '✅ ativado' : '❌ desativado';
-    await sock.sendMessage(jid, { text: `🔧 Sistema de aniversários ${status} para esse grupo!` }, { quoted: msg });
+    await sock.sendMessage(chatJid, { text: `🔧 Sistema de aniversários ${status} para esse grupo!` }, { quoted: msg });
   } catch (e) {
-    await sock.sendMessage(jid, { text: '❌ Erro ao alterar configuração.' }, { quoted: msg });
+    console.error('⚠️ Erro ao alterar configuração do sistema de aniversário:', e.message);
+    await sock.sendMessage(chatJid, { text: '❌ Erro ao alterar configuração local no arquivo.' }, { quoted: msg });
   }
 }
 
 // ─── !menuaniversario ─────────────────────────────────────────────────────────
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+
+// !menuaniversario
 async function handleMenuAniversario(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+  // ── Normaliza o ID do chat de forma segura ──
+  const chatJid = jidNormalizedUser(jid);
+  const P = getPrefix(chatJid);
+  
   const menu = `╭━━━━━━━━━━━━━━━━━╮
 │  🎂 *MENU DE ANIVERSÁRIOS* 🎂
 │
@@ -177,8 +229,8 @@ async function handleMenuAniversario(sock, msg, jid, getPrefix) {
 │
 ╰━━━━━⊰ ✧ ⊱━━━━━╯`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
-  console.log('🎂 Menu aniversários enviado');
+  await sock.sendMessage(chatJid, { text: menu }, { quoted: msg });
+  console.log('🎂 Menu aniversários enviado com sucesso');
 }
 
 module.exports = {

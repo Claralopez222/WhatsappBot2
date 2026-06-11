@@ -107,8 +107,13 @@ const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils
 // ─── Helper carinho diário ─────────────────────────────────────
 
 // handleCarinh
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
-  const found = findRelByJid(senderJid, relacionamentos);
+  // ── Normaliza o JID de quem enviou o comando ──
+  const senderJidNormalizado = jidNormalizedUser(senderJid);
+
+  const found = findRelByJid(senderJidNormalizado, relacionamentos);
   if (!found) {
     await sock.sendMessage(jid, {
       text: `💔 Você precisa estar em um relacionamento para usar *!${cmd}*!\n_Use *!casar @alguem* ou *!namorar @alguem* primeiro._`,
@@ -118,10 +123,16 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
   const { key, rel } = found;
 
+  // Garante os JIDs limpos e normalizados de ambos
+  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
+  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
+
+  // Descobre de forma cirúrgica quem é o parceiro usando os IDs normalizados
+  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+
   // ── Verifica se o item existe no inventário do sender ──
-  // Consulta apenas o campo necessário para não trazer o doc inteiro
   const userDoc = await Usuario.findOne(
-    { idWhatsApp: senderJid },
+    { idWhatsApp: senderJidNormalizado },
     { [`inventory.${cmd}`]: 1 }
   ).lean();
 
@@ -135,11 +146,8 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   }
 
   // ── Consome 1 unidade do item antes de qualquer outra operação ──
-  // A condição { $gte: 1 } é a guarda atômica contra race condition:
-  // se outro processo consumiu o último item entre o findOne acima
-  // e este update, o resultado será null e abortamos sem prejudicar o usuário.
   const consumo = await Usuario.findOneAndUpdate(
-    { idWhatsApp: senderJid, [`inventory.${cmd}`]: { $gte: 1 } },
+    { idWhatsApp: senderJidNormalizado, [`inventory.${cmd}`]: { $gte: 1 } },
     { $inc: { [`inventory.${cmd}`]: -1 } },
     { new: true }
   );
@@ -156,7 +164,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   if (diariosUsados.has(diarioKey)) {
     // Devolve o item consumido acima para não prejudicar o usuário
     await Usuario.updateOne(
-      { idWhatsApp: senderJid },
+      { idWhatsApp: senderJidNormalizado },
       { $inc: { [`inventory.${cmd}`]: 1 } }
     ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no cooldown:`, e.message));
 
@@ -167,25 +175,41 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   }
   diariosUsados.set(diarioKey, true);
 
-  // ── Cálculo de XP (bônus só dobra se realmente ativo) ──
-  const temBonus = temXpBonus(key);
+  // ── Cálculo de XP baseado no banco de dados para evitar perdas ao reiniciar ──
+  let xpAtual = 0;
+  const temBonus = typeof temXpBonus === 'function' && temXpBonus(key);
   const ganho    = temBonus ? xpValor * 2 : xpValor;
-  const xpAtual  = (xpCasais.get(key) || 0) + ganho;
-  xpCasais.set(key, xpAtual);
+
+  try {
+    const [userA, userB] = await Promise.all([
+      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
+      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
+    ]);
+
+    const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
+    xpAtual = xpAntigo + ganho;
+  } catch (err) {
+    console.error(`[handleCarinh:${cmd}] Erro ao calcular XP prévio do banco:`, err.message);
+    // Fallback para o Map em caso de falha no banco
+    xpAtual = (typeof xpCasais !== 'undefined' ? (xpCasais.get(key) || 0) : 0) + ganho;
+  }
+
+  // Atualiza também o mapa local para comandos síncronos se necessário
+  if (typeof xpCasais !== 'undefined') xpCasais.set(key, xpAtual);
 
   // ── Persiste XP no banco ──
   try {
     await Usuario.updateMany(
-      { idWhatsApp: { $in: [rel.jidA, rel.jidB].filter(Boolean) } },
+      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
       { $inc: { xpCasal: ganho } }
     );
   } catch (e) {
     console.error(`[handleCarinh:${cmd}] Erro ao persistir XP:`, e.message);
     // Reverte Map, cooldown e item consumido
-    xpCasais.set(key, xpAtual - ganho);
+    if (typeof xpCasais !== 'undefined') xpCasais.set(key, xpAtual - ganho);
     diariosUsados.delete(diarioKey);
     await Usuario.updateOne(
-      { idWhatsApp: senderJid },
+      { idWhatsApp: senderJidNormalizado },
       { $inc: { [`inventory.${cmd}`]: 1 } }
     ).catch(err => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no rollback de XP:`, err.message));
 
@@ -195,18 +219,23 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     return;
   }
 
-  const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
-  const parcJid  = rel.nomeA === author ? rel.jidB  : rel.jidA;
+  // ── FORMATAÇÃO DAS MARCAÇÕES (@MENCÕES) DIRETO PELO NÚMERO JID ──
+  const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
+  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
 
   const qtdRestante = (consumo.inventory?.[cmd] ?? 0);
   const bonusStr    = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
 
+  // Lista de JIDs que vão receber o ping/marcação azul de verdade no chat
+  const listaMentions = [senderJidNormalizado];
+  if (parcJid) listaMentions.push(parcJid);
+
   await sock.sendMessage(jid, {
     text:
-      `${emoji} *${author}* ${verbo} para *${parceiro}*! 💕\n\n` +
+      `${emoji} ${tagRemetente} ${verbo} para ${tagParceiro}! 💕\n\n` +
       `💰 *+${ganho} XP*${bonusStr} | Total do casal: *${xpAtual} XP*\n` +
       `🎒 *${cmd}* restantes no seu inventário: *${qtdRestante}*`,
-    mentions: parcJid ? [parcJid] : [],
+    mentions: listaMentions,
   }, { quoted: msg });
 }
 
@@ -214,6 +243,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 // ─── PEDIDO DE CASAMENTO / NAMORO ─────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+// !casar @alguém
 async function handleRelacionamento(sock, msg, content, jid, author, tipo, relacionamentos, pedidosPendentes, contactNames) {
   const senderJid    = msg.key.participant || msg.key.remoteJid;
   const contextInfo  = content.extendedTextMessage?.contextInfo;
@@ -356,6 +386,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
 // ─── ACEITAR OU RECUSAR PEDIDO ────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+// !euaceito 
 async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames) {
   const pedido = pedidosPendentes.get(senderJid);
   if (!pedido) {
@@ -407,6 +438,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
   }
 }
 
+// !eurecuso
 async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames) {
   const pedido = pedidosPendentes.get(senderJid);
   if (!pedido) {

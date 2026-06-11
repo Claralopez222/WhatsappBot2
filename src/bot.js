@@ -39,11 +39,11 @@ const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversa
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
 const pescaHandler          = require('./handlers/diversao/pesca');
-const { handleRankGold, handleGive } = require('./handlers/diversao/economia');
-const { handleEmprestimo, handlePayEmprestimo, handleDivida, verificarInadimplente } = require('./handlers/diversao/emprestimo'); // ← NOVO
+const { handleRankGold, handleGive } = require('./handlers/diversao/economia'); // ← Importação mantida aqui
+const { handleEmprestimo, handlePayEmprestimo, handleDivida, verificarInadimplente } = require('./handlers/diversao/emprestimo');
 const { initPetScheduler, registerActiveGroup } = require(path.join(__dirname, 'handlers', 'diversao'));
-const { initQuizRankingScheduler } = require(path.join(__dirname, 'handlers', 'quizRanking')); // ← NOVO
-const { handleRankGold } = require('./handlers/diversao/economia'); // ajusta o nome do arquivo onde colocou a função
+const { initQuizRankingScheduler } = require(path.join(__dirname, 'handlers', 'quizRanking'));
+// ← A linha duplicada que estava aqui no final foi removida com sucesso!
 
 
 // ─── Silenciar logs de sessão ─────────────────────────────────────────────────

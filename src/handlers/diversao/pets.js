@@ -1,3 +1,119 @@
+'use strict';
+
+const path        = require('path');
+const Usuario     = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+
+const { prepareDailyMissionState } = require('./missoes');
+const { somenteGrupo }             = require('../grupo');
+
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+const CONFIG = {
+  STAT_MAX:           100,
+  NIVEL_MAX:          100,
+  COOLDOWN_ALIMENTAR: 30 * 60 * 1000,   // 30 min
+  COOLDOWN_BRINCAR:   20 * 60 * 1000,   // 20 min
+  COOLDOWN_CURAR:     60 * 60 * 1000,   // 1 hora
+};
+
+// ─── CATÁLOGO DE PETS ─────────────────────────────────────────────────────────
+const PET_SYSTEM = {
+  gato:     { nome: 'Gato',     emoji: '🐱', rarity: 'COMUM',      desc: 'Independente e misterioso.',     xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
+  cachorro: { nome: 'Cachorro', emoji: '🐶', rarity: 'COMUM',      desc: 'Leal e cheio de energia.',       xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
+  coelho:   { nome: 'Coelho',   emoji: '🐰', rarity: 'COMUM',      desc: 'Fofo e saltitante.',             xpMult: 1.1, pontMult: 1.0, catchRate: 0.70 },
+  papagaio: { nome: 'Papagaio', emoji: '🦜', rarity: 'RARO',       desc: 'Repete tudo que você fala.',     xpMult: 1.2, pontMult: 1.1, catchRate: 0.50 },
+  raposa:   { nome: 'Raposa',   emoji: '🦊', rarity: 'RARO',       desc: 'Esperta e curiosa.',             xpMult: 1.3, pontMult: 1.2, catchRate: 0.45 },
+  lobo:     { nome: 'Lobo',     emoji: '🐺', rarity: 'ULTRA-RARO', desc: 'Feroz e solitário.',             xpMult: 1.5, pontMult: 1.4, catchRate: 0.30 },
+  dragao:   { nome: 'Dragão',   emoji: '🐲', rarity: 'LENDÁRIO',   desc: 'Criatura mística das lendas.',   xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
+  unicornio:{ nome: 'Unicórnio',emoji: '🦄', rarity: 'LENDÁRIO',   desc: 'Puro e cheio de magia.',         xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
+};
+
+const RARITY_EMOJI = {
+  'COMUM':      '⭐',
+  'RARO':       '🌟',
+  'ULTRA-RARO': '💎',
+  'LENDÁRIO':   '👑',
+};
+
+const MEDALS = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+
+// ─── ESTADO EM MEMÓRIA ────────────────────────────────────────────────────────
+const spawnedPets = new Map(); // jid → { type, rarity, spawnedAt }
+const petCache    = new Map(); // userId → pet
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+function getUserId(msg) {
+  return msg.key.participant || msg.key.remoteJid;
+}
+
+function reply(sock, jid, msg, text) {
+  return sock.sendMessage(jid, { text }, { quoted: msg });
+}
+
+function checkCooldown(userId, cmd, ms) {
+  const key  = `${userId}:${cmd}`;
+  const last = checkCooldown._map?.get(key) ?? 0;
+  const diff = Date.now() - last;
+  if (diff < ms) return ms - diff;
+  if (!checkCooldown._map) checkCooldown._map = new Map();
+  checkCooldown._map.set(key, Date.now());
+  return 0;
+}
+checkCooldown._map = new Map();
+
+function formatarTempo(ms) {
+  const m = Math.floor(ms / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  return m > 0 ? `${m}min ${s}s` : `${s}s`;
+}
+
+function getHumor(pet) {
+  const avg = ((pet.happiness ?? 0) + (pet.energy ?? 0) + (pet.fullness ?? 0)) / 3;
+  if (avg >= 80) return '😄 Feliz';
+  if (avg >= 50) return '😐 Normal';
+  if (avg >= 25) return '😟 Triste';
+  return '😢 Sofrendo';
+}
+
+function getRankScore(pet) {
+  return ((pet.level ?? 1) * 1000) + ((pet.xp ?? 0));
+}
+
+async function getPet(userId) {
+  if (petCache.has(userId)) return petCache.get(userId);
+  const user = await Usuario.findOne({ idWhatsApp: userId }).select('pet').lean();
+  const pet  = user?.pet ?? null;
+  if (pet?.name) petCache.set(userId, pet);
+  return pet;
+}
+
+async function savePet(userId, pet) {
+  petCache.set(userId, pet);
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId },
+    { $set: { pet } },
+    { upsert: true }
+  );
+}
+
+function spawnNovoPet(jid) {
+  const tipos = Object.keys(PET_SYSTEM);
+  const type  = tipos[Math.floor(Math.random() * tipos.length)];
+  const def   = PET_SYSTEM[type];
+  const spawn = { type, rarity: def.rarity, spawnedAt: Date.now() };
+  spawnedPets.set(jid, spawn);
+  // Expira em 1 hora
+  setTimeout(() => {
+    if (spawnedPets.get(jid)?.spawnedAt === spawn.spawnedAt) spawnedPets.delete(jid);
+  }, 60 * 60 * 1000);
+  return spawn;
+}
+
+function getSpawnAtivo(jid) {
+  return spawnedPets.get(jid) ?? null;
+}
+
 // ============================================================
 //  PET HANDLERS — capturar / alimentar / brincar / curar
 // ============================================================

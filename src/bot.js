@@ -39,6 +39,7 @@ const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversa
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
 const pescaHandler          = require('./handlers/diversao/pesca');
+const { handleRankGold, handleGive } = require('./handlers/diversao/economia');
 const { handleEmprestimo, handlePayEmprestimo, handleDivida, verificarInadimplente } = require('./handlers/diversao/emprestimo'); // ← NOVO
 const { initPetScheduler, registerActiveGroup } = require(path.join(__dirname, 'handlers', 'diversao'));
 const { initQuizRankingScheduler } = require(path.join(__dirname, 'handlers', 'quizRanking')); // ← NOVO
@@ -307,6 +308,7 @@ function getSenderName(msg) {
   return msg.pushName || msg.key.remoteJid?.split('@')[0] || 'UsuÃ¡rio';
 }
 
+// ── Iniciar bot ───────────────────────────────────────────────────────────────
 async function startBot() {
   const { state, saveCreds } = await useMongoAuthState();
   const { version }          = await fetchLatestBaileysVersion();
@@ -317,7 +319,7 @@ async function startBot() {
     version,
     auth: state,
     logger,
-    browser: ['Piroquinhas', 'Chrome', '1.0.0'],
+    browser: ['Ubuntu', 'Chrome-Bot', '1.0.0'], // Nome alterado para evitar bloqueios de filtros
     patchMessageBeforeSending: (message) => {
       const requiresPatch = !!(
         message.buttonsMessage  ||
@@ -334,18 +336,18 @@ async function startBot() {
                 deviceListMetadata: {},
               },
               ...message,
-            },
-          },
-        };
-      }
+                },
+              },
+            };
+          }
       return message;
     },
   });
 
-  // â”€â”€ Credenciais â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Credenciais ───────────────────────────────────────────────────────────────
   sock.ev.on('creds.update', saveCreds);
 
-  // â”€â”€ Atualizar nomes de contato â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Atualizar nomes de contato ────────────────────────────────────────────────
   sock.ev.on('contacts.upsert', cs => {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
@@ -354,21 +356,26 @@ async function startBot() {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
 
- // ── Mensagens ─────────────────────────────────────────────────────────────────
+  // ── Mensagens ─────────────────────────────────────────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify' && type !== 'append') return;
-    for (const msg of messages) {
-      if (msg.key.fromMe) continue;
-      if (!msg.message)   continue;
+  if (type !== 'notify' && type !== 'append') return;
+  
+  for (const msg of messages) {
+    if (msg.key.fromMe) continue;
+    if (!msg.message)   continue;
 
-      const _jid       = msg.key.remoteJid || '';
-      const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
+    const _jid       = msg.key.remoteJid || '';
+    const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
 
-      if (_isPrivate) {
-        const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-        console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
-      }
+    if (_isPrivate) {
+      const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+      console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
+    }
 
+    // ── PROCESSAMENTO EM PARALELO ──
+    // Criamos uma função assíncrona imediata para processar esta mensagem.
+    // Como não usamos 'await' antes dela, o loop passa instantaneamente para a próxima mensagem da fila.
+    (async () => {
       try {
         if (!_isPrivate) {
           const remetente  = msg.key.participant || msg.key.remoteJid;
@@ -395,34 +402,64 @@ async function startBot() {
           );
         }
 
+        // Executa o comando de forma independente
         await handleMessage(sock, msg);
 
         if (_jid.endsWith('@g.us')) {
           registerActiveGroup(_jid);
-          activeGroups.add(_jid); // ← NOVO
+          activeGroups.add(_jid); 
         }
 
       } catch (err) {
         console.error('❌ Erro no processamento da mensagem:', err.message);
       }
-    }
-  });
+    })(); // Executa imediatamente em segundo plano
+  }
+});
 
-  // â”€â”€ Eventos de grupo (entradas/saÃ­das) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Eventos de grupo (entradas/saídas) ───────────────────────────────────────
   sock.ev.on('group-participants.update', async ({ id: groupJid, participants, action }) => {
+    
+    // Seção: Entradas (Bem-vindo)
     if (action === 'add') {
       for (const userJid of participants) {
         const nome = contactNames[userJid] || userJid.split('@')[0];
         try {
           await grupoHandler.processarBemVindo(sock, groupJid, userJid, nome);
         } catch (e) {
-          console.log('âš ï¸ Erro no bem-vindo:', e.message);
+          console.log('⚠️ Erro no bem-vindo:', e.message);
         }
+      }
+    }
+
+    // Seção: Saídas/Banimentos (Terminar relacionamento automaticamente)
+    if (action === 'remove') {
+      for (const participantJid of participants) {
+        const found = relacionamentoHandler.findRelByJid(participantJid, relacionamentos);
+        if (!found) continue;
+
+        const { key, rel } = found;
+        const parceiro = rel.jidA === participantJid ? rel.jidB : rel.jidA;
+
+        // Limpa as variáveis locais de memória
+        relacionamentos.delete(key);
+        if (relacionamentoHandler.xpCasais) {
+          relacionamentoHandler.xpCasais.delete(key);
+        }
+
+        // Remove do banco de dados
+        await relacionamentoHandler.clearCasamentoDb(participantJid, parceiro);
+
+        // Avisa o grupo sobre o término forçado
+        await sock.sendMessage(groupJid, { 
+          text: `💔 *@${participantJid.split('@')[0]}* saiu do grupo e o relacionamento foi encerrado automaticamente.`, 
+          mentions: [participantJid, parceiro].filter(Boolean),
+        }).catch(() => {});
       }
     }
   });
 
- // ── Conexão ───────────────────────────────────────────────────────────────
+  // ── Conexão ──────────────────────────────────────────────────────────────────
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       console.log('\n📱 Escaneie o QR Code:\n');
@@ -445,11 +482,13 @@ async function startBot() {
       initQuizRankingScheduler(sock, activeGroups);
     }
   });
-} // fim de startBot()
+} // fim do startBot
+
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // â”€â”€â”€ HANDLER PRINCIPAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+// hadleMessage
 async function handleMessage(sock, msg) {
   const jid = msg.key.remoteJid;
 
@@ -638,6 +677,8 @@ if (matchCmd(cmdWord, 'gold'))
   if (matchCmd(cmdWord, 'lojacasal'))
     { await diversaoHandler.handleLojaCasal(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'buy'))
+    if (matchCmdStart(cmd, 'give'))
+  { await handleGive(sock, msg, jid, caption); return; }
     { await diversaoHandler.handleComprar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'vender'))
     { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }
@@ -683,6 +724,8 @@ if (matchCmd(cmdWord, 'divida'))
     { await diversaoHandler.handlePets(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'abrigo') || matchCmd(cmdWord, 'shelter'))
     { await diversaoHandler.handleAbrigo(sock, msg, jid, caption, getPrefix); return; }
+  if (matchCmdStart(cmd, 'renomearpet'))
+  { await diversaoHandler.handleRenomearPet(sock, msg, jid, caption); return; }
 
   // â”€â”€ MARKETPLACE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmd(cmdWord, 'avenda'))

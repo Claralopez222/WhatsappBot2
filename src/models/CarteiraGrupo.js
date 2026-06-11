@@ -38,10 +38,10 @@ const carteiraGrupoSchema = new mongoose.Schema(
     },
 
     // ── Emprego (isolado por grupo) ──────────────────────────────
+    // O enum rígido foi removido para aceitar qualquer cargo gerenciado pelo resolverCargo()
     empregoAtual: {
       type:    String,
       default: null,
-      enum: [null, 'entregador', 'atendente', 'mecanico', 'chef', 'programador', 'medico', 'diretor', 'empresario'],
     },
     totalTrabalhosComSucesso: { type: Number, default: 0, min: 0 },
     ultimoTrabalho:           { type: Date,   default: null },
@@ -55,6 +55,13 @@ const carteiraGrupoSchema = new mongoose.Schema(
     },
     equiparoubo: { type: String, default: null },
     ultimoRoubo: { type: Date,   default: null },
+
+    // ── Pets (isolado por grupo) ────────────────────────────────
+    itensPets: {
+      type:    Map,
+      of:      { type: Number, min: 0 },
+      default: {},
+    },
 
     // ── Segurança — defesa (isolada por grupo) ───────────────────
     itensSec: {

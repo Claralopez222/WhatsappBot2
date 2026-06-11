@@ -105,6 +105,8 @@ function formatarTempo(ms) {
 const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils'));
 
 // ─── Helper carinho diário ─────────────────────────────────────
+
+// handleCarinh
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
   const found = findRelByJid(senderJid, relacionamentos);
   if (!found) {
@@ -115,8 +117,49 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   }
 
   const { key, rel } = found;
+
+  // ── Verifica se o item existe no inventário do sender ──
+  // Consulta apenas o campo necessário para não trazer o doc inteiro
+  const userDoc = await Usuario.findOne(
+    { idWhatsApp: senderJid },
+    { [`inventory.${cmd}`]: 1 }
+  ).lean();
+
+  const qtdItem = userDoc?.inventory?.[cmd] ?? 0;
+
+  if (qtdItem < 1) {
+    await sock.sendMessage(jid, {
+      text: `🛒 Você não tem *${cmd}* para dar!\nCompre na *!lojacasal* e surpreenda seu par! 💝`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Consome 1 unidade do item antes de qualquer outra operação ──
+  // A condição { $gte: 1 } é a guarda atômica contra race condition:
+  // se outro processo consumiu o último item entre o findOne acima
+  // e este update, o resultado será null e abortamos sem prejudicar o usuário.
+  const consumo = await Usuario.findOneAndUpdate(
+    { idWhatsApp: senderJid, [`inventory.${cmd}`]: { $gte: 1 } },
+    { $inc: { [`inventory.${cmd}`]: -1 } },
+    { new: true }
+  );
+
+  if (!consumo) {
+    await sock.sendMessage(jid, {
+      text: `⚠️ Não foi possível usar o item agora. Tente novamente.`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Cooldown diário por casal+comando (não só por sender) ──
   const diarioKey = `${key}:${cmd}:${hoje()}`;
   if (diariosUsados.has(diarioKey)) {
+    // Devolve o item consumido acima para não prejudicar o usuário
+    await Usuario.updateOne(
+      { idWhatsApp: senderJid },
+      { $inc: { [`inventory.${cmd}`]: 1 } }
+    ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no cooldown:`, e.message));
+
     await sock.sendMessage(jid, {
       text: `⏰ Você já usou *!${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`,
     }, { quoted: msg });
@@ -124,17 +167,45 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   }
   diariosUsados.set(diarioKey, true);
 
-  const bonus   = temXpBonus(key) ? xpValor : 0;
-  const ganho   = xpValor + bonus;
-  const xpAtual = (xpCasais.get(key) || 0) + ganho;
+  // ── Cálculo de XP (bônus só dobra se realmente ativo) ──
+  const temBonus = temXpBonus(key);
+  const ganho    = temBonus ? xpValor * 2 : xpValor;
+  const xpAtual  = (xpCasais.get(key) || 0) + ganho;
   xpCasais.set(key, xpAtual);
+
+  // ── Persiste XP no banco ──
+  try {
+    await Usuario.updateMany(
+      { idWhatsApp: { $in: [rel.jidA, rel.jidB].filter(Boolean) } },
+      { $inc: { xpCasal: ganho } }
+    );
+  } catch (e) {
+    console.error(`[handleCarinh:${cmd}] Erro ao persistir XP:`, e.message);
+    // Reverte Map, cooldown e item consumido
+    xpCasais.set(key, xpAtual - ganho);
+    diariosUsados.delete(diarioKey);
+    await Usuario.updateOne(
+      { idWhatsApp: senderJid },
+      { $inc: { [`inventory.${cmd}`]: 1 } }
+    ).catch(err => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no rollback de XP:`, err.message));
+
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao registrar o carinho. Tente novamente.',
+    }, { quoted: msg });
+    return;
+  }
 
   const parceiro = rel.nomeA === author ? rel.nomeB : rel.nomeA;
   const parcJid  = rel.nomeA === author ? rel.jidB  : rel.jidA;
 
-  const bonusStr = bonus > 0 ? ` _(XP Duplo ativo! +${bonus} bônus)_` : '';
+  const qtdRestante = (consumo.inventory?.[cmd] ?? 0);
+  const bonusStr    = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
+
   await sock.sendMessage(jid, {
-    text: `${emoji} *${author}* ${verbo} para *${parceiro}*! 💕\n\n💰 *+${ganho} XP*${bonusStr} | Total do casal: *${xpAtual} XP*`,
+    text:
+      `${emoji} *${author}* ${verbo} para *${parceiro}*! 💕\n\n` +
+      `💰 *+${ganho} XP*${bonusStr} | Total do casal: *${xpAtual} XP*\n` +
+      `🎒 *${cmd}* restantes no seu inventário: *${qtdRestante}*`,
     mentions: parcJid ? [parcJid] : [],
   }, { quoted: msg });
 }

@@ -11,8 +11,11 @@ const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { getCarteira, alterarGold, transferirGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { prepareDailyMissionState } = require('./missoes');
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 // Importar catálogos de pesca para o !comprar reconhecer varas e iscas
 const { VARAS_PESCA, ISCAS } = require('./pesca');
+// Adicione isso na primeira linha ou junto com os outros 'require' do topo do arquivo:
+const CarteiraGrupo = require('../models/CarteiraGrupo'); // <-- Ajuste o caminho '../' se necessário
 
 // ─── RE-EXPORTA ITENS_LOJA (sem mudança) ─────────────────────────────────
 const ITENS_LOJA = {
@@ -204,6 +207,7 @@ async function debitarGold(userId, idGrupo, valor, descricao) {
   );
 }
 
+// !gold
 async function handleGold(sock, msg, jid, getPrefix, contactNames) {
   const userId  = msg.key.participant || msg.key.remoteJid;
   const idGrupo = jid;
@@ -241,6 +245,8 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
     await sock.sendMessage(jid, { text: '⚠️ Erro ao buscar saldo!' }, { quoted: msg });
   }
 }
+
+// !loja
 async function handleLoja(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
   const texto =
@@ -260,55 +266,112 @@ async function handleLoja(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-// ─── Lojas específicas (sem mudanças) ────────────────────────────────────────
+// ─── Lojas específicas ────────────────────────────────────────────────────────
 
+// !lojafood
 async function handleLojaFood(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
-  const texto =
-    `🍔 *LOJA DE COMIDA* 🍔\n\n` +
-    `🍕 *PIZZAS*\n  🍕 Pizza Margherita — 50 gold\n  🍕 Pizza Pepperoni — 60 gold\n  🍕 Pizza 4 Queijos — 70 gold\n\n` +
-    `🍔 *LANCHES*\n  🍔 Hamburger Simples — 40 gold\n  🌭 Hot Dog — 35 gold\n  🥪 Sanduíche — 45 gold\n\n` +
-    `🍗 *CARNES*\n  🍗 Frango Frito — 35 gold\n  🍗 Costela — 80 gold\n\n` +
-    `🍫 *DOCES*\n  🍫 Chocolate — 25 gold\n  🍰 Bolo — 65 gold\n  🍦 Sorvete — 30 gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+
+  const categorias = {
+    '🍕 PIZZAS':    ['pizza', 'pizzapeperoni', 'pizza4queijos', 'pizzavegetariana', 'pizzafrango'],
+    '🍔 LANCHES':   ['hamburger', 'hamburgerduplo', 'xtudo', 'hotdog', 'taco', 'sanduiche'],
+    '🍗 CARNES':    ['frango', 'costela', 'picanha', 'linguica', 'carne'],
+    '🍫 DOCES':     ['chocolate', 'bolobocolate', 'sorvete', 'pudim', 'biscoito', 'donut', 'bolo'],
+    '🥤 BEBIDAS':   ['refrigerante', 'cafe', 'suco', 'vinho', 'cerveja'],
+  };
+
+  let texto = `🍔 *LOJA DE COMIDA* 🍔\n\n`;
+  for (const [cat, keys] of Object.entries(categorias)) {
+    texto += `${cat}\n`;
+    for (const k of keys) {
+      const item = ITENS_LOJA[k];
+      if (item) texto += `  • ${item.nome} — ${item.preco} gold\n`;
+    }
+    texto += '\n';
+  }
+  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
+// !lojapet
 async function handleLojaPet(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
-  const texto =
-    `🐾 *LOJA DE PETS* 🐾\n\n` +
-    `🦴 *COMIDAS*\n  🦴 Ração Normal — 20 gold\n  🦴 Ração Premium — 45 gold\n  🍖 Osso Saboroso — 40 gold\n\n` +
-    `🎾 *BRINQUEDOS*\n  🎾 Bolinha de Tênis — 35 gold\n  🧸 Pelúcia — 50 gold\n  🎪 Disco Voador — 60 gold\n\n` +
-    `💊 *MEDICAMENTOS*\n  💊 Remédio Geral — 80 gold\n  🩹 Bandagem — 50 gold\n  💉 Vacina — 120 gold\n\n` +
-    `⚙️ *ACESSÓRIOS*\n  🎀 Coleira Colorida — 55 gold\n  👑 Coroa Pet — 100 gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+
+  const categorias = {
+    '🦴 COMIDAS':      ['racao', 'racaopremium', 'racaogourmet', 'carnefresh', 'osso', 'arrozfeijao', 'peixe', 'leite', 'cenoura', 'maca'],
+    '🎾 BRINQUEDOS':   ['bolinha', 'pelucia', 'corda', 'disco', 'bolacrocante', 'pena', 'casabrinquedo'],
+    '💊 MEDICAMENTOS': ['remedio', 'bandagem', 'vacina', 'shampoo', 'sabonete', 'escova'],
+    '🎀 ACESSÓRIOS':   ['coleira', 'coleiraouro', 'peitoral', 'bandana', 'coroa', 'placaid'],
+  };
+
+  let texto = `🐾 *LOJA DE PETS* 🐾\n\n`;
+  for (const [cat, keys] of Object.entries(categorias)) {
+    texto += `${cat}\n`;
+    for (const k of keys) {
+      const item = ITENS_LOJA[k];
+      if (item) texto += `  • ${item.nome} — ${item.preco} gold\n`;
+    }
+    texto += '\n';
+  }
+  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
+// !lojatec
 async function handleLojaTec(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
-  const texto =
-    `💻 *LOJA DE TECNOLOGIA* 💻\n\n` +
-    `🖥️ *COMPUTADORES*\n  🖥️ Notebook Gamer — 5000 gold\n  💾 Notebook i5 — 3500 gold\n  🖥️ Desktop Gaming — 6000 gold\n\n` +
-    `📱 *SMARTPHONES*\n  📱 Smartphone Premium — 2500 gold\n  📱 Smartphone Gamer — 3500 gold\n  📱 Tablet Pro — 3500 gold\n\n` +
-    `🎮 *PERIFÉRICOS*\n  🖱️ Mouse Gamer — 350 gold\n  ⌨️ Teclado Mecânico — 450 gold\n  🖥️ Monitor 4K — 2500 gold\n  🎧 Headset Gamer — 800 gold\n\n` +
-    `🔌 *ACESSÓRIOS*\n  🔌 Cabo USB-C — 50 gold\n  💾 SSD 1TB — 800 gold\n  💾 SSD 2TB — 1500 gold\n  💾 Memória RAM 16GB — 600 gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+
+  const categorias = {
+    '🖥️ COMPUTADORES':  ['notebook', 'notebooki5', 'desktop', 'pccustom', 'laptopfino', 'workstation', 'pcgamerlegendario', 'setupgamer'],
+    '📱 SMARTPHONES':   ['smartphonepremium', 'smartphonegamer', 'smartphonebasico', 'tablet10', 'tabletpro', 'ereader', 'celular'],
+    '🎮 PERIFÉRICOS':   ['mousegamer', 'tecladomecanico', 'tecladorgb', 'monitor24', 'monitor4k', 'monitorcurvo', 'mousepad', 'webcam', 'headsetgamer'],
+    '🎧 ÁUDIO':         ['fonesemfio', 'fonecancelamento', 'fonepremium', 'microusbfone', 'microprofissional', 'caixabluetooth', 'altofalante'],
+    '🔌 ACESSÓRIOS':    ['cabousbc', 'cabohdmi', 'carregadorrapido', 'adaptadorusb', 'hub7portas', 'powerbank20', 'powerbanksolar', 'suportemagnetico', 'casecelular', 'protetortela', 'mochilatech', 'bolsalaptop'],
+    '💾 ARMAZENAMENTO': ['ssd1tb', 'ssd2tb', 'ram16gb', 'usb', 'gpu4090'],
+  };
+
+  let texto = `💻 *LOJA DE TECNOLOGIA* 💻\n\n`;
+  for (const [cat, keys] of Object.entries(categorias)) {
+    texto += `${cat}\n`;
+    for (const k of keys) {
+      const item = ITENS_LOJA[k];
+      if (item) texto += `  • ${item.nome} — ${item.preco} gold\n`;
+    }
+    texto += '\n';
+  }
+  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
+// !lojacasal
 async function handleLojaCasal(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
-  const texto =
-    `💕 *LOJA DE CASAL* 💕\n\n` +
-    `🎁 *PRESENTES ROMÂNTICOS*\n  🌹 Flores — 60 gold\n  💌 Carta de Amor — 80 gold\n  🍫 Caixa de Chocolate — 75 gold\n  🍓 Morango com Chocolate — 55 gold\n  🧸 Ursinho de Pelúcia — 130 gold\n\n` +
-    `💎 *JOIAS E ACESSÓRIOS*\n  💍 Anel — 500 gold\n  📿 Colar Casal — 200 gold\n  💪 Pulseira Casal — 120 gold\n\n` +
-    `🎽 *VESTUÁRIO*\n  👕 Camiseta Casal — 110 gold\n  🧢 Gorro Casal — 85 gold\n  🩴 Chinelo de Casal — 95 gold\n\n` +
-    `🏠 *DECORAÇÃO*\n  💡 Luminária Romântica — 140 gold\n  🕯️ Vela Aromática — 90 gold\n  🪞 Espelho com LED — 180 gold\n\n` +
-    `🍷 *BEBIDAS E GOURMET*\n  ☕ Chá Especial Casal — 70 gold\n  🍷 Taça para Vinho — 160 gold\n  🍾 Garrafa Vinho Tinto — 250 gold\n\n` +
-    `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>\n\n` +
+
+  const categorias = {
+    '🎁 PRESENTES ROMÂNTICOS': ['flores', 'carta', 'morango', 'urso', 'caixa'],
+    '💎 JOIAS E ACESSÓRIOS':   ['anel', 'colar', 'pulseira'],
+    '🎽 VESTUÁRIO':            ['camisetacasal', 'gorro', 'chinelo'],
+    '🏠 DECORAÇÃO':            ['luminaria', 'vela', 'espelho', 'almofada', 'cortina', 'foto'],
+    '🍷 BEBIDAS E GOURMET':    ['taça', 'garrafa', 'perfume'],
+  };
+
+  let texto = `💕 *LOJA DE CASAL* 💕\n\n`;
+  for (const [cat, keys] of Object.entries(categorias)) {
+    texto += `${cat}\n`;
+    for (const k of keys) {
+      const item = ITENS_LOJA[k];
+      if (item) texto += `  • ${item.nome} — ${item.preco} gold\n`;
+    }
+    texto += '\n';
+  }
+  texto +=
+    `━━━━━━━━━━━━━━━━\n` +
+    `*COMO COMPRAR?*\n  ${P}buy <nome_item>\n\n` +
     `💑 _Mostre seu amor com presentes incríveis!_`;
+
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
@@ -1042,11 +1105,22 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   }, { quoted: msg });
 }
 
+// ─── Helpers do ranking ───────────────────────────────────────────────────────
+
+const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+function barraProgresso(valor, maximo, tamanho = 10) {
+  if (!maximo || maximo <= 0) return '░'.repeat(tamanho);
+  const preenchido = Math.min(Math.round((valor / maximo) * tamanho), tamanho);
+  return '█'.repeat(preenchido) + '░'.repeat(tamanho - preenchido);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !rankgold ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
+
 async function handleRankGold(sock, msg, jid, contactNames = {}) {
-  if (!jid.endsWith('@g.us')) {
+  if (!jid?.endsWith('@g.us')) {
     await sock.sendMessage(jid, {
       text: '⚠️ Este comando só pode ser usado em grupos.',
     }, { quoted: msg });
@@ -1054,14 +1128,24 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
   }
 
   try {
-    const top = await CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
+    // 1. Busca a lista de membros que realmente estão no grupo agora
+    const metadata = await sock.groupMetadata(jid);
+    const membrosAtuais = new Set(metadata.participants.map(p => p.id));
+
+    // 2. Busca uma amostragem maior no banco para garantir que, filtrando os banidos, ainda sobrem 10
+    const candidatos = await CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
       .sort({ gold: -1 })
-      .limit(10)
+      .limit(100) // Puxa até 100 jogadores ativos localmente
       .lean();
+
+    // 3. Filtra mantendo apenas quem ainda está presente no chat
+    const top = candidatos
+      .filter(u => membrosAtuais.has(u.idWhatsApp))
+      .slice(0, 10); // Mantém o Top 10 real e ativo
 
     if (!top?.length) {
       await sock.sendMessage(jid, {
-        text: 'ℹ️ Nenhum Gold registrado neste grupo ainda!',
+        text: '💰 *RANKING DE GOLD*\n\nNenhum membro ativo com Gold registrado neste grupo ainda!\n\n⛏️ Use *!garimpar* para começar a ganhar Gold.',
       }, { quoted: msg });
       return;
     }
@@ -1069,24 +1153,120 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
     const totalGold = top.reduce((s, u) => s + (u.gold || 0), 0);
     const maxGold   = top[0].gold || 1;
 
+    // Garante que a constante MEDALS tenha fallbacks seguros caso falte no escopo global
+    const medalhasfbt = ['🥇', '🥈', '🥉', '🔹 4.', '🔹 5.', '🔹 6.', '🔹 7.', '🔹 8.', '🔹 9.', '🔹 10.'];
+
     const linhas = top.map((u, i) => {
       const count = u.gold || 0;
       const pct   = ((count / totalGold) * 100).toFixed(1);
-      const bar   = barraProgresso(count, maxGold);
-      const nome  = contactNames[u.idWhatsApp] || u.idWhatsApp.split('@')[0];
-      return `${MEDALS[i]} *${nome}*\n   ${bar} ${count} 💰 (${pct}%)`;
+      
+      // Executa a barra de progresso visual (certifique-se de que a função barraProgresso existe no arquivo)
+      const bar    = typeof barraProgresso === 'function' ? barraProgresso(count, maxGold) : '░░░░░░░░░░';
+      const numero = u.idWhatsApp.split('@')[0].split(':')[0];
+      const medal  = typeof MEDALS !== 'undefined' && MEDALS[i] ? MEDALS[i] : medalhasfbt[i];
+      
+      // Mudança para mencionar via @ em vez de injetar o nome de contato salvo
+      return `${medal} @${numero}\n   ${bar} ${count} 💰 (${pct}%)`;
     }).join('\n\n');
 
+    const mentions = top.map(u => u.idWhatsApp);
+
     await sock.sendMessage(jid, {
-      text: `💰 *RANKING DE GOLD — ESTE GRUPO*\n\n${linhas}\n\n🏦 Total do Top 10: *${totalGold} Gold*`,
+      text:
+        `💰 *RANKING DE GOLD — MEMBROS ATIVOS* 💰\n\n` +
+        `${linhas}\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `🏦 Total do Top 10: *${totalGold} Gold*\n` +
+        `⛏️ Use *!garimpar* para subir no ranking!`,
+      mentions,
     }, { quoted: msg });
 
   } catch (err) {
     console.error('[handleRankGold] Erro:', err.message);
     await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao carregar o ranking.',
+      text: '⚠️ Erro ao carregar o ranking. Tente novamente.',
     }, { quoted: msg });
   }
+}
+
+// ─── !give ────────────────────────────────────────────────────────────────────
+
+async function handleGive(sock, msg, jid, caption) {
+  const userId       = msg.key.participant || msg.key.remoteJid;
+  const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+
+  if (!mentionedJid) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Marca quem vai receber!\nExemplo: *!give @fulano pizza*',
+    }, { quoted: msg });
+    return;
+  }
+
+  if (mentionedJid.split('@')[0] === userId.split('@')[0]) {
+    await sock.sendMessage(jid, {
+      text: '😂 Você não pode dar item pra si mesmo!',
+    }, { quoted: msg });
+    return;
+  }
+
+  // Extrai o item ignorando a menção (@xxx)
+  const match = caption.match(/give\s+@\S+\s+(\S+)/i) || caption.match(/give\s+(\S+)/i);
+  if (!match) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Use: *!give @fulano <item>*\nExemplo: *!give @João pizza*',
+    }, { quoted: msg });
+    return;
+  }
+
+  const itemKey  = match[1].toLowerCase().trim();
+  const itemInfo = ITENS_LOJA[itemKey];
+
+  if (!itemInfo) {
+    await sock.sendMessage(jid, {
+      text:
+        `⚠️ Item *${itemKey}* não existe!\n\n` +
+        `Use *!loja* pra ver os itens disponíveis.`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Checar se o remetente tem o item
+  const remetente = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
+  const qtd       = remetente?.inventory?.[itemKey] ?? 0;
+
+  if (qtd <= 0) {
+    await sock.sendMessage(jid, {
+      text:
+        `⚠️ Você não possui *${itemInfo.nome}* no inventário!\n\n` +
+        `Use *!inventario* pra ver seus itens ou *!buy ${itemKey}* pra comprar.`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Remover do remetente
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId },
+    { $inc: { [`inventory.${itemKey}`]: -1 } }
+  );
+
+  // ── Adicionar ao destinatário
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: mentionedJid },
+    { $inc: { [`inventory.${itemKey}`]: 1 } },
+    { upsert: true }
+  );
+
+  const numeroAlvo = mentionedJid.split('@')[0].split(':')[0];
+
+  await sock.sendMessage(jid, {
+    text:
+      `🎁 *PRESENTE ENVIADO!* 🎁\n\n` +
+      `📦 Item: *${itemInfo.nome}*\n` +
+      `➡️ Para: *@${numeroAlvo}*\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `_Use !inventario pra conferir seus itens._`,
+    mentions: [mentionedJid],
+  }, { quoted: msg });
 }
 
 // ─── EXPORTS ──────────────────────────────────────────────────────────────────
@@ -1110,4 +1290,5 @@ module.exports = {
   getSaldoGrupo,   // substitui getSaldoAtual
   ITENS_LOJA,
   handleRankGold,
+  handleGive,
 };

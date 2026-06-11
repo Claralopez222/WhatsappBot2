@@ -274,7 +274,6 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
       return;
     }
 
-    // Exclui apenas o bot e o próprio remetente — admins são incluídos
     const targets = meta.participants
       .filter(p => {
         if (isBotJid(p.id, botJid)) return false;
@@ -285,9 +284,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
       .map(p => p.id);
 
     if (targets.length === 0) {
-      await sock.sendMessage(jid, {
-        text: '⚠️ Nenhum membro para remover.',
-      }, { quoted: msg });
+      await sock.sendMessage(jid, { text: '⚠️ Nenhum membro para remover.' }, { quoted: msg });
       return;
     }
 
@@ -343,33 +340,31 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  // ─── Apenas o bot é protegido ────────────────────────────────
   if (isBotJid(targetJid, botJid)) {
     await sock.sendMessage(jid, { text: '🤖 Não é possível banir o bot!' }, { quoted: msg });
     return;
   }
 
   try {
-    const nome = contactNames[targetJid] || targetJid.split('@')[0];
+    const promises = [];
 
     if (fs.existsSync(BAN_IMAGE_PATH)) {
-      await sock.sendMessage(jid, {
+      promises.push(sock.sendMessage(jid, {
         image:    fs.readFileSync(BAN_IMAGE_PATH),
         caption:  `🔨 @${targetJid.split('@')[0]} foi banido(a) do grupo! Tchau! 👋`,
         mentions: [targetJid],
-      });
+      }));
     }
 
     if (fs.existsSync(BAN_AUDIO_PATH)) {
-      await sock.sendMessage(jid, {
+      promises.push(sock.sendMessage(jid, {
         audio:    fs.readFileSync(BAN_AUDIO_PATH),
         mimetype: 'audio/mp4',
         ptt:      false,
-      });
+      }));
     }
 
-    await new Promise(r => setTimeout(r, 1500));
-
+    await Promise.all(promises);
     await sock.groupParticipantsUpdate(jid, [targetJid], 'remove');
     unmuteUser(jid, targetJid);
   } catch (err) {
@@ -540,47 +535,77 @@ async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
 // ─── !ranking ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-/** Medalhas padrão para o ranking (posições 1–10). */
-const MEDALS_DEFAULT = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 
-/**
- * Barra de progresso padrão com blocos Unicode.
- * @param {number} valor
- * @param {number} maximo
- * @param {number} [tamanho=10]
- * @returns {string}
- */
-function barraProgressoDefault(valor, maximo, tamanho = 10) {
-  if (maximo <= 0) return '░'.repeat(tamanho);
+const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+function barraProgresso(valor, maximo, tamanho = 10) {
+  if (!maximo || maximo <= 0) return '░'.repeat(tamanho);
   const filled = Math.min(Math.round((valor / maximo) * tamanho), tamanho);
   return '█'.repeat(filled) + '░'.repeat(tamanho - filled);
 }
 
-/**
- * Exibe o ranking de Gold do grupo.
- * Dependências do sistema de economia são injetadas via `deps` para evitar
- * acoplamento direto e facilitar testes.
- *
- * @param {object} sock
- * @param {object} msg
- * @param {string} jid
- * @param {object} [contactNames={}]
- * @param {object} [deps={}]
- * @param {object}   deps.CarteiraGrupo   Model Mongoose
- * @param {string[]} [deps.MEDALS]
- * @param {Function} [deps.barraProgresso]
- * @param {Function} [deps.resolverNome]
- */
+async function handleRanking(sock, msg, jid, msgCount = new Map()) {
+  if (!jid?.endsWith('@g.us')) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Este comando só pode ser usado em grupos.',
+    }, { quoted: msg });
+    return;
+  }
 
-// correto (sobe um nível)
-const CarteiraGrupo = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
+  try {
+    // ── Coletar mensagens do grupo filtradas por membros ativos
+    const entradas = [...msgCount.entries()]
+      .filter(([id]) => id.endsWith('@s.whatsapp.net') || id.endsWith('@c.us'))
+      .map(([id, data]) => ({
+        idWhatsApp: id,
+        count: typeof data === 'object' ? (data.count ?? 0) : (data ?? 0),
+      }))
+      .filter(e => e.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
 
-// ─── Helpers internos ─────────────────────────────────────────
-const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+    if (!entradas.length) {
+      await sock.sendMessage(jid, {
+        text:
+          `📊 *RANKING DE MENSAGENS — ESTE GRUPO*\n\n` +
+          `📭 Nenhuma mensagem registrada ainda!\n\n` +
+          `_Comece a conversar para aparecer no ranking!_`,
+      }, { quoted: msg });
+      return;
+    }
 
-function barraProgresso(valor, maximo, tamanho = 8) {
-  const preenchido = Math.round((valor / maximo) * tamanho);
-  return '█'.repeat(preenchido) + '░'.repeat(tamanho - preenchido);
+    const totalMsgs = entradas.reduce((s, e) => s + e.count, 0);
+    const maxCount  = entradas[0].count || 1;
+
+    const linhas = entradas.map((e, i) => {
+      const numero = e.idWhatsApp.split('@')[0].split(':')[0];
+      const pct    = ((e.count / totalMsgs) * 100).toFixed(1);
+      const bar    = barraProgresso(e.count, maxCount);
+      return (
+        `${MEDALS[i]} *@${numero}*\n` +
+        `   ${bar} ${e.count} msgs (${pct}%)`
+      );
+    });
+
+    const mentions = entradas.map(e => e.idWhatsApp);
+
+    await sock.sendMessage(jid, {
+      text:
+        `📊 *RANKING DE MENSAGENS — ESTE GRUPO* 📊\n\n` +
+        `${linhas.join('\n\n')}\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `💬 Total de mensagens: *${totalMsgs}*\n` +
+        `_Continue conversando para subir no ranking!_`,
+      mentions,
+    }, { quoted: msg });
+
+  } catch (e) {
+    console.error('[Grupo] handleRanking:', e.message);
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao carregar o ranking. Tente novamente!',
+    }, { quoted: msg });
+  }
 }
 
 

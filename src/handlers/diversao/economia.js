@@ -11,11 +11,10 @@ const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { getCarteira, alterarGold, transferirGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { prepareDailyMissionState } = require('./missoes');
-const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-// Importar catálogos de pesca para o !comprar reconhecer varas e iscas
-const { VARAS_PESCA, ISCAS } = require('./pesca');
-// Adicione isso na primeira linha ou junto com os outros 'require' do topo do arquivo:
-const CarteiraGrupo = require('../models/CarteiraGrupo'); // <-- Ajuste o caminho '../' se necessário
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo')); // <-- Mantido este padrão seguro
+const { VARAS_PESCA, ISCAS } = require('./pesca'); // Importar catálogos de pesca para o !comprar reconhecer varas e iscas
+
+// A linha duplicada que estava aqui embaixo foi removida com sucesso!
 
 // ─── RE-EXPORTA ITENS_LOJA (sem mudança) ─────────────────────────────────
 const ITENS_LOJA = {
@@ -541,22 +540,22 @@ async function handleInventario(sock, msg, jid) {
 }
 
 // ─── !pix ─────────────────────────────────────────────────────────────────────
-// Transfere gold dentro do mesmo grupo (CarteiraGrupo → CarteiraGrupo)
-
 /**
  * Extrai { targetJid, numeroPura, quantia } do contexto da mensagem.
  * Retorna null se não for possível resolver os parâmetros.
+ * Tratado para suportar JIDs normais (@s.whatsapp.net) e novos identificadores (@lid).
  */
 function parsearPix(msg, caption) {
   const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
 
-  // ── Caso 1: menção via @tag
+  // ── Caso 1: menção via @tag (O Baileys já entrega o JID nativo correto)
   if (mentionedJid) {
     const parts   = caption.trim().split(/\s+/);
     const quantia = parseInt(parts[parts.length - 1], 10);
     if (isNaN(quantia) || quantia <= 0) return null;
+    
     return {
-      targetJid:  mentionedJid,
+      targetJid:  jidNormalizedUser(mentionedJid),
       numeroPura: mentionedJid.split('@')[0].split(':')[0],
       quantia,
     };
@@ -570,15 +569,20 @@ function parsearPix(msg, caption) {
   const quantia    = parseInt(numMatch[2], 10);
   if (!numeroPura || isNaN(quantia) || quantia <= 0) return null;
 
+  // Para buscas manuais por número puro, o fallback padrão da rede ainda é @s.whatsapp.net
   return {
-    targetJid:  `${numeroPura}@s.whatsapp.net`,
+    targetJid:  jidNormalizedUser(`${numeroPura}@s.whatsapp.net`),
     numeroPura,
     quantia,
   };
 }
 
+// !pix
 async function handlePix(sock, msg, jid, caption) {
-  const userId = msg.key.participant || msg.key.remoteJid;
+  // Limpa e normaliza o ID do remetente (resolve problemas com @lid e sessões multi-dispositivo)
+  const rawUserId = msg.key.participant || msg.key.remoteJid;
+  const userId = jidNormalizedUser(rawUserId);
+  
   const parsed = parsearPix(msg, caption);
 
   if (!parsed) {
@@ -597,10 +601,9 @@ async function handlePix(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Usa transferirGold do carteiraService: débito + crédito atômicos em sequência.
-  //    Se o débito falhar (saldo insuficiente), o crédito não acontece.
   let resultado;
   try {
+    // Transfere o saldo local no grupo usando operações atômicas
     resultado = await transferirGold(
       userId,
       targetJid,
@@ -610,7 +613,8 @@ async function handlePix(sock, msg, jid, caption) {
     );
   } catch (e) {
     if (e instanceof RangeError) {
-      const saldo = (await getCarteira(userId, jid))?.gold ?? 0;
+      const carteiraRemetente = await getCarteira(userId, jid);
+      const saldo = carteiraRemetente?.gold ?? 0;
       await sock.sendMessage(jid, {
         text:
           `⚠️ *SALDO INSUFICIENTE!*\n\n` +
@@ -619,17 +623,18 @@ async function handlePix(sock, msg, jid, caption) {
       }, { quoted: msg });
       return;
     }
-    throw e; // erro inesperado — deixa subir
+    throw e; // Erros inesperados do banco de dados continuam subindo para o log
   }
 
-  const remetenteNum = userId.split('@')[0].split(':')[0];
+  // Define um saldo visual caso o retorno atômico falte por algum motivo
+  const saldoFinalRemetente = resultado?.de?.gold ?? 0;
 
   await sock.sendMessage(jid, {
     text:
       `✅ *TRANSFERÊNCIA REALIZADA!* ✅\n\n` +
       `💸 *${quantia} gold* enviado para *@${numeroPura}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `💰 Seu novo saldo: *${resultado.de.gold}* gold`,
+      `💰 Seu novo saldo: *${saldoFinalRemetente}* gold`,
     mentions: [targetJid, userId],
   }, { quoted: msg });
 }

@@ -43,6 +43,8 @@ const { handleRankGold, handleGive } = require('./handlers/diversao/economia'); 
 const { handleEmprestimo, handlePayEmprestimo, handleDivida, verificarInadimplente } = require('./handlers/diversao/emprestimo');
 const { initPetScheduler, registerActiveGroup } = require(path.join(__dirname, 'handlers', 'diversao'));
 const { initQuizRankingScheduler } = require(path.join(__dirname, 'handlers', 'quizRanking'));
+// Adicionar nos imports dos handlers:
+const pinnedHandler = require(path.join(__dirname, 'handlers', 'diversao', 'pinned'));
 // ← A linha duplicada que estava aqui no final foi removida com sucesso!
 
 
@@ -125,7 +127,6 @@ function saveData() {
       msgCount:       Object.fromEntries([...msgCount.entries()]),
       stickerCount:   Object.fromEntries([...stickerCount.entries()]),
       cmdCount:       Object.fromEntries([...cmdCount.entries()]),
-      pinnedMessages: Object.fromEntries([...pinnedMessages.entries()]),
       warnings:       warningsObj,
       groupConfig: {
         antiLink:    [...antiLinkGroups],
@@ -460,35 +461,46 @@ async function startBot() {
   });
 
   // ── Conexão ──────────────────────────────────────────────────────────────────
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
-      console.log('\n📱 Escaneie o QR Code:\n');
-      console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
-      await QRCode.toFile(path.resolve(__dirname, '../qrcode.png'), qr, { width: 400 });
+  let schedulersIniciados = false;
+
+sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+  if (qr) {
+    console.log('\n📱 Escaneie o QR Code:\n');
+    console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
+    await QRCode.toFile(path.resolve(__dirname, '../qrcode.png'), qr, { width: 400 });
+  }
+
+  if (connection === 'close') {
+    schedulersIniciados = false;
+    const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
+    console.log(`🔌 Desconectado. Código: ${code} | Erro: ${lastDisconnect?.error?.message}`);
+    if (code !== DisconnectReason.loggedOut) {
+      setTimeout(() => startBot(), 30000);
+    } else {
+      console.log('🚪 Sessão encerrada definitivamente.');
+      process.exit(0);
     }
-    if (connection === 'close') {
-      const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      console.log(`🔌 Desconectado. Código: ${code} | Erro: ${lastDisconnect?.error?.message}`);
-      if (code !== DisconnectReason.loggedOut) {
-        setTimeout(() => startBot(), 30000);
-      } else {
-        console.log('🚪 Sessão encerrada definitivamente.');
-        process.exit(0);
-      }
-    } else if (connection === 'open') {
-      botJid = sock.user?.id || null;
-      console.log(`✅ Bot conectado! JID: ${botJid}\n`);
+
+  } else if (connection === 'open') {
+    botJid = sock.user?.id || null;
+    console.log(`✅ Bot conectado! JID: ${botJid}\n`);
+
+    if (!schedulersIniciados) {
       initPetScheduler(sock);
       initQuizRankingScheduler(sock, activeGroups);
+      schedulersIniciados = true;
+    } else {
+      initPetScheduler.updateSock?.(sock);
+      initQuizRankingScheduler.updateSock?.(sock);
     }
-  });
+  }
+});
 } // fim do startBot
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â”€â”€â”€ HANDLER PRINCIPAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════
+// ─── HANDLER PRINCIPAL ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 
-// hadleMessage
 async function handleMessage(sock, msg) {
   const jid = msg.key.remoteJid;
 
@@ -517,20 +529,20 @@ async function handleMessage(sock, msg) {
   const isPrivate = jid && !jid.endsWith('@g.us') && !jid.endsWith('@broadcast');
   const isGroup   = jid && jid.endsWith('@g.us');
 
-  // â”€â”€ Slow Mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Slow Mode ────────────────────────────────────────────────
   if (isGroup && !isAnyCmd(raw)) {
     const permitido = grupoHandler.verificarSlowMode(jid, senderJid);
     if (!permitido) return;
   }
 
-  // â”€â”€ Anti-Flood â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Anti-Flood ───────────────────────────────────────────────
   if (isGroup) {
     try {
       const flood = await grupoHandler.verificarAntiFlood(sock, jid, senderJid, botJid);
       if (flood) {
         await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
         await sock.sendMessage(jid, {
-          text: `ðŸš« *@${senderJid.split('@')[0]}* foi removido por flood!`,
+          text: `🚫 *@${senderJid.split('@')[0]}* foi removido por flood!`,
           mentions: [senderJid],
         });
         return;
@@ -538,33 +550,36 @@ async function handleMessage(sock, msg) {
     } catch {}
   }
 
-  // â”€â”€ SubstituiÃ§Ã£o estilo vim (s/antigo/novo/) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Substituição estilo vim (s/antigo/novo/) ─────────────────
   const subMatch = caption.match(/^[!.]s\/([^\/]+)\/([^\/]+)\/?/i);
   if (subMatch && (isPrivate || content.extendedTextMessage?.contextInfo?.quotedMessage)) {
     if (senderJid) contarCmd(senderJid);
     const pattern     = subMatch[1];
     const replacement = subMatch[2];
-    const targetText  = content.extendedTextMessage?.contextInfo?.quotedMessage?.conversation
-      || lastTexts.get(jid) || '';
+    const targetText  =
+      content.extendedTextMessage?.contextInfo?.quotedMessage?.conversation ||
+      lastTexts.get(jid) ||
+      '';
+
     if (!targetText) {
-      await sock.sendMessage(jid, { text: 'âš ï¸ Nenhuma mensagem para corrigir.' }, { quoted: msg });
+      await sock.sendMessage(jid, { text: '⚠️ Nenhuma mensagem para corrigir.' }, { quoted: msg });
     } else {
       try {
         const newText = targetText.replace(new RegExp(pattern, 'g'), replacement);
         await sock.sendMessage(jid, {
-          text: newText === targetText ? 'âš ï¸ Nada foi alterado.' : newText,
+          text: newText === targetText ? '⚠️ Nada foi alterado.' : newText,
         }, { quoted: msg });
       } catch {
-        await sock.sendMessage(jid, { text: 'âš ï¸ PadrÃ£o invÃ¡lido.' }, { quoted: msg });
+        await sock.sendMessage(jid, { text: '⚠️ Padrão inválido.' }, { quoted: msg });
       }
     }
     return;
   }
 
-  // Guardar Ãºltima msg de texto no PV
+  // Guardar última msg de texto no PV
   if (isPrivate && textMsg && !isAnyCmd(raw)) lastTexts.set(jid, textMsg);
 
-  // â”€â”€ Anti-Link â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Anti-Link ────────────────────────────────────────────────
   if (isGroup && antiLinkGroups.has(jid) && !isAnyCmd(raw)) {
     const hasLink = /(https?:\/\/|wa\.me\/|chat\.whatsapp\.com)/i.test(caption);
     if (hasLink) {
@@ -572,7 +587,7 @@ async function handleMessage(sock, msg) {
       if (!isAdm) {
         try {
           await sock.sendMessage(jid, {
-            text: `ðŸš« *${getSenderName(msg)}*, links nÃ£o sÃ£o permitidos neste grupo!`,
+            text: `🚫 *${getSenderName(msg)}*, links não são permitidos neste grupo!`,
             mentions: [senderJid],
           });
           await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
@@ -582,7 +597,7 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // â”€â”€ Auto-Sticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Auto-Sticker ─────────────────────────────────────────────
   if (isGroup && autoStickerGroups.has(jid) && !isAnyCmd(raw)) {
     if (imageMsg || videoMsg) {
       try { await figurinhaHandler.processMedia(sock, msg, content, jid, author, stickerCount); } catch {}
@@ -590,22 +605,22 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // â”€â”€ Pedido de casamento (sim/nÃ£o) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Pedido de casamento (sim/não) ────────────────────────────
   if (pedidosPendentes.has(senderJid)) {
     const resp = raw.trim();
-    if (resp === 'sim' || resp === 'nao' || resp === 'nÃ£o') {
+    if (resp === 'sim' || resp === 'nao' || resp === 'não') {
       await relacionamentoHandler.handleResposta(sock, msg, jid, senderJid, resp, relacionamentos, pedidosPendentes, contactNames);
       return;
     }
   }
 
-  // â”€â”€ Quiz ativo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Quiz ativo ───────────────────────────────────────────────
   if (diversaoHandler.quizState?.has(senderJid)) {
     await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption);
     return;
   }
 
-  // â”€â”€ Anagrama ativo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Anagrama ativo ───────────────────────────────────────────
   if (diversaoHandler.anagramaState?.has(senderJid)) {
     await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid);
     return;
@@ -615,13 +630,13 @@ async function handleMessage(sock, msg) {
   if (!isAnyCmd(raw)) return;
   if (senderJid) contarCmd(senderJid);
 
-  // â”€â”€ Mute check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Mute check ───────────────────────────────────────────────
   if (isGroup && mutedUsers.has(senderJid)) {
     setTimeout(async () => {
       try {
         await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
         mutedUsers.delete(senderJid);
-      } catch (e) { console.log('âŒ Erro ao remover mutado:', e.message); }
+      } catch (e) { console.error('❌ Erro ao remover mutado:', e.message); }
     }, 20000);
     return;
   }
@@ -678,8 +693,6 @@ if (matchCmd(cmdWord, 'lojacasal'))
   { await diversaoHandler.handleLojaCasal(sock, msg, jid, getPrefix); return; }
 if (matchCmdStart(cmd, 'give'))
   { await handleGive(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'buy'))
-  { await diversaoHandler.handleComprar(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'vender'))
   { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'inventario') || matchCmd(cmdWord, 'inv'))
@@ -706,7 +719,7 @@ if (matchCmd(cmdWord, 'divida'))
   { await handleDivida(sock, msg, jid); return; }
 
   // â”€â”€ MISSÃ•ES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes') || matchCmd(cmdWord, 'missÃµes'))
+  if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes') || matchCmd(cmdWord, 'missoes'))
     { await diversaoHandler.handleMissao(sock, msg, jid, caption); return; }
 
   // ── PETS ──────────────────────────────────────────────────────────────────
@@ -728,27 +741,28 @@ if (matchCmd(cmdWord, 'divida'))
     { await diversaoHandler.handleAbrigo(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'renomearpet') || matchCmdStart(cmd, 'renomearpet'))
     { await diversaoHandler.handleRenomearPet(sock, msg, jid, caption); return; }
-  // â”€â”€ MARKETPLACE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (matchCmd(cmdWord, 'avenda'))
+
+  // ── MARKETPLACE ───────────────────────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'avenda') || matchCmdStart(cmd, 'avenda '))
     { await diversaoHandler.handleAvenda(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'buscaroferta') || matchCmd(cmdWord, 'buscaoferta'))
+  if (matchCmd(cmdWord, 'buscaroferta') || matchCmd(cmdWord, 'buscaoferta') || matchCmdStart(cmd, 'buscaroferta ') || matchCmdStart(cmd, 'buscaoferta '))
     { await diversaoHandler.handleBuscarOferta(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'ofertar'))
+  if (matchCmd(cmdWord, 'ofertar') || matchCmdStart(cmd, 'ofertar '))
     { await diversaoHandler.handleOfertar(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'buy'))
+  if (matchCmd(cmdWord, 'buyoferta') || matchCmdStart(cmd, 'buyoferta '))
     { await diversaoHandler.handleBuy(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'cancelaroferta') || matchCmd(cmdWord, 'canceloferta'))
+  if (matchCmd(cmdWord, 'cancelaroferta') || matchCmd(cmdWord, 'canceloferta') || matchCmdStart(cmd, 'cancelaroferta ') || matchCmdStart(cmd, 'canceloferta '))
     { await diversaoHandler.handleCancelarOferta(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'minhasofertas') || matchCmd(cmdWord, 'mesofertas'))
     { await diversaoHandler.handleMinhasOfertas(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'historicomarket') || matchCmd(cmdWord, 'mercadohistorico'))
-    { await diversaoHandler.handleHistoricoMarket(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'ofertasrecebidas') || matchCmd(cmdWord, 'ofertas'))
-    { await diversaoHandler.handleOfertasRecebidas(sock, msg, jid, contactNames); return; }
+  if (matchCmd(cmdWord, 'historicomarket') || matchCmd(cmdWord, 'mercadohistorico') || matchCmdStart(cmd, 'historicomarket ') || matchCmdStart(cmd, 'mercadohistorico '))
+    { await diversaoHandler.handleHistoricoMarket(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'minhasofertas') || matchCmd(cmdWord, 'mesofertas') || matchCmd(cmdWord, 'ofertasrecebidas'))
+    { await diversaoHandler.handleMinhasOfertas(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'aceitarofferta') || matchCmd(cmdWord, 'aceitaroferta'))
     { await diversaoHandler.handleAceitarOfferta(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'comprarofferta'))
-    { await diversaoHandler.handleOfertar(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'menumarket') || matchCmd(cmdWord, 'menumercado'))
+    { await diversaoHandler.handleMenuMarket(sock, msg, jid, getPrefix); return; }
 
   /// â”€â”€ PESCA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if (matchCmd(cmdWord, 'pescar')         || matchCmd(cmdWord, 'pesca'))
@@ -884,25 +898,19 @@ if (matchCmd(cmdWord, 'alteradores'))
   if (matchCmdStart(cmd, 'fig '))         { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'fig',         'sticker',         stickerCount, author); return; }
   if (matchCmdStart(cmd, 'pesquisafig'))  { await figurinhaHandler.handlePesquisaFig(sock, msg, jid, caption, getPrefix, stickerCount); return; }
   
-  // ── RELACIONAMENTO ────────────────────────────────────────────
-if (matchCmdStart(cmd, 'casar'))
-  { await relacionamentoHandler.handleRelacionamento(sock, msg, content, jid, author, 'casamento', relacionamentos, pedidosPendentes, contactNames); return; }
-if (matchCmdStart(cmd, 'namorar'))
-  { await relacionamentoHandler.handleRelacionamento(sock, msg, content, jid, author, 'namoro', relacionamentos, pedidosPendentes, contactNames); return; }
-if (matchCmd(cmdWord, 'terminar'))
-  { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos); return; }
-if (matchCmd(cmdWord, 'cancelarpedido'))
-  { await relacionamentoHandler.handleCancelarPedido(sock, msg, jid, senderJid, pedidosPendentes); return; }
-if (matchCmd(cmdWord, 'euaceito'))
-  { await relacionamentoHandler.handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames); return; }
-if (matchCmd(cmdWord, 'eurecuso'))
-  { await relacionamentoHandler.handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames); return; }
-if (matchCmd(cmdWord, 'fixar') || matchCmdStart(cmd, 'fixar'))
-  { await relacionamentoHandler.handleFixar(sock, msg, content, jid, author, pinnedMessages, contactNames); return; }
-if (matchCmd(cmdWord, 'pinned') || matchCmdStart(cmd, 'pinned'))
-  { await relacionamentoHandler.handlePinned(sock, msg, jid, pinnedMessages, contactNames); return; }
-if (matchCmdStart(cmd, 'desfixar'))
-  { await relacionamentoHandler.handleDesfixar(sock, msg, jid, pinnedMessages); return; }
+// ── RELACIONAMENTO ────────────────────────────────────────────
+  if (matchCmdStart(cmd, 'casar'))
+    { await relacionamentoHandler.handleRelacionamento(sock, msg, content, jid, author, 'casamento', relacionamentos, pedidosPendentes, contactNames); return; }
+  if (matchCmdStart(cmd, 'namorar'))
+    { await relacionamentoHandler.handleRelacionamento(sock, msg, content, jid, author, 'namoro', relacionamentos, pedidosPendentes, contactNames); return; }
+  if (matchCmd(cmdWord, 'terminar'))
+    { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'cancelarpedido'))
+    { await relacionamentoHandler.handleCancelarPedido(sock, msg, jid, senderJid, pedidosPendentes); return; }
+  if (matchCmd(cmdWord, 'euaceito'))
+    { await relacionamentoHandler.handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames); return; }
+  if (matchCmd(cmdWord, 'eurecuso'))
+    { await relacionamentoHandler.handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames); return; }
 if (matchCmd(cmdWord, 'flores'))           { await relacionamentoHandler.handleFlores(sock, msg, jid, author, senderJid, relacionamentos); return; }
 if (matchCmd(cmdWord, 'doces'))            { await relacionamentoHandler.handleDoces(sock, msg, jid, author, senderJid, relacionamentos); return; }
 if (matchCmd(cmdWord, 'carta'))            { await relacionamentoHandler.handleCarta(sock, msg, jid, author, senderJid, relacionamentos); return; }
@@ -922,6 +930,14 @@ if (matchCmd(cmdWord, 'xpdobro'))          { await relacionamentoHandler.handleX
 if (matchCmd(cmdWord, 'aniversario_casal')){ await relacionamentoHandler.handleAniversarioCasal(sock, msg, jid, author, senderJid, relacionamentos); return; }
 if (matchCmdStart(cmd, 'duelodecasais'))   { await relacionamentoHandler.handleDueloDeCasais(sock, msg, content, jid, author, senderJid, relacionamentos, contactNames); return; }
 if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleRankCasais(sock, msg, jid, relacionamentos); return; }
+
+// ── PINNED ────────────────────────────────────────────────────
+  if (matchCmdStart(cmd, 'fixar'))
+    { await pinnedHandler.handleFixar(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'desfixar'))
+    { await pinnedHandler.handleDesfixar(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'pinned') || matchCmd(cmdWord, 'mensagemfixada'))
+    { await pinnedHandler.handlePinned(sock, msg, jid); return; }
 
   // â”€â”€ ANIVERSÃRIOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmdStart(cmd, 'reganiversario'))
@@ -1116,9 +1132,9 @@ async function main() {
   console.log('✅ MongoDB conectado');
 
   // Limpar sessão antiga (remova após primeiro login bem-sucedido)
-  const AuthData = mongoose.models.AuthData || mongoose.model('AuthData', new mongoose.Schema({ _id: String, data: String }, { timestamps: true }));
-  await AuthData.deleteMany({});
-  console.log('🗑️ Sessão antiga removida');
+ // const AuthData = mongoose.models.AuthData || mongoose.model('AuthData', new mongoose.Schema({ _id: String, data: String }, { timestamps: true }));
+  //await AuthData.deleteMany({});
+  //console.log('🗑️ Sessão antiga removida');
 
   await diversaoHandler.initializePersistedData();
   await loadRelationshipsFromDb();

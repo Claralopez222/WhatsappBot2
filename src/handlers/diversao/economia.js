@@ -746,10 +746,15 @@ async function handleApostar(sock, msg, jid, caption) {
 
 // ─── !extrato ─────────────────────────────────────────────────────────────────
 
-const EXTRATO_LIMITE = 10;
-
+const EXTRATO_LIMITE   = 15;
 const EXTRATO_DATE_FMT = { day: '2-digit', month: '2-digit' };
 const EXTRATO_HORA_FMT = { hour: '2-digit', minute: '2-digit' };
+
+const EXTRATO_ICONES = {
+  recebido: '📈',
+  enviado:  '📤',
+  default:  '📉',
+};
 
 function formatarDataHora(date) {
   if (!date) return { data: '??/??', hora: '??:??' };
@@ -760,16 +765,18 @@ function formatarDataHora(date) {
   };
 }
 
-function buildLinhaTransacao(t) {
+function buildLinhaTransacao(t, index) {
   const { data, hora } = formatarDataHora(t.date);
   const recebido = t.type === 'recebido';
-  return `  ${recebido ? '✅' : '❌'} *${recebido ? '+' : '-'}${t.amount}g* | ${t.item} | ${data} ${hora}`;
+  const icone    = EXTRATO_ICONES[t.type] ?? EXTRATO_ICONES.default;
+  const sinal    = recebido ? '+' : '-';
+  const num      = String(index + 1).padStart(2, '0');
+  return `  ${num}. ${icone} *${sinal}${t.amount}g* — ${t.item}\n      🕐 ${data} às ${hora}`;
 }
 
 async function handleExtrato(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-
-  const carteira  = await getCarteira(userId, jid);
+  const userId   = msg.key.participant || msg.key.remoteJid;
+  const carteira = await getCarteira(userId, jid);
   const historico = carteira?.goldHistory ?? [];
 
   if (historico.length === 0) {
@@ -777,52 +784,69 @@ async function handleExtrato(sock, msg, jid) {
       text:
         `📊 *EXTRATO DE TRANSAÇÕES* 📊\n\n` +
         `😔 Nenhuma transação registrada ainda.\n\n` +
-        `💰 *Saldo atual:* ${carteira?.gold ?? 0} gold`,
+        `💰 Saldo atual: *${carteira?.gold ?? 0} gold*`,
     }, { quoted: msg });
     return;
   }
 
-  const ultimas = historico.slice(-EXTRATO_LIMITE).reverse();
+  const ultimas     = historico.slice(-EXTRATO_LIMITE).reverse();
+  let totalEntrada  = 0;
+  let totalSaida    = 0;
 
-  let totalEntrada = 0;
-  let totalSaida   = 0;
-  const linhas     = [];
-
-  for (const t of ultimas) {
+  const linhas = ultimas.map((t, i) => {
     if (t.type === 'recebido') totalEntrada += t.amount;
     else                       totalSaida   += t.amount;
-    linhas.push(buildLinhaTransacao(t));
-  }
+    return buildLinhaTransacao(t, i);
+  });
+
+  const saldo      = carteira.gold ?? 0;
+  const balanco    = totalEntrada - totalSaida;
+  const iconeBalanco = balanco >= 0 ? '📈' : '📉';
+  const sinalBalanco = balanco >= 0 ? '+' : '';
 
   await sock.sendMessage(jid, {
     text:
       `📊 ═══ EXTRATO DE TRANSAÇÕES ═══ 📊\n\n` +
-      `*ÚLTIMAS ${ultimas.length} TRANSAÇÕES:*\n` +
-      linhas.join('\n') +
-      `\n\n━━━━━━━━━━━━━━━━\n*RESUMO DO PERÍODO:*\n` +
-      `  📈 Entradas: *+${totalEntrada}* gold\n` +
-      `  📉 Saídas: *-${totalSaida}* gold\n` +
-      `  💰 Saldo atual: *${carteira.gold}* gold`,
+      `*ÚLTIMAS ${ultimas.length} MOVIMENTAÇÕES:*\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      linhas.join('\n\n') +
+      `\n\n━━━━━━━━━━━━━━━━\n` +
+      `📋 *RESUMO DO PERÍODO*\n` +
+      `  📈 Entradas:  *+${totalEntrada} gold*\n` +
+      `  📉 Saídas:    *-${totalSaida} gold*\n` +
+      `  ${iconeBalanco} Balanço:   *${sinalBalanco}${balanco} gold*\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `  💰 Saldo atual: *${saldo} gold*`,
   }, { quoted: msg });
 }
 
 // ─── !garimpar ────────────────────────────────────────────────────────────────
 
-const GARIMPO_COOLDOWN_MS = 60 * 60 * 1000;
-const GARIMPO_GOLD_MIN    = 30;
-const GARIMPO_GOLD_MAX    = 129;
+const GARIMPO_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutos
 
-// Cache local: userId → timestamp do último garimpo bem-sucedido
-// Evita round-trip ao banco em chamadas duplicadas / double-tap
-const garimpoCache = new Map();
+// ─── Tabela de minérios (do mais raro ao mais comum) ─────────────────────────
+const MINERIOS = [
+  { nome: '💎 Diamante',    emoji: '💎', gold: 1000, chance: 0.5  },
+  { nome: '🔮 Ametista',    emoji: '🔮', gold: 750,  chance: 1.5  },
+  { nome: '💠 Safira',      emoji: '💠', gold: 600,  chance: 3.0  },
+  { nome: '❤️ Rubi',        emoji: '❤️', gold: 450,  chance: 5.0  },
+  { nome: '🟡 Topázio',     emoji: '🟡', gold: 300,  chance: 10.0 },
+  { nome: '🟢 Esmeralda',   emoji: '🟢', gold: 200,  chance: 15.0 },
+  { nome: '⚪ Quartzo',     emoji: '⚪', gold: 120,  chance: 25.0 },
+  { nome: '🪨 Pedra Comum', emoji: '🪨', gold: 50,   chance: 40.0 },
+];
+// Soma das chances = 100%
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function sortearOuro() {
-  return (
-    Math.floor(Math.random() * (GARIMPO_GOLD_MAX - GARIMPO_GOLD_MIN + 1)) +
-    GARIMPO_GOLD_MIN
-  );
+function sortearMinerio() {
+  const roll = Math.random() * 100;
+  let acumulado = 0;
+  for (const m of MINERIOS) {
+    acumulado += m.chance;
+    if (roll < acumulado) return m;
+  }
+  return MINERIOS[MINERIOS.length - 1]; // fallback
 }
 
 function formatarTempo(ms) {
@@ -842,11 +866,14 @@ function msgCooldown(restante) {
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 
+// Cache local: userId → timestamp do último garimpo bem-sucedido
+const garimpoCache = new Map();
+
 async function handleGarimpar(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
   const agora  = Date.now();
 
-  // ── 1. Checar cache local (evita chamada desnecessária ao banco e double-tap)
+  // ── 1. Checar cache local
   const tsCache = garimpoCache.get(userId) ?? 0;
   if (tsCache > 0) {
     const passado = agora - tsCache;
@@ -856,10 +883,9 @@ async function handleGarimpar(sock, msg, jid) {
     }
   }
 
-  // ── 2. Update atômico: só avança se o cooldown realmente expirou no banco.
-  //       Elimina race condition entre instâncias / após reinicialização.
-  const agora_date   = new Date(agora);
-  const limiteData   = new Date(agora - GARIMPO_COOLDOWN_MS);
+  // ── 2. Update atômico no banco (evita race condition entre instâncias)
+  const agora_date = new Date(agora);
+  const limiteData = new Date(agora - GARIMPO_COOLDOWN_MS);
 
   const userAtualizado = await Usuario.findOneAndUpdate(
     {
@@ -871,10 +897,9 @@ async function handleGarimpar(sock, msg, jid) {
       ],
     },
     { $set: { ultimoGarimpo: agora_date } },
-    { new: false, upsert: false } // `new: false` → retorna doc ANTES da alteração
+    { new: false, upsert: false }
   );
 
-  // Se não encontrou doc elegível, o cooldown ainda está ativo no banco
   if (!userAtualizado) {
     const userAtual = await Usuario.findOne({ idWhatsApp: userId })
       .select('ultimoGarimpo')
@@ -885,53 +910,60 @@ async function handleGarimpar(sock, msg, jid) {
       : agora;
 
     const restante = GARIMPO_COOLDOWN_MS - (agora - tsUltimo);
-
-    // Sincroniza cache com a realidade do banco
     garimpoCache.set(userId, tsUltimo);
 
     await sock.sendMessage(jid, { text: msgCooldown(Math.max(restante, 0)) }, { quoted: msg });
     return;
   }
 
-  // ── 3. Cooldown confirmado como livre — marcar cache imediatamente
+  // ── 3. Cooldown livre — registrar cache imediatamente
   garimpoCache.set(userId, agora);
 
   try {
-    const ouro = sortearOuro();
+    const minerio = sortearMinerio();
 
-    // Atualizar missão diária e creditar gold em paralelo
     await prepareDailyMissionState(userId);
 
     const [carteira] = await Promise.all([
-      alterarGold(userId, jid, ouro, 'Garimpo'),
+      alterarGold(userId, jid, minerio.gold, `Garimpo - ${minerio.nome}`),
       Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
-        { $inc: { 'dailyMissions.progress.gold500': ouro } },
+        { $inc: { 'dailyMissions.progress.gold500': minerio.gold } },
         { upsert: true }
       ),
     ]);
+
+    // Raridade em texto para exibir na mensagem
+    const raridade = minerio.chance <= 1
+      ? '🌟 *LENDÁRIO!*'
+      : minerio.chance <= 5
+      ? '✨ *Raro!*'
+      : minerio.chance <= 15
+      ? '🔹 Incomum'
+      : '▫️ Comum';
 
     await sock.sendMessage(
       jid,
       {
         text:
           `⛏️ ═══ GARIMPO ═══ ⛏️\n\n` +
-          `🪨 Você cavou fundo e encontrou ouro!\n\n` +
+          `🪨 Você cavou e encontrou um minério!\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
-          `💎 Encontrado: *+${ouro} gold*\n` +
+          `${minerio.emoji} Minério: *${minerio.nome}*\n` +
+          `⭐ Raridade: ${raridade}\n` +
+          `💎 Encontrado: *+${minerio.gold} gold*\n` +
           `💰 Novo saldo: *${carteira.gold} gold*\n\n` +
-          `⏰ Próximo garimpo em: *1 hora*`,
+          `⏰ Próximo garimpo em: *15 minutos*`,
       },
       { quoted: msg }
     );
   } catch (e) {
-    // Rollback do cooldown no banco para o estado anterior
+    // Rollback do cooldown no banco
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       { $set: { ultimoGarimpo: userAtualizado.ultimoGarimpo ?? null } }
-    ).catch(() => {}); // silencia erro secundário
+    ).catch(() => {});
 
-    // Desfaz cache para liberar nova tentativa
     garimpoCache.delete(userId);
 
     console.error('⚠️ Erro handleGarimpar:', e.message);
@@ -939,101 +971,108 @@ async function handleGarimpar(sock, msg, jid) {
   }
 }
 
-'use strict';
-
-// ─── Helpers compartilhados ───────────────────────────────────────────────────
-
-/**
- * Tenta debitar gold usando o update atômico do carteiraService.
- * Retorna a carteira atualizada ou null se saldo insuficiente.
- */
-async function tentarDebitar(userId, idGrupo, valor, descricao) {
-  try {
-    return await alterarGold(userId, idGrupo, -valor, descricao);
-  } catch (e) {
-    if (e instanceof RangeError) return null; // saldo insuficiente
-    throw e;
-  }
-}
-
-/**
- * Credita prêmio e atualiza missão diária em paralelo.
- * Retorna o saldo final atualizado.
- */
-async function creditarPremioEMissao(userId, idGrupo, premio, descricao, lucroLiq, saldoFallback) {
-  const ops = [];
-
-  if (premio > 0) {
-    ops.push(alterarGold(userId, idGrupo, premio, descricao));
-  }
-
-  if (lucroLiq > 0) {
-    ops.push(
-      prepareDailyMissionState(userId).then(() =>
-        Usuario.findOneAndUpdate(
-          { idWhatsApp: userId },
-          { $inc: { 'dailyMissions.progress.gold500': lucroLiq } }
-        )
-      )
-    );
-  }
-
-  if (ops.length === 0) return saldoFallback;
-
-  const [carteira] = await Promise.all(ops);
-  return carteira?.gold ?? saldoFallback;
-}
-
-function msgSaldoInsuficiente(saldo, aposta) {
-  return (
-    `❌ *Saldo insuficiente!*\n\n` +
-    `💰 Seu saldo: *${saldo}* gold\n` +
-    `💸 Aposta: *${aposta}* gold`
-  );
-}
-
 // ─── !slots ───────────────────────────────────────────────────────────────────
 
-const SLOTS_FRUTAS       = ['🍒', '🍋', '🍇', '🍉', '🔔'];
-const SLOTS_FRAMES       = [
-  `[ 🎲 | 🍒 | 🎲 ]`,
-  `[ 🍋 | 🎲 | 🍇 ]`,
-  `[ 🍉 | 🍒 | 🔔 ]`,
-  `[ 🔔 | 🍋 | 🍒 ]`,
-  `[ 🍇 | 🍉 | 🍋 ]`,
+const SLOTS_SIMBOLOS = [
+  { emoji: '💎', nome: 'Diamante', peso: 2  },
+  { emoji: '7️⃣',  nome: 'Sete',    peso: 5  },
+  { emoji: '🔔', nome: 'Sino',    peso: 10 },
+  { emoji: '🍇', nome: 'Uva',     peso: 15 },
+  { emoji: '🍉', nome: 'Melancia', peso: 18 },
+  { emoji: '🍋', nome: 'Limão',   peso: 22 },
+  { emoji: '🍒', nome: 'Cereja',  peso: 28 },
 ];
-const SLOTS_FRAME_DELAY  = 300;
+
+// Pré-computa pool ponderada uma única vez
+const SLOTS_POOL = SLOTS_SIMBOLOS.flatMap(s => Array(s.peso).fill(s.emoji));
+
+const SLOTS_MULTIPLICADORES = {
+  '💎': { tres: 50, dois: 5  },
+  '7️⃣':  { tres: 25, dois: 3  },
+  '🔔': { tres: 15, dois: 2  },
+  '🍇': { tres: 10, dois: 1.5 },
+  '🍉': { tres: 8,  dois: 1.5 },
+  '🍋': { tres: 6,  dois: 1.2 },
+  '🍒': { tres: 4,  dois: 1.2 },
+};
+
+const SLOTS_FRAMES_ANIM = [
+  ['🎲', '🎲', '🎲'],
+  ['🍒', '🎲', '🎲'],
+  ['🍋', '🍇', '🎲'],
+  ['🍉', '🔔', '🍒'],
+  ['🔔', '🍋', '🍒'],
+  ['🍇', '🍉', '🍋'],
+];
+const SLOTS_FRAME_DELAY = 320;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function sortearSlots() {
-  const pick = () => SLOTS_FRUTAS[Math.floor(Math.random() * SLOTS_FRUTAS.length)];
+  const pick = () => SLOTS_POOL[Math.floor(Math.random() * SLOTS_POOL.length)];
   return [pick(), pick(), pick()];
 }
 
-function calcularMultiplicador(r1, r2, r3) {
-  if (r1 === r2 && r2 === r3)                   return { mult: 10,  label: '🎉 *JACKPOT MÁXIMO!* Três iguais! Multiplicado por 10!' };
-  if (r1 === r2 || r2 === r3 || r1 === r3)      return { mult: 2.5, label: '✨ *QUASE JACKPOT!* Duas iguais! Multiplicado por 2.5!' };
-  return { mult: 0, label: '❌ *Você perdeu!* O banco agradece.' };
+function calcularResultado(r1, r2, r3, aposta) {
+  if (r1 === r2 && r2 === r3) {
+    const mult  = SLOTS_MULTIPLICADORES[r1]?.tres ?? 4;
+    const label =
+      mult >= 25
+        ? `🌟 *JACKPOT LENDÁRIO!* Três ${r1} — *${mult}x*!`
+        : mult >= 10
+        ? `🎉 *JACKPOT!* Três ${r1} — *${mult}x*!`
+        : `✨ *TRÊS IGUAIS!* ${r1}${r1}${r1} — *${mult}x*!`;
+    return { mult, label, tipo: 'tres' };
+  }
+
+  if (r1 === r2 || r2 === r3 || r1 === r3) {
+    const simbolo = r1 === r2 ? r1 : r3 === r2 ? r2 : r1;
+    const mult    = SLOTS_MULTIPLICADORES[simbolo]?.dois ?? 1.2;
+    return {
+      mult,
+      label: `💫 *DOIS IGUAIS!* ${simbolo}${simbolo} — *${mult}x*`,
+      tipo: 'dois',
+    };
+  }
+
+  return { mult: 0, label: `❌ *Perdeu!* O cassino agradece 🏦`, tipo: 'derrota' };
 }
 
-function buildSlotsFrame(frame) {
-  return `🎰 *CASSINO PIROQUINHAS* 🎰\n\n     ${frame}\n\n_Girando..._`;
-}
-
-function buildSlotsResultado(r1, r2, r3, aposta, multiplicador, label, lucroLiq, saldoFinal) {
-  const premio = Math.floor(aposta * multiplicador);
+function buildFrame(s1, s2, s3, girando = true) {
+  const status = girando ? `_Girando..._` : `_Resultado_`;
   return (
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
-    `     [ ${r1} | ${r2} | ${r3} ]\n\n` +
-    `${label}\n` +
-    `━━━━━━━━━━━━━━━━\n*DETALHES:*\n` +
-    `  💵 Aposta: *${aposta}* gold\n` +
-    (multiplicador > 0
-      ? `  ✖️ Multiplicador: *${multiplicador}x*\n  💰 Prêmio: *${premio}* gold\n`
-      : '') +
-    `  ${lucroLiq >= 0 ? '✅' : '❌'} Resultado: *${lucroLiq >= 0 ? '+' : ''}${lucroLiq}* gold\n` +
-    `  💎 Saldo: *${saldoFinal}* gold`
+    `┌─────────────────┐\n` +
+    `│   ${s1}  │  ${s2}  │  ${s3}   │\n` +
+    `└─────────────────┘\n\n` +
+    status
   );
 }
+
+function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal) {
+  const premio  = Math.floor(aposta * mult);
+  const icone   = lucroLiq > 0 ? '📈' : lucroLiq === 0 ? '➖' : '📉';
+  const sinal   = lucroLiq >= 0 ? '+' : '';
+
+  return (
+    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+    `┌─────────────────┐\n` +
+    `│   ${r1}  │  ${r2}  │  ${r3}   │\n` +
+    `└─────────────────┘\n\n` +
+    `${label}\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `📋 *DETALHES DA RODADA*\n` +
+    `  💵 Aposta:      *${aposta} gold*\n` +
+    (mult > 0
+      ? `  ✖️  Multiplicador: *${mult}x*\n` +
+        `  🏆 Prêmio:      *${premio} gold*\n`
+      : '') +
+    `  ${icone} Resultado:   *${sinal}${lucroLiq} gold*\n` +
+    `  💰 Saldo final: *${saldoFinal} gold*`
+  );
+}
+
+// ─── Handler principal ────────────────────────────────────────────────────────
 
 async function handleSlots(sock, msg, jid, senderJid, caption) {
   const args   = caption.trim().split(/\s+/);
@@ -1041,12 +1080,19 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
 
   if (!aposta || isNaN(aposta) || aposta <= 0) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Uso correto: *!slots [valor]*\nExemplo: *!slots 50*',
+      text:
+        `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+        `⚠️ Uso correto: *!slots [valor]*\n` +
+        `Exemplo: *!slots 100*\n\n` +
+        `💎 Símbolos e multiplicadores (3x iguais):\n` +
+        SLOTS_SIMBOLOS.map(s =>
+          `  ${s.emoji} ${s.nome}: *${SLOTS_MULTIPLICADORES[s.emoji].tres}x* (par: ${SLOTS_MULTIPLICADORES[s.emoji].dois}x)`
+        ).join('\n'),
     }, { quoted: msg });
     return;
   }
 
-  // ── Débito atômico (usa RangeError do carteiraService para saldo insuficiente)
+  // ── Débito atômico
   const carteiraDebitada = await tentarDebitar(senderJid, jid, aposta, 'Slots');
   if (!carteiraDebitada) {
     const saldo = (await getCarteira(senderJid, jid))?.gold ?? 0;
@@ -1055,28 +1101,30 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   }
 
   // ── Animação de giro
-  const msgInicial = await sock.sendMessage(jid, {
-    text: buildSlotsFrame('[ 🎲 | 🎲 | 🎲 ]'),
-  }, { quoted: msg });
-
-  for (const frame of SLOTS_FRAMES) {
-    await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
-    try { await sock.chatModify({ text: buildSlotsFrame(frame) }, msgInicial.key); } catch {}
-  }
-  await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
-
-// ── Resultado
-  const [r1, r2, r3]    = sortearSlots();
-  const { mult, label } = calcularMultiplicador(r1, r2, r3);
-  const premio          = Math.floor(aposta * mult);
-  const lucroLiq        = premio - aposta;
-  const saldoFallback   = carteiraDebitada.gold; // ← CORRIGIDO
-
-  const saldoFinal = await creditarPremioEMissao(
-    senderJid, jid, premio, `Slots (${mult}x)`, lucroLiq, saldoFallback
+  const msgInicial = await sock.sendMessage(
+    jid,
+    { text: buildFrame('🎲', '🎲', '🎲', true) },
+    { quoted: msg }
   );
 
-  const textoFinal = buildSlotsResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal);
+  for (const [s1, s2, s3] of SLOTS_FRAMES_ANIM) {
+    await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
+    try { await sock.chatModify({ text: buildFrame(s1, s2, s3, true) }, msgInicial.key); } catch {}
+  }
+
+  await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
+
+  // ── Resultado
+  const [r1, r2, r3]        = sortearSlots();
+  const { mult, label }     = calcularResultado(r1, r2, r3, aposta);
+  const premio              = Math.floor(aposta * mult);
+  const lucroLiq            = premio - aposta;
+
+  const saldoFinal = await creditarPremioEMissao(
+    senderJid, jid, premio, `Slots (${mult}x)`, lucroLiq, carteiraDebitada.gold
+  );
+
+  const textoFinal = buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal);
 
   try { await sock.chatModify({ text: textoFinal }, msgInicial.key); }
   catch { await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg }); }
@@ -1084,37 +1132,96 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
 
 // ─── !corrida ─────────────────────────────────────────────────────────────────
 
-const CORRIDA_BICHOS  = ['🐎 Cavalo', '🐅 Tigre', '🐢 Tartaruga', '🐕 Cachorro'];
-const CORRIDA_EMOJIS  = ['🐎', '🐅', '🐢', '🐕'];
-const CORRIDA_MULT    = 3;
+const CORRIDA_BICHOS = [
+  { nome: '🐎 Cavalo',    emoji: '🐎', odds: 2.0, velocidade: 9 },
+  { nome: '🐅 Tigre',     emoji: '🐅', odds: 2.5, velocidade: 8 },
+  { nome: '🦊 Raposa',    emoji: '🦊', odds: 3.0, velocidade: 7 },
+  { nome: '🐕 Cachorro',  emoji: '🐕', odds: 3.5, velocidade: 6 },
+  { nome: '🐗 Javali',    emoji: '🐗', odds: 4.0, velocidade: 5 },
+  { nome: '🐢 Tartaruga', emoji: '🐢', odds: 8.0, velocidade: 2 },
+];
 
-function buildPista(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal) {
-  let pista = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
+const CORRIDA_PISTA_LEN  = 12; // caracteres de pista
+const CORRIDA_FRAMES     = 5;
+const CORRIDA_FRAME_DELAY = 800;
 
-  for (let i = 0; i < CORRIDA_BICHOS.length; i++) {
-    pista += i === vencedorIdx
-      ? `${CORRIDA_EMOJIS[i]} ══════════════ 💨 🏆\n`
-      : `${CORRIDA_EMOJIS[i]} ${'═'.repeat(Math.floor(Math.random() * 8) + 2)}\n`;
-  }
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  pista +=
-    `\n━━━━━━━━━━━━━━━━\n` +
-    `🎯 Você apostou no *${CORRIDA_BICHOS[escolhaIdx]}*\n` +
-    `🏆 Vencedor: *${CORRIDA_BICHOS[vencedorIdx]}*\n\n`;
-
-  pista += lucroLiq > 0
-    ? `🎉 *VITÓRIA!* Você ganhou *+${aposta * CORRIDA_MULT}* gold!\n`
-    : `❌ *DERROTA!* Você perdeu *${aposta}* gold.\n`;
-
-  pista += `💰 Saldo: *${saldoFinal}* gold`;
-
-  return pista;
+/**
+ * Sorteio ponderado pela velocidade — bicho mais rápido tem maior chance de ganhar,
+ * mas nunca é garantido (upset pode acontecer).
+ */
+function sortearVencedor() {
+  const pool = CORRIDA_BICHOS.flatMap((b, i) => Array(b.velocidade).fill(i));
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/// ── !corrida ────────────────────────────────────────────────────────
+/**
+ * Gera posições aleatórias para cada bicho em um frame de animação.
+ * O vencedor é `null` durante a animação (posição aleatória).
+ */
+function gerarPosicoes(frame, totalFrames, vencedorIdx = null) {
+  return CORRIDA_BICHOS.map((b, i) => {
+    if (vencedorIdx !== null && i === vencedorIdx) return CORRIDA_PISTA_LEN;
+    // Progresso base pelo ritmo do bicho + ruído aleatório
+    const base  = Math.floor((b.velocidade / 10) * (CORRIDA_PISTA_LEN * (frame / totalFrames)));
+    const ruido = Math.floor(Math.random() * 3);
+    return Math.min(base + ruido, CORRIDA_PISTA_LEN - 1);
+  });
+}
+
+function buildFrameCorrida(posicoes, titulo = '_Correndo..._') {
+  let texto = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
+
+  for (let i = 0; i < CORRIDA_BICHOS.length; i++) {
+    const pos   = posicoes[i];
+    const trilha = '─'.repeat(pos) + CORRIDA_BICHOS[i].emoji + '─'.repeat(Math.max(0, CORRIDA_PISTA_LEN - pos));
+    texto += `${trilha} 🏁\n`;
+  }
+
+  texto += `\n${titulo}`;
+  return texto;
+}
+
+function buildResultado(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal) {
+  const vencedor = CORRIDA_BICHOS[vencedorIdx];
+  const escolha  = CORRIDA_BICHOS[escolhaIdx];
+  const ganhou   = vencedorIdx === escolhaIdx;
+  const premio   = ganhou ? Math.floor(aposta * escolha.odds) : 0;
+  const icone    = ganhou ? '🎉' : '❌';
+  const sinal    = lucroLiq >= 0 ? '+' : '';
+
+  let texto = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
+
+  // Pista final — vencedor chegou, outros parados
+  for (let i = 0; i < CORRIDA_BICHOS.length; i++) {
+    if (i === vencedorIdx) {
+      texto += `${'─'.repeat(CORRIDA_PISTA_LEN)}${CORRIDA_BICHOS[i].emoji} 🏆\n`;
+    } else {
+      const pos = Math.floor(Math.random() * (CORRIDA_PISTA_LEN - 2)) + 2;
+      texto += `${'─'.repeat(pos)}${CORRIDA_BICHOS[i].emoji}${'─'.repeat(CORRIDA_PISTA_LEN - pos)} 🏁\n`;
+    }
+  }
+
+  texto +=
+    `\n━━━━━━━━━━━━━━━━\n` +
+    `🎯 Sua aposta: *${escolha.nome}* (odds ${escolha.odds}x)\n` +
+    `🏆 Vencedor:   *${vencedor.nome}*\n\n` +
+    `${icone} ${ganhou ? `*VITÓRIA!* Você ganhou *+${premio} gold*!` : `*DERROTA!* Você perdeu *${aposta} gold.*`}\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `  💵 Aposta:      *${aposta} gold*\n` +
+    (ganhou ? `  ✖️  Odds:         *${escolha.odds}x*\n  🏆 Prêmio:      *${premio} gold*\n` : '') +
+    `  📊 Resultado:   *${sinal}${lucroLiq} gold*\n` +
+    `  💰 Saldo final: *${saldoFinal} gold*`;
+
+  return texto;
+}
+
+// ─── Handler principal ────────────────────────────────────────────────────────
+
 async function handleCorrida(sock, msg, jid, senderJid, caption) {
-  const args    = caption.trim().split(/\s+/);
-  const escolha = parseInt(args[1]); // 1–4
+  const args   = caption.trim().split(/\s+/);
+  const escolha = parseInt(args[1]);
   const aposta  = parseInt(args[2]);
 
   const escolhaValida = escolha >= 1 && escolha <= CORRIDA_BICHOS.length;
@@ -1122,10 +1229,14 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   if (!escolha || !aposta || isNaN(escolha) || isNaN(aposta) || !escolhaValida || aposta <= 0) {
     await sock.sendMessage(jid, {
       text:
-        `⚠️ Uso correto: *!corrida [bicho] [valor]*\n\n` +
+        `🏁 *CORRIDA DE BICHOS* 🏁\n\n` +
+        `⚠️ Uso: *!corrida [bicho] [valor]*\n\n` +
         `*Escolha seu corredor:*\n` +
-        CORRIDA_BICHOS.map((b, i) => `${i + 1}️⃣ ${b}`).join('\n') +
-        `\n\nExemplo: *!corrida 1 50* (Aposta 50 no Cavalo)`,
+        CORRIDA_BICHOS.map((b, i) =>
+          `  ${i + 1}️⃣ ${b.nome} — odds *${b.odds}x*`
+        ).join('\n') +
+        `\n\n💡 Exemplo: *!corrida 1 100* (100 gold no Cavalo)\n` +
+        `⚠️ Bichos mais lentos pagam mais, mas ganham menos!`,
     }, { quoted: msg });
     return;
   }
@@ -1134,7 +1245,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
 
   // ── Débito atômico
   const carteiraDebitada = await tentarDebitar(
-    senderJid, jid, aposta, `Corrida (${CORRIDA_BICHOS[escolhaIdx]})`
+    senderJid, jid, aposta, `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`
   );
   if (!carteiraDebitada) {
     const saldo = (await getCarteira(senderJid, jid))?.gold ?? 0;
@@ -1142,20 +1253,50 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
     return;
   }
 
-  // ── Resultado
-  const vencedorIdx   = Math.floor(Math.random() * CORRIDA_BICHOS.length);
-  const ganhou        = escolhaIdx === vencedorIdx;
-  const premio        = ganhou ? aposta * CORRIDA_MULT : 0;
-  const lucroLiq      = premio - aposta;
-  const saldoFallback = carteiraDebitada.gold; // ← CORRIGIDO
+  // ── Sortear vencedor antes da animação (resultado já definido)
+  const vencedorIdx = sortearVencedor();
 
-  const saldoFinal = await creditarPremioEMissao(
-    senderJid, jid, premio, `Corrida (${CORRIDA_BICHOS[escolhaIdx]})`, lucroLiq, saldoFallback
+  // ── Animação
+  const posIniciais = CORRIDA_BICHOS.map(() => 0);
+  const msgCorrida  = await sock.sendMessage(
+    jid,
+    { text: buildFrameCorrida(posIniciais, '_Largando..._') },
+    { quoted: msg }
   );
 
-  await sock.sendMessage(jid, {
-    text: buildPista(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal),
-  }, { quoted: msg });
+  for (let f = 1; f <= CORRIDA_FRAMES; f++) {
+    await new Promise(r => setTimeout(r, CORRIDA_FRAME_DELAY));
+    const posicoes = gerarPosicoes(f, CORRIDA_FRAMES);
+    try {
+      await sock.chatModify(
+        { text: buildFrameCorrida(posicoes, `_Volta ${f} de ${CORRIDA_FRAMES}..._`) },
+        msgCorrida.key
+      );
+    } catch {}
+  }
+
+  // Frame final — vencedor chegou
+  await new Promise(r => setTimeout(r, CORRIDA_FRAME_DELAY));
+  const posFinal = gerarPosicoes(CORRIDA_FRAMES, CORRIDA_FRAMES, vencedorIdx);
+  try { await sock.chatModify({ text: buildFrameCorrida(posFinal, `_Finalizando..._`) }, msgCorrida.key); } catch {}
+  await new Promise(r => setTimeout(r, 600));
+
+  // ── Creditar prêmio
+  const ganhou      = escolhaIdx === vencedorIdx;
+  const premio      = ganhou ? Math.floor(aposta * CORRIDA_BICHOS[escolhaIdx].odds) : 0;
+  const lucroLiq    = premio - aposta;
+
+  const saldoFinal = await creditarPremioEMissao(
+    senderJid, jid, premio,
+    `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`,
+    lucroLiq,
+    carteiraDebitada.gold
+  );
+
+  const textoFinal = buildResultado(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal);
+
+  try { await sock.chatModify({ text: textoFinal }, msgCorrida.key); }
+  catch { await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg }); }
 }
 
 // ─── Helpers do ranking ───────────────────────────────────────────────────────

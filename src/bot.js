@@ -460,38 +460,58 @@ async function startBot() {
     }
   });
 
-  // ── Conexão ──────────────────────────────────────────────────────────────────
-  let schedulersIniciados = false;
+// ── Conexão ───────────────────────────────────────────────────────────────────
+let schedulersIniciados = false;
 
 sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+
+  // ── QR Code ────────────────────────────────────────────────────────────────
   if (qr) {
     console.log('\n📱 Escaneie o QR Code:\n');
-    console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
-    await QRCode.toFile(path.resolve(__dirname, '../qrcode.png'), qr, { width: 400 });
+    try {
+      console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
+      await QRCode.toFile(path.resolve(__dirname, '../qrcode.png'), qr, { width: 400 });
+    } catch (err) {
+      console.error('[QRCode] Erro ao gerar QR:', err.message);
+    }
   }
 
+  // ── Desconexão ─────────────────────────────────────────────────────────────
   if (connection === 'close') {
     schedulersIniciados = false;
-    const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
-    console.log(`🔌 Desconectado. Código: ${code} | Erro: ${lastDisconnect?.error?.message}`);
-    if (code !== DisconnectReason.loggedOut) {
-      setTimeout(() => startBot(), 30000);
+
+    const code    = new Boom(lastDisconnect?.error)?.output?.statusCode;
+    const motivo  = lastDisconnect?.error?.message ?? 'desconhecido';
+    const logado  = code !== DisconnectReason.loggedOut;
+
+    console.warn(`🔌 Desconectado. Código: ${code} | Motivo: ${motivo}`);
+
+    if (logado) {
+      const delay = code === DisconnectReason.connectionReplaced ? 5_000 : 30_000;
+      console.log(`🔄 Reconectando em ${delay / 1000}s...`);
+      setTimeout(() => startBot(), delay);
     } else {
-      console.log('🚪 Sessão encerrada definitivamente.');
+      console.log('🚪 Sessão encerrada definitivamente (loggedOut).');
       process.exit(0);
     }
+  }
 
-  } else if (connection === 'open') {
-    botJid = sock.user?.id || null;
+  // ── Conexão aberta ─────────────────────────────────────────────────────────
+  if (connection === 'open') {
+    botJid = sock.user?.id ?? null;
     console.log(`✅ Bot conectado! JID: ${botJid}\n`);
 
     if (!schedulersIniciados) {
+      // Primeira conexão — inicializa os schedulers
       initPetScheduler(sock);
       initQuizRankingScheduler(sock, activeGroups);
       schedulersIniciados = true;
+      console.log('[Schedulers] Iniciados.');
     } else {
+      // Reconexão — só atualiza o sock nos schedulers existentes
       initPetScheduler.updateSock?.(sock);
       initQuizRankingScheduler.updateSock?.(sock);
+      console.log('[Schedulers] Sock atualizado após reconexão.');
     }
   }
 });

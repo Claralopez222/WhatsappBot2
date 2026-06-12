@@ -14,6 +14,7 @@ const { prepareDailyMissionState } = require('./missoes');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo')); // <-- Mantido este padrão seguro
 const { VARAS_PESCA, ISCAS } = require('./pesca'); // Importar catálogos de pesca para o !comprar reconhecer varas e iscas
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // A linha duplicada que estava aqui embaixo foi removida com sucesso!
 
@@ -1078,6 +1079,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   const args   = caption.trim().split(/\s+/);
   const aposta = parseInt(args[1]);
 
+  // ── Validação da aposta
   if (!aposta || isNaN(aposta) || aposta <= 0) {
     await sock.sendMessage(jid, {
       text:
@@ -1092,13 +1094,24 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
     return;
   }
 
-  // ── Débito atômico
-  const carteiraDebitada = await tentarDebitar(senderJid, jid, aposta, 'Slots');
-  if (!carteiraDebitada) {
-    const saldo = (await getCarteira(senderJid, jid))?.gold ?? 0;
-    await sock.sendMessage(jid, { text: msgSaldoInsuficiente(saldo, aposta) }, { quoted: msg });
+  // ── Verifica e debita saldo
+  const carteira = await getCarteira(senderJid, jid);
+  const saldo    = carteira?.gold ?? 0;
+
+  if (saldo < aposta) {
+    await sock.sendMessage(jid, {
+      text:
+        `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+        `❌ *Saldo insuficiente!*\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `💰 Seu saldo:  *${saldo} gold*\n` +
+        `🎲 Aposta:     *${aposta} gold*\n` +
+        `📉 Faltam:     *${aposta - saldo} gold*`,
+    }, { quoted: msg });
     return;
   }
+
+  await alterarGold(senderJid, jid, -aposta, 'Slots (aposta)');
 
   // ── Animação de giro
   const msgInicial = await sock.sendMessage(
@@ -1115,14 +1128,17 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
 
   // ── Resultado
-  const [r1, r2, r3]        = sortearSlots();
-  const { mult, label }     = calcularResultado(r1, r2, r3, aposta);
-  const premio              = Math.floor(aposta * mult);
-  const lucroLiq            = premio - aposta;
+  const [r1, r2, r3]    = sortearSlots();
+  const { mult, label } = calcularResultado(r1, r2, r3, aposta);
+  const premio          = Math.floor(aposta * mult);
+  const lucroLiq        = premio - aposta;
 
-  const saldoFinal = await creditarPremioEMissao(
-    senderJid, jid, premio, `Slots (${mult}x)`, lucroLiq, carteiraDebitada.gold
-  );
+  // ── Credita prêmio e calcula saldo final
+  let saldoFinal = saldo - aposta;
+  if (premio > 0) {
+    const carteiraAtualizada = await alterarGold(senderJid, jid, premio, `Slots (${mult}x)`);
+    saldoFinal = carteiraAtualizada.gold;
+  }
 
   const textoFinal = buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal);
 
@@ -1141,8 +1157,8 @@ const CORRIDA_BICHOS = [
   { nome: '🐢 Tartaruga', emoji: '🐢', odds: 8.0, velocidade: 2 },
 ];
 
-const CORRIDA_PISTA_LEN  = 12; // caracteres de pista
-const CORRIDA_FRAMES     = 5;
+const CORRIDA_PISTA_LEN   = 12;
+const CORRIDA_FRAMES      = 5;
 const CORRIDA_FRAME_DELAY = 800;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1158,12 +1174,10 @@ function sortearVencedor() {
 
 /**
  * Gera posições aleatórias para cada bicho em um frame de animação.
- * O vencedor é `null` durante a animação (posição aleatória).
  */
 function gerarPosicoes(frame, totalFrames, vencedorIdx = null) {
   return CORRIDA_BICHOS.map((b, i) => {
     if (vencedorIdx !== null && i === vencedorIdx) return CORRIDA_PISTA_LEN;
-    // Progresso base pelo ritmo do bicho + ruído aleatório
     const base  = Math.floor((b.velocidade / 10) * (CORRIDA_PISTA_LEN * (frame / totalFrames)));
     const ruido = Math.floor(Math.random() * 3);
     return Math.min(base + ruido, CORRIDA_PISTA_LEN - 1);
@@ -1174,7 +1188,7 @@ function buildFrameCorrida(posicoes, titulo = '_Correndo..._') {
   let texto = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
 
   for (let i = 0; i < CORRIDA_BICHOS.length; i++) {
-    const pos   = posicoes[i];
+    const pos    = posicoes[i];
     const trilha = '─'.repeat(pos) + CORRIDA_BICHOS[i].emoji + '─'.repeat(Math.max(0, CORRIDA_PISTA_LEN - pos));
     texto += `${trilha} 🏁\n`;
   }
@@ -1183,7 +1197,7 @@ function buildFrameCorrida(posicoes, titulo = '_Correndo..._') {
   return texto;
 }
 
-function buildResultado(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal) {
+function buildResultadoCorrida(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal) {
   const vencedor = CORRIDA_BICHOS[vencedorIdx];
   const escolha  = CORRIDA_BICHOS[escolhaIdx];
   const ganhou   = vencedorIdx === escolhaIdx;
@@ -1193,7 +1207,6 @@ function buildResultado(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal) {
 
   let texto = `🏁 *CORRIDA DE BICHOS* 🏁\n\n`;
 
-  // Pista final — vencedor chegou, outros parados
   for (let i = 0; i < CORRIDA_BICHOS.length; i++) {
     if (i === vencedorIdx) {
       texto += `${'─'.repeat(CORRIDA_PISTA_LEN)}${CORRIDA_BICHOS[i].emoji} 🏆\n`;
@@ -1207,10 +1220,16 @@ function buildResultado(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal) {
     `\n━━━━━━━━━━━━━━━━\n` +
     `🎯 Sua aposta: *${escolha.nome}* (odds ${escolha.odds}x)\n` +
     `🏆 Vencedor:   *${vencedor.nome}*\n\n` +
-    `${icone} ${ganhou ? `*VITÓRIA!* Você ganhou *+${premio} gold*!` : `*DERROTA!* Você perdeu *${aposta} gold.*`}\n` +
+    `${icone} ${ganhou
+      ? `*VITÓRIA!* Você ganhou *+${premio} gold*!`
+      : `*DERROTA!* Você perdeu *${aposta} gold.*`
+    }\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `  💵 Aposta:      *${aposta} gold*\n` +
-    (ganhou ? `  ✖️  Odds:         *${escolha.odds}x*\n  🏆 Prêmio:      *${premio} gold*\n` : '') +
+    (ganhou
+      ? `  ✖️  Odds:         *${escolha.odds}x*\n` +
+        `  🏆 Prêmio:      *${premio} gold*\n`
+      : '') +
     `  📊 Resultado:   *${sinal}${lucroLiq} gold*\n` +
     `  💰 Saldo final: *${saldoFinal} gold*`;
 
@@ -1243,15 +1262,24 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
 
   const escolhaIdx = escolha - 1;
 
-  // ── Débito atômico
-  const carteiraDebitada = await tentarDebitar(
-    senderJid, jid, aposta, `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`
-  );
-  if (!carteiraDebitada) {
-    const saldo = (await getCarteira(senderJid, jid))?.gold ?? 0;
-    await sock.sendMessage(jid, { text: msgSaldoInsuficiente(saldo, aposta) }, { quoted: msg });
+  // ── Verifica e debita saldo
+  const carteira = await getCarteira(senderJid, jid);
+  const saldo    = carteira?.gold ?? 0;
+
+  if (saldo < aposta) {
+    await sock.sendMessage(jid, {
+      text:
+        `🏁 *CORRIDA DE BICHOS* 🏁\n\n` +
+        `❌ *Saldo insuficiente!*\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `💰 Seu saldo:  *${saldo} gold*\n` +
+        `🎲 Aposta:     *${aposta} gold*\n` +
+        `📉 Faltam:     *${aposta - saldo} gold*`,
+    }, { quoted: msg });
     return;
   }
+
+  await alterarGold(senderJid, jid, -aposta, `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`);
 
   // ── Sortear vencedor antes da animação (resultado já definido)
   const vencedorIdx = sortearVencedor();
@@ -1275,25 +1303,24 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
     } catch {}
   }
 
-  // Frame final — vencedor chegou
+  // ── Frame final — vencedor chegou
   await new Promise(r => setTimeout(r, CORRIDA_FRAME_DELAY));
   const posFinal = gerarPosicoes(CORRIDA_FRAMES, CORRIDA_FRAMES, vencedorIdx);
   try { await sock.chatModify({ text: buildFrameCorrida(posFinal, `_Finalizando..._`) }, msgCorrida.key); } catch {}
   await new Promise(r => setTimeout(r, 600));
 
-  // ── Creditar prêmio
-  const ganhou      = escolhaIdx === vencedorIdx;
-  const premio      = ganhou ? Math.floor(aposta * CORRIDA_BICHOS[escolhaIdx].odds) : 0;
-  const lucroLiq    = premio - aposta;
+  // ── Creditar prêmio e calcular saldo final
+  const ganhou   = escolhaIdx === vencedorIdx;
+  const premio   = ganhou ? Math.floor(aposta * CORRIDA_BICHOS[escolhaIdx].odds) : 0;
+  const lucroLiq = premio - aposta;
 
-  const saldoFinal = await creditarPremioEMissao(
-    senderJid, jid, premio,
-    `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`,
-    lucroLiq,
-    carteiraDebitada.gold
-  );
+  let saldoFinal = saldo - aposta;
+  if (premio > 0) {
+    const carteiraAtualizada = await alterarGold(senderJid, jid, premio, `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`);
+    saldoFinal = carteiraAtualizada.gold;
+  }
 
-  const textoFinal = buildResultado(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal);
+  const textoFinal = buildResultadoCorrida(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoFinal);
 
   try { await sock.chatModify({ text: textoFinal }, msgCorrida.key); }
   catch { await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg }); }

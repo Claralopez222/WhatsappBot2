@@ -38,7 +38,6 @@ async function handleFixar(sock, msg, jid) {
     quotedMsg.videoMessage?.caption     ||
     '[_Mensagem de Mídia_]';
 
-  // FIX 2: cobre tanto extendedTextMessage quanto conversation
   const fullText =
     msg.message?.extendedTextMessage?.text ||
     msg.message?.conversation              ||
@@ -46,25 +45,33 @@ async function handleFixar(sock, msg, jid) {
   const args     = fullText.trim().split(/\s+/);
   const duration = parseDuration(args[1]);
 
+  // ── CORREÇÃO DA KEY: Identifica se a mensagem marcada é do próprio bot ──
+  const isFromMe = quotedPart
+    ? jidNormalizedUser(quotedPart) === jidNormalizedUser(sock.user?.id ?? '')
+    : false;
+
+  const targetKey = {
+    remoteJid: chatJid,
+    fromMe:    isFromMe,
+    id:        quotedSign,
+  };
+
+  // REGRA DE OURO: O participant SÓ vai na key se a mensagem NÃO for nossa e for em grupo
+  if (!isFromMe && chatJid.endsWith('@g.us') && quotedPart) {
+    targetKey.participant = quotedPart;
+  }
+
   try {
+    // Envia o comando de fixação nativo correto para o WhatsApp
     await sock.sendMessage(chatJid, {
       pin: {
-        key: {
-          remoteJid:   chatJid,
-          // FIX 3: fallback seguro para sock.user?.id no boot
-          fromMe: quotedPart
-            ? jidNormalizedUser(quotedPart) === jidNormalizedUser(sock.user?.id ?? '')
-            : false,
-          id:          quotedSign,
-          participant: quotedPart,
-        },
-        // FIX 1: valores numéricos diretos — evita falha silenciosa em versões
-        // do Baileys onde proto.Message.PinExtension.Type pode ser undefined
+        key:      targetKey,
         type:     1, // PIN
         duration,
       },
     });
 
+    // Salva no banco para o comando !pinned funcionar depois
     await PinnedMessage.findOneAndUpdate(
       { chatJid },
       {
@@ -93,7 +100,6 @@ async function handleFixar(sock, msg, jid) {
 async function handlePinned(sock, msg, jid) {
   const chatJid = jidNormalizedUser(jid);
 
-  // FIX 4: try/catch para não derrubar o handler se o MongoDB cair
   try {
     const pm = await PinnedMessage.findOne({ chatJid }).lean();
 
@@ -142,14 +148,25 @@ async function handleDesfixar(sock, msg, jid) {
 
   try {
     if (pm?.messageId) {
+      // Também precisamos da validação do fromMe aqui para desfixar certo
+      const isFromMe = pm.orig
+        ? jidNormalizedUser(pm.orig) === jidNormalizedUser(sock.user?.id ?? '')
+        : false;
+
+      const unpinKey = {
+        remoteJid: chatJid,
+        fromMe:    isFromMe,
+        id:        pm.messageId,
+      };
+
+      if (!isFromMe && chatJid.endsWith('@g.us') && pm.orig) {
+        unpinKey.participant = pm.orig;
+      }
+
       await sock.sendMessage(chatJid, {
         pin: {
-          key: {
-            remoteJid:   chatJid,
-            id:          pm.messageId,
-            participant: pm.orig,
-          },
-          type: 2, // FIX 1: UNPIN — valor numérico direto
+          key:  unpinKey,
+          type: 2, // UNPIN
         },
       });
     }

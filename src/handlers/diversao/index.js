@@ -25,7 +25,7 @@ const {
   handleVerdadeOuDesafio, handleConfissao, handleJulgamento, handlePodre, handleFrango,
   handleMaldizer, handleFortuna, handleCompatibilidade,
   handleTrans, handleCorno, handlePeitudo, handlePauzudo,
-  handleBundudo, handleGordo, handleCuzudo,
+  handleBundudo, handleGordo, handleCuzudo,handleGado,
 } = require('./brincadeiras');
 
 // Economia
@@ -142,6 +142,7 @@ module.exports = {
   handleBundudo,
   handleGordo,
   handleCuzudo,
+  handleGado,
 
   // ── Economia (17 itens) ────────────────────────────────────────────────────
   handleGold,

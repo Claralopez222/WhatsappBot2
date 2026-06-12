@@ -1871,6 +1871,97 @@ async function handleCorno(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
+// ─── !gado
+async function handleGado(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content?.extendedTextMessage?.contextInfo;
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const pct     = Math.floor(Math.random() * 101);
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '😎',
+      frases: [
+        `*${display}* tem total controle! Não faz nada que não queira. Respeito. 😎`,
+        `Zero gado! *${display}* é independente demais. A mulher que corra atrás. 💅`,
+        `*${display}* nem lembra o nome da ex. Blindado(a) completamente. 🧊`,
+        `Nenhum sinal de gadice em *${display}*. Esse(a) manda no próprio nariz. 😤`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🤨',
+      frases: [
+        `*${display}* já cancelou plano com os amigos "só uma vez" por causa dela. Só uma. 👀`,
+        `Baixo, mas já tem umas atitudes suspeitas! *${display}* tá no caminho... 🤨`,
+        `*${display}* disse "não sou gado" enquanto respondia mensagem em 3 segundos. 📱`,
+        `Ainda controlado(a), mas *${display}* já deixou de sair pra ficar de chamada. Sinal amarelo. 🟡`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🐄',
+      frases: [
+        `*${display}* na média! Já muda de humor dependendo do status dela no WhatsApp. 📱`,
+        `50/50! *${display}* nega que é gado mas o histórico conta outra história. 😂`,
+        `*${display}* já ficou acordado(a) até as 3h esperando resposta. Clássico. 🌙`,
+        `Na metade! *${display}* ainda resiste, mas a gadice tá aflorando devagarzinho. 🐄`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '🐮',
+      frases: [
+        `Gado em evolução! *${display}* já pagou conta de restaurante sem nem ser convidado(a). 💸`,
+        `*${display}* já mandou "bom dia amor" sem receber resposta por 3 dias seguidos. 🌅`,
+        `O grupo todo sabe que *${display}* é gado. Só *${display}* acha que tá se segurando. 😅`,
+        `*${display}* já disse "ela é diferente" pra justificar tudo. Todo gado diz isso. 🐮`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '🐂',
+      frases: [
+        `GADO RAÇUDO! *${display}* já fez coisa que nem a própria mãe acreditaria. 💀`,
+        `*${display}* cancelou viagem com os amigos porque ela ficou de mau humor. Trágico. 🐂`,
+        `Alto nível! *${display}* já pediu desculpa sem saber nem o que fez de errado. 😂`,
+        `*${display}* já passou horas escrevendo mensagem, apagou tudo e mandou "oi". Gadão(ona). 💀`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '☠️',
+      frases: [
+        `*${display}* quase no topo! Já transferiu dinheiro pra ela com coração na descrição. 💸☠️`,
+        `99%! *${display}* é referência de gadice no grupo. Lenda trágica. 😂`,
+        `*${display}* já abriu mão de emprego, amigos e dignidade. Tudo por amor. ☠️`,
+        `*${display}* tá com 99% e ainda manda "você é tudo pra mim" sem resposta. Icônico. 💀`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🏆',
+      frases: [
+        `100% GADO(A)! *${display}* é o(a) maior(a) de todos! Hall da fama da gadice! 🎊🐄`,
+        `RECORDE HISTÓRICO! *${display}* zerou o gadômetro! O grupo chora de respeito. 🏆`,
+        `*${display}* chegou nos 100%! Já tem estátua de gado no quintal em homenagem. 💀🎊`,
+        `Máximo absoluto! *${display}* não é gado, é rebanho inteiro numa pessoa só. 🐄🐄🐄😂`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct, '🟤');
+
+  await sock.sendMessage(jid, {
+    text: `🐄 *GADÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
+  }, { quoted: msg });
+}
+
 // ─── !peitudo
 async function handlePeitudo(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;

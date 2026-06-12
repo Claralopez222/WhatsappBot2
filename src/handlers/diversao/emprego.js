@@ -588,8 +588,8 @@ async function handleDemitir(sock, msg, jid) {
 
     const cargo = resolverCargo(carteira.empregoAtual);
 
-    // Cooldown de 30min para recontratação após demissão voluntária
-    const bloqueioAte = new Date(Date.now() + 30 * 60 * 1000);
+    // ── Cooldown fixo de 20 minutos ───────────────────────────────────────────
+    const bloqueioAte = new Date(Date.now() + 20 * 60 * 1000);
 
     await CarteiraGrupo.findOneAndUpdate(
       filtro(userId, groupId),
@@ -598,7 +598,7 @@ async function handleDemitir(sock, msg, jid) {
           empregoAtual:             null,
           totalTrabalhosComSucesso: 0,
           ultimoTrabalho:           null,
-          demissaoVoluntariaAte:    bloqueioAte, // ← novo campo
+          demissaoVoluntariaAte:    bloqueioAte,
         },
       }
     );
@@ -607,7 +607,7 @@ async function handleDemitir(sock, msg, jid) {
       `👋 *VOCÊ PEDIU DEMISSÃO!*\n\n` +
       `Cargo encerrado: *${cargo?.nome ?? carteira.empregoAtual}*\n\n` +
       `✅ Histórico preservado (saída voluntária).\n` +
-      `⏳ Você poderá se reempregar em *30 minutos*.\n\n` +
+      `⏳ Você poderá se reempregar em *20 minutos*.\n\n` +
       `_O mercado precisa de um tempo para novas vagas aparecerem..._`
     );
 

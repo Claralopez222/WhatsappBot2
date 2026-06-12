@@ -13,6 +13,7 @@ const { getCarteira, alterarGold, transferirGold } = require(path.join(__dirname
 const { prepareDailyMissionState } = require('./missoes');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo')); // <-- Mantido este padrão seguro
 const { VARAS_PESCA, ISCAS } = require('./pesca'); // Importar catálogos de pesca para o !comprar reconhecer varas e iscas
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // A linha duplicada que estava aqui embaixo foi removida com sucesso!
 
@@ -388,7 +389,7 @@ async function handleComprar(sock, msg, jid, caption) {
   }
 
   const itemNome = match[1].toLowerCase().trim();
-  const itemInfo = ITENS_LOJA[itemNome] || VARAS_PESCA[itemNome] || ISCAS[itemNome];
+  const itemInfo = ITENS_LOJA[itemNome] || VARAS_PESCA?.[itemNome] || ISCAS?.[itemNome];
 
   if (!itemInfo) {
     const lista = Object.entries(ITENS_LOJA)
@@ -418,35 +419,40 @@ async function handleComprar(sock, msg, jid, caption) {
     return;
   }
 
-  // 1) Adicionar ao inventário correto
+  // 1) Debitar gold PRIMEIRO (atômico) para evitar item sem pagamento
+  const carteiraAtualizada = await debitarGold(userId, idGrupo, preco, `Compra: ${itemInfo.nome}`);
+  if (!carteiraAtualizada) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ *SALDO INSUFICIENTE*\n\nNão foi possível debitar o gold. Tente novamente.',
+    }, { quoted: msg });
+    return;
+  }
+
+  // 2) Adicionar ao inventário correto
   try {
-    const ehPesca = !!(VARAS_PESCA[itemNome] || ISCAS[itemNome]);
-    const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+    const ehPesca = !!(VARAS_PESCA?.[itemNome] || ISCAS?.[itemNome]);
 
     if (ehPesca) {
       await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: idGrupo },
+        { idWhatsApp: userId, idGrupo },
         { $inc: { [`itensPesca.${itemNome}`]: 1 } },
         { upsert: true }
       );
     } else {
-      let user = await Usuario.findOne({ idWhatsApp: userId });
-      if (!user) {
-        user = new Usuario({ idWhatsApp: userId, gold: 0, inventory: { [itemNome]: 1 } });
-      } else {
-        if (!user.inventory) user.inventory = {};
-        user.inventory[itemNome] = (user.inventory[itemNome] || 0) + 1;
-      }
-      await user.save();
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: userId },
+        { $inc: { [`inventory.${itemNome}`]: 1 } },
+        { upsert: true }
+      );
     }
   } catch (e) {
     console.error('⚠️ Erro ao adicionar inventário:', e.message);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar a compra! Tente novamente.' }, { quoted: msg });
+    // Tenta devolver o gold em caso de falha no inventário
+    await alterarGold(userId, idGrupo, preco, `Estorno: ${itemInfo.nome}`).catch(() => {});
+    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar a compra! Gold devolvido. Tente novamente.' }, { quoted: msg });
     return;
   }
 
-  // 2) Debitar gold da carteira do grupo
-  const carteiraAtualizada = await debitarGold(userId, idGrupo, preco, `Compra: ${itemInfo.nome}`);
   const saldoFinal = carteiraAtualizada?.gold ?? (saldoAtual - preco);
 
   await sock.sendMessage(jid, {
@@ -468,31 +474,61 @@ async function handleVender(sock, msg, jid, caption) {
   const match  = caption.match(/vender\s+(\S+)\s+(\d+)\s+(\d+)/i);
 
   if (!match) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!vender <item> <preco> <quantidade>*\nExemplo: *!vender pizza 50 3*' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '⚠️ Use: *!vender <item> <preco> <quantidade>*\nExemplo: *!vender pizza 50 3*',
+    }, { quoted: msg });
     return;
   }
 
-  const itemKey   = match[1].toLowerCase().trim();
-  const preco     = parseInt(match[2]);
+  const itemKey    = match[1].toLowerCase().trim();
+  const preco      = parseInt(match[2]);
   const quantidade = parseInt(match[3]);
-  const itemInfo  = ITENS_LOJA[itemKey];
+  const itemInfo   = ITENS_LOJA[itemKey];
 
-  if (!itemInfo)              { await sock.sendMessage(jid, { text: `⚠️ Item *${itemKey}* não existe!` }, { quoted: msg }); return; }
-  if (preco <= 0 || quantidade <= 0) { await sock.sendMessage(jid, { text: '⚠️ Preço e quantidade devem ser maiores que 0!' }, { quoted: msg }); return; }
+  if (!itemInfo) {
+    await sock.sendMessage(jid, { text: `⚠️ Item *${itemKey}* não existe! Use *!loja* para ver os itens.` }, { quoted: msg });
+    return;
+  }
+  if (preco <= 0 || quantidade <= 0) {
+    await sock.sendMessage(jid, { text: '⚠️ Preço e quantidade devem ser maiores que 0!' }, { quoted: msg });
+    return;
+  }
 
-  const sellerName = userId.split('@')[0].split(':')[0];
+  // Verifica se o usuário tem o item no inventário
+  const user = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
+  const qtdDisponivel = user?.inventory?.[itemKey] ?? 0;
+
+  if (qtdDisponivel < quantidade) {
+    await sock.sendMessage(jid, {
+      text:
+        `⚠️ *ESTOQUE INSUFICIENTE*\n\n` +
+        `📦 Você tem: *${qtdDisponivel}x ${itemInfo.nome}*\n` +
+        `📊 Precisa de: *${quantidade}x*`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // Remove os itens do inventário
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId },
+    { $inc: { [`inventory.${itemKey}`]: -quantidade } }
+  );
+
+  // Credita o gold
+  const totalRecebido = preco * quantidade;
+  const carteira = await alterarGold(userId, jid, totalRecebido, `Venda: ${itemInfo.nome} x${quantidade}`);
+
   await sock.sendMessage(jid, {
     text:
-      `✅ *OFERTA CRIADA!* ✅\n\n` +
-      `📦 *Item:* ${itemInfo.nome}\n` +
-      `💵 *Preço:* ${preco} gold cada\n` +
-      `📊 *Quantidade:* ${quantidade}\n` +
-      `👤 *Vendedor:* ${sellerName}\n\n` +
-      `━━━━━━━━━━━━━━━━\n*PRÓXIMOS PASSOS:*\n  Ver ofertas: *!avenda*`,
+      `✅ *VENDA REALIZADA!* ✅\n\n` +
+      `📦 Item: *${itemInfo.nome}*\n` +
+      `💵 Preço unitário: *${preco} gold*\n` +
+      `📊 Quantidade: *${quantidade}*\n` +
+      `💰 Total recebido: *${totalRecebido} gold*\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `💎 Novo saldo: *${carteira?.gold ?? '?'} gold*`,
   }, { quoted: msg });
 }
-
-'use strict';
 
 // ─── !inventario ──────────────────────────────────────────────────────────────
 
@@ -512,7 +548,6 @@ async function handleInventario(sock, msg, jid) {
     getCarteira(userId, jid),
   ]);
 
-  // ── Filtrar apenas itens conhecidos e com quantidade > 0
   const itensValidos = Object.entries(user?.inventory ?? {})
     .filter(([key, qtd]) => qtd > 0 && ITENS_LOJA[key])
     .map(([key, qtd]) => ({ info: ITENS_LOJA[key], qtd }));
@@ -524,9 +559,23 @@ async function handleInventario(sock, msg, jid) {
 
   const totalItens = itensValidos.reduce((acc, { qtd }) => acc + qtd, 0);
 
-  const linhas = itensValidos
-    .map(({ info, qtd }) => `  • ${info.nome} × ${qtd}`)
-    .join('\n');
+  // Agrupa por categoria
+  const porCategoria = {};
+  for (const { info, qtd } of itensValidos) {
+    const cat = info.categoria || 'outros';
+    if (!porCategoria[cat]) porCategoria[cat] = [];
+    porCategoria[cat].push(`  • ${info.nome} × ${qtd}`);
+  }
+
+  const EMOJI_CAT = {
+    comida: '🍔', petcomida: '🦴', petbrinquedo: '🎾', petcuidado: '💊',
+    petacessorio: '🎀', especial: '⭐', casal: '💕', tec: '💻',
+    estilo: '👗', pet: '🐾', outros: '📦',
+  };
+
+  const linhas = Object.entries(porCategoria)
+    .map(([cat, items]) => `${EMOJI_CAT[cat] ?? '📦'} *${cat.toUpperCase()}*\n${items.join('\n')}`)
+    .join('\n\n');
 
   await sock.sendMessage(jid, {
     text:
@@ -534,8 +583,7 @@ async function handleInventario(sock, msg, jid) {
       `${linhas}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*TOTAL:* ${totalItens} item(ns)\n\n` +
-      `💰 *SALDO NESTE GRUPO:*\n` +
-      `  Gold: *${carteira?.gold ?? 0}* gold`,
+      `💰 *SALDO NESTE GRUPO:* *${carteira?.gold ?? 0} gold*`,
   }, { quoted: msg });
 }
 

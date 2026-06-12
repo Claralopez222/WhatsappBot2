@@ -883,46 +883,44 @@ if (matchCmd(cmdWord, 'alteradores'))
   if (matchCmdStart(cmd, 'fig '))         { await figurinhaHandler.handleFigCategoria(sock, msg, jid, caption, 'fig',         'sticker',         stickerCount, author); return; }
   if (matchCmdStart(cmd, 'pesquisafig'))  { await figurinhaHandler.handlePesquisaFig(sock, msg, jid, caption, getPrefix, stickerCount); return; }
   
-  // â”€â”€ RELACIONAMENTO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (matchCmdStart(cmd, 'casar'))
-    { await relacionamentoHandler.handleRelacionamento(sock, msg, content, jid, author, 'casamento', relacionamentos, pedidosPendentes, contactNames); return; }
-  if (matchCmdStart(cmd, 'namorar'))
-    { await relacionamentoHandler.handleRelacionamento(sock, msg, content, jid, author, 'namoro', relacionamentos, pedidosPendentes, contactNames); return; }
-  if (matchCmdStart(cmd, 'terminar'))
-    { await relacionamentoHandler.handleTerminar(sock, msg, content, jid, author, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'fixar') || matchCmdStart(cmd, 'fixar'))
-    { await relacionamentoHandler.handleFixar(sock, msg, content, jid, author, pinnedMessages, contactNames); return; }
-  if (matchCmd(cmdWord, 'pinned') || matchCmdStart(cmd, 'pinned'))
-    { await relacionamentoHandler.handlePinned(sock, msg, jid, pinnedMessages, contactNames); return; }
-  if (matchCmdStart(cmd, 'desfixar'))
-    { await relacionamentoHandler.handleDesfixar(sock, msg, jid, pinnedMessages); return; }
-  if (matchCmd(cmdWord, 'euaceito'))
-    { await relacionamentoHandler.handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames); return; }
-  if (matchCmd(cmdWord, 'eurecuso'))
-    { await relacionamentoHandler.handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames); return; }
-  if (matchCmd(cmdWord, 'cancelarpedido'))
-    if (matchCmd(cmdWord, 'terminar'))
-    { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos); return; }
-    { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'flores'))    { await relacionamentoHandler.handleFlores(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'doces'))     { await relacionamentoHandler.handleDoces(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'carta'))     { await relacionamentoHandler.handleCarta(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'mimo'))      { await relacionamentoHandler.handleMimo(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'beijo'))     { await relacionamentoHandler.handleBeijo(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'abraco'))    { await relacionamentoHandler.handleAbraco(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'presente'))  { await relacionamentoHandler.handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption); return; }
-  if (matchCmd(cmdWord, 'jantar'))    { await relacionamentoHandler.handleJantar(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'cinematel')) { await relacionamentoHandler.handleCinemaRel(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'viajar'))    { await relacionamentoHandler.handleViajar(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'serenata'))  { await relacionamentoHandler.handleSerenata(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'declarar'))           { await relacionamentoHandler.handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmdStart(cmd, 'ciumento'))          { await relacionamentoHandler.handleCiumento(sock, msg, content, jid, author, senderJid, relacionamentos, contactNames); return; }
-  if (matchCmd(cmdWord, 'statu'))              { await relacionamentoHandler.handleStatu(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'meupar'))             { await relacionamentoHandler.handleMeuPar(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'xpdobro'))            { await relacionamentoHandler.handleXpDobro(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'aniversario_casal'))  { await relacionamentoHandler.handleAniversarioCasal(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmdStart(cmd, 'duelodecasais'))     { await relacionamentoHandler.handleDueloDeCasais(sock, msg, content, jid, author, senderJid, relacionamentos, contactNames); return; }
-  if (matchCmd(cmdWord, 'rankcasais'))         { await relacionamentoHandler.handleRankCasais(sock, msg, jid, relacionamentos); return; }
+  // ── RELACIONAMENTO ────────────────────────────────────────────
+if (matchCmdStart(cmd, 'casar'))
+  { await relacionamentoHandler.handleRelacionamento(sock, msg, content, jid, author, 'casamento', relacionamentos, pedidosPendentes, contactNames); return; }
+if (matchCmdStart(cmd, 'namorar'))
+  { await relacionamentoHandler.handleRelacionamento(sock, msg, content, jid, author, 'namoro', relacionamentos, pedidosPendentes, contactNames); return; }
+if (matchCmd(cmdWord, 'terminar'))
+  { await relacionamentoHandler.handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'cancelarpedido'))
+  { await relacionamentoHandler.handleCancelarPedido(sock, msg, jid, senderJid, pedidosPendentes); return; }
+if (matchCmd(cmdWord, 'euaceito'))
+  { await relacionamentoHandler.handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames); return; }
+if (matchCmd(cmdWord, 'eurecuso'))
+  { await relacionamentoHandler.handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames); return; }
+if (matchCmd(cmdWord, 'fixar') || matchCmdStart(cmd, 'fixar'))
+  { await relacionamentoHandler.handleFixar(sock, msg, content, jid, author, pinnedMessages, contactNames); return; }
+if (matchCmd(cmdWord, 'pinned') || matchCmdStart(cmd, 'pinned'))
+  { await relacionamentoHandler.handlePinned(sock, msg, jid, pinnedMessages, contactNames); return; }
+if (matchCmdStart(cmd, 'desfixar'))
+  { await relacionamentoHandler.handleDesfixar(sock, msg, jid, pinnedMessages); return; }
+if (matchCmd(cmdWord, 'flores'))           { await relacionamentoHandler.handleFlores(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'doces'))            { await relacionamentoHandler.handleDoces(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'carta'))            { await relacionamentoHandler.handleCarta(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'mimo'))             { await relacionamentoHandler.handleMimo(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'beijo'))            { await relacionamentoHandler.handleBeijo(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'abraco'))           { await relacionamentoHandler.handleAbraco(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'presente'))         { await relacionamentoHandler.handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption); return; }
+if (matchCmd(cmdWord, 'jantar'))           { await relacionamentoHandler.handleJantar(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'cinematel'))        { await relacionamentoHandler.handleCinemaRel(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'viajar'))           { await relacionamentoHandler.handleViajar(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'serenata'))         { await relacionamentoHandler.handleSerenata(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'declarar'))         { await relacionamentoHandler.handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmdStart(cmd, 'ciumento'))        { await relacionamentoHandler.handleCiumento(sock, msg, content, jid, author, senderJid, relacionamentos, contactNames); return; }
+if (matchCmd(cmdWord, 'statu'))            { await relacionamentoHandler.handleStatu(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'meupar'))           { await relacionamentoHandler.handleMeuPar(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'xpdobro'))          { await relacionamentoHandler.handleXpDobro(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'aniversario_casal')){ await relacionamentoHandler.handleAniversarioCasal(sock, msg, jid, author, senderJid, relacionamentos); return; }
+if (matchCmdStart(cmd, 'duelodecasais'))   { await relacionamentoHandler.handleDueloDeCasais(sock, msg, content, jid, author, senderJid, relacionamentos, contactNames); return; }
+if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleRankCasais(sock, msg, jid, relacionamentos); return; }
 
   // â”€â”€ ANIVERSÃRIOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmdStart(cmd, 'reganiversario'))

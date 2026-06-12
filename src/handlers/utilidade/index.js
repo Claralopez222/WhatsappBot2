@@ -579,7 +579,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     `🔎 *PERFIL DO USUÁRIO* 🔎`,
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `👤 *Nome:* ${nome}`,
-    `📞 *Número:* +${number}`
+    `📞 *Número:* @${number}`
   ];
   
   if (groupName) L.push(`🏠 *Grupo:* ${groupName}`);

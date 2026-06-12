@@ -47,6 +47,7 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
+// !menuutil
 async function handleMenuUtil(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
   const menu =
@@ -82,6 +83,7 @@ async function handleMenuUtil(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
+// !menujogos
 async function handleMenuJogos(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
   const menu =
@@ -126,6 +128,7 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
+// !menucasal
 async function handleAlteradores(sock, msg, jid) {
   const menu =
 `╔══════════════════════╗
@@ -171,49 +174,55 @@ _Responda uma mídia com o comando desejado_
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
+// !menucasal
 async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const menu =
 `╔══════════════════════╗
       ❤️ MENU DO CASAL
 ╚══════════════════════╝
 
-💍 *CASAMENTO*
-  ▸ ${P}casar @pessoa
-  ▸ ${P}euaceito
-  ▸ ${P}eurecuso
-  ▸ ${P}cancelarpedido
-  ▸ ${P}cancelarcasamento _(bloqueia 7 dias)_
+💍 *RELACIONAMENTO*
+  ▸ ${P}casar @pessoa — Pedir em casamento
+  ▸ ${P}euaceito — Aceitar pedido
+  ▸ ${P}eurecuso — Recusar pedido
+  ▸ ${P}cancelarpedido — Cancelar pedido enviado
+  ▸ ${P}terminar — Terminar relacionamento _(bloqueia 10 min)_
 
 💐 *DIÁRIOS (+5 XP cada, 1x/dia)*
-  ▸ ${P}flores
-  ▸ ${P}doces
-  ▸ ${P}carta
-  ▸ ${P}mimo
-  ▸ ${P}beijo
+  ▸ ${P}flores 🌹
+  ▸ ${P}doces 🍬
+  ▸ ${P}carta 💌
+  ▸ ${P}mimo 🎁
+  ▸ ${P}beijo 💋
 
 💝 *ROMÂNTICOS*
-  ▸ ${P}abraco
-  ▸ ${P}presente
-  ▸ ${P}jantar
-  ▸ ${P}cinematel
-  ▸ ${P}viajar
-  ▸ ${P}serenata
-  ▸ ${P}declarar
-  ▸ ${P}ciumento
+  ▸ ${P}abraco — Dar um abraço
+  ▸ ${P}presente — Dar um presente
+  ▸ ${P}jantar — Jantar a dois
+  ▸ ${P}cinematel — Sessão de cinema
+  ▸ ${P}viajar — Viajar juntos
+  ▸ ${P}serenata — Fazer uma serenata
+  ▸ ${P}declarar — Declaração de amor
+  ▸ ${P}ciumento — Demonstrar ciúme
 
 🏆 *ESPECIAIS*
-  ▸ ${P}statu — Ver status do casal
-  ▸ ${P}meupar — Infos do par
+  ▸ ${P}statu — Status do casal
+  ▸ ${P}meupar — Infos do seu par
   ▸ ${P}xpdobro — XP duplo por 1h
-  ▸ ${P}duelodecasais
-  ▸ ${P}rankcasais
+  ▸ ${P}aniversario_casal — Ver aniversário
+  ▸ ${P}duelodecasais — Duelo entre casais
+  ▸ ${P}rankcasais — Ranking de casais
+
+🛒 *LOJA*
+  ▸ ${P}lojacasal — Ver itens disponíveis
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
+// !menubaixar
 async function handleMenuBaixar(sock, msg, jid, getPrefix) {
   const P = getPrefix ? getPrefix(jid) : '!';
   const menu =
@@ -236,6 +245,7 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
+// !menuwork
 async function handleMenuWork(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
   const menu =

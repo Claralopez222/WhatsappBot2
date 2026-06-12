@@ -2,7 +2,13 @@ const path = require('path');
 
 const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
 const { getNivelInfo }      = require(path.join(__dirname, '..', 'utils', 'levelUtils'));
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+let _jidNormalizedUser = null;
+function jidNormalizedUser(jid) {
+  if (!_jidNormalizedUser) {
+    _jidNormalizedUser = require('@whiskeysockets/baileys').jidNormalizedUser;
+  }
+  return _jidNormalizedUser(jid);
+}
 
 // ─── Lazy require para quebrar dependência circular ────────────
 let _rel = null;

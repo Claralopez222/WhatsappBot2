@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const goldHistorySchema = new mongoose.Schema({
   type:   { type: String, enum: ['recebido', 'gasto'], required: true },
   item:   { type: String, required: true },
-  amount: { type: Number, required: true, min: 0 },
+  amount: { type: Number, required: true },           // sem min: 0 — negativos são válidos (gastos)
   date:   { type: Date,   default: Date.now },
 }, { _id: false });
 
@@ -34,12 +34,12 @@ const bankSchema = new mongoose.Schema({
 
 // ─── Sub-schema: progresso de missões (reutilizável) ─────────
 const missaoNumSchema = new mongoose.Schema({
-  xp100:   { type: Number,  default: 0,     min: 0 },
-  msg50:   { type: Number,  default: 0,     min: 0 },
-  quiz5:   { type: Number,  default: 0,     min: 0 },
-  gold500: { type: Number,  default: 0,     min: 0 },
-  pet10:   { type: Number,  default: 0,     min: 0 },
-  roubo3:  { type: Number,  default: 0,     min: 0 },
+  xp100:   { type: Number, default: 0, min: 0 },
+  msg50:   { type: Number, default: 0, min: 0 },
+  quiz5:   { type: Number, default: 0, min: 0 },
+  gold500: { type: Number, default: 0, min: 0 },
+  pet10:   { type: Number, default: 0, min: 0 },
+  roubo3:  { type: Number, default: 0, min: 0 },
 }, { _id: false });
 
 const missaoBoolSchema = new mongoose.Schema({
@@ -59,19 +59,10 @@ const dailyMissionsSchema = new mongoose.Schema({
 }, { _id: false });
 
 // ─── Sub-schema: item da loja do casal ───────────────────────
-//
-// Armazena cada item desbloqueado via !lojacasal.
-// A lógica de uso (guard nos handlers de carinho) consulta
-// casalItens para saber se o comando está liberado.
-//
-// Campos:
-//  • itemKey   — chave canônica do comando (ex: 'serenata', 'jantar')
-//  • compradoPor — jid de quem comprou (qualquer um do casal pode comprar)
-//  • compradoEm  — timestamp da compra (auditoria / exibição em !meupar)
 const casalItemSchema = new mongoose.Schema({
-  itemKey:      { type: String, required: true, trim: true, lowercase: true },
-  compradoPor:  { type: String, required: true },
-  compradoEm:   { type: Date,   default: Date.now },
+  itemKey:     { type: String, required: true, trim: true, lowercase: true },
+  compradoPor: { type: String, required: true },
+  compradoEm:  { type: Date,   default: Date.now },
 }, { _id: false });
 
 // ─── Schema principal ─────────────────────────────────────────
@@ -83,33 +74,21 @@ const usuarioSchema = new mongoose.Schema({
   gold:       { type: Number, default: 100, min: 0 },
   quizPoints: { type: Number, default: 0,   min: 0 },
 
-  // ─── XP de casal (persistência dos handlers de relacionamento) ──
-  xpCasal: { type: Number, default: 0, min: 0 },
+  xpCasal:     { type: Number, default: 0, min: 0 },
 
-  goldHistory:  { type: [goldHistorySchema], default: [] },
+  goldHistory: { type: [goldHistorySchema], default: [] },
 
-  inventory:    { type: Map, of: Number, default: {} },
+  inventory:   { type: Map, of: Number, default: {} },
 
   // ─── Relacionamento ──────────────────────────────────────────
   casadoCom:   { type: String, default: null },
   casadoTipo:  { type: String, enum: ['casamento', 'namoro', null], default: null },
   casadoDesde: { type: Date,   default: null },
 
-  // ─── Itens desbloqueados da loja do casal (!lojacasal) ───────
-  //
-  // Escopo: POR USUÁRIO.
-  // Qualquer membro do casal pode comprar; a verificação nos handlers
-  // de carinho consulta o doc do sender (não do parceiro).
-  // Se preferir escopo por CASAL, mova esta lógica para uma coleção
-  // separada indexada por relKey(jidA, jidB).
-  //
-  // $addToSet não funciona com sub-documentos complexos; use $push
-  // com uma verificação prévia de casalItens.itemKey no handler
-  // para evitar duplicatas.
-  casalItens: { type: [casalItemSchema], default: [] },
+  casalItens:  { type: [casalItemSchema], default: [] },
 
-  pet:           { type: petSchema,          default: () => ({}) },
-  bank:          { type: bankSchema,         default: () => ({}) },
+  pet:           { type: petSchema,           default: () => ({}) },
+  bank:          { type: bankSchema,          default: () => ({}) },
   dailyMissions: { type: dailyMissionsSchema, default: () => ({}) },
 
   // ─── Roubo ───────────────────────────────────────────────────

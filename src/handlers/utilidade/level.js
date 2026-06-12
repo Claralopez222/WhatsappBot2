@@ -1,55 +1,78 @@
+'use strict';
+
 /**
- * Mostra o Top 10 usuários com mais XP ativos no chat atual
+ * !ranklevel — Top 10 usuários com mais XP ativos no grupo atual
  */
+async function handleRankLevel(sock, msg, jid) {
+  if (!jid?.endsWith('@g.us')) {
+    return sock.sendMessage(
+      jid,
+      { text: '⚠️ Este comando só pode ser usado em grupos.' },
+      { quoted: msg }
+    );
+  }
 
-// !ranklevel
-async function handleRankLevel(sock, msg, jid, contactNames, msgCount) {
   try {
-    // 1. Se for em chat privado, não faz sentido filtrar por grupo
-    if (!jid?.endsWith('@g.us')) {
-      return await sock.sendMessage(jid, { text: '⚠️ Este comando só pode ser usado em grupos.' }, { quoted: msg });
-    }
-
-    // 2. Busca os membros atuais do grupo diretamente do WhatsApp
-    const metadata = await sock.groupMetadata(jid);
+    // ── Membros atuais do grupo ───────────────────────────────
+    const metadata     = await sock.groupMetadata(jid);
     const membrosAtuais = new Set(metadata.participants.map(p => p.id));
 
-    // 3. Busca uma amostragem maior no banco para garantir o preenchimento do Top 10
-    const candidatos = await Usuario.find().sort({ xp: -1 }).limit(100).lean();
-    
-    // 4. Filtra mantendo apenas quem ainda está presente no grupo
-    const topUsers = candidatos
-      .filter(user => membrosAtuais.has(user.idWhatsApp))
-      .slice(0, 10); // Seleciona apenas os 10 primeiros válidos
-
-    if (topUsers.length === 0) {
-      return await sock.sendMessage(jid, { text: '❌ Nenhum membro ativo do grupo possui registro de XP ainda.' }, { quoted: msg });
+    if (membrosAtuais.size === 0) {
+      return sock.sendMessage(
+        jid,
+        { text: '❌ Não foi possível obter os membros do grupo.' },
+        { quoted: msg }
+      );
     }
 
-    const mentionsList = [];
-    const lines = topUsers.map((user, index) => {
-      const cleanJid = user.idWhatsApp.split(':')[0].split('@')[0];
-      
-      // Garante o formato correto de JID para a lista de menções do Baileys
-      const fullJid = user.idWhatsApp.includes('@') ? user.idWhatsApp : `${cleanJid}@s.whatsapp.net`;
-      mentionsList.push(fullJid);
+    // ── Busca em lote e filtra quem está no grupo ─────────────
+    // Busca até 200 para ter margem suficiente mesmo em grupos grandes
+    const candidatos = await Usuario
+      .find({ idWhatsApp: { $in: [...membrosAtuais] } })
+      .sort({ xp: -1, level: -1 })
+      .limit(10)
+      .lean();
 
-      // Ícones de pódio e formatação de alinhamento visual
-      const medals = ['🥇', '🥈', '🥉'];
-      const prefix = medals[index] || `🔹 *${index + 1}.*`;
+    if (candidatos.length === 0) {
+      return sock.sendMessage(
+        jid,
+        { text: '❌ Nenhum membro do grupo possui registro de XP ainda.' },
+        { quoted: msg }
+      );
+    }
 
-      return `${prefix} @${cleanJid} — XP: *${user.xp || 0}* (Lvl ${user.level || 1})`;
+    // ── Montar ranking ────────────────────────────────────────
+    const MEDALS  = ['🥇', '🥈', '🥉'];
+    const mentions = [];
+    const linhas   = candidatos.map((user, i) => {
+      const numero  = user.idWhatsApp.split('@')[0].split(':')[0];
+      const fullJid = `${numero}@s.whatsapp.net`;
+      mentions.push(fullJid);
+
+      const prefix = MEDALS[i] ?? `🔹 *${i + 1}.*`;
+      const xp     = (user.xp    ?? 0).toLocaleString('pt-BR');
+      const level  = user.level  ?? 1;
+
+      return `${prefix} @${numero} — XP: *${xp}* | Nível *${level}*`;
     });
 
-    const response = `🏆 *RANKING DE XP — TOP 10 ATIVOS* 🏆\n\n` + lines.join('\n');
+    const texto =
+      `🏆 *RANKING DE XP — TOP ${candidatos.length} ATIVOS* 🏆\n` +
+      `━━━━━━━━━━━━━━━━\n\n` +
+      linhas.join('\n') +
+      `\n\n━━━━━━━━━━━━━━━━\n` +
+      `_Use *!perfil* para ver seu progresso completo!_`;
 
-    await sock.sendMessage(jid, { 
-      text: response, 
-      mentions: mentionsList 
-    }, { quoted: msg });
+    return sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
 
   } catch (err) {
-    console.error('[RankLevel] Erro ao carregar ranking:', err);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao carregar o ranking de níveis. Tente novamente.' }, { quoted: msg });
+    console.error('[handleRankLevel] Erro:', err);
+    return sock.sendMessage(
+      jid,
+      { text: '⚠️ Erro ao carregar o ranking. Tente novamente.' },
+      { quoted: msg }
+    );
   }
 }
+
+module.exports = { handleRankLevel };

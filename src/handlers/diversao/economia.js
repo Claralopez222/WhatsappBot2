@@ -11,12 +11,9 @@ const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { getCarteira, alterarGold, transferirGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { prepareDailyMissionState } = require('./missoes');
-const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo')); // <-- Mantido este padrão seguro
-const { VARAS_PESCA, ISCAS } = require('./pesca'); // Importar catálogos de pesca para o !comprar reconhecer varas e iscas
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const { VARAS_PESCA, ISCAS } = require('./pesca');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
-
-// A linha duplicada que estava aqui embaixo foi removida com sucesso!
 
 // ─── RE-EXPORTA ITENS_LOJA (sem mudança) ─────────────────────────────────
 const ITENS_LOJA = {

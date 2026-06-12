@@ -5,7 +5,8 @@ const Usuario     = require(path.join(__dirname, '..', '..', 'models', 'Usuario'
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 
 const { prepareDailyMissionState } = require('./missoes');
-const { somenteGrupo }             = require('../grupo');
+// ✅
+const somenteGrupo = (jid) => jid?.endsWith('@g.us') ?? false;g
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const CONFIG = {
@@ -237,31 +238,39 @@ async function handleAlimentarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
 
+  // ── Cooldown ──────────────────────────────────────────────
   const espera = checkCooldown(userId, 'alimentar', CONFIG.COOLDOWN_ALIMENTAR);
   if (espera > 0) {
     return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para alimentar novamente!`);
   }
 
-  const pet = await getPet(userId);
+  // ── Buscar pet ────────────────────────────────────────────
+  let pet;
+  try {
+    pet = await getPet(userId);
+  } catch (err) {
+    console.error('[alimentar] Erro ao buscar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
+  }
+
   if (!pet?.name) {
     return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
   }
 
   if (pet.fullness >= CONFIG.STAT_MAX) {
-    return reply(
-      sock, jid, msg,
-      `❌ *${pet.name}* está completamente cheio (🍽️ 100%) e recusou a comida!`,
+    return reply(sock, jid, msg,
+      `❌ *${pet.name}* está completamente cheio (🍽️ 100%) e recusou a comida!`
     );
   }
 
+  // ── Calcular novo estado ──────────────────────────────────
   const petAtualizado = comTimestamp({
     ...pet,
     fullness:  clamp(pet.fullness  + 30),
     happiness: clamp(pet.happiness + 10),
   });
 
-  petCache.delete(userId);
-
+  // ── Salvar no banco ───────────────────────────────────────
   let userAtualizado;
   try {
     await prepareDailyMissionState(userId);
@@ -278,27 +287,30 @@ async function handleAlimentarPet(sock, msg, jid) {
     return reply(sock, jid, msg, '❌ Erro interno ao alimentar o pet. Tente novamente!');
   }
 
+  // ── Sem comida no inventário ──────────────────────────────
   if (!userAtualizado) {
-    return reply(
-      sock, jid, msg,
-      '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.',
+    return reply(sock, jid, msg,
+      '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.'
     );
   }
 
-  const qtdRestante = userAtualizado.inventory?.comida ?? 0;
-  const aviso       = qtdRestante === 0
+  // ── Atualizar cache APÓS confirmação do banco ─────────────
+  petCache.set(userId, petAtualizado);
+
+  // ── Resposta ──────────────────────────────────────────────
+  const qtdRestante = userAtualizado.inventory?.get?.('comida') ?? userAtualizado.inventory?.comida ?? 0;
+  const aviso = qtdRestante === 0
     ? '\n\n⚠️ _Você ficou sem comida! Compre mais na *!loja*._'
     : qtdRestante <= 2
-      ? `\n\n⚠️ _Estoque baixo! Só restam ${qtdRestante} comida(s). Compre mais na *!loja*._`
+      ? `\n\n⚠️ _Estoque baixo! Só restam *${qtdRestante}* comida(s). Compre mais na *!loja*._`
       : '';
 
-  return reply(
-    sock, jid, msg,
+  return reply(sock, jid, msg,
     `🍖 Você alimentou *${petAtualizado.name}*!\n\n` +
-    `😊 Felicidade : ${petAtualizado.happiness}%\n` +
-    `🍽️ Fome       : ${petAtualizado.fullness}%\n` +
-    `📦 Comidas restantes: ${qtdRestante}` +
-    aviso,
+    `😊 Felicidade : *${petAtualizado.happiness}%*\n` +
+    `🍽️ Fome       : *${petAtualizado.fullness}%*\n` +
+    `📦 Comidas restantes: *${qtdRestante}*` +
+    aviso
   );
 }
 
@@ -312,47 +324,53 @@ async function handleBrincarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
 
+  // ── Cooldown ──────────────────────────────────────────────
   const espera = checkCooldown(userId, 'brincar', CONFIG.COOLDOWN_BRINCAR);
   if (espera > 0) {
     return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para brincar novamente!`);
   }
 
-  const pet = await getPet(userId);
+  // ── Buscar pet ────────────────────────────────────────────
+  let pet;
+  try {
+    pet = await getPet(userId);
+  } catch (err) {
+    console.error('[brincar] Erro ao buscar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
+  }
+
   if (!pet?.name) {
     return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
   }
 
+  // ── Verificações de estado ────────────────────────────────
   const ENERGIA_MINIMA = 15;
-  if (pet.energy < ENERGIA_MINIMA) {
-    return reply(
-      sock, jid, msg,
-      `❌ *${pet.name}* está sem energia para brincar! Aguarde ele recuperar (⚡ ${pet.energy}%).`,
+  if ((pet.energy ?? 0) < ENERGIA_MINIMA) {
+    return reply(sock, jid, msg,
+      `❌ *${pet.name}* está sem energia para brincar! (⚡ ${pet.energy ?? 0}%)\n\n_Use *!curar* para recuperar energia._`
     );
   }
 
-  if (pet.fullness <= 0) {
-    return reply(
-      sock, jid, msg,
-      `❌ *${pet.name}* está com fome demais para brincar! Use *!alimentar* primeiro.`,
+  if ((pet.fullness ?? 0) <= 0) {
+    return reply(sock, jid, msg,
+      `❌ *${pet.name}* está com fome demais para brincar! Use *!alimentar* primeiro.`
     );
   }
 
-  // ── Sistema de XP ────────────────────────────────────────────────────────────
+  // ── Sistema de XP ─────────────────────────────────────────
   const def        = PET_SYSTEM[pet.type] ?? { xpMult: 1.0 };
   const nivelAtual = pet.level ?? 1;
   const xpAtual    = pet.xp    ?? 0;
-
-  // XP necessário cresce com o nível: 100 * nível atual
-  const xpParaSubir  = nivelAtual * 100;
-  const xpGanho      = Math.round(20 * def.xpMult);
-  const xpNovo       = xpAtual + xpGanho;
+  const xpParaSubir = nivelAtual * 100;
+  const xpGanho    = Math.round(20 * def.xpMult);
+  const xpNovo     = xpAtual + xpGanho;
 
   const podeSubir  = nivelAtual < CONFIG.NIVEL_MAX && xpNovo >= xpParaSubir;
   const novoNivel  = podeSubir ? nivelAtual + 1 : nivelAtual;
   const xpFinal    = podeSubir ? xpNovo - xpParaSubir : xpNovo;
   const subiuNivel = novoNivel > nivelAtual;
-  // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── Calcular novo estado ──────────────────────────────────
   const petAtualizado = comTimestamp({
     ...pet,
     happiness: clamp(pet.happiness + 20),
@@ -362,8 +380,7 @@ async function handleBrincarPet(sock, msg, jid) {
     xp:        xpFinal,
   });
 
-  petCache.delete(userId);
-
+  // ── Salvar no banco ───────────────────────────────────────
   try {
     await prepareDailyMissionState(userId);
     await Usuario.findOneAndUpdate(
@@ -379,36 +396,41 @@ async function handleBrincarPet(sock, msg, jid) {
     return reply(sock, jid, msg, '❌ Erro interno ao brincar com o pet. Tente novamente!');
   }
 
-  const xpBar      = buildXpBar(xpFinal, podeSubir ? novoNivel * 100 : xpParaSubir);
-  const nivelMsg   = subiuNivel
-    ? `\n\n🎉 *${petAtualizado.name}* subiu para o nível ${petAtualizado.level}!`
+  // ── Atualizar cache APÓS confirmação do banco ─────────────
+  petCache.set(userId, petAtualizado);
+
+  // ── Montar resposta ───────────────────────────────────────
+  const xpBar = buildXpBar(xpFinal, podeSubir ? novoNivel * 100 : xpParaSubir);
+
+  const nivelMsg    = subiuNivel
+    ? `\n\n🎉 *${petAtualizado.name}* subiu para o nível *${petAtualizado.level}*!`
     : '';
-  const fomeAviso  = petAtualizado.fullness <= 20
+  const fomeAviso   = petAtualizado.fullness <= 20
     ? `\n⚠️ _${petAtualizado.name} está com fome! Use *!alimentar*._`
     : '';
-  const energiAviso = petAtualizado.energy <= 20
+  const energiaAviso = petAtualizado.energy <= 20
     ? `\n⚠️ _${petAtualizado.name} está cansado! Use *!curar* ou aguarde._`
     : '';
 
-  return reply(
-    sock, jid, msg,
+  return reply(sock, jid, msg,
     `🎾 Você brincou com *${petAtualizado.name}*!\n\n` +
-    `😊 Felicidade : ${petAtualizado.happiness}%\n` +
-    `⚡ Energia    : ${petAtualizado.energy}%\n` +
-    `🍽️ Fome       : ${petAtualizado.fullness}%\n` +
-    `🏆 Nível      : ${petAtualizado.level}/${CONFIG.NIVEL_MAX}\n` +
+    `😊 Felicidade : *${petAtualizado.happiness}%*\n` +
+    `⚡ Energia    : *${petAtualizado.energy}%*\n` +
+    `🍽️ Fome       : *${petAtualizado.fullness}%*\n` +
+    `🏆 Nível      : *${petAtualizado.level}/${CONFIG.NIVEL_MAX}*\n` +
     `✨ XP         : +${xpGanho} ${xpBar}` +
     nivelMsg +
     fomeAviso +
-    energiAviso,
+    energiaAviso
   );
 }
 
 // Barra de progresso de XP  ex: [████░░░░░░] 40/100
 function buildXpBar(xpAtual, xpTotal, tamanho = 10) {
-  const preenchido = Math.round((xpAtual / xpTotal) * tamanho);
+  if (!xpTotal || xpTotal <= 0) return `[██████████] MAX`;
+  const preenchido = Math.min(Math.round((xpAtual / xpTotal) * tamanho), tamanho);
   const vazio      = tamanho - preenchido;
-  return `[${`█`.repeat(preenchido)}${`░`.repeat(vazio)}] ${xpAtual}/${xpTotal}`;
+  return `[${'█'.repeat(preenchido)}${'░'.repeat(vazio)}] ${xpAtual}/${xpTotal}`;
 }
 
 // --------------- !curar -------------------------------------
@@ -420,24 +442,38 @@ async function handleCurarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
 
+  // ── Cooldown ──────────────────────────────────────────────
   const espera = checkCooldown(userId, 'curar', CONFIG.COOLDOWN_CURAR);
   if (espera > 0) {
     return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para curar novamente!`);
   }
 
-  const pet = await getPet(userId);
+  // ── Buscar pet ────────────────────────────────────────────
+  let pet;
+  try {
+    pet = await getPet(userId);
+  } catch (err) {
+    console.error('[curar] Erro ao buscar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
+  }
+
   if (!pet?.name) {
     return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
   }
 
-  const energiaCheia    = pet.energy    >= CONFIG.STAT_MAX;
-  const felicidadeCheia = pet.happiness >= CONFIG.STAT_MAX;
+  // ── Verificar se já está saudável ─────────────────────────
+  const energiaCheia    = (pet.energy    ?? 0) >= CONFIG.STAT_MAX;
+  const felicidadeCheia = (pet.happiness ?? 0) >= CONFIG.STAT_MAX;
 
   if (energiaCheia && felicidadeCheia) {
-    return reply(sock, jid, msg, `✅ *${pet.name}* já está completamente saudável!`);
+    return reply(sock, jid, msg,
+      `✅ *${pet.name}* já está completamente saudável!\n\n` +
+      `⚡ Energia    : *${pet.energy}%*\n` +
+      `😊 Felicidade : *${pet.happiness}%*`
+    );
   }
 
-  // Avisa o que será curado antes de consumir o remédio
+  // ── Calcular novo estado ──────────────────────────────────
   const beneficios = [];
   if (!energiaCheia)    beneficios.push(`⚡ Energia +50`);
   if (!felicidadeCheia) beneficios.push(`😊 Felicidade +20`);
@@ -448,8 +484,7 @@ async function handleCurarPet(sock, msg, jid) {
     happiness: clamp(pet.happiness + 20),
   });
 
-  petCache.delete(userId);
-
+  // ── Salvar no banco ───────────────────────────────────────
   let userAtualizado;
   try {
     userAtualizado = await Usuario.findOneAndUpdate(
@@ -466,20 +501,29 @@ async function handleCurarPet(sock, msg, jid) {
   }
 
   if (!userAtualizado) {
-    return reply(sock, jid, msg, '❌ Você não tem remédios no inventário! Compre na *!loja*.');
+    return reply(sock, jid, msg,
+      '❌ Você não tem remédios no inventário! Compre na *!loja*.'
+    );
   }
 
-  const qtdRestante = userAtualizado.inventory?.remedio ?? 0;
-  const aviso       = qtdRestante === 0 ? '\n\n⚠️ _Você ficou sem remédios! Compre mais na *!loja*._' : '';
+  // ── Atualizar cache APÓS confirmação do banco ─────────────
+  petCache.set(userId, petAtualizado);
 
-  return reply(
-    sock, jid, msg,
+  // ── Resposta ──────────────────────────────────────────────
+  const qtdRestante = userAtualizado.inventory?.get?.('remedio') ?? userAtualizado.inventory?.remedio ?? 0;
+  const aviso = qtdRestante === 0
+    ? '\n\n⚠️ _Você ficou sem remédios! Compre mais na *!loja*._'
+    : qtdRestante <= 2
+      ? `\n\n⚠️ _Estoque baixo! Só restam *${qtdRestante}* remédio(s). Compre mais na *!loja*._`
+      : '';
+
+  return reply(sock, jid, msg,
     `💊 Você curou *${petAtualizado.name}*!\n` +
     `${beneficios.join(' | ')}\n\n` +
-    `⚡ Energia    : ${petAtualizado.energy}%\n` +
-    `😊 Felicidade : ${petAtualizado.happiness}%\n` +
-    `📦 Remédios restantes: ${qtdRestante}` +
-    aviso,
+    `⚡ Energia    : *${petAtualizado.energy}%*\n` +
+    `😊 Felicidade : *${petAtualizado.happiness}%*\n` +
+    `📦 Remédios restantes: *${qtdRestante}*` +
+    aviso
   );
 }
 
@@ -490,19 +534,27 @@ async function handleRenomearPet(sock, msg, jid, caption) {
 
   const novoNome = caption.replace(/^[!.,/]?renomearpet\s*/i, '').trim();
 
+  // ── Validações de entrada ─────────────────────────────────
   if (!novoNome) {
-    return reply(sock, jid, msg, '⚠️ Você precisa informar um nome!\nExemplo: *!renomearpet Farofa*');
+    return reply(sock, jid, msg,
+      '⚠️ Informe o novo nome!\n\n*Exemplo:* !renomearpet Farofa'
+    );
   }
 
   if (novoNome.length < 2 || novoNome.length > 24) {
-    return reply(sock, jid, msg, `⚠️ Nome inválido! Use entre 2 e 24 caracteres. (atual: ${novoNome.length})`);
+    return reply(sock, jid, msg,
+      `⚠️ Nome deve ter entre *2 e 24 caracteres*.\n_Atual: ${novoNome.length} caractere(s)._`
+    );
   }
 
-  // Bloqueia caracteres especiais / emojis abusivos
-  if (!/^[\w\s\u00C0-\u024F\u{1F300}-\u{1F9FF}]{2,24}$/u.test(novoNome)) {
-    return reply(sock, jid, msg, '⚠️ Nome com caracteres inválidos! Use letras, números e espaços.');
+  // Permite letras (incluindo acentuadas), números, espaços e emojis básicos
+  if (!/^[\p{L}\p{N}\s\u{1F300}-\u{1FAFF}]{2,24}$/u.test(novoNome)) {
+    return reply(sock, jid, msg,
+      '⚠️ Nome inválido! Use apenas letras, números, espaços ou emojis.'
+    );
   }
 
+  // ── Buscar pet ────────────────────────────────────────────
   let pet;
   try {
     pet = await getPet(userId);
@@ -512,14 +564,17 @@ async function handleRenomearPet(sock, msg, jid, caption) {
   }
 
   if (!pet?.name) {
-    return reply(sock, jid, msg, '⚠️ Você não tem um pet para renomear!');
+    return reply(sock, jid, msg,
+      '⚠️ Você não tem um pet para renomear!\n_Use *!capturar* quando um aparecer._'
+    );
   }
 
-  // Evita renomear para o mesmo nome
+  // ── Evita renomear para o mesmo nome ─────────────────────
   if (pet.name.toLowerCase() === novoNome.toLowerCase()) {
     return reply(sock, jid, msg, `⚠️ *${pet.name}* já tem esse nome!`);
   }
 
+  // ── Salvar ────────────────────────────────────────────────
   const nomeAntigo    = pet.name;
   const petAtualizado = comTimestamp({ ...pet, name: novoNome });
 
@@ -533,77 +588,62 @@ async function handleRenomearPet(sock, msg, jid, caption) {
     );
   } catch (err) {
     console.error('[renomear] Erro ao salvar pet:', err);
+    // Restaura cache em caso de falha
+    petCache.set(userId, pet);
     return reply(sock, jid, msg, '❌ Erro interno ao renomear. Tente novamente!');
   }
 
-  return reply(sock, jid, msg, `✅ *${nomeAntigo}* agora se chama *${novoNome}*!`);
-}
-
-// !statuspet
-async function handleStatusPet(sock, msg, jid) {
-  const userId = getUserId(msg);
-  if (!userId) return;
-
-  let pet;
-  try {
-    pet = await getPet(userId);
-  } catch (err) {
-    console.error('[statuspet] Erro ao buscar pet:', err);
-    return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
-  }
-
-  if (!pet?.name) {
-    return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
-  }
-
-  const def     = PET_SYSTEM[pet.type] ?? { emoji: '🐾', nome: pet.type, xpMult: 1.0, pontMult: 1.0 };
-  const re      = RARITY_EMOJI[pet.rarity] ?? '⭐';
-  const humor   = getHumor(pet);
-  const capData = pet.capturedAt ? new Date(pet.capturedAt).toLocaleDateString('pt-BR') : '?';
-
-  // Barra de XP — consistente com handleBrincarPet
-  const nivelAtual  = pet.level ?? 1;
-  const xpAtual     = pet.xp    ?? 0;
-  const xpParaSubir = nivelAtual * 100;
-  const xpBar       = nivelAtual >= CONFIG.NIVEL_MAX
-    ? '✨ *NÍVEL MÁXIMO*'
-    : `✨ XP: ${buildXpBar(xpAtual, xpParaSubir)} (${xpAtual}/${xpParaSubir})`;
+  const def = PET_SYSTEM[pet.type] ?? { emoji: '🐾' };
 
   return reply(sock, jid, msg,
-    `${def.emoji} *${pet.name}*\n\n` +
-    `${re} *${pet.rarity}*\n` +
-    `🏆 Nível : ${nivelAtual}/${CONFIG.NIVEL_MAX}\n` +
-    `${xpBar}\n` +
-    `💭 Humor : ${humor}\n` +
-    `━━━━━━━━━━━\n` +
-    `😊 Felicidade : ${pet.happiness ?? 0}%\n` +
-    `⚡ Energia    : ${pet.energy    ?? 0}%\n` +
-    `🍽️ Fome       : ${pet.fullness  ?? 0}%\n` +
-    `━━━━━━━━━━━\n` +
-    `🎯 XP mult: ${def.xpMult}x | Pts mult: ${def.pontMult}x\n` +
-    `📅 Capturado em: ${capData}`
+    `✅ *Pet renomeado com sucesso!*\n\n` +
+    `${def.emoji} *${nomeAntigo}* → *${novoNome}*\n\n` +
+    `_Use *!statuspet* para ver seu pet atualizado!_`
   );
 }
 
 // !rankpet
-// !rankpet
 async function handlePetRank(sock, msg, jid) {
-  if (!somenteGrupo(jid)) {
+  // ── Garantir que é grupo ──────────────────────────────────
+  if (!jid?.endsWith('@g.us')) {
     return reply(sock, jid, msg, '⚠️ Este comando só pode ser usado em grupos.');
   }
 
   try {
-    // ── Busca membros do grupo diretamente pelo WhatsApp ──────
-    const metadata      = await sock.groupMetadata(jid);
-    const membrosAtuais = new Set(metadata.participants.map(p => p.id));
+    // ── Buscar membros do grupo ───────────────────────────────
+    let metadata;
+    try {
+      metadata = await sock.groupMetadata(jid);
+    } catch (err) {
+      console.error('[PetRank] Erro ao buscar metadata do grupo:', err);
+      return reply(sock, jid, msg, '⚠️ Não consegui acessar os dados do grupo. Tente novamente.');
+    }
 
-    if (membrosAtuais.size === 0) {
+    if (!metadata?.participants?.length) {
       return reply(sock, jid, msg,
-        `🐾 *RANKING DE PETS — ESTE GRUPO*\n\nNão foi possível obter os membros do grupo.`
+        `🐾 *RANKING DE PETS*\n\nNão foi possível obter os membros do grupo.`
       );
     }
 
-    // ── Busca apenas membros do grupo que têm pet ─────────────
+    // ── Normalizar JIDs (resolve @lid para @s.whatsapp.net) ──
+    const membrosAtuais = new Set(
+      metadata.participants
+        .map(p => {
+          const id = p.id || '';
+          if (id.endsWith('@lid')) {
+            const numero = id.split('@')[0].split(':')[0];
+            return `${numero}@s.whatsapp.net`;
+          }
+          return id;
+        })
+        .filter(Boolean)
+    );
+
+    if (membrosAtuais.size === 0) {
+      return reply(sock, jid, msg, `🐾 *RANKING DE PETS*\n\nNenhum membro encontrado no grupo.`);
+    }
+
+    // ── Buscar usuários com pet ───────────────────────────────
     const usuarios = await Usuario.find({
       idWhatsApp:  { $in: [...membrosAtuais] },
       'pet.name':  { $exists: true, $nin: [null, ''] },
@@ -618,24 +658,24 @@ async function handlePetRank(sock, msg, jid) {
       );
     }
 
-    // ── Ordenar por score (nível × 1000 + xp) e pegar top 10 ─
+    // ── Ordenar por score e pegar top 10 ─────────────────────
     const ranks = usuarios
       .map(u => ({ ...u, score: getRankScore(u.pet) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
-    // ── Montar linhas do ranking ──────────────────────────────
+    // ── Montar linhas ─────────────────────────────────────────
     const mentions = [];
     const linhas   = ranks.map((entry, i) => {
       const numero  = entry.idWhatsApp.split('@')[0].split(':')[0];
       const fullJid = `${numero}@s.whatsapp.net`;
       mentions.push(fullJid);
 
-      const def    = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
-      const re     = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
-      const nivel  = entry.pet.level ?? 1;
-      const xp     = entry.pet.xp    ?? 0;
-      const humor  = getHumor(entry.pet);
+      const def   = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
+      const re    = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
+      const nivel = entry.pet.level ?? 1;
+      const xp    = entry.pet.xp    ?? 0;
+      const humor = getHumor(entry.pet);
 
       return (
         `${MEDALS[i]} @${numero}\n` +
@@ -645,7 +685,7 @@ async function handlePetRank(sock, msg, jid) {
     });
 
     const texto =
-      `🐾 *RANKING DE PETS — TOP ${ranks.length} ATIVOS* 🐾\n` +
+      `🐾 *RANKING DE PETS — TOP ${ranks.length}* 🐾\n` +
       `━━━━━━━━━━━━━━━━\n\n` +
       linhas.join('\n\n') +
       `\n\n━━━━━━━━━━━━━━━━\n` +
@@ -654,10 +694,11 @@ async function handlePetRank(sock, msg, jid) {
     return sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
 
   } catch (e) {
-    console.error('[Pets] handlePetRank:', e);
+    console.error('[PetRank] Erro geral:', e);
     return reply(sock, jid, msg, '⚠️ Erro ao carregar o ranking de pets. Tente novamente.');
   }
 }
+
 // !pets
 async function handlePets(sock, msg, jid, caption = '') {
   const prefixMatch = caption.match(/^([!.,/])/);
@@ -861,7 +902,6 @@ module.exports = {
   handleBrincarPet,
   handleCurarPet,
   handleRenomearPet,
-  handleStatusPet,
   handlePetRank,
   handlePets,
   handleAbrigo,

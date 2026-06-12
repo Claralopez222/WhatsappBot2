@@ -60,11 +60,12 @@ const {
 registerCatalog({ ...VARAS_PESCA, ...ISCAS, ...PEIXES_E_ITENS });
 
 // Quiz
+// ✅ Correto
 const {
-  handleQuiz, handlePontos, handleRankJogos, handleBanco, handleResgatar, quizState
+  handleQuiz, handlePontos, handleRankJogos, quizState
 } = require('./quiz');
 
-const { handleHistoricoBanco } = require('./banco');
+const { handleBanco, handleResgatar, handleHistoricoBanco } = require('./banco');
 
 // Missões
 const {

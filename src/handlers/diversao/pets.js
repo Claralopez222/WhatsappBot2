@@ -1,32 +1,32 @@
 'use strict';
 
-const path        = require('path');
-const Usuario     = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const path          = require('path');
+const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 
 const { prepareDailyMissionState } = require('./missoes');
-// ✅
-const somenteGrupo = (jid) => jid?.endsWith('@g.us') ?? false;g
+
+const somenteGrupo = (jid) => jid?.endsWith('@g.us') ?? false;
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const CONFIG = {
   STAT_MAX:           100,
   NIVEL_MAX:          100,
-  COOLDOWN_ALIMENTAR: 30 * 60 * 1000,   // 30 min
-  COOLDOWN_BRINCAR:   20 * 60 * 1000,   // 20 min
-  COOLDOWN_CURAR:     60 * 60 * 1000,   // 1 hora
+  COOLDOWN_ALIMENTAR: 30 * 60 * 1000,  // 30 min
+  COOLDOWN_BRINCAR:   20 * 60 * 1000,  // 20 min
+  COOLDOWN_CURAR:     60 * 60 * 1000,  // 1 hora
 };
 
 // ─── CATÁLOGO DE PETS ─────────────────────────────────────────────────────────
 const PET_SYSTEM = {
-  gato:     { nome: 'Gato',     emoji: '🐱', rarity: 'COMUM',      desc: 'Independente e misterioso.',     xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
-  cachorro: { nome: 'Cachorro', emoji: '🐶', rarity: 'COMUM',      desc: 'Leal e cheio de energia.',       xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
-  coelho:   { nome: 'Coelho',   emoji: '🐰', rarity: 'COMUM',      desc: 'Fofo e saltitante.',             xpMult: 1.1, pontMult: 1.0, catchRate: 0.70 },
-  papagaio: { nome: 'Papagaio', emoji: '🦜', rarity: 'RARO',       desc: 'Repete tudo que você fala.',     xpMult: 1.2, pontMult: 1.1, catchRate: 0.50 },
-  raposa:   { nome: 'Raposa',   emoji: '🦊', rarity: 'RARO',       desc: 'Esperta e curiosa.',             xpMult: 1.3, pontMult: 1.2, catchRate: 0.45 },
-  lobo:     { nome: 'Lobo',     emoji: '🐺', rarity: 'ULTRA-RARO', desc: 'Feroz e solitário.',             xpMult: 1.5, pontMult: 1.4, catchRate: 0.30 },
-  dragao:   { nome: 'Dragão',   emoji: '🐲', rarity: 'LENDÁRIO',   desc: 'Criatura mística das lendas.',   xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
-  unicornio:{ nome: 'Unicórnio',emoji: '🦄', rarity: 'LENDÁRIO',   desc: 'Puro e cheio de magia.',         xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
+  gato:      { nome: 'Gato',      emoji: '🐱', rarity: 'COMUM',      desc: 'Independente e misterioso.',   xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
+  cachorro:  { nome: 'Cachorro',  emoji: '🐶', rarity: 'COMUM',      desc: 'Leal e cheio de energia.',     xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
+  coelho:    { nome: 'Coelho',    emoji: '🐰', rarity: 'COMUM',      desc: 'Fofo e saltitante.',           xpMult: 1.1, pontMult: 1.0, catchRate: 0.70 },
+  papagaio:  { nome: 'Papagaio',  emoji: '🦜', rarity: 'RARO',       desc: 'Repete tudo que você fala.',   xpMult: 1.2, pontMult: 1.1, catchRate: 0.50 },
+  raposa:    { nome: 'Raposa',    emoji: '🦊', rarity: 'RARO',       desc: 'Esperta e curiosa.',           xpMult: 1.3, pontMult: 1.2, catchRate: 0.45 },
+  lobo:      { nome: 'Lobo',      emoji: '🐺', rarity: 'ULTRA-RARO', desc: 'Feroz e solitário.',           xpMult: 1.5, pontMult: 1.4, catchRate: 0.30 },
+  dragao:    { nome: 'Dragão',    emoji: '🐲', rarity: 'LENDÁRIO',   desc: 'Criatura mística das lendas.', xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
+  unicornio: { nome: 'Unicórnio', emoji: '🦄', rarity: 'LENDÁRIO',   desc: 'Puro e cheio de magia.',       xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
 };
 
 const RARITY_EMOJI = {
@@ -39,56 +39,149 @@ const RARITY_EMOJI = {
 const MEDALS = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
 
 // ─── ESTADO EM MEMÓRIA ────────────────────────────────────────────────────────
-const spawnedPets = new Map(); // jid → { type, rarity, spawnedAt }
-const petCache    = new Map(); // userId → pet
+const spawnedPets = new Map(); // jid    → { type, rarity, spawnedAt }
+
+// Cache com TTL de 5 minutos para evitar dados velhos presos em memória
+const PET_CACHE_TTL_MS = 5 * 60 * 1000;
+const petCache = {
+  _store: new Map(),
+
+  get(userId) {
+    const entry = this._store.get(userId);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > PET_CACHE_TTL_MS) {
+      this._store.delete(userId);
+      return null;
+    }
+    return entry.data;
+  },
+
+  set(userId, pet) {
+    this._store.set(userId, { data: pet, ts: Date.now() });
+  },
+
+  delete(userId) {
+    this._store.delete(userId);
+  },
+
+  has(userId) {
+    return this.get(userId) !== null;
+  },
+};
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
+/**
+ * Extrai o ID do usuário da mensagem (grupo ou privado).
+ * @param {object} msg
+ * @returns {string}
+ */
 function getUserId(msg) {
   return msg.key.participant || msg.key.remoteJid;
 }
 
+/**
+ * Responde uma mensagem com quote.
+ * @param {object} sock
+ * @param {string} jid
+ * @param {object} msg
+ * @param {string} text
+ */
 function reply(sock, jid, msg, text) {
   return sock.sendMessage(jid, { text }, { quoted: msg });
 }
 
+// Mapa de cooldowns isolado (sem ficar pendurado na função)
+const _cooldownMap = new Map();
+
+/**
+ * Verifica cooldown de um comando para um usuário.
+ * @param {string} userId
+ * @param {string} cmd
+ * @param {number} ms — duração do cooldown em milissegundos
+ * @returns {number} 0 se liberado, ou ms restantes se ainda em cooldown
+ */
 function checkCooldown(userId, cmd, ms) {
   const key  = `${userId}:${cmd}`;
-  const last = checkCooldown._map?.get(key) ?? 0;
+  const last = _cooldownMap.get(key) ?? 0;
   const diff = Date.now() - last;
   if (diff < ms) return ms - diff;
-  if (!checkCooldown._map) checkCooldown._map = new Map();
-  checkCooldown._map.set(key, Date.now());
+  _cooldownMap.set(key, Date.now());
   return 0;
 }
-checkCooldown._map = new Map();
 
-function formatarTempo(ms) {
-  const m = Math.floor(ms / 60000);
-  const s = Math.floor((ms % 60000) / 1000);
-  return m > 0 ? `${m}min ${s}s` : `${s}s`;
+/**
+ * Remove o cooldown de um usuário para um comando (útil em rollbacks).
+ * @param {string} userId
+ * @param {string} cmd
+ */
+function clearCooldown(userId, cmd) {
+  _cooldownMap.delete(`${userId}:${cmd}`);
 }
 
+/**
+ * Formata milissegundos em string legível.
+ * Ex: 90min → "1h 30min" | 75s → "1min 15s"
+ * @param {number} ms
+ * @returns {string}
+ */
+function formatarTempo(ms) {
+  if (ms <= 0) return '0s';
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  const s = Math.floor((ms % 60_000) / 1_000);
+  if (h > 0) return `${h}h ${m}min`;
+  if (m > 0) return `${m}min ${s}s`;
+  return `${s}s`;
+}
+
+/**
+ * Retorna o estado de humor do pet com base na média dos atributos.
+ * @param {object} pet
+ * @returns {string}
+ */
 function getHumor(pet) {
-  const avg = ((pet.happiness ?? 0) + (pet.energy ?? 0) + (pet.fullness ?? 0)) / 3;
+  const avg = (
+    (pet.happiness ?? 0) +
+    (pet.energy    ?? 0) +
+    (pet.fullness  ?? 0)
+  ) / 3;
   if (avg >= 80) return '😄 Feliz';
   if (avg >= 50) return '😐 Normal';
   if (avg >= 25) return '😟 Triste';
   return '😢 Sofrendo';
 }
 
+/**
+ * Calcula o score de ranking do pet (nível tem peso maior que XP).
+ * @param {object} pet
+ * @returns {number}
+ */
 function getRankScore(pet) {
-  return ((pet.level ?? 1) * 1000) + ((pet.xp ?? 0));
+  return (pet.level ?? 1) * 1000 + (pet.xp ?? 0);
 }
 
+/**
+ * Busca o pet ativo do usuário (cache com TTL → banco).
+ * @param {string} userId
+ * @returns {Promise<object|null>}
+ */
 async function getPet(userId) {
-  if (petCache.has(userId)) return petCache.get(userId);
+  const cached = petCache.get(userId);
+  if (cached) return cached;
+
   const user = await Usuario.findOne({ idWhatsApp: userId }).select('pet').lean();
   const pet  = user?.pet ?? null;
+
   if (pet?.name) petCache.set(userId, pet);
   return pet;
 }
 
+/**
+ * Salva o pet ativo do usuário (cache + banco).
+ * @param {string} userId
+ * @param {object} pet
+ */
 async function savePet(userId, pet) {
   petCache.set(userId, pet);
   await Usuario.findOneAndUpdate(
@@ -98,19 +191,53 @@ async function savePet(userId, pet) {
   );
 }
 
+/**
+ * Remove o pet ativo do usuário (cache + banco).
+ * Use este em vez de fazer $unset manual espalhado pelo código.
+ * @param {string} userId
+ */
+async function clearPet(userId) {
+  petCache.delete(userId);
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId },
+    { $unset: { pet: '' } }
+  );
+}
+
+/**
+ * Spawna um novo pet selvagem para um grupo.
+ * Remove o spawn automaticamente após 1 hora.
+ * @param {string} jid — JID do grupo
+ * @returns {object} dados do spawn
+ */
 function spawnNovoPet(jid) {
   const tipos = Object.keys(PET_SYSTEM);
   const type  = tipos[Math.floor(Math.random() * tipos.length)];
   const def   = PET_SYSTEM[type];
-  const spawn = { type, rarity: def.rarity, spawnedAt: Date.now() };
+
+  const spawn = {
+    type,
+    rarity:    def.rarity,
+    spawnedAt: Date.now(),
+  };
+
   spawnedPets.set(jid, spawn);
-  // Expira em 1 hora
+
+  // Só remove se ainda for este mesmo spawn (evita apagar spawn mais recente)
   setTimeout(() => {
-    if (spawnedPets.get(jid)?.spawnedAt === spawn.spawnedAt) spawnedPets.delete(jid);
+    if (spawnedPets.get(jid)?.spawnedAt === spawn.spawnedAt) {
+      spawnedPets.delete(jid);
+    }
   }, 60 * 60 * 1000);
+
   return spawn;
 }
 
+/**
+ * Retorna o spawn ativo de um grupo, ou null se não houver.
+ * @param {string} jid
+ * @returns {object|null}
+ */
 function getSpawnAtivo(jid) {
   return spawnedPets.get(jid) ?? null;
 }
@@ -747,36 +874,45 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     .map(s => s.toLowerCase());
 
   // ── !abrigo deixar ───────────────────────────────────────────────────────────
-  if (args[0] === 'deixar') {
-    const pet = await getPet(userId);
-    if (!pet?.name) {
-      return reply(sock, jid, msg,
-        `⚠️ Você não tem um pet para deixar no abrigo.\n_Capture um com *${prefix}capturar*!_`
-      );
-    }
-
-    petCache.delete(userId);
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      {
-        $unset: { pet: '' },
-        $set: {
-          'petShelter.isSheltered':  true,
-          'petShelter.shelteredPet': pet,
-          'petShelter.leftAt':       new Date().toISOString(),
-        },
-      },
-      { upsert: true }
-    );
-
-    const def = PET_SYSTEM[pet.type] ?? { emoji: '🐾' };
+  // ── !abrigo deixar ───────────────────────────────────────────────────────────
+if (args[0] === 'deixar') {
+  const pet = await getPet(userId);
+  if (!pet?.name) {
     return reply(sock, jid, msg,
-      `🏥 *PET ENVIADO AO ABRIGO!*\n\n` +
-      `${def.emoji} *${pet.name}* foi guardado com segurança.\n\n` +
-      `Para vê-lo novamente: *${prefix}abrigo*\n` +
-      `Para adotá-lo de volta: *${prefix}abrigo ${pet.name} pegar*`
+      `⚠️ Você não tem um pet para deixar no abrigo.\n_Capture um com *${prefix}capturar*!_`
     );
   }
+
+  petCache.delete(userId);
+
+  // Separar as operações para evitar conflito de upsert
+  const usuarioExiste = await Usuario.findOne({ idWhatsApp: userId }).lean();
+
+  if (!usuarioExiste) {
+    return reply(sock, jid, msg, `⚠️ Usuário não encontrado no banco de dados.`);
+  }
+
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId },
+    {
+      $unset: { pet: '' },
+      $set: {
+        'petShelter.isSheltered':  true,
+        'petShelter.shelteredPet': pet,
+        'petShelter.leftAt':       new Date().toISOString(),
+      },
+    }
+    // ← removido o upsert: true
+  );
+
+  const def = PET_SYSTEM[pet.type] ?? { emoji: '🐾' };
+  return reply(sock, jid, msg,
+    `🏥 *PET ENVIADO AO ABRIGO!*\n\n` +
+    `${def.emoji} *${pet.name}* foi guardado com segurança.\n\n` +
+    `Para vê-lo novamente: *${prefix}abrigo*\n` +
+    `Para adotá-lo de volta: *${prefix}abrigo ${pet.name} pegar*`
+  );
+}
 
   // ── !abrigo <nome> pegar ─────────────────────────────────────────────────────
   if (args.length >= 2 && args[args.length - 1] === 'pegar') {
@@ -830,16 +966,18 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
 
     let texto = `🏥 *ABRIGO DE PETS* — ${lista.length} pet(s)\n\n`;
     lista.forEach((u, i) => {
-      const p   = u.petShelter.shelteredPet;
+      const p   = u.petShelter?.shelteredPet;
+      if (!p?.name) return;
       const def = PET_SYSTEM[p.type] ?? { emoji: '🐾' };
       const re  = RARITY_EMOJI[p.rarity] ?? '⭐';
-      texto += `${i + 1}. ${def.emoji} *${p.name}* ${re} (${p.rarity})\n`;
-      texto += `   └ Lvl ${p.level ?? 1} | 😊 ${p.happiness ?? 0}% | ⚡ ${p.energy ?? 0}%\n\n`;
+      const humor = getHumor(p);
+      texto += `${i + 1}. ${def.emoji} *${p.name}* ${re} (${p.rarity ?? '?'})\n`;
+      texto += `   └ 🏆 Lvl *${p.level ?? 1}* | 😊 *${p.happiness ?? 0}%* | ⚡ *${p.energy ?? 0}%* | 🍽️ *${p.fullness ?? 0}%* | ${humor}\n\n`;
     });
 
     texto += `━━━━━━━━━━━\n`;
-    texto += `*Para adotar:* ${prefix}abrigo <nome> pegar\n`;
-    texto += `Exemplo: _${prefix}abrigo ${lista[0].petShelter.shelteredPet.name} pegar_`;
+    texto += `*Para adotar:* _${prefix}abrigo <nome> pegar_\n`;
+    texto += `*Para deixar seu pet:* _${prefix}abrigo deixar_`;
 
     return reply(sock, jid, msg, texto);
   } catch (e) {
@@ -879,9 +1017,15 @@ function registerActiveGroup(jid) {
 }
 
 function initPetScheduler(sock) {
+  let currentSock = sock;
+
+  initPetScheduler.updateSock = (newSock) => { currentSock = newSock; };
+
   setInterval(() => {
+    if (!currentSock?.user) return;
+
     for (const jid of activeGroups) {
-      triggerSpawn(sock, jid).catch(err =>
+      triggerSpawn(currentSock, jid).catch(err =>
         console.error('[PetScheduler] Erro no spawn:', err)
       );
     }

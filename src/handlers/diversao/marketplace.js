@@ -160,49 +160,99 @@ const logSchema = new mongoose.Schema(
 );
 
 // ── Índices de logSchema ─────────────────────────────────────────────────────
+//
+// handleHistoricoMarket faz duas queries separadas por campo indexado
+// (compradorId, vendedorId) e merge em memória — estratégia mais previsível
+// do que $or com index union, que o query planner pode não otimizar bem
+// dependendo da seletividade de cada ramo.
+//
+// Índice composto (campo + createdAt DESC) cobre tanto o find quanto o
+// countDocuments de cada lado sem FETCH extra.
+logSchema.index({ compradorId: 1, createdAt: -1 }); // find/count lado comprador
+logSchema.index({ vendedorId:  1, createdAt: -1 }); // find/count lado vendedor
 
-// handleHistoricoMarket — query $or cobre os dois lados em uma só consulta.
-// MongoDB executa $or sobre campos indexados separadamente via index union,
-// mas um índice por campo ainda é necessário para cada ramo do $or.
-logSchema.index({ compradorId: 1, createdAt: -1 }); // ramo compradorId do $or
-logSchema.index({ vendedorId:  1, createdAt: -1 }); // ramo vendedorId  do $or
-
-// Índice de suporte ao countDocuments({ $or: [...] }) — cobre o count total
-// sem collection scan. Sem ele, o count lê todos os documentos da coleção.
+// Índice de cobertura para countDocuments({ compradorId, vendedorId }) —
+// útil caso uma query futura precise contar transações entre dois usuários
+// específicos sem collection scan.
+// ATENÇÃO: este índice NÃO cobre o countDocuments({ $or: [...] }) atual;
+// cada ramo do $or usa o seu índice composto acima via index union.
 logSchema.index({ compradorId: 1, vendedorId: 1 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ?? em vez de || para evitar falsy acidental em modelo já registrado
+// ?? em vez de || para evitar falsy acidental (0, '') em modelo já registrado.
+// mongoose.models é o registro global; re-compilar o mesmo modelo lança erro
+// em hot-reload (ex: Next.js, nodemon), por isso a guarda é necessária.
 const Oferta    = mongoose.models.Oferta    ?? mongoose.model('Oferta',    ofertaSchema);
 const MarketLog = mongoose.models.MarketLog ?? mongoose.model('MarketLog', logSchema);
+
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 
+/**
+ * Retorna o JID do remetente da mensagem.
+ * - Em grupos: msg.key.participant (JID do membro)
+ * - Em DMs:    msg.key.remoteJid   (JID do contato)
+ * Retorna null se a estrutura da mensagem for inválida.
+ */
 function getUserId(msg) {
   if (!msg?.key) return null;
+  // participant só existe em mensagens de grupo; remoteJid é o fallback para DMs
   return msg.key.participant ?? msg.key.remoteJid ?? null;
 }
 
+/**
+ * Remove o sufixo @s.whatsapp.net (ou qualquer @domínio) e caracteres
+ * não-numéricos, retornando apenas os dígitos do número.
+ * Retorna string vazia se jid for falsy.
+ */
 function formatarNumero(jid = '') {
   if (!jid) return '';
   return String(jid).replace(/@\S+/, '').replace(/\D/g, '');
 }
 
+/**
+ * Converte um número de telefone ou JID completo em JID WhatsApp padrão.
+ *
+ * Regras:
+ *  - Se já contiver '@', retorna como está (assume JID válido).
+ *  - Remove qualquer caractere não-numérico antes de validar.
+ *  - Rejeita números com menos de 8 dígitos (inválidos para qualquer país).
+ *
+ * @param  {string|number} numero
+ * @returns {string|null} JID no formato "<dígitos>@s.whatsapp.net" ou null
+ */
 function toJid(numero) {
   const str = String(numero ?? '').trim();
+
+  // JID já formatado — devolve sem alteração
   if (str.includes('@')) return str;
+
   const limpo = str.replace(/\D/g, '');
+
   if (limpo.length < 8) {
     console.warn(`[Market] toJid: número inválido ou curto demais: "${str}"`);
     return null;
   }
+
   return `${limpo}@s.whatsapp.net`;
 }
 
+/**
+ * Envia uma mensagem de texto como resposta (quote) à mensagem original.
+ * Falhas de envio são capturadas e logadas; a Promise resolve para undefined
+ * em vez de rejeitar, evitando crashes em erros de rede pontuais.
+ *
+ * @param  {object} sock  - Instância do cliente WhatsApp
+ * @param  {string} jid   - JID do destinatário
+ * @param  {object} msg   - Mensagem original (para quote)
+ * @param  {string} texto - Conteúdo da resposta
+ * @returns {Promise<object|undefined>}
+ */
 async function reply(sock, jid, msg, texto) {
   try {
     return await sock.sendMessage(jid, { text: String(texto) }, { quoted: msg });
   } catch (e) {
+    // Não relança: falha de envio não deve derrubar o fluxo do handler
     console.error(`[Market] reply falhou (jid=${jid}):`, e.message);
   }
 }
@@ -238,18 +288,32 @@ async function getQuantidadeInventario(userId, itemKey, session = null) {
   }
 }
 
-//removerInventario
 // ─── CONSTANTES LOCAIS ────────────────────────────────────────────────────────
 
-// Regex compilada uma vez — reutilizada em toda chamada
+// Compilada uma vez no módulo — reutilizada em removerInventario e adicionarInventario
 const ITEM_KEY_RE = /^[a-z0-9_-]+$/;
 
 // ─── REMOVER INVENTÁRIO ───────────────────────────────────────────────────────
 
+/**
+ * Remove `quantidade` unidades de `itemKey` do inventário de `userId`,
+ * distribuindo o desconto entre os campos de CAMPOS_INVENTARIO em ordem de prioridade.
+ *
+ * Comportamento por contexto:
+ *  - Com session (dentro de transação): lança Error em qualquer falha → abort automático.
+ *  - Sem session (uso avulso):          retorna false em falhas recuperáveis,
+ *                                       lança TypeError apenas para erros de programação.
+ *
+ * @param  {string}           userId    - JID do usuário
+ * @param  {string}           itemKey   - Chave do item (ex: "dinamite")
+ * @param  {number}           quantidade - Inteiro positivo a remover
+ * @param  {ClientSession|null} session - Session Mongoose (opcional)
+ * @returns {Promise<boolean>} true em sucesso; false se sem session e estoque insuficiente
+ */
 async function removerInventario(userId, itemKey, quantidade, session = null) {
 
   // ── 1. Validações de programação (síncronas, sem I/O) ─────────────────────
-  // Lançam sempre, independente de session: dados inválidos indicam bug no caller
+  // Sempre lançam, independente de session: dados inválidos indicam bug no caller.
 
   if (!userId || typeof userId !== 'string') {
     throw new TypeError(`[Market] removerInventario: userId inválido (${userId})`);
@@ -262,24 +326,24 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
   }
 
   // ── 2. Leitura do inventário atual ────────────────────────────────────────
+  // Projeção precisa: busca apenas os campos que serão decrementados,
+  // evitando trazer o documento inteiro (pode ser grande).
 
-  const projection = CAMPOS_INVENTARIO.reduce((proj, c) => {
-    proj[c] = 1;
+  const projection = CAMPOS_INVENTARIO.reduce((proj, campo) => {
+    proj[campo] = 1;
     return proj;
   }, {});
 
-  const user = await Usuario.findOne(
-    { idWhatsApp: userId },
-    projection,
-    session ? { session } : {}
-  ).lean();
+  const opts = session ? { session } : {};
+
+  const user = await Usuario.findOne({ idWhatsApp: userId }, projection, opts).lean();
 
   if (!user) {
-    const msg = `[Market] removerInventario: usuário não encontrado — userId=${userId}`;
-    console.warn(msg);
-    // ✅ Dentro de transação lança para forçar o abort; fora retorna false
-    // para manter compatibilidade com callers que tratam o booleano
-    if (session) throw new Error(msg);
+    const errMsg = `[Market] removerInventario: usuário não encontrado — userId=${userId}`;
+    console.warn(errMsg);
+    // Dentro de transação: lança para forçar abort via withTransaction.
+    // Fora: retorna false para compatibilidade com callers que verificam o booleano.
+    if (session) throw new Error(errMsg);
     return false;
   }
 
@@ -292,13 +356,16 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
       `[Market] removerInventario: estoque insuficiente — ` +
       `userId=${userId} item=${itemKey} disponivel=${totalDisponivel} pedido=${quantidade}`
     );
+    // Prefixo estruturado para facilitar identificação no catch do caller
     if (session) throw new Error(`INVENTARIO_INSUFICIENTE:${userId}:${itemKey}`);
     return false;
   }
 
   // ── 4. Cálculo do $inc distribuído pelos campos ───────────────────────────
   // Consome da primeira fonte com saldo antes de passar para a próxima,
-  // seguindo a ordem de prioridade definida em CAMPOS_INVENTARIO
+  // seguindo a ordem de prioridade definida em CAMPOS_INVENTARIO.
+  // Ex: se "inventory" tem 2 e "itensRoubo" tem 3, e pediu=4,
+  //     desconta 2 de inventory e 2 de itensRoubo.
 
   let restante  = quantidade;
   const incrMap = {};
@@ -309,28 +376,28 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
     const disponivel = user[campo]?.[itemKey];
     if (typeof disponivel !== 'number' || disponivel <= 0) continue;
 
-    const descontar                    = Math.min(disponivel, restante);
-    incrMap[`${campo}.${itemKey}`]     = -descontar;
-    restante                          -= descontar;
+    const descontar              = Math.min(disponivel, restante);
+    incrMap[`${campo}.${itemKey}`] = -descontar;
+    restante                    -= descontar;
   }
 
-  // ✅ Nunca deve ocorrer: somarCampos garantiu totalDisponivel >= quantidade.
-  // Se chegou aqui com restante > 0, os dados do documento estão corrompidos.
+  // Invariante: somarCampos garantiu totalDisponivel >= quantidade.
+  // Se restante > 0 aqui, os dados do documento estão corrompidos — lança sempre.
   if (restante > 0) {
     throw new Error(
-      `[Market] removerInventario: inconsistência — restante=${restante} após distribuição ` +
+      `[Market] removerInventario: inconsistência interna — restante=${restante} após distribuição ` +
       `(userId=${userId} item=${itemKey} totalDisponivel=${totalDisponivel})`
     );
   }
 
   // ── 5. Aplicação atômica com condição de guarda ───────────────────────────
-  // A condição $gte garante que nenhum campo fique negativo se outro processo
-  // decrementar o inventário entre o findOne e o findOneAndUpdate (race condition).
-  // Em caso de race, retorna null → o caller recebe false / lança conforme context.
+  // A condição $gte em cada campo impede que valores negativos sejam gerados
+  // caso outro processo tenha decrementado o inventário entre o findOne (passo 2)
+  // e este update (race condition). Se a guarda falhar, result === null.
 
   const guardas = Object.entries(incrMap).reduce((acc, [campoKey, decremento]) => {
-    // campoKey = "inventory.dinamite" → verifica que o campo ainda tem saldo suficiente
-    acc[campoKey] = { $gte: -decremento }; // -decremento = valor positivo esperado
+    // decremento é negativo; -decremento é o mínimo esperado no campo
+    acc[campoKey] = { $gte: -decremento };
     return acc;
   }, { idWhatsApp: userId });
 
@@ -338,67 +405,94 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
     guardas,
     { $inc: incrMap },
     {
-      ...(session ? { session } : {}),
-      // ✅ new: true permite validar os valores pós-decremento se necessário no futuro;
-      // mantido como false apenas por compatibilidade com o restante do código atual
+      ...opts,
+      // new: false — o documento pré-update não é usado por nenhum caller;
+      // evita o FETCH extra que new: true exigiria no driver
       new: false,
     }
   );
 
   if (!result) {
-    // Documento não encontrou a condição de guarda — race condition detectada
-    const msg =
-      `[Market] removerInventario: guarda falhou (race condition detectada) — ` +
+    // Guarda falhou: outro processo consumiu o estoque no intervalo entre
+    // findOne e findOneAndUpdate. Dentro de transação o withTransaction
+    // pode fazer retry se o erro tiver label TransientTransactionError.
+    const errMsg =
+      `[Market] removerInventario: guarda falhou (possível race condition) — ` +
       `userId=${userId} item=${itemKey}`;
-    console.warn(msg);
-    if (session) throw new Error(msg);
+    console.warn(errMsg);
+    if (session) throw new Error(errMsg);
     return false;
   }
 
   return true;
 }
 
-// adicionarInventario
+// ─── ADICIONAR INVENTÁRIO ─────────────────────────────────────────────────────
+
+/**
+ * Adiciona `quantidade` unidades de `itemKey` ao campo `inventory` do usuário.
+ * Sempre usa `inventory` como destino (sem distribuição entre campos),
+ * pois novos itens chegam pelo canal padrão.
+ *
+ * Comportamento por contexto: igual a removerInventario.
+ *
+ * @param  {string}           userId
+ * @param  {string}           itemKey
+ * @param  {number}           quantidade
+ * @param  {ClientSession|null} session
+ * @returns {Promise<boolean>}
+ */
 async function adicionarInventario(userId, itemKey, quantidade, session = null) {
-  // ✅ Validações fora do try — erros de programação não devem ser
-  // silenciados pelo catch, e não dependem de I/O
+
+  // ── Validações de programação (fora do try — não devem ser silenciadas) ───
+
   if (!Number.isInteger(quantidade) || quantidade <= 0) {
-    const msg = `[Market] adicionarInventario: quantidade inválida (${quantidade})`;
-    console.error(msg);
-    if (session) throw new Error(msg);
-    return false;
-  }
-  if (!/^[a-z0-9_-]+$/.test(itemKey)) {
-    const msg = `[Market] adicionarInventario: itemKey inválido (${itemKey})`;
-    console.error(msg);
-    if (session) throw new Error(msg);
+    const errMsg = `[Market] adicionarInventario: quantidade inválida (${quantidade})`;
+    console.error(errMsg);
+    if (session) throw new Error(errMsg);
     return false;
   }
 
+  if (!ITEM_KEY_RE.test(itemKey)) {
+    const errMsg = `[Market] adicionarInventario: itemKey inválido ("${itemKey}")`;
+    console.error(errMsg);
+    if (session) throw new Error(errMsg);
+    return false;
+  }
+
+  // ── Operação atômica ──────────────────────────────────────────────────────
+  // $inc cria o campo com o valor se não existir — não é necessário $setOnInsert.
+
   try {
+    const opts   = session ? { session } : {};
     const result = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
       { $inc: { [`inventory.${itemKey}`]: quantidade } },
-      { new: true, ...(session ? { session } : {}) }
+      { new: false, ...opts }
+      // new: false — valor pós-update não é utilizado; evita FETCH desnecessário
     );
 
     if (!result) {
-      const msg = `[Market] adicionarInventario: usuário ${userId} não encontrado`;
-      console.error(msg);
-      if (session) throw new Error(msg);
+      const errMsg = `[Market] adicionarInventario: usuário não encontrado — userId=${userId}`;
+      console.error(errMsg);
+      if (session) throw new Error(errMsg);
       return false;
     }
 
     return true;
+
   } catch (e) {
-    console.error('[Market] adicionarInventario:', e.message);
+    // Relança imediatamente dentro de transação para garantir abort via withTransaction.
+    // Fora de transação, loga e retorna false para não derrubar o fluxo do caller.
     if (session) throw e;
+    console.error('[Market] adicionarInventario:', e.message);
     return false;
   }
 }
 
 // ─── TRANSAÇÃO ────────────────────────────────────────────────────────────────
 
+// Labels do driver MongoDB que indicam erros transitórios passíveis de retry
 const RETRY_CODES = new Set([
   'TransientTransactionError',
   'UnknownTransactionCommitResult',
@@ -406,54 +500,76 @@ const RETRY_CODES = new Set([
 
 const MAX_TRANSACTION_RETRIES = 3;
 
-// Espera exponencial entre retries para reduzir contenção no servidor
+/**
+ * Backoff exponencial com jitter para evitar thundering herd em retries.
+ * Cresce como: 50ms, 100ms, 200ms … com cap em 1 000ms.
+ *
+ * @param  {number} tentativa - Número da tentativa atual (base 1)
+ * @returns {number} Milissegundos a aguardar antes do próximo retry
+ */
 function _retryDelay(tentativa) {
-  const base  = 50;                             // ms
-  const cap   = 1_000;                          // ms — teto para não atrasar demais
-  const jitter = Math.random() * base;          // evita thundering herd
-  return Math.min(base * 2 ** tentativa + jitter, cap);
+  const BASE   = 50;
+  const CAP    = 1_000;
+  const jitter = Math.random() * BASE; // distribui retries em janelas diferentes
+  return Math.min(BASE * 2 ** tentativa + jitter, CAP);
 }
 
+/**
+ * Executa `callback(session)` dentro de uma transação MongoDB com retry
+ * automático para erros transitórios.
+ *
+ * Contrato do callback:
+ *  - Deve lançar erros de negócio com `err.userMsg` para falha imediata (sem retry).
+ *  - Deve ser idempotente: pode ser chamado mais de uma vez em caso de retry
+ *    com label `UnknownTransactionCommitResult` (commit incerto).
+ *
+ * @param  {function} callback - async (session: ClientSession) => any
+ * @returns {Promise<any>} Valor retornado pelo callback em caso de sucesso
+ * @throws  Relança o último erro após esgotar retries, ou imediatamente
+ *          se o erro for de negócio (e.userMsg) ou não-transitório.
+ */
 async function withTransaction(callback) {
   let tentativa = 0;
 
   while (true) {
-    // ✅ Session criada dentro do loop: cada retry usa uma session limpa,
-    // evitando reutilizar uma session em estado indeterminado após abort
+    // Session criada dentro do loop: cada retry começa com um estado limpo,
+    // evitando reutilizar uma session em estado indeterminado após abort.
     const session = await mongoose.startSession();
 
     try {
       session.startTransaction({
-        readConcern:    { level: 'snapshot' },
-        writeConcern:   { w: 'majority' },
-        readPreference: 'primary',
+        readConcern:    { level: 'snapshot' },  // leitura consistente dentro da transação
+        writeConcern:   { w: 'majority' },       // durabilidade garantida pela maioria do replica set
+        readPreference: 'primary',              // evita ler de secondary desatualizado
         maxTimeMS:      CONFIG.TRANSACTION_TIMEOUT_MS,
       });
 
       const result = await callback(session);
 
-      // ✅ commitTransaction pode lançar com label 'UnknownTransactionCommitResult',
-      // o que significa que o commit pode ou não ter sido aplicado.
-      // O retry re-executa o callback completo com uma nova session — o código
-      // do callback deve ser idempotente para este caso ser seguro.
+      // commitTransaction pode lançar com label 'UnknownTransactionCommitResult':
+      // o commit pode ou não ter sido aplicado. O retry re-executa o callback
+      // inteiro — por isso o callback deve ser idempotente.
       await session.commitTransaction();
 
       return result;
 
     } catch (e) {
-      // ✅ Só aborta se a transação ainda estiver ativa; commitTransaction pode
-      // ter lançado após o commit parcial, deixando a transação já encerrada
+
+      // Só aborta se a transação ainda estiver ativa.
+      // commitTransaction pode ter lançado após commit parcial,
+      // deixando a transação já encerrada — chamar abort nesse estado é erro.
       if (session.inTransaction()) {
         try {
           await session.abortTransaction();
         } catch (abortErr) {
-          // Abort falhou (ex: sessão já expirou). Apenas loga — o servidor
-          // vai limpar a transação por timeout de qualquer forma
+          // Abort falhou (ex: sessão expirou por maxTimeMS).
+          // Apenas loga — o servidor vai limpar a transação por timeout.
           console.warn('[Market] withTransaction: abortTransaction falhou:', abortErr.message);
         }
       }
 
-      // ✅ Erros de negócio (e.userMsg) nunca são retentados — falha imediata
+      // Erros de negócio (e.userMsg) nunca são retentados — sinalizam
+      // condição esperada que o retry não vai resolver (ex: saldo insuficiente).
       const isTransient = !e.userMsg && e.errorLabels?.some(l => RETRY_CODES.has(l));
 
       if (isTransient && tentativa < MAX_TRANSACTION_RETRIES) {
@@ -464,15 +580,15 @@ async function withTransaction(callback) {
           ` — aguardando ${Math.round(delay)}ms — ${e.message}`
         );
         await new Promise(res => setTimeout(res, delay));
-        continue;
+        continue; // volta ao topo do while com nova session
       }
 
-      // ✅ Esgotou retries ou erro não-transiente: relança preservando stack original
+      // Esgotou retries ou erro não-transitório: relança preservando stack original
       throw e;
 
     } finally {
-      // ✅ endSession sempre chamado, independente de commit/abort/throw
-      // Chamar em session já encerrada é no-op seguro no driver oficial
+      // endSession sempre chamado, independente do caminho tomado.
+      // Chamar em session já encerrada é no-op seguro no driver oficial.
       session.endSession();
     }
   }
@@ -712,6 +828,7 @@ async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, co
 
 // ─── HANDLERS ─────────────────────────────────────────────────────────────────
 
+// !avenda [página]
 async function handleAvenda(sock, msg, jid, caption = '') {
   try {
     const pageArg = parseInt(caption.match(/avenda\s+(\d+)/i)?.[1] ?? '1', 10);
@@ -722,70 +839,94 @@ async function handleAvenda(sock, msg, jid, caption = '') {
 
     const [total, ofertas] = await Promise.all([
       Oferta.countDocuments(filtro),
-      Oferta.find(filtro).sort({ createdAt: -1 }).skip(skip).limit(CONFIG.ITENS_POR_PAGINA).lean(),
+      Oferta.find(filtro)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(CONFIG.ITENS_POR_PAGINA)
+        .lean(),
     ]);
 
     if (total === 0) {
       return reply(sock, jid, msg,
-        `📦 *MARKETPLACE VAZIO*\n\nNenhum item à venda no momento.\n\n` +
-        `💡 Quer vender algo? *!ofertar <item> <preco> <qtd>*`
+        `📦 *MARKETPLACE VAZIO*\n\n` +
+        `Nenhum item à venda no momento.\n\n` +
+        `💡 Quer vender algo?\n` +
+        `➡️ *!ofertar <item> <preco> <qtd>*`
       );
     }
 
     const totalPags   = Math.ceil(total / CONFIG.ITENS_POR_PAGINA);
     const agora       = new Date();
-    const porVendedor = {};
+
+    // Agrupa por vendedor preservando a ordem de chegada (sort createdAt desc já aplicado)
+    const porVendedor = new Map();
     for (const o of ofertas) {
-      (porVendedor[o.sellerId] ??= []).push(o);
+      if (!porVendedor.has(o.sellerId)) porVendedor.set(o.sellerId, []);
+      porVendedor.get(o.sellerId).push(o);
     }
 
     let texto  = `🛒 *MARKETPLACE* — Página ${page}/${totalPags}\n`;
     texto     += `📊 _${total} oferta(s) ativa(s)_\n`;
-    texto     += `━━━━━━━━━━━━━━━━\n`;
+    texto     += `━━━━━━━━━━━━━━━━`;
 
-    for (const [sellerId, lista] of Object.entries(porVendedor)) {
+    for (const [sellerId, lista] of porVendedor) {
       const num         = formatarNumero(sellerId);
-      const nomeExibido = lista[0].sellerName || num;
-      texto += `\n👤 *${nomeExibido}* (${num})\n`;
+      const nomeExibido = lista[0].sellerName?.trim() || num;
+      texto += `\n\n👤 *${nomeExibido}* (${num})\n`;
 
       for (const o of lista) {
         const totalVal = o.preco * o.quantidade;
+        const taxaEst  = Math.floor(totalVal * CONFIG.TAXA_MERCADO_PCT / 100);
+
         let expiraTexto = '';
         if (o.expiresAt) {
-          const horas = Math.floor((o.expiresAt - agora) / 3_600_000);
-          expiraTexto = horas < 24
-            ? `     ⚠️ Expira em *${horas}h*!\n`
-            : `     ⏳ Expira ${o.expiresAt.toLocaleDateString('pt-BR')}\n`;
+          const horas = Math.floor((new Date(o.expiresAt) - agora) / 3_600_000);
+          if (horas <= 0) {
+            expiraTexto = `     ⚠️ _Expirando agora_\n`;
+          } else if (horas < 24) {
+            expiraTexto = `     ⚠️ _Expira em *${horas}h*!_\n`;
+          } else {
+            const dias = Math.floor(horas / 24);
+            expiraTexto = `     ⏳ _Expira em ${dias} dia(s)_\n`;
+          }
         }
+
         texto += `  📦 *${o.itemNome}*\n`;
         texto += `     💵 ${o.preco}g × ${o.quantidade} un. _(total: ${totalVal}g)_\n`;
+        texto += `     🏦 _Taxa estimada: ${taxaEst}g (${CONFIG.TAXA_MERCADO_PCT}%)_\n`;
         texto += expiraTexto;
-        texto += `     🛒 \`!buy ${num} ${o.itemKey} <qtd>\`\n`;
+        texto += `     🛒 \`!buyoferta ${num} ${o.itemKey} <qtd>\`\n`;
       }
     }
 
     texto += `\n━━━━━━━━━━━━━━━━\n`;
-    if (page > 1)         texto += `📄 Anterior: *!avenda ${page - 1}*\n`;
-    if (page < totalPags) texto += `📄 Próxima: *!avenda ${page + 1}*\n`;
-    texto += `🔍 Buscar: *!buscaroferta <item>*\n`;
+    if (page > 1)         texto += `◀️ Anterior: *!avenda ${page - 1}*\n`;
+    if (page < totalPags) texto += `▶️ Próxima:  *!avenda ${page + 1}*\n`;
+    texto += `🔍 Buscar item: *!buscaroferta <item>*\n`;
+    texto += `📋 Suas ofertas: *!minhasofertas*\n`;
     texto += `❌ Cancelar oferta: *!cancelaroferta <item>*`;
 
     return reply(sock, jid, msg, texto);
+
   } catch (e) {
-    console.error('[Market] handleAvenda:', e.message);
-    return reply(sock, jid, msg, '⚠️ Erro ao carregar o marketplace!');
+    console.error('[Market] handleAvenda:', e.message, e.stack);
+    return reply(sock, jid, msg,
+      '⚠️ Erro ao carregar o marketplace. Tente novamente em instantes.'
+    );
   }
 }
 
+// !buscaroferta <item>
 async function handleBuscarOferta(sock, msg, jid, caption) {
   const match = caption.match(/buscaroferta\s+([A-Za-z0-9_-]+)/i);
   if (!match) {
     return reply(sock, jid, msg,
-      '⚠️ Use: *!buscaroferta <item>*\nExemplo: *!buscaroferta dinamite*'
+      '⚠️ Use: *!buscaroferta <item>*\n📌 Exemplo: *!buscaroferta dinamite*'
     );
   }
 
-  const itemKey = match[1].toLowerCase();
+  const itemKey  = match[1].toLowerCase();
+  const itemNome = getNomeItem(itemKey);
 
   try {
     const ofertas = await Oferta.find(filtroOfertasAtivas({ itemKey }))
@@ -794,13 +935,15 @@ async function handleBuscarOferta(sock, msg, jid, caption) {
 
     if (ofertas.length === 0) {
       return reply(sock, jid, msg,
-        `🔍 Nenhuma oferta encontrada para *${getNomeItem(itemKey)}*.\n\n` +
-        `Seja o primeiro a vender: *!ofertar ${itemKey} <preco> <qtd>*`
+        `🔍 Nenhuma oferta encontrada para *${itemNome}*.\n\n` +
+        `💡 Seja o primeiro a vender:\n` +
+        `➡️ *!ofertar ${itemKey} <preco> <qtd>*`
       );
     }
 
-    const itemNome        = getNomeItem(itemKey);
     const totalDisponivel = ofertas.reduce((s, o) => s + o.quantidade, 0);
+    const maisBarato      = ofertas[0];
+    const agora           = new Date();
 
     let texto  = `🔍 *OFERTAS: ${itemNome}*\n`;
     texto     += `📊 _${ofertas.length} vendedor(es) · ${totalDisponivel} un. disponíveis_\n`;
@@ -808,41 +951,74 @@ async function handleBuscarOferta(sock, msg, jid, caption) {
 
     for (const o of ofertas) {
       const num         = formatarNumero(o.sellerId);
-      const nomeExibido = o.sellerName || num;
-      texto += `👤 *${nomeExibido}*\n`;
-      texto += `   💵 ${o.preco}g × ${o.quantidade} un.\n`;
-      texto += `   🛒 \`!buy ${num} ${itemKey} <qtd>\`\n\n`;
+      const nomeExibido = o.sellerName?.trim() || num;
+      const totalVal    = o.preco * o.quantidade;
+      const taxaEst     = Math.floor(totalVal * CONFIG.TAXA_MERCADO_PCT / 100);
+
+      let expiraTexto = '';
+      if (o.expiresAt) {
+        const horas = Math.floor((new Date(o.expiresAt) - agora) / 3_600_000);
+        if (horas <= 0) {
+          expiraTexto = `   ⚠️ _Expirando agora_\n`;
+        } else if (horas < 24) {
+          expiraTexto = `   ⚠️ _Expira em *${horas}h*!_\n`;
+        } else {
+          const dias = Math.floor(horas / 24);
+          expiraTexto = `   ⏳ _Expira em ${dias} dia(s)_\n`;
+        }
+      }
+
+      texto += `👤 *${nomeExibido}* (${num})\n`;
+      texto += `   💵 ${o.preco}g × ${o.quantidade} un. _(total: ${totalVal}g)_\n`;
+      texto += `   🏦 _Taxa estimada: ${taxaEst}g (${CONFIG.TAXA_MERCADO_PCT}%)_\n`;
+      texto += expiraTexto;
+      texto += `   🛒 \`!buyoferta ${num} ${itemKey} <qtd>\`\n\n`;
     }
 
-    const maisBarato = ofertas[0];
+    const nomeBarato = maisBarato.sellerName?.trim() || formatarNumero(maisBarato.sellerId);
     texto += `━━━━━━━━━━━━━━━━\n`;
-    texto += `🏆 Mais barato: *${maisBarato.preco}g* de ${maisBarato.sellerName || formatarNumero(maisBarato.sellerId)}`;
+    texto += `🏆 Mais barato: *${maisBarato.preco}g* de ${nomeBarato}\n`;
+    texto += `🛒 \`!buyoferta ${formatarNumero(maisBarato.sellerId)} ${itemKey} <qtd>\``;
 
     return reply(sock, jid, msg, texto);
   } catch (e) {
-    console.error('[Market] handleBuscarOferta:', e.message);
-    return reply(sock, jid, msg, '⚠️ Erro ao buscar oferta!');
+    console.error('[Market] handleBuscarOferta:', e.message, e.stack);
+    return reply(sock, jid, msg, '⚠️ Erro ao buscar oferta. Tente novamente em instantes.');
   }
 }
 
-// ─── HANDLER: OFERTAR ─────────────────────────────────────────────────────────
+// ─── HANDLER: OFERTAR ────────────────────────────────────────────────────────
 
+/**
+ * !ofertar <item> <preco> <quantidade>
+ *
+ * Fluxo:
+ *  1. Identifica o usuário
+ *  2. Valida argumentos (sintaxe → negócio)
+ *  3. Pré-checks fora da transação (limite de ofertas, inventário) — feedback rápido
+ *  4. Transação: re-valida limite + remove inventário + upsert da oferta
+ *  5. Resposta de sucesso com resumo financeiro
+ *
+ * Nota: o comentário original dizia "!cancelaroferta <item>" no cabeçalho —
+ * era um copy-paste incorreto; corrigido abaixo.
+ */
 async function handleOfertar(sock, msg, jid, caption) {
 
-  // ── 1. Identificação do usuário ───────────────────────────────────────────
+  // ── 1. Identificação do usuário ──────────────────────────────────────────
 
   const userId = getUserId(msg);
   if (!userId) {
     return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   }
 
-  // ── 2. Parse e validação dos argumentos ──────────────────────────────────
+  // ── 2. Parse dos argumentos ──────────────────────────────────────────────
 
   const match = caption.match(/ofertar\s+([A-Za-z0-9_-]+)\s+(\d+)\s+(\d+)/i);
   if (!match) {
     return reply(sock, jid, msg,
       '⚠️ *Uso correto:* `!ofertar <item> <preco> <quantidade>`\n' +
-      '📌 *Exemplo:* `!ofertar dinamite 200 3`'
+      '📌 *Exemplo:* `!ofertar dinamite 200 3`\n\n' +
+      '🛒 Ver marketplace: *!avenda*'
     );
   }
 
@@ -850,9 +1026,10 @@ async function handleOfertar(sock, msg, jid, caption) {
   const preco      = parseInt(match[2], 10);
   const quantidade = parseInt(match[3], 10);
 
-  // ── 3. Validações de negócio (síncronas) ─────────────────────────────────
+  // ── 3. Validações de negócio (síncronas, sem I/O) ────────────────────────
 
   if (!CATALOGO_COMPLETO[itemKey]) {
+    // Mostra até 5 exemplos para orientar o usuário sem expor o catálogo inteiro
     const exemplos = Object.keys(CATALOGO_COMPLETO).slice(0, 5).join(', ');
     return reply(sock, jid, msg,
       `❌ Item *${itemKey}* não encontrado no catálogo.\n\n` +
@@ -861,44 +1038,44 @@ async function handleOfertar(sock, msg, jid, caption) {
     );
   }
 
-  if (!Number.isFinite(preco) || preco < CONFIG.PRECO_MINIMO || preco > CONFIG.PRECO_MAXIMO) {
+  // parseInt já retorna inteiro; a guarda Number.isInteger cobre NaN/Infinity
+  if (!Number.isInteger(preco) || preco < CONFIG.PRECO_MINIMO || preco > CONFIG.PRECO_MAXIMO) {
     return reply(sock, jid, msg,
       `❌ *Preço inválido!*\n` +
-      `💵 Deve ser entre *${CONFIG.PRECO_MINIMO}g* e *${CONFIG.PRECO_MAXIMO.toLocaleString('pt-BR')}g*`
+      `💵 Deve ser um inteiro entre *${CONFIG.PRECO_MINIMO}g* e *${CONFIG.PRECO_MAXIMO.toLocaleString('pt-BR')}g*`
     );
   }
 
-  if (!Number.isFinite(quantidade) || quantidade < CONFIG.QTD_MINIMA || quantidade > CONFIG.QTD_MAXIMA) {
+  if (!Number.isInteger(quantidade) || quantidade < CONFIG.QTD_MINIMA || quantidade > CONFIG.QTD_MAXIMA) {
     return reply(sock, jid, msg,
       `❌ *Quantidade inválida!*\n` +
-      `📊 Deve ser entre *${CONFIG.QTD_MINIMA}* e *${CONFIG.QTD_MAXIMA}*`
+      `📊 Deve ser um inteiro entre *${CONFIG.QTD_MINIMA}* e *${CONFIG.QTD_MAXIMA}*`
     );
   }
 
-  // ── 4. Busca de metadados antes da transação ──────────────────────────────
-  // Nome do usuário e contagem de ofertas não precisam de consistência
-  // transacional — buscados em paralelo fora da transação para não aumentar
-  // seu escopo desnecessariamente.
+  // ── 4. Pré-checks fora da transação ─────────────────────────────────────
   //
-  // BUG 4 FIX: filtroOfertasAtivas nos dois countDocuments — aqui e dentro
-  // da transação. Sem o filtro, ofertas expiradas ainda não limpas pelo TTL
-  // inflam a contagem e bloqueiam o usuário mesmo ele tendo vagas reais.
+  // Objetivo: retornar feedback rápido antes de abrir uma transação
+  // (que tem custo no servidor e nos locks). Estes checks são "otimistas":
+  // podem ser invalidados por race condition — por isso são repetidos
+  // dentro da transação no passo 5.
 
-  const filtroContagem = filtroOfertasAtivas({ sellerId: userId });
+  const filtroAtivas = filtroOfertasAtivas({ sellerId: userId });
 
-  const [usuarioDoc, qtdOfertasAtual] = await Promise.all([
+  // Busca paralela para minimizar latência
+  const [usuarioDoc, qtdOfertasAtual, ofertaExistentePrevia] = await Promise.all([
     Usuario.findOne({ idWhatsApp: userId }, { nome: 1 }).lean(),
-    Oferta.countDocuments(filtroContagem),
+    Oferta.countDocuments(filtroAtivas),
+    Oferta.exists({ sellerId: userId, itemKey }),
   ]);
 
+  // usuarioDoc pode ser null se o usuário ainda não tiver registro;
+  // nesse caso usa o número formatado como nome de exibição
   const sellerName = usuarioDoc?.nome?.trim() || formatarNumero(userId);
   const itemNome   = getNomeItem(itemKey);
 
-  // Verificação prévia fora da transação para feedback imediato ao usuário.
-  // A verificação definitiva ainda ocorre dentro da transação (cobre race
-  // conditions), mas esta evita abrir uma session no caso mais comum.
-  const ofertaExistentePrevia = await Oferta.exists({ sellerId: userId, itemKey });
-
+  // Só bloqueia se não existir oferta prévia para este item:
+  // adicionar quantidade a uma oferta existente não ocupa nova slot
   if (!ofertaExistentePrevia && qtdOfertasAtual >= CONFIG.MAX_OFERTAS_USER) {
     return reply(sock, jid, msg,
       `❌ Você atingiu o limite de *${CONFIG.MAX_OFERTAS_USER} ofertas ativas*!\n\n` +
@@ -907,17 +1084,30 @@ async function handleOfertar(sock, msg, jid, caption) {
     );
   }
 
-  // ── 5. Transação ──────────────────────────────────────────────────────────
+  // Verificação de inventário antes de abrir transação:
+  // getQuantidadeInventario lê fora de session aqui (intencionalmente),
+  // pois serve apenas para feedback rápido. A remoção real é transacional.
+  const qtdInventario = await getQuantidadeInventario(userId, itemKey);
+  if (qtdInventario < quantidade) {
+    return reply(sock, jid, msg,
+      `❌ *Itens insuficientes no inventário!*\n\n` +
+      `📦 Você tem: *${qtdInventario}* ${itemNome}\n` +
+      `📊 Pediu ofertar: *${quantidade}*\n\n` +
+      `🎒 Ver inventário: *!inventario*`
+    );
+  }
+
+  // ── 5. Transação ─────────────────────────────────────────────────────────
+  //
+  // Re-valida limite e inventário dentro da transação para cobrir o intervalo
+  // entre os pré-checks acima e os writes abaixo (race condition).
 
   let ofertaCriada;
 
   try {
     await withTransaction(async (session) => {
 
-      // Re-verifica o limite DENTRO da transação para cobrir race conditions
-      // entre a verificação prévia acima e o upsert abaixo.
-      // BUG 4 FIX (continuação): mesmo filtroOfertasAtivas aplicado aqui,
-      // garantindo consistência entre a contagem prévia e a transacional.
+      // Re-leitura transacional — garante isolamento snapshot
       const [qtdTransacional, ofertaJaExiste] = await Promise.all([
         Oferta.countDocuments(filtroOfertasAtivas({ sellerId: userId }), { session }),
         Oferta.exists({ sellerId: userId, itemKey }, { session }),
@@ -932,29 +1122,32 @@ async function handleOfertar(sock, msg, jid, caption) {
         throw err;
       }
 
-      // removerInventario lança com mensagem estruturada quando session está
-      // presente — a transação aborta automaticamente via withTransaction
+      // removerInventario lança com session ativa em caso de falha,
+      // garantindo abort automático pela withTransaction
       await removerInventario(userId, itemKey, quantidade, session);
 
-      // Upsert atômico: cria a oferta se não existir, ou acumula quantidade
-      // e atualiza preço/nome se já existir — mantém o índice único
-      // (sellerId + itemKey) sem risco de inserção duplicada.
+      // findOneAndUpdate com upsert: cria oferta se não existir,
+      // ou acumula quantidade + atualiza preço/nome se já existir.
+      // new: true devolve o documento pós-update para usar na resposta.
       ofertaCriada = await Oferta.findOneAndUpdate(
         { sellerId: userId, itemKey },
         {
           $set: { sellerName, itemNome, preco },
           $inc: { quantidade },
-          // $setOnInsert não define createdAt: timestamps:true já cuida disso
         },
         { upsert: true, new: true, session }
       );
     });
 
   } catch (e) {
+    // Erros de negócio (e.userMsg) são exibidos diretamente ao usuário
     if (e.userMsg) return reply(sock, jid, msg, e.userMsg);
 
+    // Erros inesperados: loga com contexto completo para diagnóstico
     console.error('[Market] handleOfertar: erro inesperado', {
-      userId, itemKey, preco, quantidade, erro: e.message, stack: e.stack,
+      userId, itemKey, preco, quantidade,
+      erro:  e.message,
+      stack: e.stack,
     });
     return reply(sock, jid, msg,
       '⚠️ Erro interno ao criar oferta. Seus itens *não foram afetados*.\n' +
@@ -963,16 +1156,33 @@ async function handleOfertar(sock, msg, jid, caption) {
   }
 
   // ── 6. Resposta de sucesso ────────────────────────────────────────────────
-  // Contagem relida após commit para refletir o estado real do banco.
-  // BUG 4 FIX (continuação): mesmo filtro aplicado para consistência com
-  // o número exibido ao usuário — evita mostrar "3/10" quando são 2 ativas.
+  //
+  // Contagem relida pós-commit para refletir o estado real do banco,
+  // evitando exibir um valor defasado calculado antes da transação.
 
   const restantes = await Oferta.countDocuments(filtroOfertasAtivas({ sellerId: userId }));
 
-  const expiraTexto = ofertaCriada.expiresAt
-    ? `\n⏳ *Expira em:* ${ofertaCriada.expiresAt.toLocaleDateString('pt-BR')}`
-    : '';
+  // Calcula tempo de expiração a partir do documento atualizado
+  let expiraTexto = '';
+  if (ofertaCriada.expiresAt) {
+    const msRestantes = new Date(ofertaCriada.expiresAt) - Date.now();
+    const horas       = Math.floor(msRestantes / 3_600_000);
+    const dias        = Math.floor(horas / 24);
 
+    if (horas <= 0) {
+      // Pode ocorrer se o clock do servidor divergir ou o TTL estiver muito baixo
+      expiraTexto = `\n⚠️ *Atenção:* oferta já expirada — contate um admin`;
+    } else {
+      const tempoLabel = dias > 0
+        ? `${dias} dia(s)`
+        : `${horas}h`;
+      expiraTexto =
+        `\n⏳ *Expira em:* ${tempoLabel}` +
+        ` (${ofertaCriada.expiresAt.toLocaleDateString('pt-BR')})`;
+    }
+  }
+
+  // Estimativa financeira baseada no estoque total atual da oferta
   const totalOferta     = preco * ofertaCriada.quantidade;
   const taxaEstimada    = Math.floor(totalOferta * CONFIG.TAXA_MERCADO_PCT / 100);
   const liquidoEstimado = totalOferta - taxaEstimada;
@@ -981,7 +1191,7 @@ async function handleOfertar(sock, msg, jid, caption) {
     `✅ *OFERTA CRIADA COM SUCESSO!*\n\n` +
     `📦 *Item:* ${itemNome}\n` +
     `💵 *Preço unitário:* ${preco.toLocaleString('pt-BR')}g\n` +
-    `📊 *Quantidade ofertada:* ${quantidade}\n` +
+    `📊 *Quantidade adicionada:* ${quantidade}\n` +
     `💰 *Estoque total na oferta:* ${ofertaCriada.quantidade}\n` +
     expiraTexto + `\n` +
     `━━━━━━━━━━━━━━━━\n` +
@@ -996,38 +1206,37 @@ async function handleOfertar(sock, msg, jid, caption) {
 
 // ─── HANDLER: BUY ─────────────────────────────────────────────────────────────
 
+// !buy
 async function handleBuy(sock, msg, jid, caption) {
 
-  // ── 1. Identificação do comprador ─────────────────────────────────────────
+  // ── 1. Identificação do comprador ────────────────────────────────────────
 
   const compradorId = getUserId(msg);
   if (!compradorId) {
     return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   }
 
-  // ── 2. Cooldown ───────────────────────────────────────────────────────────
-  // ✅ Verificado antes do parse para rejeitar spam imediatamente,
-  // sem custo de regex ou I/O
+  // ── 2. Cooldown ──────────────────────────────────────────────────────────
 
   const espera = checkCooldown(compradorId);
   if (espera > 0) {
     return reply(sock, jid, msg, `⏳ Aguarde *${espera}s* antes de comprar novamente.`);
   }
 
-  // ── 3. Parse dos argumentos ───────────────────────────────────────────────
+  // ── 3. Parse dos argumentos ──────────────────────────────────────────────
 
   const args = parseBuyArgs(caption);
   if (!args) {
     return reply(sock, jid, msg,
-      '⚠️ *Uso correto:* `!buy <vendedor> <item> <quantidade>`\n' +
-      '📌 *Exemplo:* `!buy 5511999999999 dinamite 2`\n\n' +
+      '⚠️ *Uso correto:* `!buyoferta <vendedor> <item> <quantidade>`\n' +
+      '📌 *Exemplo:* `!buyoferta 5511999999999 dinamite 2`\n\n' +
       '🛒 Ver vendedores disponíveis: *!avenda*'
     );
   }
 
   const { vendedorRaw, itemKey, quantidade } = args;
 
-  // ── 4. Validações síncronas de negócio ────────────────────────────────────
+  // ── 4. Validações síncronas de negócio ───────────────────────────────────
 
   const vendedorId = toJid(vendedorRaw);
   if (!vendedorId) {
@@ -1042,8 +1251,6 @@ async function handleBuy(sock, msg, jid, caption) {
     return reply(sock, jid, msg, '❌ Você não pode comprar sua própria oferta!');
   }
 
-  // ✅ parseBuyArgs já valida quantidade >= 1; a checagem de MAX_QTD_COMPRA
-  // é feita aqui pois é regra de negócio do handler, não do parser
   if (quantidade > CONFIG.MAX_QTD_COMPRA) {
     return reply(sock, jid, msg,
       `❌ Quantidade máxima por compra: *${CONFIG.MAX_QTD_COMPRA}*\n` +
@@ -1051,32 +1258,71 @@ async function handleBuy(sock, msg, jid, caption) {
     );
   }
 
-  // ── 5. Registro do cooldown ───────────────────────────────────────────────
-  // ✅ Setado somente após TODAS as validações síncronas passarem,
-  // evitando penalizar o usuário por erros de digitação
+  // ── 5. Verificação prévia de saldo (antes de abrir transação) ────────────
+
+  const compradorPreview = await Usuario.findOne(
+    { idWhatsApp: compradorId },
+    { gold: 1, nome: 1 }
+  ).lean().catch(() => null);
+
+  if (!compradorPreview) {
+    return reply(sock, jid, msg, '⚠️ Seu usuário não foi encontrado. Tente novamente.');
+  }
+
+  const ofertaPreview = await Oferta.findOne(
+    filtroOfertasAtivas({ sellerId: vendedorId, itemKey }),
+    { preco: 1, quantidade: 1, itemNome: 1 }
+  ).lean().catch(() => null);
+
+  if (!ofertaPreview) {
+    return reply(sock, jid, msg,
+      `❌ Oferta não encontrada!\n\n` +
+      `🔍 Ver ofertas de *${getNomeItem(itemKey)}*: *!buscaroferta ${itemKey}*\n` +
+      `🛒 Ver todas as ofertas: *!avenda*`
+    );
+  }
+
+  if (ofertaPreview.quantidade < quantidade) {
+    return reply(sock, jid, msg,
+      `⚠️ *Quantidade indisponível!*\n\n` +
+      `📦 Estoque atual: *${ofertaPreview.quantidade}*\n` +
+      `📊 Você pediu: *${quantidade}*\n` +
+      `🔍 Ver oferta: *!buscaroferta ${itemKey}*`
+    );
+  }
+
+  const custoTotal = ofertaPreview.preco * quantidade;
+  if ((compradorPreview.gold ?? 0) < custoTotal) {
+    const faltam = custoTotal - (compradorPreview.gold ?? 0);
+    return reply(sock, jid, msg,
+      `❌ *SALDO INSUFICIENTE*\n\n` +
+      `💰 Você tem: *${compradorPreview.gold ?? 0}g*\n` +
+      `💸 Precisa: *${custoTotal}g* _(${ofertaPreview.preco}g × ${quantidade})_\n` +
+      `📊 Faltam: *${faltam}g*`
+    );
+  }
+
+  // ── 6. Registro do cooldown ──────────────────────────────────────────────
+  // Setado somente após TODAS as validações síncronas e prévias passarem
 
   BUY_COOLDOWNS.set(compradorId, Date.now());
 
-  // ── 6. Busca de nomes (fora da transação) ────────────────────────────────
-  // ✅ Paralelo e sem session: nomes são metadados de exibição,
-  // não precisam de consistência transacional
+  // ── 7. Busca de nomes para exibição (fora da transação) ──────────────────
 
-  let compradorNome = null;
+  let compradorNome = compradorPreview.nome?.trim() ?? null;
   let vendedorNome  = null;
 
   try {
-    const [compradorDoc, vendedorDoc] = await Promise.all([
-      Usuario.findOne({ idWhatsApp: compradorId }, { nome: 1 }).lean(),
-      Usuario.findOne({ idWhatsApp: vendedorId  }, { nome: 1 }).lean(),
-    ]);
-    compradorNome = compradorDoc?.nome?.trim() ?? null;
-    vendedorNome  = vendedorDoc?.nome?.trim()  ?? null;
+    const vendedorDoc = await Usuario.findOne(
+      { idWhatsApp: vendedorId },
+      { nome: 1 }
+    ).lean();
+    vendedorNome = vendedorDoc?.nome?.trim() ?? null;
   } catch (e) {
-    // ✅ Falha ao buscar nomes não cancela a compra — apenas exibe número no lugar
-    console.warn('[Market] handleBuy: falha ao buscar nomes (não crítico):', e.message);
+    console.warn('[Market] handleBuy: falha ao buscar nome do vendedor (não crítico):', e.message);
   }
 
-  // ── 7. Execução da transação ──────────────────────────────────────────────
+  // ── 8. Execução da transação ─────────────────────────────────────────────
 
   let resultado;
 
@@ -1088,8 +1334,6 @@ async function handleBuy(sock, msg, jid, caption) {
       )
     );
   } catch (e) {
-    // ✅ Cooldown removido em qualquer falha transacional:
-    // erros de negócio (saldo, estoque) não devem penalizar o usuário
     BUY_COOLDOWNS.delete(compradorId);
 
     if (e.userMsg) {
@@ -1111,15 +1355,9 @@ async function handleBuy(sock, msg, jid, caption) {
     );
   }
 
-  // BUG 3 FIX: cooldown removido explicitamente após compra bem-sucedida.
-  // Sem isso, o usuário fica bloqueado até o setInterval de cleanup rodar,
-  // mesmo tendo concluído a compra com sucesso. O comentário da etapa 5
-  // ("evitar penalizar o usuário") se aplica igualmente ao caminho feliz.
   BUY_COOLDOWNS.delete(compradorId);
 
-  // ── 8. Notificações pós-transação ─────────────────────────────────────────
-  // ✅ Comprador notificado com await para garantir entrega antes de retornar;
-  // vendedor notificado em fire-and-forget — falha não deve afetar o comprador
+  // ── 9. Notificações pós-transação ────────────────────────────────────────
 
   await reply(
     sock, jid, msg,

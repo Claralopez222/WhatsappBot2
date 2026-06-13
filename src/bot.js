@@ -1071,6 +1071,7 @@ if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleR
   if (matchCmd(cmdWord, 'anagrama') || matchCmdStart(cmd, 'anagrama '))
     { await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid); return; }
   if (matchCmdStart(cmd, 'ppt'))           { await diversaoHandler.handlePpt(sock, msg, jid, caption, author, senderJid); return; }
+if (matchCmdStart(cmd, 'bucetudo'))      { await diversaoHandler.handleBucetudo(sock, msg, content, jid, author, contactNames); return; }
 
   // â”€â”€ GRUPO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmdStart(cmd, 'ban'))          { await grupoHandler.handleBan(sock, msg, content, jid, botJid, contactNames); return; }

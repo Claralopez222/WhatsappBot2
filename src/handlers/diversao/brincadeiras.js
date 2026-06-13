@@ -285,6 +285,98 @@ async function handleDado(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
+// ─── !bucetudo
+async function handleBucetudo(sock, msg, content, jid, author, contactNames) {
+  const contextInfo = content.extendedTextMessage?.contextInfo;
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const pct = Math.floor(Math.random() * 101);
+
+  const display = mentionedJid ? nome : author;
+
+  const faixas = [
+    {
+      max: 11,
+      emoji: '🍑',
+      frases: [
+        `*${display}* mal tem nada, mas o que tem já chama atenção. 👀`,
+        `Quase zero, *${display}*. Mas aquela calça justa no último domingo... 😏`,
+        `*${display}* ainda tá no começo da jornada. Tem futuro. 🍑`,
+        `Discreto(a) demais, *${display}*. A natureza foi econômica, mas com carinho. 😌`,
+      ],
+    },
+    {
+      max: 31,
+      emoji: '🍑💦',
+      frases: [
+        `*${display}* tem alguma coisa ali, não é? O short ajuda bastante. 😂`,
+        `Modesto(a), mas presente. *${display}* não precisa de muito pra chamar atenção. 😏`,
+        `*${display}* tem o suficiente pra fazer alguém olhar duas vezes. 👀`,
+        `Não é muito, mas *${display}* sabe usar bem o que tem. 💅`,
+      ],
+    },
+    {
+      max: 51,
+      emoji: '🍑🔥',
+      frases: [
+        `Na média! *${display}* tá no padrão. Nem demais, nem de menos. 🍑`,
+        `*${display}* é mediano(a), mas tudo depende da roupa certa. 😂`,
+        `Meio a meio! *${display}* às vezes impressiona, às vezes não. Depende do dia. 😅`,
+        `*${display}* tá bem no centro. 50% é honesto, o grupo concorda. 🔥`,
+      ],
+    },
+    {
+      max: 71,
+      emoji: '🍑💎',
+      frases: [
+        `Acima da média! *${display}* tem motivo pra andar de cabeça erguida. 💎`,
+        `*${display}* não é o centro das atenções à toa. A geometria favorece. 🍑`,
+        `Considerável! *${display}* entra numa sala e a física muda. 😂`,
+        `O grupo votou e *${display}* ficou acima da média por unanimidade. 🏆`,
+      ],
+    },
+    {
+      max: 90,
+      emoji: '🍑👑',
+      frases: [
+        `IMPRESSIONANTE! *${display}* tá no top tier sem nem tentar. 👑`,
+        `*${display}* caminha e o chão agradece. Que presença! 🍑🔥`,
+        `Alto demais pra ignorar, *${display}*. Isso é um dom, não tem outro nome. 😏`,
+        `*${display}* é a razão pela qual as calças jeans têm elástico. 💀👑`,
+      ],
+    },
+    {
+      max: 100,
+      emoji: '🍑🏆',
+      frases: [
+        `LENDÁRIO(A)! *${display}* transcende o comum. Isso é patrimônio. 🏆`,
+        `*${display}* chegou nos 99% e a gravidade fez hora extra hoje. 🍑✨`,
+        `Quase 100%! *${display}* foi criado(a) por engenheiros ou foi sorte mesmo? 😂`,
+        `*${display}* devia ter seguro. Um ativo desse tamanho precisa de proteção. 💅🏆`,
+      ],
+    },
+    {
+      max: 101,
+      emoji: '🍑🎊👑',
+      frases: [
+        `100% BUCETUDO(A)! *${display}* é a referência absoluta do grupo. 🎊`,
+        `MÁXIMO HISTÓRICO! *${display}* zerou o medidor e o algoritmo entrou em colapso. 🏆🍑`,
+        `*${display}* chegou nos 100% e a física quântica pediu licença. 👑✨`,
+        `100%! *${display}* não é uma pessoa, é um fenômeno da natureza. 🎉🍑👑`,
+      ],
+    },
+  ];
+
+  const faixa = faixas.find(f => pct < f.max);
+  const frase = faixa.frases[Math.floor(Math.random() * faixa.frases.length)];
+  const barra = buildBar(pct);
+
+  await sock.sendMessage(jid, {
+    text: `${faixa.emoji} *BUCETÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`,
+    mentions: mentionedJid ? [alvoJid] : [],
+  }, { quoted: msg });
+}
+
 // ─── !moeda
 async function handleMoeda(sock, msg, jid) {
   const resultado = Math.random() < 0.5 ? '🟡 Cara' : '⚪ Coroa';

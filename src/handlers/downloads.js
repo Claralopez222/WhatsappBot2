@@ -480,45 +480,121 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-// !audio
+// ─── !audio ───────────────────────────────────────────────────────────────────
+// Dependências: npm install yt-dlp-wrap @ffmpeg-installer/ffmpeg
+
+const YTDlpWrap  = require('yt-dlp-wrap').default;
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const { randomUUID } = require('crypto');
+const fs   = require('fs');
+const path = require('path');
+
+const execFileAsync = promisify(execFile);
+
+// Instância única reutilizada entre chamadas
+const ytDlpWrap = new YTDlpWrap();
+
+// Garante que o binário yt-dlp existe em /tmp (baixa na primeira execução)
+async function ensureYtDlp() {
+  const binPath = path.join('/tmp', 'yt-dlp');
+  if (!fs.existsSync(binPath)) {
+    await YTDlpWrap.downloadFromGithub(binPath);
+  }
+  ytDlpWrap.setBinaryPath(binPath);
+}
+
 async function handleAudioDownload(sock, msg, jid, caption) {
   const link = caption.replace(/^[!.,\/]*audio\s*/i, '').trim();
+
   if (!link || !link.startsWith('http')) {
-    return sock.sendMessage(jid, { text: '⚠️ Envie o link do vídeo.\nExemplo: *!audio https://youtu.be/xxx*' }, { quoted: msg });
+    return sock.sendMessage(jid, {
+      text: '⚠️ Envie o link do vídeo.\nExemplo: *!audio https://youtu.be/xxx*',
+    }, { quoted: msg });
   }
+
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  const ytdlp = await getYtDlpPath();
-  const ffmpegBin = getFfmpegPath();
-  const { randomUUID } = require('crypto');
-  const id = randomUUID();
-  const rawTemplate = tmpPath(id, '_raw.%(ext)s');
-  const outPath = tmpPath(id, '_out.mp3');
+  const id          = randomUUID();
+  const rawTemplate = path.join('/tmp', `${id}_raw.%(ext)s`);
+  const outPath     = path.join('/tmp', `${id}_out.mp3`);
 
-  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'best', '--audio-quality', '0', '--max-filesize', '100m', '-o', rawTemplate, link];
-  const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 90000);
-  if (!dlOk) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o áudio.' }, { quoted: msg });
+  try {
+    // ── Garantir binário yt-dlp ───────────────────────────────────────────────
+    await ensureYtDlp();
 
-  const base = rawTemplate.replace('.%(ext)s', '');
-  const rawPath = ['.mp3','.m4a','.opus','.ogg','.webm','.aac','.flac','.wav'].map(e => base + e).find(p => fs.existsSync(p)) || null;
-  if (!rawPath) return sock.sendMessage(jid, { text: '❌ Arquivo de áudio não encontrado.' }, { quoted: msg });
+    // ── Download do áudio ─────────────────────────────────────────────────────
+    await ytDlpWrap.execPromise([
+      '--no-playlist',
+      '-x',
+      '--audio-format', 'best',
+      '--audio-quality', '0',
+      '--max-filesize', '100m',
+      '-o', rawTemplate,
+      link,
+    ]);
 
-  const encOk = await ffmpeg(ffmpegBin, [
-    '-y', '-i', rawPath,
-    '-vn', '-c:a', 'libmp3lame', '-b:a', '192k', '-ar', '44100', '-ac', '2', outPath
-  ]);
-  safeDel(rawPath);
+    // ── Localizar arquivo baixado ─────────────────────────────────────────────
+    const base    = rawTemplate.replace('.%(ext)s', '');
+    const rawPath = ['.mp3', '.m4a', '.opus', '.ogg', '.webm', '.aac', '.flac', '.wav']
+      .map(ext => base + ext)
+      .find(p => fs.existsSync(p)) ?? null;
 
-  if (!encOk || !fs.existsSync(outPath)) return sock.sendMessage(jid, { text: '❌ Falha ao processar o áudio.' }, { quoted: msg });
+    if (!rawPath) {
+      return sock.sendMessage(jid, {
+        text: '❌ Arquivo de áudio não encontrado após o download.',
+      }, { quoted: msg });
+    }
 
-  const audioBuffer = fs.readFileSync(outPath);
-  safeDel(outPath);
+    // ── Converter para MP3 com ffmpeg ─────────────────────────────────────────
+    try {
+      await execFileAsync(ffmpegPath, [
+        '-y', '-i', rawPath,
+        '-vn', '-c:a', 'libmp3lame', '-b:a', '192k', '-ar', '44100', '-ac', '2',
+        outPath,
+      ]);
+    } finally {
+      fs.existsSync(rawPath) && fs.unlinkSync(rawPath);
+    }
 
-  if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Áudio muito grande (máx 64MB).' }, { quoted: msg });
+    if (!fs.existsSync(outPath)) {
+      return sock.sendMessage(jid, {
+        text: '❌ Falha ao converter o áudio.',
+      }, { quoted: msg });
+    }
 
-  await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  log.info('✅ Áudio MP3 enviado!');
+    // ── Verificar tamanho e enviar ────────────────────────────────────────────
+    const audioBuffer = fs.readFileSync(outPath);
+    fs.unlinkSync(outPath);
+
+    if (audioBuffer.length > SIZE_LIMIT) {
+      return sock.sendMessage(jid, {
+        text: '❌ Áudio muito grande (máx 64 MB).',
+      }, { quoted: msg });
+    }
+
+    await sock.sendMessage(jid,
+      { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false },
+      { quoted: msg }
+    );
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    log.info(`[audio] MP3 enviado — ${(audioBuffer.length / 1_048_576).toFixed(1)} MB`);
+
+  } catch (e) {
+    log.error('[audio] handleAudioDownload:', e.message);
+
+    // Limpeza de emergência
+    [rawPath, outPath].forEach(p => { try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch {} });
+
+    const msg_erro = e.message?.includes('max-filesize')
+      ? '❌ Vídeo muito grande para baixar (máx 100 MB).'
+      : e.message?.includes('Unsupported URL') || e.message?.includes('no video')
+        ? '❌ Link inválido ou não suportado.'
+        : '❌ Erro ao processar o áudio. Tente novamente.';
+
+    return sock.sendMessage(jid, { text: msg_erro }, { quoted: msg });
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

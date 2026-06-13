@@ -157,7 +157,124 @@ function filtro(userId, groupId) {
   return { idWhatsApp: userId, idGrupo: groupId };
 }
 
-// ─── !procuraremprego ────────────────────────────────────────────────────────
+// ─── !trabalhar ───────────────────────────────────────────────────────────────
+
+async function handleTrabalhar(sock, msg, jid) {
+  const ctx = await resolverContexto(sock, msg, jid);
+  if (!ctx) return;
+  const { userId, groupId } = ctx;
+
+  try {
+    const carteira = await getCarteira(userId, groupId);
+
+    // ── Sem emprego ───────────────────────────────────────────────────────────
+    if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
+      return reply(sock, jid, msg,
+        `😴 *VOCÊ ESTÁ DESEMPREGADO!*\n\n` +
+        `Use *!procuraremprego* para conseguir um cargo.`
+      );
+    }
+
+    // ── Cargo inválido → reset automático ────────────────────────────────────
+    const cargo = resolverCargo(carteira.empregoAtual);
+    if (!cargo) {
+      await CarteiraGrupo.findOneAndUpdate(
+        filtro(userId, groupId),
+        { $set: { empregoAtual: null } }
+      );
+      return reply(sock, jid, msg,
+        `⚠️ Cargo inválido detectado. Seu emprego foi resetado.\n` +
+        `Use *!procuraremprego* para se reempregar.`
+      );
+    }
+
+    const agora          = Date.now();
+    const ultimoTrabalho = carteira.ultimoTrabalho
+      ? new Date(carteira.ultimoTrabalho).getTime()
+      : null;
+
+    // ── Primeiro turno — apenas verifica horário ──────────────────────────────
+    if (!ultimoTrabalho) {
+      if (!dentroDoHorario()) {
+        return reply(sock, jid, msg, _msgForaHorario());
+      }
+      return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
+    }
+
+    // ── Cálculo de tempo efetivo (exclui período fora do horário) ─────────────
+    const tempoForaHorario = calcularTempoForaHorario(ultimoTrabalho, agora);
+    const decorridoEfetivo = (agora - ultimoTrabalho) - tempoForaHorario;
+
+    // 1. Cooldown ainda ativo
+    if (decorridoEfetivo < TEMPO.COOLDOWN_MS) {
+      const falta = TEMPO.COOLDOWN_MS - decorridoEfetivo;
+      return reply(sock, jid, msg,
+        `⏳ *TURNO EM ANDAMENTO!*\n\n` +
+        `💼 Cargo: *${cargo.nome}*\n` +
+        `🕐 Próximo turno em: *${formatMs(falta)}* _(tempo comercial)_\n\n` +
+        `💡 _Você tem ${LABEL_JANELA} após o desbloqueio para bater o ponto._`
+      );
+    }
+
+    // 2. Cooldown expirou mas estamos fora do horário agora
+    if (!dentroDoHorario()) {
+      return reply(sock, jid, msg, _msgForaHorario());
+    }
+
+    // 3. Tolerância estourada → demissão por justa causa
+    if (decorridoEfetivo >= TEMPO.DEMISSAO_MS) {
+      await CarteiraGrupo.findOneAndUpdate(
+        filtro(userId, groupId),
+        {
+          $set: {
+            empregoAtual:             null,
+            totalTrabalhosComSucesso: 0,
+            historicoSujo:            true,
+            ultimoTrabalho:           null,
+          },
+        }
+      );
+
+      const totalMins = Math.floor(decorridoEfetivo / 60_000);
+      const horas     = Math.floor(totalMins / 60);
+      const mins      = totalMins % 60;
+      const tempoFmt  = mins > 0 ? `${horas}h ${mins}min` : `${horas}h`;
+
+      return reply(sock, jid, msg,
+        `🔴 *DEMITIDO POR JUSTA CAUSA!*\n\n` +
+        `⏱️ Tempo útil sem bater ponto: *${tempoFmt}* _(comercial)_\n` +
+        `📌 Tolerância: *${LABEL_JANELA}* após o cooldown de *${LABEL_COOLDOWN}*\n` +
+        `🌙 _Períodos fora do horário comercial foram congelados._\n\n` +
+        `📋 *Consequências:*\n` +
+        `  ❌ Cargo perdido: *${cargo.nome}*\n` +
+        `  ❌ Progresso zerado\n` +
+        `  ⚠️ Histórico sujo ativado *(30% de chance de recontratação)*\n\n` +
+        `Use *!procuraremprego* para tentar um novo emprego.`
+      );
+    }
+
+    // 4. Tudo certo — executa o turno
+    return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
+
+  } catch (e) {
+    console.error('[Emprego] handleTrabalhar:', e);
+    return reply(sock, jid, msg, '⚠️ Erro ao processar turno. Tente novamente.');
+  }
+}
+
+// ─── Helpers locais ───────────────────────────────────────────────────────────
+
+function _msgForaHorario() {
+  const falta = msParaAbertura();
+  return (
+    `🌙 *FORA DO HORÁRIO COMERCIAL*\n\n` +
+    `Você só pode trabalhar das *${LABEL_HORARIO}*.\n\n` +
+    `⏰ Expediente começa em: *${formatMs(falta)}*\n` +
+    `💡 _Seu ponto não conta fora desse horário!_`
+  );
+}
+
+// ─── !procuraremprego ─────────────────────────────────────────────────────────
 
 async function handleProcurarEmprego(sock, msg, jid) {
   const ctx = await resolverContexto(sock, msg, jid);
@@ -169,13 +286,14 @@ async function handleProcurarEmprego(sock, msg, jid) {
     return reply(sock, jid, msg,
       `🌙 *FORA DO HORÁRIO COMERCIAL*\n\n` +
       `Os empregos funcionam apenas das *${LABEL_HORARIO}*.\n\n` +
-      `⏰ A agência de empregos abre em *${formatMs(falta)}*.`
+      `⏰ A agência abre em: *${formatMs(falta)}*`
     );
   }
 
   try {
     const carteira = await getCarteira(userId, groupId);
 
+    // ── Já empregado ──────────────────────────────────────────────────────────
     if (carteira.empregoAtual && carteira.empregoAtual !== 'desempregado') {
       const cargo = resolverCargo(carteira.empregoAtual);
       return reply(sock, jid, msg,
@@ -186,34 +304,32 @@ async function handleProcurarEmprego(sock, msg, jid) {
       );
     }
 
-    // ── Verificar cooldown de demissão voluntária ──
+    // ── Cooldown de demissão voluntária ───────────────────────────────────────
     if (carteira.demissaoVoluntariaAte) {
       const bloqueio = new Date(carteira.demissaoVoluntariaAte).getTime();
-      if (Date.now() < bloqueio) {
-        const falta = bloqueio - Date.now();
+      const falta    = bloqueio - Date.now();
+      if (falta > 0) {
         return reply(sock, jid, msg,
           `⏳ *AGUARDE PARA SE REEMPREGAR*\n\n` +
           `Você pediu demissão recentemente.\n` +
-          `O mercado estará disponível novamente em: *${formatMs(falta)}*\n\n` +
+          `Mercado disponível novamente em: *${formatMs(falta)}*\n\n` +
           `_Pense bem antes de pedir demissão da próxima vez!_`
         );
       }
     }
 
-    // ── Histórico sujo ──
-    if (carteira.historicoSujo) {
-      const aprovado = Math.random() < 0.30;
-      if (!aprovado) {
-        return reply(sock, jid, msg,
-          `📋 *HISTÓRICO SUJO DETECTADO*\n\n` +
-          `Você foi demitido por justa causa anteriormente.\n` +
-          `As empresas estão relutantes em te contratar...\n\n` +
-          `😔 *Sua candidatura foi recusada desta vez.*\n` +
-          `💡 Continue tentando — você tem *30%* de chance a cada tentativa.`
-        );
-      }
+    // ── Histórico sujo ────────────────────────────────────────────────────────
+    if (carteira.historicoSujo && Math.random() >= 0.30) {
+      return reply(sock, jid, msg,
+        `📋 *HISTÓRICO SUJO DETECTADO*\n\n` +
+        `Você foi demitido por justa causa anteriormente.\n` +
+        `As empresas estão relutantes em te contratar...\n\n` +
+        `😔 *Candidatura recusada desta vez.*\n` +
+        `💡 Continue tentando — você tem *30%* de chance a cada tentativa.`
+      );
     }
 
+    // ── Contratar ─────────────────────────────────────────────────────────────
     const cargoInicial = CARGOS[0];
     await CarteiraGrupo.findOneAndUpdate(
       filtro(userId, groupId),
@@ -223,7 +339,7 @@ async function handleProcurarEmprego(sock, msg, jid) {
           totalTrabalhosComSucesso: 0,
           ultimoTrabalho:           null,
           historicoSujo:            false,
-          demissaoVoluntariaAte:    null, // limpa o bloqueio ao ser contratado
+          demissaoVoluntariaAte:    null,
         },
       },
       { upsert: true }
@@ -235,23 +351,22 @@ async function handleProcurarEmprego(sock, msg, jid) {
       `💰 Salário por turno: *${cargoInicial.salarioMin}–${cargoInicial.salarioMax} gold*\n\n` +
       `📋 Use *!trabalhar* para começar a ganhar!\n` +
       `⏰ Cooldown entre turnos: *${LABEL_COOLDOWN}*\n` +
-      `⚠️ Não perca o ponto — você tem *${LABEL_JANELA} de tolerância* após o cooldown!\n` +
+      `⚠️ Você tem *${LABEL_JANELA} de tolerância* após o cooldown para bater o ponto!\n` +
       `🕐 Horário de funcionamento: *${LABEL_HORARIO}*`
     );
 
   } catch (e) {
     console.error('[Emprego] handleProcurarEmprego:', e);
-    return reply(sock, jid, msg, '⚠️ Erro ao procurar emprego! Tente novamente.');
+    return reply(sock, jid, msg, '⚠️ Erro ao procurar emprego. Tente novamente.');
   }
 }
 
-// ─── CALCULAR TEMPO FORA DO HORÁRIO ──────────────────────────────────────────
+// ─── Calcular tempo fora do horário ───────────────────────────────────────────
 
 function calcularTempoForaHorario(desde, ate) {
-  // Itera de minuto em minuto contando quantos ms ficaram fora do horário comercial
-  let fora   = 0;
-  let cursor = desde;
   const PASSO = 60_000; // 1 minuto em ms
+  let fora    = 0;
+  let cursor  = desde;
 
   while (cursor < ate) {
     const min = getMinutosBrasilia(cursor);
@@ -260,10 +375,11 @@ function calcularTempoForaHorario(desde, ate) {
     }
     cursor += PASSO;
   }
+
   return fora;
 }
 
-// ─── EXECUTAR TURNO ───────────────────────────────────────────────────────────
+// ─── Executar turno ───────────────────────────────────────────────────────────
 
 async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora) {
   const salario  = randInt(cargo.salarioMin, cargo.salarioMax);
@@ -283,9 +399,9 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
   let progressoTexto = '';
 
   if (proximoCargo) {
-    const faltam  = Math.max(0, proximoCargo.exigencia - sucessos);
-    const barsOn  = Math.min(10, Math.floor((sucessos / proximoCargo.exigencia) * 10));
-    const barra   = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
+    const faltam = Math.max(0, proximoCargo.exigencia - sucessos);
+    const barsOn = Math.min(10, Math.floor((sucessos / proximoCargo.exigencia) * 10));
+    const barra  = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
     progressoTexto = faltam === 0
       ? `\n\n✅ *Promoção disponível!* Use *!promocao* agora!`
       : `\n\n📈 Progresso: [${barra}] *${sucessos}/${proximoCargo.exigencia}* turnos para *${proximoCargo.nome}*`;
@@ -298,13 +414,13 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
     `💼 Cargo: *${cargo.nome}*\n` +
     `💰 Salário recebido: *+${salario} gold*\n` +
     `📊 Turnos no cargo: *${sucessos}*\n` +
-    `⏰ Próximo turno disponível em: *${LABEL_COOLDOWN}* _(horário comercial)_\n` +
+    `⏰ Próximo turno em: *${LABEL_COOLDOWN}* _(horário comercial)_\n` +
     `⚠️ _Bata o ponto em até ${LABEL_JANELA} após o desbloqueio ou será demitido!_` +
     progressoTexto
   );
 }
 
-// ─── !trabalhar / !work ──────────────────────────────────────────────────────
+// ─── !trabalhar ───────────────────────────────────────────────────────────────
 
 async function handleTrabalhar(sock, msg, jid) {
   const ctx = await resolverContexto(sock, msg, jid);
@@ -314,12 +430,15 @@ async function handleTrabalhar(sock, msg, jid) {
   try {
     const carteira = await getCarteira(userId, groupId);
 
+    // ── Sem emprego ───────────────────────────────────────────────────────────
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
       return reply(sock, jid, msg,
-        `😴 *VOCÊ ESTÁ DESEMPREGADO!*\n\nUse *!procuraremprego* para conseguir um cargo.`
+        `😴 *VOCÊ ESTÁ DESEMPREGADO!*\n\n` +
+        `Use *!procuraremprego* para conseguir um cargo.`
       );
     }
 
+    // ── Cargo inválido → reset automático ────────────────────────────────────
     const cargo = resolverCargo(carteira.empregoAtual);
     if (!cargo) {
       await CarteiraGrupo.findOneAndUpdate(
@@ -337,21 +456,15 @@ async function handleTrabalhar(sock, msg, jid) {
       ? new Date(carteira.ultimoTrabalho).getTime()
       : null;
 
-    // ── Primeiro turno — apenas verifica horário ──
+    // ── Primeiro turno — apenas verifica horário ──────────────────────────────
     if (!ultimoTrabalho) {
       if (!dentroDoHorario()) {
-        const falta = msParaAbertura();
-        return reply(sock, jid, msg,
-          `🌙 *FORA DO HORÁRIO COMERCIAL*\n\n` +
-          `Você só pode trabalhar das *${LABEL_HORARIO}*.\n\n` +
-          `⏰ O expediente começa em *${formatMs(falta)}*.\n` +
-          `💡 _Seu ponto não conta fora desse horário!_`
-        );
+        return reply(sock, jid, msg, _msgForaHorario());
       }
       return _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora);
     }
 
-    // ── Cálculo de tempo efetivo (exclui período fora do horário) ──
+    // ── Cálculo de tempo efetivo (exclui período fora do horário) ─────────────
     const tempoForaHorario = calcularTempoForaHorario(ultimoTrabalho, agora);
     const decorridoEfetivo = (agora - ultimoTrabalho) - tempoForaHorario;
 
@@ -361,20 +474,14 @@ async function handleTrabalhar(sock, msg, jid) {
       return reply(sock, jid, msg,
         `⏳ *TURNO EM ANDAMENTO!*\n\n` +
         `💼 Cargo: *${cargo.nome}*\n` +
-        `🕐 Próximo turno disponível em: *${formatMs(falta)}* _(tempo comercial)_\n\n` +
-        `💡 _Não se atrase! Você tem ${LABEL_JANELA} após o desbloqueio para bater o ponto._`
+        `🕐 Próximo turno em: *${formatMs(falta)}* _(tempo comercial)_\n\n` +
+        `💡 _Você tem ${LABEL_JANELA} após o desbloqueio para bater o ponto._`
       );
     }
 
     // 2. Cooldown expirou mas estamos fora do horário agora
     if (!dentroDoHorario()) {
-      const falta = msParaAbertura();
-      return reply(sock, jid, msg,
-        `🌙 *FORA DO HORÁRIO COMERCIAL*\n\n` +
-        `Você só pode trabalhar das *${LABEL_HORARIO}*.\n\n` +
-        `⏰ O expediente começa em *${formatMs(falta)}*.\n` +
-        `💡 _Seu ponto não conta fora desse horário!_`
-      );
+      return reply(sock, jid, msg, _msgForaHorario());
     }
 
     // 3. Tolerância estourada → demissão por justa causa
@@ -391,16 +498,16 @@ async function handleTrabalhar(sock, msg, jid) {
         }
       );
 
-      const totalMins  = Math.floor(decorridoEfetivo / 60_000);
-      const horas      = Math.floor(totalMins / 60);
-      const mins       = totalMins % 60;
-      const tempoFmt   = mins > 0 ? `${horas}h ${mins}min` : `${horas}h`;
+      const totalMins = Math.floor(decorridoEfetivo / 60_000);
+      const horas     = Math.floor(totalMins / 60);
+      const mins      = totalMins % 60;
+      const tempoFmt  = mins > 0 ? `${horas}h ${mins}min` : `${horas}h`;
 
       return reply(sock, jid, msg,
         `🔴 *DEMITIDO POR JUSTA CAUSA!*\n\n` +
-        `⏱️ Tempo útil comercial sem bater ponto: *${tempoFmt}*\n` +
-        `📌 Janela de tolerância: *${LABEL_JANELA}* após o cooldown de *${LABEL_COOLDOWN}*\n` +
-        `🌙 _(Períodos fora do horário comercial foram completamente congelados)_\n\n` +
+        `⏱️ Tempo útil sem bater ponto: *${tempoFmt}* _(comercial)_\n` +
+        `📌 Tolerância: *${LABEL_JANELA}* após o cooldown de *${LABEL_COOLDOWN}*\n` +
+        `🌙 _Períodos fora do horário comercial foram congelados._\n\n` +
         `📋 *Consequências:*\n` +
         `  ❌ Cargo perdido: *${cargo.nome}*\n` +
         `  ❌ Progresso zerado\n` +
@@ -414,10 +521,21 @@ async function handleTrabalhar(sock, msg, jid) {
 
   } catch (e) {
     console.error('[Emprego] handleTrabalhar:', e);
-    return reply(sock, jid, msg, '⚠️ Erro ao processar turno! Tente novamente.');
+    return reply(sock, jid, msg, '⚠️ Erro ao processar turno. Tente novamente.');
   }
 }
 
+// ─── Helpers locais ───────────────────────────────────────────────────────────
+
+function _msgForaHorario() {
+  const falta = msParaAbertura();
+  return (
+    `🌙 *FORA DO HORÁRIO COMERCIAL*\n\n` +
+    `Você só pode trabalhar das *${LABEL_HORARIO}*.\n\n` +
+    `⏰ Expediente começa em: *${formatMs(falta)}*\n` +
+    `💡 _Seu ponto não conta fora desse horário!_`
+  );
+}
 // ─── !promocao ────────────────────────────────────────────────────────────────
 
 async function handlePromocao(sock, msg, jid) {

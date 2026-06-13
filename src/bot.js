@@ -823,58 +823,49 @@ if (matchCmd(cmdWord, 'demitir') || matchCmd(cmdWord, 'pedirdemissao'))
 if (matchCmd(cmdWord, 'menuwork') || matchCmd(cmdWord, 'menuemprego'))
   { await diversaoHandler.handleMenuWork(sock, msg, jid, getPrefix); return; }
 
-// â”€â”€â”€ Sistema de Roubo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-if (matchCmd(cmdWord, 'menuroubar'))
-  { await diversaoHandler.handleMenuRoubo(sock, msg, jid, getPrefix); return; }
-if (matchCmd(cmdWord, 'menusec'))
-  { await diversaoHandler.handleMenuSec(sock, msg, jid, getPrefix); return; }
-if (matchCmd(cmdWord, 'buyroubo'))
-  { await diversaoHandler.handleComprarRoubo(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'buysec'))
-  { await diversaoHandler.handleComprarSec(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'equiparroubo'))
-  { await diversaoHandler.handleEquiparRoubo(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'equiparsec'))
-  { await diversaoHandler.handleEquiparSec(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'roubar'))
-  { await diversaoHandler.handleRoubar(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'alteradores'))
-  { await utilidadeHandler.handleAlteradores(sock, msg, jid); return; }
+// ─── Sistema de Roubo ─────────────────────────────────────────────────────────
 
-  // â”€â”€ UTILIDADES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (matchCmdStart(cmd, 'qrcode ') || matchCmd(cmdWord, 'qrcode'))
-    { await utilidadeHandler.handleQrcode(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'encurtar ') || matchCmd(cmdWord, 'encurtar'))
-    { await utilidadeHandler.handleEncurtar(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'cep ') || matchCmd(cmdWord, 'cep'))
-    { await utilidadeHandler.handleCep(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'clima ') || matchCmd(cmdWord, 'clima'))
-    { await utilidadeHandler.handleClima(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'calcular ') || matchCmd(cmdWord, 'calcular'))
-    { await utilidadeHandler.handleCalcular(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'piada'))
-    { await utilidadeHandler.handlePiada(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'fato'))
-    { await utilidadeHandler.handleFato(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'menuroubar'))   { await diversaoHandler.handleMenuRoubo(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'menusec'))      { await diversaoHandler.handleMenuSec(sock, msg, jid, getPrefix);   return; }
+if (matchCmd(cmdWord, 'buyroubo'))     { await diversaoHandler.handleComprarRoubo(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'buysec'))       { await diversaoHandler.handleComprarSec(sock, msg, jid, caption);   return; }
+if (matchCmd(cmdWord, 'equiparroubo')) { await diversaoHandler.handleEquiparRoubo(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'equiparsec'))   { await diversaoHandler.handleEquiparSec(sock, msg, jid, caption);   return; }
+if (matchCmd(cmdWord, 'roubar'))       { await diversaoHandler.handleRoubar(sock, msg, jid, caption);       return; }
+if (matchCmd(cmdWord, 'invroubo'))     { await diversaoHandler.handleInvRoubo(sock, msg, jid);              return; }
+if (matchCmd(cmdWord, 'invsec'))       { await diversaoHandler.handleInvSec(sock, msg, jid);                return; }
 
-  // !moeda: 3 args numÃ©ricos â†’ cÃ¢mbio, senÃ£o â†’ cara/coroa
-  if (matchCmdStart(cmd, 'moeda ')) {
-    const args = caption.replace(/^[!.,\/]moeda\s*/i, '').trim().split(/\s+/);
-    if (args.length >= 3 && !isNaN(parseFloat(args[0])))
-      { await utilidadeHandler.handleMoeda(sock, msg, jid, caption); }
-    else
-      { await diversaoHandler.handleMoeda(sock, msg, jid); }
-    return;
-  }
-  if (matchCmd(cmdWord, 'moeda'))
-    { await diversaoHandler.handleMoeda(sock, msg, jid); return; }
+// ─── Utilitários ──────────────────────────────────────────────────────────────
 
-  if (matchCmdStart(cmd, 'traduzir ') || matchCmd(cmdWord, 'traduzir'))
-    { await utilidadeHandler.handleTraduzir(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'codigomorse ') || matchCmd(cmdWord, 'codigomorse') || matchCmdStart(cmd, 'morse ') || matchCmd(cmdWord, 'morse'))
-    { await utilidadeHandler.handleCodigoMorse(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'decodificarmorse ') || matchCmd(cmdWord, 'decodificarmorse') || matchCmdStart(cmd, 'demorse ') || matchCmd(cmdWord, 'demorse'))
-    { await utilidadeHandler.handleDecodificarMorse(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'alteradores'))  { await utilidadeHandler.handleAlteradores(sock, msg, jid); return; }
+
+if (matchCmdStart(cmd, 'qrcode ')      || matchCmd(cmdWord, 'qrcode'))      { await utilidadeHandler.handleQrcode(sock, msg, jid, caption);       return; }
+if (matchCmdStart(cmd, 'encurtar ')    || matchCmd(cmdWord, 'encurtar'))    { await utilidadeHandler.handleEncurtar(sock, msg, jid, caption);     return; }
+if (matchCmdStart(cmd, 'cep ')         || matchCmd(cmdWord, 'cep'))         { await utilidadeHandler.handleCep(sock, msg, jid, caption);          return; }
+if (matchCmdStart(cmd, 'clima ')       || matchCmd(cmdWord, 'clima'))       { await utilidadeHandler.handleClima(sock, msg, jid, caption);        return; }
+if (matchCmdStart(cmd, 'calcular ')    || matchCmd(cmdWord, 'calcular'))    { await utilidadeHandler.handleCalcular(sock, msg, jid, caption);     return; }
+if (matchCmdStart(cmd, 'traduzir ')    || matchCmd(cmdWord, 'traduzir'))    { await utilidadeHandler.handleTraduzir(sock, msg, jid, caption);     return; }
+if (matchCmd(cmdWord, 'piada'))                                             { await utilidadeHandler.handlePiada(sock, msg, jid);                 return; }
+if (matchCmd(cmdWord, 'fato'))                                              { await utilidadeHandler.handleFato(sock, msg, jid);                  return; }
+
+if (matchCmdStart(cmd, 'codigomorse ') || matchCmd(cmdWord, 'codigomorse') ||
+    matchCmdStart(cmd, 'morse ')        || matchCmd(cmdWord, 'morse'))
+  { await utilidadeHandler.handleCodigoMorse(sock, msg, jid, caption); return; }
+
+if (matchCmdStart(cmd, 'decodificarmorse ') || matchCmd(cmdWord, 'decodificarmorse') ||
+    matchCmdStart(cmd, 'demorse ')           || matchCmd(cmdWord, 'demorse'))
+  { await utilidadeHandler.handleDecodificarMorse(sock, msg, jid, caption); return; }
+
+// !moeda: 3 args numéricos → câmbio, senão → cara/coroa
+if (matchCmdStart(cmd, 'moeda ')) {
+  const args = caption.replace(/^[!.,\/]moeda\s*/i, '').trim().split(/\s+/);
+  if (args.length >= 3 && !isNaN(parseFloat(args[0])))
+    { await utilidadeHandler.handleMoeda(sock, msg, jid, caption); }
+  else
+    { await diversaoHandler.handleMoeda(sock, msg, jid); }
+  return;
+}
+if (matchCmd(cmdWord, 'moeda')) { await diversaoHandler.handleMoeda(sock, msg, jid); return; }
 
   // â”€â”€ DOWNLOADS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmdStart(cmd, 'tiktok'))

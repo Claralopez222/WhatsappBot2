@@ -110,10 +110,10 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
   texto += `*COMANDOS:*\n`;
-  texto += `  ${P}buyroubo <item> — Comprar item\n`;
+  texto += `  ${P}buyroubo <item>   — Comprar item\n`;
   texto += `  ${P}equiparroubo <item> — Equipar item\n`;
-  texto += `  ${P}meusitensroubo — Ver inventário de ataque\n`;
-  texto += `  ${P}roubar @pessoa — Roubar alguém\n\n`;
+  texto += `  ${P}invroubo          — Ver inventário de ataque\n`;
+  texto += `  ${P}roubar @pessoa    — Roubar alguém\n\n`;
   texto += `⚠️ *Item equipado é obrigatório para roubar!*\n`;
   texto += `⏱️ *Cooldown:* 30 minutos entre tentativas\n`;
   texto += `🎲 *Taxa base de sucesso:* ${TAXA_SUCESSO_BASE}%`;
@@ -136,76 +136,76 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
   texto += `*COMANDOS:*\n`;
-  texto += `  ${P}buysec <item> — Comprar item\n`;
-  texto += `  ${P}equiparsec <item> — Equipar defesa\n`;
-  texto += `  ${P}meussec — Ver inventário de segurança\n`;
-  texto += `  ${P}meiosec — Ver defesa ativa\n\n`;
+  texto += `  ${P}buysec <item>      — Comprar item\n`;
+  texto += `  ${P}equiparsec <item>  — Equipar defesa\n`;
+  texto += `  ${P}invsec             — Ver inventário de segurança\n\n`;
   texto += `🛡️ *Sem defesa, há ${TAXA_SUCESSO_BASE}% de chance de ser roubado com sucesso!*`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-// ─── !comprarroubo ────────────────────────────────────────────────────────────
+// ─── !buyroubo ────────────────────────────────────────────────────────────────
 
 async function handleComprarRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match = caption.match(/buyroubo\s+(\S+)/i);
 
+  const match = caption.match(/buyroubo\s+(\S+)/i);
   if (!match) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!comprarroubo <item>*\nExemplo: *!comprarroubo dinamite*',
+      text: '⚠️ Use: *!buyroubo <item>*\nExemplo: *!buyroubo dinamite*',
     }, { quoted: msg });
     return;
   }
 
   const itemSlug = match[1].toLowerCase().trim();
   const itemInfo = ITENS_ROUBO[itemSlug];
-
   if (!itemInfo) {
     await sock.sendMessage(jid, {
-      text: `⚠️ Item *${itemSlug}* não existe na loja de roubo!\nUse *!menuroubar* para ver os disponíveis.`,
+      text: `⚠️ Item *${itemSlug}* não encontrado na loja de roubo!\nUse *!menuroubar* para ver os disponíveis.`,
     }, { quoted: msg });
     return;
   }
 
-  // Verificar saldo antes de debitar
   const carteira = await getCarteira(userId, idGrupo);
-  if ((carteira.gold ?? 0) < itemInfo.preco) {
-    const faltam = itemInfo.preco - carteira.gold;
+  const saldo    = carteira.gold ?? 0;
+  if (saldo < itemInfo.preco) {
+    const faltam = itemInfo.preco - saldo;
     await sock.sendMessage(jid, {
       text:
         `❌ *SALDO INSUFICIENTE!*\n\n` +
-        `💵 Preço: *${itemInfo.preco}* gold\n` +
-        `💰 Seu saldo: *${carteira.gold}* gold\n\n` +
-        `_Faltam ${faltam} gold!_`,
+        `💵 Preço:      *${itemInfo.preco}* gold\n` +
+        `💰 Seu saldo:  *${saldo}* gold\n` +
+        `⚠️ Faltam:     *${faltam}* gold`,
     }, { quoted: msg });
     return;
   }
 
-  // Debitar gold via serviço (lança RangeError se insuficiente — segurança extra)
   let carteiraAtualizada;
   try {
     carteiraAtualizada = await alterarGold(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`);
   } catch (e) {
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar compra! Tente novamente.' }, { quoted: msg });
+    console.error('Erro ao debitar gold (buyroubo):', e.message);
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao processar a compra. Tente novamente.',
+    }, { quoted: msg });
     return;
   }
 
-  // Adicionar item ao inventário
   try {
     await incrementarItem(userId, idGrupo, 'itensRoubo', itemSlug);
   } catch (e) {
-    // Reembolsar se a escrita do item falhar
-    console.error('⚠️ Erro ao registrar item de roubo, reembolsando:', e.message);
+    console.error('Erro ao registrar item de roubo, reembolsando:', e.message);
     await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao comprar item! Gold reembolsado.' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao registrar o item. Seu gold foi reembolsado.',
+    }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, {
     text:
-      `✅ *COMPRA REALIZADA!* ✅\n\n` +
+      `✅ *COMPRA REALIZADA!*\n\n` +
       `🎭 *Item:* ${itemInfo.nome}\n` +
       `💵 *Preço:* ${itemInfo.preco} gold\n` +
       `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
@@ -214,39 +214,39 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── !comprarsec ──────────────────────────────────────────────────────────────
+// ─── !buysec ──────────────────────────────────────────────────────────────────
 
 async function handleComprarSec(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match = caption.match(/buysec\s+(\S+)/i);
 
+  const match = caption.match(/buysec\s+(\S+)/i);
   if (!match) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!comprarsec <item>*\nExemplo: *!comprarsec cofre*',
+      text: '⚠️ Use: *!buysec <item>*\nExemplo: *!buysec cofre*',
     }, { quoted: msg });
     return;
   }
 
   const itemSlug = match[1].toLowerCase().trim();
   const itemInfo = ITENS_SEGURANCA[itemSlug];
-
   if (!itemInfo) {
     await sock.sendMessage(jid, {
-      text: `⚠️ Item *${itemSlug}* não existe na loja de segurança!\nUse *!menusec* para ver os disponíveis.`,
+      text: `⚠️ Item *${itemSlug}* não encontrado na loja de segurança!\nUse *!menusec* para ver os disponíveis.`,
     }, { quoted: msg });
     return;
   }
 
   const carteira = await getCarteira(userId, idGrupo);
-  if ((carteira.gold ?? 0) < itemInfo.preco) {
-    const faltam = itemInfo.preco - carteira.gold;
+  const saldo    = carteira.gold ?? 0;
+  if (saldo < itemInfo.preco) {
+    const faltam = itemInfo.preco - saldo;
     await sock.sendMessage(jid, {
       text:
         `❌ *SALDO INSUFICIENTE!*\n\n` +
-        `💵 Preço: *${itemInfo.preco}* gold\n` +
-        `💰 Seu saldo: *${carteira.gold}* gold\n\n` +
-        `_Faltam ${faltam} gold!_`,
+        `💵 Preço:      *${itemInfo.preco}* gold\n` +
+        `💰 Seu saldo:  *${saldo}* gold\n` +
+        `⚠️ Faltam:     *${faltam}* gold`,
     }, { quoted: msg });
     return;
   }
@@ -255,22 +255,27 @@ async function handleComprarSec(sock, msg, jid, caption) {
   try {
     carteiraAtualizada = await alterarGold(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`);
   } catch (e) {
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar compra! Tente novamente.' }, { quoted: msg });
+    console.error('Erro ao debitar gold (buysec):', e.message);
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao processar a compra. Tente novamente.',
+    }, { quoted: msg });
     return;
   }
 
   try {
     await incrementarItem(userId, idGrupo, 'itensSec', itemSlug);
   } catch (e) {
-    console.error('⚠️ Erro ao registrar item de segurança, reembolsando:', e.message);
+    console.error('Erro ao registrar item de segurança, reembolsando:', e.message);
     await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao comprar item! Gold reembolsado.' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao registrar o item. Seu gold foi reembolsado.',
+    }, { quoted: msg });
     return;
   }
 
   await sock.sendMessage(jid, {
     text:
-      `✅ *COMPRA REALIZADA!* ✅\n\n` +
+      `✅ *COMPRA REALIZADA!*\n\n` +
       `🔐 *Item:* ${itemInfo.nome}\n` +
       `💵 *Preço:* ${itemInfo.preco} gold\n` +
       `🛡️ *Proteção:* +${itemInfo.defesa}%\n` +
@@ -279,6 +284,7 @@ async function handleComprarSec(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
+// ─── !equiparroubo ─────────────────────────────────────────────────────────────
 async function handleEquiparRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
@@ -383,9 +389,9 @@ async function handleEquiparSec(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── !meusitensroubo ──────────────────────────────────────────────────────────
+// ─── !invroubo ────────────────────────────────────────────────────────────────
 
-async function handleMeusItensRoubo(sock, msg, jid) {
+async function handleInvRoubo(sock, msg, jid) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
 
@@ -398,32 +404,39 @@ async function handleMeusItensRoubo(sock, msg, jid) {
     const qtd = getItemQtd(carteira.itensRoubo, key);
     if (qtd > 0) {
       temItem = true;
-      const tag = carteira.equiparoubo === key ? ' ⚡ *EQUIPADO*' : '';
+      const equipado = carteira.equiparoubo === key;
+      const tag = equipado ? ' ⚡ *EQUIPADO*' : '';
       texto += `  ${item.nome}${tag}\n`;
       texto += `    └ Qtd: *${qtd}x* | Bônus: *+${item.bonus}%*\n`;
     }
   }
 
   if (!temItem) {
-    texto += `😔 Você não possui nenhum item de roubo neste grupo.\n\n🛒 Compre com *!menuroubar*!`;
+    texto += `😔 Você não possui nenhum item de roubo neste grupo.\n\n`;
+    texto += `🛒 Compre itens com *!menuroubar*!`;
   } else {
     texto += `\n━━━━━━━━━━━━━━━━\n`;
-    const eq = carteira.equiparoubo && ITENS_ROUBO[carteira.equiparoubo];
+
+    const eqKey = carteira.equiparoubo;
+    const eq    = eqKey && ITENS_ROUBO[eqKey];
+
     if (eq) {
+      const taxaAtual = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.bonus);
       texto += `⚡ *Equipado:* ${eq.nome}\n`;
       texto += `📈 *Bônus ativo:* +${eq.bonus}% de sucesso\n`;
-      texto += `🎲 *Taxa atual:* até ${Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.bonus)}%`;
+      texto += `🎲 *Taxa atual:* até ${taxaAtual}%`;
     } else {
-      texto += `⚠️ *Nenhum item equipado!*\nUse *!equiparroubo <item>* para equipar.`;
+      texto += `⚠️ *Nenhum item equipado!*\n`;
+      texto += `Use *!equiparroubo <item>* para equipar.`;
     }
   }
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-// ─── !meussec ─────────────────────────────────────────────────────────────────
+// ─── !invsec ──────────────────────────────────────────────────────────────────
 
-async function handleMeusSec(sock, msg, jid) {
+async function handleInvSec(sock, msg, jid) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
 
@@ -436,23 +449,30 @@ async function handleMeusSec(sock, msg, jid) {
     const qtd = getItemQtd(carteira.itensSec, key);
     if (qtd > 0) {
       temItem = true;
-      const tag = carteira.equiparsec === key ? ' ⚡ *ATIVO*' : '';
+      const ativo = carteira.equiparsec === key;
+      const tag = ativo ? ' ⚡ *ATIVO*' : '';
       texto += `  ${item.nome}${tag}\n`;
       texto += `    └ Qtd: *${qtd}x* | Defesa: *+${item.defesa}%*\n`;
     }
   }
 
   if (!temItem) {
-    texto += `😔 Você não possui nenhum item de segurança neste grupo.\n\n🛒 Compre com *!menusec*!`;
+    texto += `😔 Você não possui nenhum item de segurança neste grupo.\n\n`;
+    texto += `🛒 Compre itens com *!menusec*!`;
   } else {
     texto += `\n━━━━━━━━━━━━━━━━\n`;
-    const eq = carteira.equiparsec && ITENS_SEGURANCA[carteira.equiparsec];
+
+    const eqKey = carteira.equiparsec;
+    const eq    = eqKey && ITENS_SEGURANCA[eqKey];
+
     if (eq) {
+      const chanceResistir = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.defesa);
       texto += `⚡ *Ativo:* ${eq.nome}\n`;
       texto += `🛡️ *Defesa ativa:* +${eq.defesa}% de proteção\n`;
-      texto += `🔒 *Chance de resistir:* até ${Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.defesa)}%`;
+      texto += `🔒 *Chance de resistir:* até ${chanceResistir}%`;
     } else {
-      texto += `⚠️ *Nenhuma defesa ativa!*\nUse *!equiparsec <item>* para ativar.`;
+      texto += `⚠️ *Nenhuma defesa ativa!*\n`;
+      texto += `Use *!equiparsec <item>* para ativar.`;
     }
   }
 

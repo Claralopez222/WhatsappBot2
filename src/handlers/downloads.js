@@ -487,9 +487,9 @@ const YTDlpWrap  = require('yt-dlp-wrap').default;
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { randomUUID } = require('crypto');
-const fs   = require('fs');
-const path = require('path');
+
+const execFileAsync = promisify(execFile);
+const ytDlpWrap = new YTDlpWrap();
 
 const execFileAsync = promisify(execFile);
 

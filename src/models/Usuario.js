@@ -31,16 +31,6 @@ const petShelterSchema = new mongoose.Schema({
   leftAt:       { type: Date,    default: null },
 }, { _id: false });
 
-// ─── Sub-schema: banco ───────────────────────────────────────────────────────
-const bankSchema = new mongoose.Schema({
-  amount:          { type: Number, default: 0,    min: 0 },
-  interest:        { type: Number, default: 0,    min: 0 },
-  startDate:       { type: Date,   default: null },
-  lastDepositDate: { type: Date,   default: null },
-  depositedToday:  { type: Number, default: 0,    min: 0 },
-  historico:       { type: Array,  default: []              },
-}, { _id: false });
-
 // ─── Sub-schema: progresso de missões ────────────────────────────────────────
 const missaoNumSchema = new mongoose.Schema({
   xp100:   { type: Number, default: 0, min: 0 },
@@ -78,7 +68,9 @@ const casalItemSchema = new mongoose.Schema({
 const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
   idWhatsApp: { type: String, required: true, unique: true, index: true, trim: true },
-  nome:       { type: String, default: null, trim: true },
+  nome:       { type: String, default: null,  trim: true },
+  uid:        { type: String, unique: true, sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
+  bio: { type: String, default: null, trim: true, maxlength: 150 },
 
   // ── Progressão global ────────────────────────────────────────
   xp:         { type: Number, default: 0,   min: 0 },
@@ -104,9 +96,6 @@ const usuarioSchema = new mongoose.Schema({
   pet:        { type: petSchema,        default: () => ({}) },
   petShelter: { type: petShelterSchema, default: () => ({}) },
 
-  // ── Banco ────────────────────────────────────────────────────
-  bank: { type: bankSchema, default: () => ({}) },
-
   // ── Missões diárias ──────────────────────────────────────────
   dailyMissions: { type: dailyMissionsSchema, default: () => ({}) },
 
@@ -128,6 +117,7 @@ const usuarioSchema = new mongoose.Schema({
 usuarioSchema.index({ gold: -1 });
 usuarioSchema.index({ xp: -1 });
 usuarioSchema.index({ quizPoints: -1 });
+usuarioSchema.index({ uid: 1 }, { unique: true, sparse: true });
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 module.exports = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);

@@ -614,7 +614,7 @@ async function handleRoubar(sock, msg, jid) {
     );
 
     // Progresso de missão
-    await incrementMission(atacanteId, 'roubo3').catch(() => {});
+    await incrementMission(atacanteId, 'roubo3', 1).catch(() => {});
 
     textoResposta +=
       `✅ *ROUBO BEM-SUCEDIDO!*\n\n` +

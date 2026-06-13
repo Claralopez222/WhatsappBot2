@@ -8,8 +8,31 @@ const goldHistorySchema = new mongoose.Schema(
   {
     type:   { type: String, enum: ['recebido', 'gasto'], required: true },
     item:   { type: String, required: true, trim: true },
-    amount: { type: Number, required: true, min: 0 },
+    amount: { type: Number, required: true },
     date:   { type: Date,   default: Date.now },
+  },
+  { _id: false }
+);
+
+const emprestimoSchema = new mongoose.Schema(
+  {
+    ativo:             { type: Boolean, default: false },
+    valor:             { type: Number,  default: 0,   min: 0 },
+    vencimento:        { type: Date,    default: null },
+    solicitadoEm:      { type: Date,    default: null },
+    prazo:             { type: Number,  default: 7,   min: 1 },
+    quitadoEm:         { type: Date,    default: null },
+    proximoEmprestimo: { type: Date,    default: null },
+  },
+  { _id: false }
+);
+
+const pescaStatsSchema = new mongoose.Schema(
+  {
+    totalPescados:  { type: Number, default: 0, min: 0 },
+    totalVendidos:  { type: Number, default: 0, min: 0 },
+    goldGanho:      { type: Number, default: 0, min: 0 },
+    maiorPeixe:     { type: String, default: null },
   },
   { _id: false }
 );
@@ -21,6 +44,7 @@ const carteiraGrupoSchema = new mongoose.Schema(
     // ── Identificação ────────────────────────────────────────────
     idWhatsApp: { type: String, required: true, trim: true },
     idGrupo:    { type: String, required: true, trim: true },
+    nome:       { type: String, default: null,  trim: true },
 
     // ── Economia local do grupo ──────────────────────────────────
     gold:       { type: Number, default: 0, min: 0 },
@@ -30,63 +54,39 @@ const carteiraGrupoSchema = new mongoose.Schema(
     level:      { type: Number, default: 1, min: 1 },
 
     // ── Pesca (isolada por grupo) ────────────────────────────────
-    ultimaPesca: { type: Date, default: null },
+    ultimaPesca:  { type: Date,   default: null },
+    varaEquipada: { type: String, default: null },
+    iscaEquipada: { type: String, default: null },
     itensPesca: {
       type:    Map,
       of:      { type: Number, min: 0 },
       default: {},
     },
+    statsPesca: { type: pescaStatsSchema, default: () => ({}) },
 
     // ── Emprego (isolado por grupo) ──────────────────────────────
-    // O enum rígido foi removido para aceitar qualquer cargo gerenciado pelo resolverCargo()
-    empregoAtual: {
-      type:    String,
-      default: null,
-    },
-    totalTrabalhosComSucesso: { type: Number, default: 0, min: 0 },
-    ultimoTrabalho:           { type: Date,   default: null },
+    empregoAtual:             { type: String,  default: null },
+    totalTrabalhosComSucesso: { type: Number,  default: 0,     min: 0 },
+    ultimoTrabalho:           { type: Date,    default: null },
     historicoSujo:            { type: Boolean, default: false },
 
     // ── Roubo — ataque (isolado por grupo) ───────────────────────
-    itensRoubo: {
-      type:    Map,
-      of:      { type: Number, min: 0 },
-      default: {},
-    },
+    itensRoubo:  { type: Map, of: { type: Number, min: 0 }, default: {} },
     equiparoubo: { type: String, default: null },
     ultimoRoubo: { type: Date,   default: null },
 
-    // ── Pets (isolado por grupo) ────────────────────────────────
-    itensPets: {
-      type:    Map,
-      of:      { type: Number, min: 0 },
-      default: {},
-    },
-
     // ── Segurança — defesa (isolada por grupo) ───────────────────
-    itensSec: {
-      type:    Map,
-      of:      { type: Number, min: 0 },
-      default: {},
-    },
+    itensSec:   { type: Map, of: { type: Number, min: 0 }, default: {} },
     equiparsec: { type: String, default: null },
 
+    // ── Pets (isolado por grupo) ─────────────────────────────────
+    itensPets: { type: Map, of: { type: Number, min: 0 }, default: {} },
+
     // ── Empréstimo ───────────────────────────────────────────────
-    emprestimo: {
-      ativo:             { type: Boolean, default: false },
-      valor:             { type: Number,  default: 0 },
-      vencimento:        { type: Date,    default: null },
-      solicitadoEm:      { type: Date,    default: null },
-      prazo:             { type: Number,  default: 7 },
-      quitadoEm:         { type: Date,    default: null },
-      proximoEmprestimo: { type: Date,    default: null },
-    },
+    emprestimo: { type: emprestimoSchema, default: () => ({}) },
 
     // ── Histórico de gold ────────────────────────────────────────
-    goldHistory: {
-      type:    [goldHistorySchema],
-      default: [],
-    },
+    goldHistory: { type: [goldHistorySchema], default: [] },
   },
   {
     timestamps: true,
@@ -98,6 +98,8 @@ const carteiraGrupoSchema = new mongoose.Schema(
 carteiraGrupoSchema.index({ idWhatsApp: 1, idGrupo: 1 }, { unique: true });
 carteiraGrupoSchema.index({ idGrupo: 1, gold: -1 });
 carteiraGrupoSchema.index({ idGrupo: 1, xp: -1 });
+carteiraGrupoSchema.index({ idGrupo: 1, mensagens: -1 });
+carteiraGrupoSchema.index({ idGrupo: 1, quizPoints: -1 });
 
 // ─── Métodos de instância ─────────────────────────────────────────────────────
 
@@ -106,6 +108,19 @@ carteiraGrupoSchema.methods.registrarGold = function (tipo, item, amount, limite
   if (this.goldHistory.length > limite) {
     this.goldHistory = this.goldHistory.slice(-limite);
   }
+};
+
+carteiraGrupoSchema.methods.toSafeObject = function () {
+  return {
+    idWhatsApp:  this.idWhatsApp,
+    idGrupo:     this.idGrupo,
+    nome:        this.nome,
+    gold:        this.gold,
+    xp:          this.xp,
+    level:       this.level,
+    mensagens:   this.mensagens,
+    empregoAtual: this.empregoAtual,
+  };
 };
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────

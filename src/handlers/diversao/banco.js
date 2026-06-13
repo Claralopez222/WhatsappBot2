@@ -1,10 +1,11 @@
 'use strict';
 
 const path = require('path');
-const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
-// ─── Configuração central ──────────────────────────────────────────────────
+// ─── Configuração central ─────────────────────────────────────────────────────
 
 const BANCO_CONFIG = {
   PRAZO_MS:         3 * 60 * 60 * 1000,
@@ -17,7 +18,8 @@ const BANCO_CONFIG = {
 // ─── Helpers puros ────────────────────────────────────────────────────────────
 
 function sortearJuros() {
-  return BANCO_CONFIG.JUROS_MIN + Math.floor(Math.random() * (BANCO_CONFIG.JUROS_MAX - BANCO_CONFIG.JUROS_MIN + 1));
+  return BANCO_CONFIG.JUROS_MIN +
+    Math.floor(Math.random() * (BANCO_CONFIG.JUROS_MAX - BANCO_CONFIG.JUROS_MIN + 1));
 }
 
 function calcularResgate(amount, interest) {
@@ -45,126 +47,126 @@ function formatTimeLeft(ms) {
 
 // ─── Helpers de acesso ao BD ──────────────────────────────────────────────────
 
-async function garantirUsuario(idWhatsApp) {
-  return Usuario.findOneAndUpdate(
-    { idWhatsApp },
-    { $setOnInsert: { idWhatsApp } },
-    { upsert: true, new: true }
-  );
+async function resolverUserId(sock, msg) {
+  let userId = msg.key.participant || msg.key.remoteJid;
+  if (userId?.endsWith('@lid')) {
+    try {
+      const number  = userId.split('@')[0].split(':')[0];
+      const results = await sock.onWhatsApp(number);
+      if (results?.length > 0 && results[0].jid) userId = results[0].jid;
+    } catch {}
+  }
+  return userId;
 }
 
-async function getSaldoGrupo(idWhatsApp, idGrupo) {
-  if (!idGrupo) return null;
-  return carteiraService.getCarteira(idWhatsApp, idGrupo);
+async function getCarteiraGrupo(userId, idGrupo) {
+  return CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: userId, idGrupo },
+    { $setOnInsert: { idWhatsApp: userId, idGrupo } },
+    { upsert: true, new: true }
+  );
 }
 
 // ─── handleBanco ─────────────────────────────────────────────────────────────
 
 async function handleBanco(sock, msg, jid, caption) {
-  // ── Resolver @lid para jid real
-  let userId = msg.key.participant || msg.key.remoteJid;
-  if (userId?.endsWith('@lid')) {
-    try {
-      const number = userId.split('@')[0].split(':')[0];
-      const results = await sock.onWhatsApp(number);
-      if (results?.length > 0 && results[0].jid) userId = results[0].jid;
-    } catch {}
-  }
-
+  const userId  = await resolverUserId(sock, msg);
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
   const match   = caption.match(/banco\s+(\d+)/i);
 
-  // ── Carregar/criar usuário e carteira
-  const user     = await garantirUsuario(userId);
-  const carteira = idGrupo ? await getSaldoGrupo(userId, idGrupo) : null;
-
-  const saldoDisponivel = carteira ? (carteira.gold ?? 0) : (user.gold ?? 0);
-  const today           = new Date().toISOString().split('T')[0];
-
-  if (user.bank?.lastDepositDate !== today) {
-    await Usuario.updateOne(
-      { idWhatsApp: userId },
-      { $set: { 'bank.depositedToday': 0, 'bank.lastDepositDate': today } }
-    );
-    user.bank                 = user.bank ?? {};
-    user.bank.depositedToday  = 0;
-    user.bank.lastDepositDate = today;
+  // ── Banco obrigatoriamente por grupo ────────────────────────────────────────
+  if (!idGrupo) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ O banco só funciona dentro de grupos!',
+    }, { quoted: msg });
+    return;
   }
 
-  const depositedToday = user.bank?.depositedToday ?? 0;
-  const remainingLimit = BANCO_CONFIG.DAILY_LIMIT - depositedToday;
+  const carteira = await getCarteiraGrupo(userId, idGrupo);
+  const banco    = carteira.banco ?? {};
+  const today    = new Date().toISOString().split('T')[0];
 
-  // ── Exibir status (sem argumento de quantia)
+  // ── Resetar limite diário se necessário ─────────────────────────────────────
+  if (banco.lastDepositDate !== today) {
+    await CarteiraGrupo.updateOne(
+      { idWhatsApp: userId, idGrupo },
+      { $set: { 'banco.depositedToday': 0, 'banco.lastDepositDate': today } }
+    );
+    banco.depositedToday  = 0;
+    banco.lastDepositDate = today;
+  }
+
+  const saldoDisponivel = carteira.gold ?? 0;
+  const depositedToday  = banco.depositedToday ?? 0;
+  const remainingLimit  = BANCO_CONFIG.DAILY_LIMIT - depositedToday;
+
+  // ── Exibir status (sem argumento) ────────────────────────────────────────────
   if (!match) {
-    const hasInvestment = (user.bank?.amount ?? 0) > 0;
+    const hasInvestment = (banco.amount ?? 0) > 0;
 
     if (!hasInvestment) {
-      const texto =
-        `💼 ═══ BANCO PIROQUINHAS ═══ 💼\n\n` +
-        `💰 *Nenhum investimento ativo no momento!*\n\n` +
-        `O seu dinheiro está seguro, mas ocioso...\n\n` +
+      await sock.sendMessage(jid, {
+        text:
+          `💼 ═══ BANCO PIROQUINHAS ═══ 💼\n\n` +
+          `💰 *Nenhum investimento ativo no momento!*\n\n` +
+          `O seu dinheiro está seguro, mas ocioso...\n\n` +
+          `━━━━━━━━━━━━━━━━\n` +
+          `*COMO INVESTIR?*\n` +
+          `  📊 Use: *!banco <quantia>*\n` +
+          `  💵 Exemplo: *!banco 500*\n\n` +
+          `*RENDIMENTOS:*\n` +
+          `  📈 Juros: ${BANCO_CONFIG.JUROS_MIN}–${BANCO_CONFIG.JUROS_MAX}%\n` +
+          `  ⏰ Prazo: *3 horas*\n\n` +
+          `*RESGATE:*\n` +
+          `  💎 Use: *!resgatar* (neste grupo)\n\n` +
+          `━━━━━━━━━━━━━━━━\n` +
+          `*LIMITE DIÁRIO:*\n` +
+          `  📊 Depositado hoje: *${depositedToday}* gold\n` +
+          `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
+          `*SEU SALDO (grupo):* 💰 *${saldoDisponivel}* gold\n\n` +
+          `_Deixe seu dinheiro trabalhar para você!_ 🚀`,
+      }, { quoted: msg });
+      return;
+    }
+
+    const msLeft       = getMsLeft(banco.startDate);
+    const futureAmount = calcularResgate(banco.amount, banco.interest);
+    const ganho        = futureAmount - banco.amount;
+    const status       = msLeft > 0
+      ? `⏳ Tempo restante: *${formatTimeLeft(msLeft)}*`
+      : `✅ *PRONTO PARA RESGATAR!*`;
+
+    await sock.sendMessage(jid, {
+      text:
+        `💼 ═══ SEU INVESTIMENTO ═══ 💼\n\n` +
+        `${msLeft > 0 ? '⌛' : '🎯'} ${status}\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `*COMO INVESTIR?*\n` +
-        `  📊 Use: *!banco <quantia>*\n` +
-        `  💵 Exemplo: *!banco 500*\n\n` +
-        `*RENDIMENTOS:*\n` +
-        `  📈 Juros: ${BANCO_CONFIG.JUROS_MIN}–${BANCO_CONFIG.JUROS_MAX}%\n` +
-        `  ⏰ Prazo: *3 horas*\n\n` +
-        `*RESGATE:*\n` +
-        `  💎 Use: *!resgatar*\n` +
-        `  _Após as 3 horas expirarem!_\n\n` +
+        `*DETALHES:*\n` +
+        `  💵 Investido: *${banco.amount}* gold\n` +
+        `  📈 Taxa de juros: *${banco.interest}%*\n` +
+        `  💎 Retorno esperado: *${futureAmount}* gold\n` +
+        `  💹 Lucro previsto: *+${ganho}* gold\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*LIMITE DIÁRIO:*\n` +
         `  📊 Depositado hoje: *${depositedToday}* gold\n` +
         `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
-        `*SEU SALDO${idGrupo ? ' (grupo)' : ''}:* 💰 *${saldoDisponivel}* gold\n\n` +
-        `_Deixe seu dinheiro trabalhar para você!_ 🚀`;
-
-      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-      return;
-    }
-
-    const msLeft       = getMsLeft(user.bank.startDate);
-    const futureAmount = calcularResgate(user.bank.amount, user.bank.interest);
-    const ganho        = futureAmount - user.bank.amount;
-    const status       = msLeft > 0
-      ? `⏳ Tempo restante: *${formatTimeLeft(msLeft)}*`
-      : `✅ *PRONTO PARA RESGATAR!*`;
-    const emoji = msLeft > 0 ? '⌛' : '🎯';
-
-    const texto =
-      `💼 ═══ SEU INVESTIMENTO ═══ 💼\n\n` +
-      `${emoji} ${status}\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `*DETALHES:*\n` +
-      `  💵 Investido: *${user.bank.amount}* gold\n` +
-      `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
-      `  💎 Retorno esperado: *${futureAmount}* gold\n` +
-      `  💹 Lucro previsto: *+${ganho}* gold\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `*LIMITE DIÁRIO:*\n` +
-      `  📊 Depositado hoje: *${depositedToday}* gold\n` +
-      `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
-      `*SEU SALDO${idGrupo ? ' (grupo)' : ''}:* 💰 *${saldoDisponivel}* gold\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `*AÇÕES:*\n` +
-      (msLeft > 0
-        ? `  ⏳ Aguarde *${formatTimeLeft(msLeft)}* para resgatar!\n  💵 Ou deposite mais: *!banco <quantia>*`
-        : `  ✅ Use *!resgatar* para sacar seu dinheiro!\n  💵 Ou deposite mais: *!banco <quantia>*`) +
-      `\n\n_Seu investimento está crescendo..._ 📊`;
-
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+        `*SEU SALDO (grupo):* 💰 *${saldoDisponivel}* gold\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        (msLeft > 0
+          ? `⏳ Aguarde *${formatTimeLeft(msLeft)}* para resgatar!\n  💵 Ou deposite mais: *!banco <quantia>*`
+          : `✅ Use *!resgatar* para sacar seu dinheiro!\n  💵 Ou deposite mais: *!banco <quantia>*`) +
+        `\n\n_Seu investimento está crescendo..._ 📊`,
+    }, { quoted: msg });
     return;
   }
 
-  // ── Processar depósito
+  // ── Processar depósito ───────────────────────────────────────────────────────
   const amount = parseInt(match[1], 10);
 
   if (!amount || amount <= 0) {
-    await sock.sendMessage(jid,
-      { text: `⚠️ *QUANTIDADE INVÁLIDA*\n\nA quantia deve ser um número positivo!\n\n*EXEMPLO:*\n  *!banco 500*` },
-      { quoted: msg }
-    );
+    await sock.sendMessage(jid, {
+      text: `⚠️ *QUANTIDADE INVÁLIDA*\n\nA quantia deve ser um número positivo!\n\n*EXEMPLO:*\n  *!banco 500*`,
+    }, { quoted: msg });
     return;
   }
 
@@ -193,63 +195,44 @@ async function handleBanco(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Debitar gold
+  // ── Debitar gold do grupo ────────────────────────────────────────────────────
   let saldoAposDebito;
-
-  if (idGrupo) {
-    try {
-      const carteiraAtualizada = await carteiraService.alterarGold(
-        userId, idGrupo, -amount, 'Depósito banco'
-      );
-      saldoAposDebito = carteiraAtualizada.gold;
-    } catch (err) {
-      if (err instanceof RangeError) {
-        await sock.sendMessage(jid, {
-          text:
-            `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold no grupo!\n\n` +
-            `━━━━━━━━━━━━━━━━\n` +
-            `*SEU SALDO (grupo):*\n  💰 Disponível: *${saldoDisponivel}* gold`,
-        }, { quoted: msg });
-        return;
-      }
-      throw err;
-    }
-  } else {
-    const updatedUser = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId, gold: { $gte: amount } },
-      { $inc: { gold: -amount } },
-      { new: true }
+  try {
+    const carteiraAtualizada = await carteiraService.alterarGold(
+      userId, idGrupo, -amount, 'Depósito banco'
     );
-    if (!updatedUser) {
+    saldoAposDebito = carteiraAtualizada.gold;
+  } catch (err) {
+    if (err instanceof RangeError) {
       await sock.sendMessage(jid, {
         text:
-          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold!\n\n` +
+          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold neste grupo!\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
-          `*SEU SALDO:*\n  💰 Disponível: *${saldoDisponivel}* gold`,
+          `*SEU SALDO (grupo):*\n  💰 Disponível: *${saldoDisponivel}* gold`,
       }, { quoted: msg });
       return;
     }
-    saldoAposDebito = updatedUser.gold;
+    throw err;
   }
 
-  // ── Atualizar dados do banco
-  const hasActiveInvestment = (user.bank?.amount ?? 0) > 0;
-  const newDepositedToday   = depositedToday + amount;
+  // ── Atualizar dados do banco no CarteiraGrupo ────────────────────────────────
+  const newDepositedToday = depositedToday + amount;
+  const hasActiveInvestment = (banco.amount ?? 0) > 0;
 
   if (hasActiveInvestment) {
-    const newTotal = (user.bank.amount ?? 0) + amount;
-    await Usuario.updateOne(
-      { idWhatsApp: userId },
+    const newTotal = (banco.amount ?? 0) + amount;
+    await CarteiraGrupo.updateOne(
+      { idWhatsApp: userId, idGrupo },
       { $set: {
-        'bank.amount':         newTotal,
-        'bank.depositedToday': newDepositedToday,
-        'bank.lastDepositDate': today,
+        'banco.amount':          newTotal,
+        'banco.depositedToday':  newDepositedToday,
+        'banco.lastDepositDate': today,
       }}
     );
 
-    const futureAmount = calcularResgate(newTotal, user.bank.interest);
+    const futureAmount = calcularResgate(newTotal, banco.interest);
     const ganho        = futureAmount - newTotal;
-    const msLeft       = getMsLeft(user.bank.startDate);
+    const msLeft       = getMsLeft(banco.startDate);
 
     await sock.sendMessage(jid, {
       text:
@@ -259,14 +242,14 @@ async function handleBanco(sock, msg, jid, caption) {
         `*RESUMO:*\n` +
         `  💵 Adicionado agora: *+${amount}* gold\n` +
         `  🏦 Total investido: *${newTotal}* gold\n` +
-        `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
+        `  📈 Taxa de juros: *${banco.interest}%*\n` +
         `  ⏰ Tempo restante: *${formatTimeLeft(msLeft)}*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*RETORNO ESPERADO:*\n` +
         `  💎 Resgate em: *${futureAmount}* gold\n` +
         `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `*SALDO${idGrupo ? ' (grupo)' : ''}:*\n` +
+        `*SALDO (grupo):*\n` +
         `  💰 Disponível: *${saldoAposDebito}* gold\n` +
         `  🏦 Investido: *${newTotal}* gold\n` +
         `  🔓 Limite restante hoje: *${BANCO_CONFIG.DAILY_LIMIT - newDepositedToday}* gold`,
@@ -274,14 +257,14 @@ async function handleBanco(sock, msg, jid, caption) {
 
   } else {
     const interest = sortearJuros();
-    await Usuario.updateOne(
-      { idWhatsApp: userId },
+    await CarteiraGrupo.updateOne(
+      { idWhatsApp: userId, idGrupo },
       { $set: {
-        'bank.amount':          amount,
-        'bank.interest':        interest,
-        'bank.startDate':       new Date().toISOString(),
-        'bank.lastDepositDate': today,
-        'bank.depositedToday':  newDepositedToday,
+        'banco.amount':          amount,
+        'banco.interest':        interest,
+        'banco.startDate':       new Date(),
+        'banco.lastDepositDate': today,
+        'banco.depositedToday':  newDepositedToday,
       }}
     );
 
@@ -302,215 +285,160 @@ async function handleBanco(sock, msg, jid, caption) {
         `  💎 Resgate em: *${futureAmount}* gold\n` +
         `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `*SALDO${idGrupo ? ' (grupo)' : ''}:*\n` +
+        `*SALDO (grupo):*\n` +
         `  💰 Disponível: *${saldoAposDebito}* gold\n` +
         `  🏦 Investido: *${amount}* gold\n` +
         `  🔓 Limite restante hoje: *${BANCO_CONFIG.DAILY_LIMIT - newDepositedToday}* gold`,
     }, { quoted: msg });
   }
 }
+
 // ─── handleResgatar ───────────────────────────────────────────────────────────
 
-/**
- * Comando !resgatar
- *
- * Credita o resgate no saldo de grupo (se vier de grupo) ou no gold global.
- * Salva o histórico de resgate em bank.historico (últimos 10).
- */
 async function handleResgatar(sock, msg, jid) {
-  let userId    = msg.key.participant || msg.key.remoteJid;
+  const userId  = await resolverUserId(sock, msg);
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
 
-  if (userId?.endsWith('@lid')) {
-    try {
-      const number = userId.split('@')[0].split(':')[0];
-      const results = await sock.onWhatsApp(number);
-      if (results?.length > 0 && results[0].jid) userId = results[0].jid;
-    } catch {}
-  }
-
-  const user = await garantirUsuario(userId);
-
-  if (!user.bank?.amount || user.bank.amount <= 0) {
-    await sock.sendMessage(
-      jid,
-      { text: `⚠️ *SEM INVESTIMENTOS ATIVOS*\n\nVocê não possui nenhum investimento ativo no banco!\n\n_Use *!banco <quantia>* para investir!_` },
-      { quoted: msg }
-    );
+  if (!idGrupo) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ O banco só funciona dentro de grupos!',
+    }, { quoted: msg });
     return;
   }
 
-  const msLeft = getMsLeft(user.bank.startDate);
+  const carteira = await getCarteiraGrupo(userId, idGrupo);
+  const banco    = carteira.banco ?? {};
+
+  if (!banco.amount || banco.amount <= 0) {
+    await sock.sendMessage(jid, {
+      text: `⚠️ *SEM INVESTIMENTOS ATIVOS*\n\nVocê não possui nenhum investimento ativo neste grupo!\n\n_Use *!banco <quantia>* para investir!_`,
+    }, { quoted: msg });
+    return;
+  }
+
+  const msLeft = getMsLeft(banco.startDate);
 
   if (msLeft > 0) {
-    const futureAmount = calcularResgate(user.bank.amount, user.bank.interest);
-    const ganho        = futureAmount - user.bank.amount;
-
-    await sock.sendMessage(
-      jid,
-      {
-        text:
-          `⏳ ═══ INVESTIMENTO EM ANDAMENTO ═══ ⏳\n\n` +
-          `⌛ *Seu investimento vence em ${formatTimeLeft(msLeft)}!*\n\n` +
-          `━━━━━━━━━━━━━━━━\n` +
-          `*DETALHES:*\n` +
-          `  💵 Investido: *${user.bank.amount}* gold\n` +
-          `  📈 Taxa: *${user.bank.interest}%*\n` +
-          `  💎 Retorno esperado: *${futureAmount}* gold\n` +
-          `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
-          `_Aguarde o prazo para resgatar!_`,
-      },
-      { quoted: msg }
-    );
+    const futureAmount = calcularResgate(banco.amount, banco.interest);
+    const ganho        = futureAmount - banco.amount;
+    await sock.sendMessage(jid, {
+      text:
+        `⏳ ═══ INVESTIMENTO EM ANDAMENTO ═══ ⏳\n\n` +
+        `⌛ *Seu investimento vence em ${formatTimeLeft(msLeft)}!*\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `*DETALHES:*\n` +
+        `  💵 Investido: *${banco.amount}* gold\n` +
+        `  📈 Taxa: *${banco.interest}%*\n` +
+        `  💎 Retorno esperado: *${futureAmount}* gold\n` +
+        `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
+        `_Aguarde o prazo para resgatar!_`,
+    }, { quoted: msg });
     return;
   }
 
-  const futureAmount = calcularResgate(user.bank.amount, user.bank.interest);
-  const ganho        = futureAmount - user.bank.amount;
+  const futureAmount = calcularResgate(banco.amount, banco.interest);
+  const ganho        = futureAmount - banco.amount;
 
-  // ── Entrada no histórico ─────────────────────────────────────────────────
   const entradaHistorico = {
-    data:      new Date().toISOString(),
-    investido: user.bank.amount,
+    data:      new Date(),
+    investido: banco.amount,
     resgate:   futureAmount,
-    juros:     user.bank.interest,
+    juros:     banco.interest,
     lucro:     ganho,
-    origem:    idGrupo ? 'grupo' : 'global',
-    idGrupo:   idGrupo ?? null,
   };
 
-  // ── Creditar gold no saldo correto e zerar banco ─────────────────────────
-  if (idGrupo) {
-    // Crédito no saldo de grupo
-    await carteiraService.alterarGold(userId, idGrupo, futureAmount, 'Resgate banco');
-
-    // Atualizar missões e zerar banco num único update em Usuario
-    const updateResgate = {
+  // ── Zerar banco, creditar gold e registrar histórico atomicamente ────────────
+  const carteiraFinal = await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: userId, idGrupo },
+    {
+      $inc: { gold: futureAmount },
       $set: {
-        'bank.amount':    0,
-        'bank.interest':  0,
-        'bank.startDate': null,
+        'banco.amount':    0,
+        'banco.interest':  0,
+        'banco.startDate': null,
       },
       $push: {
-        'bank.historico': {
+        'banco.historico': {
           $each:  [entradaHistorico],
           $slice: -BANCO_CONFIG.HISTORICO_LIMITE,
         },
+        goldHistory: {
+          $each:  [{ type: 'recebido', item: 'Resgate banco', amount: futureAmount }],
+          $slice: -50,
+        },
       },
-    };
+    },
+    { new: true }
+  );
 
-    if (ganho > 0) {
-      updateResgate.$inc = { 'dailyMissions.progress.gold500': ganho };
-    }
+  // ── Progresso de missão no Usuario ──────────────────────────────────────────
+  if (ganho > 0) {
+    await Usuario.updateOne(
+      { idWhatsApp: userId },
+      { $inc: { 'dailyMissions.progress.gold500': ganho } }
+    ).catch(() => {});
+  }
 
-    await Usuario.findOneAndUpdate({ idWhatsApp: userId }, updateResgate, { new: true });
-
-    // Saldo pós-resgate para exibir
-    const carteiraFinal = await carteiraService.getCarteira(userId, idGrupo);
-
-    const texto =
+  await sock.sendMessage(jid, {
+    text:
       `🎉 ═══ RESGATE BEM-SUCEDIDO! ═══ 🎉\n\n` +
       `💎 *Parabéns! Seu investimento rendeu!*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*RESUMO:*\n` +
-      `  💵 Investimento inicial: *${user.bank.amount}* gold\n` +
-      `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
+      `  💵 Investimento inicial: *${banco.amount}* gold\n` +
+      `  📈 Taxa de juros: *${banco.interest}%*\n` +
       `  💰 Resgate total: *${futureAmount}* gold\n` +
       `  💹 Lucro obtido: *+${ganho}* gold\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*SALDO FINAL (grupo):*\n` +
-      `  ✅ Total na conta: *${carteiraFinal.gold}* gold`;
-
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-
-  } else {
-    // Crédito no gold global — tudo em um único update atômico
-    const updateResgate = {
-      $inc: { gold: futureAmount },
-      $set: {
-        'bank.amount':    0,
-        'bank.interest':  0,
-        'bank.startDate': null,
-      },
-      $push: {
-        'bank.historico': {
-          $each:  [entradaHistorico],
-          $slice: -BANCO_CONFIG.HISTORICO_LIMITE,
-        },
-      },
-    };
-
-    if (ganho > 0) {
-      updateResgate.$inc['dailyMissions.progress.gold500'] = ganho;
-    }
-
-    const finalUser = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      updateResgate,
-      { new: true }
-    );
-
-    const texto =
-      `🎉 ═══ RESGATE BEM-SUCEDIDO! ═══ 🎉\n\n` +
-      `💎 *Parabéns! Seu investimento rendeu!*\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `*RESUMO:*\n` +
-      `  💵 Investimento inicial: *${user.bank.amount}* gold\n` +
-      `  📈 Taxa de juros: *${user.bank.interest}%*\n` +
-      `  💰 Resgate total: *${futureAmount}* gold\n` +
-      `  💹 Lucro obtido: *+${ganho}* gold\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `*SALDO FINAL:*\n` +
-      `  ✅ Total na conta: *${finalUser.gold}* gold`;
-
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-  }
+      `  ✅ Total na conta: *${carteiraFinal.gold}* gold`,
+  }, { quoted: msg });
 }
 
 // ─── handleHistoricoBanco ─────────────────────────────────────────────────────
 
-/**
- * Comando !historicobanco
- *
- * Exibe os últimos resgates do usuário (máx 10).
- */
 async function handleHistoricoBanco(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-  const user   = await garantirUsuario(userId);
+  const userId  = await resolverUserId(sock, msg);
+  const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
 
-  const historico = user.bank?.historico ?? [];
+  if (!idGrupo) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ O banco só funciona dentro de grupos!',
+    }, { quoted: msg });
+    return;
+  }
+
+  const carteira  = await getCarteiraGrupo(userId, idGrupo);
+  const historico = carteira.banco?.historico ?? [];
 
   if (historico.length === 0) {
-    await sock.sendMessage(
-      jid,
-      { text: `📋 *HISTÓRICO DO BANCO*\n\nVocê ainda não realizou nenhum resgate!\n\n_Use *!banco <quantia>* para começar a investir._` },
-      { quoted: msg }
-    );
+    await sock.sendMessage(jid, {
+      text: `📋 *HISTÓRICO DO BANCO*\n\nVocê ainda não realizou nenhum resgate neste grupo!\n\n_Use *!banco <quantia>* para começar a investir._`,
+    }, { quoted: msg });
     return;
   }
 
   const linhas = historico
     .slice()
-    .reverse() // mais recente primeiro
+    .reverse()
     .map((h, i) => {
-      const data   = new Date(h.data).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const origem = h.origem === 'grupo' ? '👥 grupo' : '🌐 global';
+      const data = new Date(h.data).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       return (
         `*${i + 1}.* ${data}\n` +
-        `   💵 ${h.investido} → 💎 ${h.resgate} gold (+${h.lucro}) | ${h.juros}% | ${origem}`
+        `   💵 ${h.investido} → 💎 ${h.resgate} gold (+${h.lucro}) | ${h.juros}%`
       );
     })
     .join('\n\n');
 
-  const texto =
-    `📋 ═══ HISTÓRICO DO BANCO ═══ 📋\n\n` +
-    `_Últimos ${historico.length} resgates:_\n\n` +
-    `━━━━━━━━━━━━━━━━\n` +
-    linhas +
-    `\n\n━━━━━━━━━━━━━━━━\n` +
-    `_Use *!banco* para verificar seu investimento atual._`;
-
-  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  await sock.sendMessage(jid, {
+    text:
+      `📋 ═══ HISTÓRICO DO BANCO ═══ 📋\n\n` +
+      `_Últimos ${historico.length} resgates neste grupo:_\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      linhas +
+      `\n\n━━━━━━━━━━━━━━━━\n` +
+      `_Use *!banco* para verificar seu investimento atual._`,
+  }, { quoted: msg });
 }
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────

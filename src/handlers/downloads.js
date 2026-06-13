@@ -612,6 +612,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !playmp4 - Baixa a música recente como vídeo (se disponível)
 async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const pending = pendingMusic.get(senderJid);
@@ -657,7 +658,7 @@ async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-// Envia o áudio como documento (para baixar)
+// !playdoc - Baixa a música recente como documento (se disponível)
 async function handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const pending = pendingMusic.get(senderJid);

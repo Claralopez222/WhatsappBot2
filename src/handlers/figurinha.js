@@ -507,16 +507,11 @@ async function handleToGif(sock, msg, content, jid) {
 
 // (comando !roubar removido)
 
-// // ═══════════════════════════════════════════════════════════════
-// ─── !estourar ────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 async function handleEstourar(sock, msg, content, jid) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const quoted      = contextInfo?.quotedMessage;
   const textMsg     = content.conversation || content.extendedTextMessage?.text || '';
 
-  // ── Validar: precisa ser um áudio ou PTT (voice note)
   const audioMsg = quoted?.audioMessage || quoted?.pttMessage;
   if (!audioMsg) {
     await sock.sendMessage(jid, {
@@ -525,13 +520,11 @@ async function handleEstourar(sock, msg, content, jid) {
     return;
   }
 
-  // ── Parsear volume (1–100, padrão 20)
   const match  = textMsg.match(/estourar\s+(\d+)/i);
   const volume = Math.max(1, Math.min(100, match ? parseInt(match[1], 10) : 20));
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  // ── Download do áudio citado
   let audioBuffer;
   try {
     audioBuffer = await downloadMediaMessage(
@@ -547,11 +540,18 @@ async function handleEstourar(sock, msg, content, jid) {
     return;
   }
 
-  // ── Arquivos temporários
   const ffmpegBin = require('ffmpeg-static');
   const tmpId     = crypto.randomUUID();
-  const inPath    = path.join(os.tmpdir(), `${tmpId}_in.ogg`);
-  const outPath   = path.join(os.tmpdir(), `${tmpId}_out.ogg`);
+
+  // ── Detectar extensão correta pelo mimetype ──────────────────
+  const mimetype = audioMsg.mimetype || '';
+  const inExt    = mimetype.includes('mp4') ? 'mp4'
+                 : mimetype.includes('mp3') || mimetype.includes('mpeg') ? 'mp3'
+                 : mimetype.includes('webm') ? 'webm'
+                 : 'ogg';
+
+  const inPath  = path.join(os.tmpdir(), `${tmpId}_in.${inExt}`);
+  const outPath = path.join(os.tmpdir(), `${tmpId}_out.ogg`);
 
   const cleanup = () => {
     for (const f of [inPath, outPath]) {
@@ -561,19 +561,20 @@ async function handleEstourar(sock, msg, content, jid) {
 
   fs.writeFileSync(inPath, audioBuffer);
 
-  // ── Processar com FFmpeg
   const ok = await new Promise((resolve) => {
     execFile(
       ffmpegBin,
       [
         '-y', '-i', inPath,
         '-filter:a', `volume=${volume}`,
-        '-c:a', 'libopus', '-b:a', '64k',
-        '-vn',          // ignorar vídeo (evita erro em arquivos mistos)
-        '-map_metadata', '-1', // limpar metadados desnecessários
+        '-c:a', 'libopus',
+        '-b:a', '128k',       // aumentado para evitar truncamento
+        '-vn',
+        '-map_metadata', '-1',
+        '-f', 'ogg',          // forçar formato OGG explicitamente
         outPath,
       ],
-      { timeout: 30000 },
+      { timeout: 60000 },     // aumentado para áudios longos
       (err) => {
         if (err) console.error('[estourar] FFmpeg erro:', err.message);
         resolve(!err);
@@ -588,7 +589,6 @@ async function handleEstourar(sock, msg, content, jid) {
     return;
   }
 
-  // ── Enviar áudio processado
   const outBuffer = fs.readFileSync(outPath);
   cleanup();
 
@@ -597,7 +597,7 @@ async function handleEstourar(sock, msg, content, jid) {
       audio:    outBuffer,
       mimetype: 'audio/ogg; codecs=opus',
       ptt:      true,
-    }, { quoted: msg }); // quotado para ficar em contexto na conversa
+    }, { quoted: msg });
 
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (err) {
@@ -638,6 +638,7 @@ async function handleBrat(sock, msg, jid, caption, getPrefix, stickerCount) {
   }
 }
 
+// !figtexto
 async function handleFigtexto(sock, msg, jid, caption, getPrefix, stickerCount) {
   const P    = getPrefix(jid);
   const text = caption.replace(/^[!.,\/]figtexto\s*/i, '').trim();

@@ -1016,18 +1016,53 @@ function registerActiveGroup(jid) {
   activeGroups.add(jid);
 }
 
+function isSockReady(sock) {
+  return sock && sock.user && sock.ws?.readyState === 1;
+}
+
+async function tentarSpawnComRetry(sock, jid, tentativas = 3, delayMs = 15000) {
+  for (let i = 1; i <= tentativas; i++) {
+    if (!isSockReady(sock)) {
+      console.warn(`[PetScheduler] Conexão não está pronta (tentativa ${i}/${tentativas}). Aguardando ${delayMs / 1000}s...`);
+      await new Promise(res => setTimeout(res, delayMs));
+      continue;
+    }
+
+    try {
+      await triggerSpawn(sock, jid);
+      return; // sucesso, para o retry
+    } catch (err) {
+      const fechada = err?.output?.statusCode === 428 || err?.message?.includes('Connection Closed');
+
+      if (fechada && i < tentativas) {
+        console.warn(`[PetScheduler] Conexão fechada no spawn (tentativa ${i}/${tentativas}). Tentando novamente em ${delayMs / 1000}s...`);
+        await new Promise(res => setTimeout(res, delayMs));
+      } else {
+        console.error(`[PetScheduler] Erro no spawn após ${i} tentativa(s):`, err.message ?? err);
+        return;
+      }
+    }
+  }
+}
+
 function initPetScheduler(sock) {
   let currentSock = sock;
 
-  initPetScheduler.updateSock = (newSock) => { currentSock = newSock; };
+  initPetScheduler.updateSock = (newSock) => {
+    currentSock = newSock;
+    console.log('[PetScheduler] Socket atualizado.');
+  };
 
-  setInterval(() => {
-    if (!currentSock?.user) return;
+  setInterval(async () => {
+    if (!isSockReady(currentSock)) {
+      console.warn('[PetScheduler] Conexão não está pronta, ciclo de spawn ignorado.');
+      return;
+    }
+
+    console.log(`[PetScheduler] Iniciando spawn para ${activeGroups.size} grupo(s)...`);
 
     for (const jid of activeGroups) {
-      triggerSpawn(currentSock, jid).catch(err =>
-        console.error('[PetScheduler] Erro no spawn:', err)
-      );
+      await tentarSpawnComRetry(currentSock, jid);
     }
   }, 60 * 60 * 1000); // 1 hora
 }

@@ -1058,6 +1058,7 @@ if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleR
   if (matchCmd(cmdWord, 'quizmat'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'quizhis'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'quizbsq'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
+  if (matchCmd(cmdWord, 'quizanime'))      { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; } // ← novo
   if (matchCmd(cmdWord, 'pontos'))         { await diversaoHandler.handlePontos(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'banco') || matchCmdStart(cmd, 'banco '))

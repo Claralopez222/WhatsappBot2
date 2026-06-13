@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const axios = require('axios');
 const sharp = require('sharp');
 const { fetchBuffer } = require(path.join(__dirname, '..', 'fetchurl'));
@@ -20,6 +21,52 @@ const log = {
   warn:  (...a) => _logger.warn  ? _logger.warn(...a)  : console.warn(...a),
   error: (...a) => _logger.error ? _logger.error(...a) : console.error(...a),
 };
+
+// ─── Download automático do binário yt-dlp ────────────────────────────────────
+
+async function ensureYtDlpBinary() {
+  const binPath = '/tmp/yt-dlp';
+
+  // Se já existe e funciona, retorna direto
+  if (fs.existsSync(binPath)) {
+    try {
+      require('child_process').execSync(`"${binPath}" --version`, { timeout: 3000 });
+      return binPath;
+    } catch {
+      // Binário corrompido ou desatualizado — remove e baixa novamente
+      try { fs.unlinkSync(binPath); } catch {}
+    }
+  }
+
+  log.info('yt-dlp não encontrado — baixando binário do GitHub...');
+
+  await new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(binPath);
+
+    const doRequest = (url, redirects = 0) => {
+      if (redirects > 5) return reject(new Error('Muitos redirecionamentos ao baixar yt-dlp'));
+      https.get(url, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          return doRequest(res.headers.location, redirects + 1);
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${res.statusCode} ao baixar yt-dlp`));
+        }
+        res.pipe(file);
+        file.on('finish', () => file.close(resolve));
+        file.on('error', reject);
+      }).on('error', reject);
+    };
+
+    doRequest('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp');
+  });
+
+  fs.chmodSync(binPath, 0o755);
+  log.info('yt-dlp baixado com sucesso em /tmp/yt-dlp');
+  return binPath;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -149,7 +196,15 @@ async function getYtDlpPath() {
     }
   }
 
-  log.warn('yt-dlp não encontrado — usando "yt-dlp" do PATH');
+  // 6. Baixar binário direto do GitHub (último recurso — funciona no Render)
+  try {
+    const p = await ensureYtDlpBinary();
+    if (p) { _cachedYtDlpPath = p; return p; }
+  } catch (e) {
+    log.warn('Falha ao baixar yt-dlp:', e.message);
+  }
+
+  log.warn('yt-dlp não encontrado em nenhum local — usando "yt-dlp" do PATH como fallback');
   return 'yt-dlp';
 }
 

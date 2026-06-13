@@ -15,7 +15,6 @@ const {
   handleMenuWork,
 } = require('./emprego');
 
-// Brincadeiras
 const {
   handleGay, handleSexo, handleNazista, handleLesbica, handleAura,
   handleDado, handleMoeda, handle8ball, handleShip, handleRolar,
@@ -25,7 +24,7 @@ const {
   handleVerdadeOuDesafio, handleConfissao, handleJulgamento, handlePodre, handleFrango,
   handleMaldizer, handleFortuna, handleCompatibilidade,
   handleTrans, handleCorno, handlePeitudo, handlePauzudo,
-  handleBundudo, handleGordo, handleCuzudo,handleGado,handleBucetudo,
+  handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup,
 } = require('./brincadeiras');
 
 // Economia

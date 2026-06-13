@@ -2,37 +2,46 @@
 
 const mongoose = require('mongoose');
 
-// ─── Sub-schema: histórico de gold ───────────────────────────
+// ─── Sub-schema: histórico de gold ───────────────────────────────────────────
 const goldHistorySchema = new mongoose.Schema({
   type:   { type: String, enum: ['recebido', 'gasto'], required: true },
-  item:   { type: String, required: true },
-  amount: { type: Number, required: true },           // sem min: 0 — negativos são válidos (gastos)
+  item:   { type: String, required: true, trim: true },
+  amount: { type: Number, required: true },
   date:   { type: Date,   default: Date.now },
 }, { _id: false });
 
-// ─── Sub-schema: pet ─────────────────────────────────────────
+// ─── Sub-schema: pet ─────────────────────────────────────────────────────────
 const petSchema = new mongoose.Schema({
-  name:       { type: String,  default: null },
-  level:      { type: Number,  default: 1,  min: 1 },
-  happiness:  { type: Number,  default: 60, min: 0, max: 100 },
-  energy:     { type: Number,  default: 80, min: 0, max: 100 },
-  fullness:   { type: Number,  default: 80, min: 0, max: 100 },
-  adoptedAt:  { type: Date,    default: null },
-  lastFed:    { type: Date,    default: null },
-  lastPlayed: { type: Date,    default: null },
+  type:            { type: String,  default: null },
+  name:            { type: String,  default: null, trim: true },
+  rarity:          { type: String,  default: null },
+  level:           { type: Number,  default: 1,    min: 1 },
+  xp:              { type: Number,  default: 0,    min: 0 },
+  happiness:       { type: Number,  default: 60,   min: 0, max: 100 },
+  energy:          { type: Number,  default: 80,   min: 0, max: 100 },
+  fullness:        { type: Number,  default: 80,   min: 0, max: 100 },
+  capturedAt:      { type: Date,    default: null },
+  lastInteraction: { type: Date,    default: null },
 }, { _id: false });
 
-// ─── Sub-schema: banco ───────────────────────────────────────
+// ─── Sub-schema: abrigo de pet ───────────────────────────────────────────────
+const petShelterSchema = new mongoose.Schema({
+  isSheltered:  { type: Boolean, default: false },
+  shelteredPet: { type: Object,  default: null },
+  leftAt:       { type: Date,    default: null },
+}, { _id: false });
+
+// ─── Sub-schema: banco ───────────────────────────────────────────────────────
 const bankSchema = new mongoose.Schema({
   amount:          { type: Number, default: 0,    min: 0 },
   interest:        { type: Number, default: 0,    min: 0 },
   startDate:       { type: Date,   default: null },
   lastDepositDate: { type: Date,   default: null },
   depositedToday:  { type: Number, default: 0,    min: 0 },
-  historico:       { type: Array,  default: [] },
+  historico:       { type: Array,  default: []              },
 }, { _id: false });
 
-// ─── Sub-schema: progresso de missões (reutilizável) ─────────
+// ─── Sub-schema: progresso de missões ────────────────────────────────────────
 const missaoNumSchema = new mongoose.Schema({
   xp100:   { type: Number, default: 0, min: 0 },
   msg50:   { type: Number, default: 0, min: 0 },
@@ -52,57 +61,73 @@ const missaoBoolSchema = new mongoose.Schema({
 }, { _id: false });
 
 const dailyMissionsSchema = new mongoose.Schema({
-  date:      { type: Date,             default: null },
+  date:      { type: String,           default: null }, // 'YYYY-MM-DD'
   progress:  { type: missaoNumSchema,  default: () => ({}) },
   completed: { type: missaoBoolSchema, default: () => ({}) },
   claimed:   { type: missaoBoolSchema, default: () => ({}) },
 }, { _id: false });
 
-// ─── Sub-schema: item da loja do casal ───────────────────────
+// ─── Sub-schema: item da loja do casal ───────────────────────────────────────
 const casalItemSchema = new mongoose.Schema({
   itemKey:     { type: String, required: true, trim: true, lowercase: true },
   compradoPor: { type: String, required: true },
   compradoEm:  { type: Date,   default: Date.now },
 }, { _id: false });
 
-// ─── Schema principal ─────────────────────────────────────────
+// ─── Schema principal ─────────────────────────────────────────────────────────
 const usuarioSchema = new mongoose.Schema({
-  idWhatsApp: { type: String, required: true, unique: true, index: true },
-  nome:       { type: String, default: null },
+  // ── Identificação ────────────────────────────────────────────
+  idWhatsApp: { type: String, required: true, unique: true, index: true, trim: true },
+  nome:       { type: String, default: null, trim: true },
+
+  // ── Progressão global ────────────────────────────────────────
   xp:         { type: Number, default: 0,   min: 0 },
   level:      { type: Number, default: 1,   min: 1 },
   gold:       { type: Number, default: 100, min: 0 },
   quizPoints: { type: Number, default: 0,   min: 0 },
+  mensagens:  { type: Number, default: 0,   min: 0 },
 
-  xpCasal:     { type: Number, default: 0, min: 0 },
-
-  goldHistory: { type: [goldHistorySchema], default: [] },
-
-  inventory:   { type: Map, of: Number, default: {} },
-
-  // ─── Relacionamento ──────────────────────────────────────────
+  // ── Relacionamento ───────────────────────────────────────────
+  xpCasal:     { type: Number, default: 0,    min: 0 },
   casadoCom:   { type: String, default: null },
   casadoTipo:  { type: String, enum: ['casamento', 'namoro', null], default: null },
   casadoDesde: { type: Date,   default: null },
-
   casalItens:  { type: [casalItemSchema], default: [] },
 
-  pet:           { type: petSchema,           default: () => ({}) },
-  bank:          { type: bankSchema,          default: () => ({}) },
+  // ── Inventário ───────────────────────────────────────────────
+  inventory:   { type: Map, of: Number, default: {} },
+
+  // ── Histórico de gold ────────────────────────────────────────
+  goldHistory: { type: [goldHistorySchema], default: [] },
+
+  // ── Pet ──────────────────────────────────────────────────────
+  pet:        { type: petSchema,        default: () => ({}) },
+  petShelter: { type: petShelterSchema, default: () => ({}) },
+
+  // ── Banco ────────────────────────────────────────────────────
+  bank: { type: bankSchema, default: () => ({}) },
+
+  // ── Missões diárias ──────────────────────────────────────────
   dailyMissions: { type: dailyMissionsSchema, default: () => ({}) },
 
-  // ─── Roubo ───────────────────────────────────────────────────
+  // ── Roubo ────────────────────────────────────────────────────
   itensRoubo:  { type: Map,    of: Number, default: {} },
   itensSec:    { type: Map,    of: Number, default: {} },
   equiparoubo: { type: String, default: null },
   equiparsec:  { type: String, default: null },
   ultimoRoubo: { type: Date,   default: null },
 
-  // ─── Advertências (jid do grupo → contagem) ──────────────────
-  warnings:    { type: Map,    of: Number, default: {} },
+  // ── Advertências (jid do grupo → contagem) ───────────────────
+  warnings: { type: Map, of: Number, default: {} },
 
 }, {
   timestamps: true,
 });
 
+// ─── Índices ──────────────────────────────────────────────────────────────────
+usuarioSchema.index({ gold: -1 });
+usuarioSchema.index({ xp: -1 });
+usuarioSchema.index({ quizPoints: -1 });
+
+// ─── Exportar ─────────────────────────────────────────────────────────────────
 module.exports = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);

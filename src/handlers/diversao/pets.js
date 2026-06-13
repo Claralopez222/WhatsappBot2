@@ -1067,6 +1067,78 @@ function initPetScheduler(sock) {
   }, 60 * 60 * 1000); // 1 hora
 }
 
+async function handleStatusPet(sock, msg, jid, caption = '') {
+  const userId = getUserId(msg);
+  if (!userId) return;
+
+  const prefixMatch = caption?.match(/^([!.,/])/);
+  const prefix = prefixMatch ? prefixMatch[1] : '!';
+
+  let pet;
+  try {
+    pet = await getPet(userId);
+  } catch (err) {
+    console.error('[statuspet] Erro ao buscar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
+  }
+
+  if (!pet?.name) {
+    return reply(sock, jid, msg,
+      `⚠️ Você não tem um pet!\n\n_Aguarde um spawn e use *${prefix}capturar* para pegar um._`
+    );
+  }
+
+  const def    = PET_SYSTEM[pet.type] ?? { emoji: '🐾', nome: '?', desc: '?', rarity: '?' };
+  const re     = RARITY_EMOJI[pet.rarity] ?? '⭐';
+  const humor  = getHumor(pet);
+  const nivel  = pet.level ?? 1;
+  const xp     = pet.xp    ?? 0;
+  const xpMax  = nivel < CONFIG.NIVEL_MAX ? nivel * 100 : null;
+  const xpBar  = xpMax ? buildXpBar(xp, xpMax) : buildXpBar(1, 1);
+
+  // ── Cooldowns restantes ─────────────────────────────────────
+  const cdAlimentar = _cooldownMap.get(`${userId}:alimentar`);
+  const cdBrincar   = _cooldownMap.get(`${userId}:brincar`);
+  const cdCurar     = _cooldownMap.get(`${userId}:curar`);
+
+  const tempoRestante = (last, cd) => {
+    if (!last) return '✅ Pronto';
+    const resto = cd - (Date.now() - last);
+    return resto > 0 ? `⏳ ${formatarTempo(resto)}` : '✅ Pronto';
+  };
+
+  // ── Alertas de estado ───────────────────────────────────────
+  const alertas = [];
+  if ((pet.fullness  ?? 0) <= 20) alertas.push(`🍽️ _${pet.name} está com fome! Use *${prefix}alimentar*._`);
+  if ((pet.energy    ?? 0) <= 20) alertas.push(`⚡ _${pet.name} está cansado! Use *${prefix}curar*._`);
+  if ((pet.happiness ?? 0) <= 20) alertas.push(`😟 _${pet.name} está triste! Use *${prefix}brincar*._`);
+
+  const alertaTexto = alertas.length > 0 ? `\n⚠️ *AVISOS:*\n${alertas.join('\n')}\n` : '';
+
+  return reply(sock, jid, msg,
+    `${def.emoji} *${pet.name}* ${re}\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `📋 Tipo     : *${def.nome}* (${pet.rarity})\n` +
+    `🎭 Humor    : ${humor}\n` +
+    `🏆 Nível    : *${nivel}/${CONFIG.NIVEL_MAX}*\n` +
+    `✨ XP       : ${xpBar}\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `😊 Felicidade : *${pet.happiness ?? 0}%*\n` +
+    `⚡ Energia    : *${pet.energy    ?? 0}%*\n` +
+    `🍽️ Fome       : *${pet.fullness  ?? 0}%*\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `⏱️ *Cooldowns:*\n` +
+    `  🍖 Alimentar : ${tempoRestante(cdAlimentar, CONFIG.COOLDOWN_ALIMENTAR)}\n` +
+    `  🎾 Brincar   : ${tempoRestante(cdBrincar,   CONFIG.COOLDOWN_BRINCAR)}\n` +
+    `  💊 Curar     : ${tempoRestante(cdCurar,     CONFIG.COOLDOWN_CURAR)}\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    alertaTexto +
+    `📌 *Comandos:*\n` +
+    `  *${prefix}alimentar* | *${prefix}brincar* | *${prefix}curar*\n` +
+    `  *${prefix}renomearpet* | *${prefix}abrigo deixar*`
+  );
+}
+
 // ─── EXPORTAR ─────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -1084,6 +1156,7 @@ module.exports = {
   handlePetRank,
   handlePets,
   handleAbrigo,
+  handleStatusPet,
 
   // Utilitários externos
   triggerSpawn,

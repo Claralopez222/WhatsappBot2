@@ -4,8 +4,8 @@
  */
 
 // ─── Core Node.js (SEMPRE PRIMEIRO) ──────────────────────────────────────────
-const path     = require('path');
-const fs       = require('fs');
+const path = require('path');
+const fs   = require('fs');
 
 // ─── Dependências externas ────────────────────────────────────────────────────
 const {
@@ -16,7 +16,6 @@ const {
 } = require('@whiskeysockets/baileys');
 
 const { useMongoAuthState } = require('./mongoAuthState');
-
 const { Boom }  = require('@hapi/boom');
 const pino      = require('pino');
 const QRCode    = require('qrcode');
@@ -28,6 +27,7 @@ const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
+
 const figurinhaHandler      = require(path.join(__dirname, 'handlers', 'figurinha'));
 const diversaoHandler       = require(path.join(__dirname, 'handlers', 'diversao'));
 const relacionamentoHandler = require(path.join(__dirname, 'handlers', 'relacionamento'));
@@ -38,14 +38,13 @@ const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidad
 const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversario'));
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
 const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
-const pescaHandler          = require('./handlers/diversao/pesca');
-const { handleRankGold, handleGive } = require('./handlers/diversao/economia'); // ← Importação mantida aqui
-const { handleEmprestimo, handlePayEmprestimo, handleDivida, verificarInadimplente } = require('./handlers/diversao/emprestimo');
-const { initPetScheduler, registerActiveGroup } = require(path.join(__dirname, 'handlers', 'diversao'));
-const { initQuizRankingScheduler } = require(path.join(__dirname, 'handlers', 'quizRanking'));
-// Adicionar nos imports dos handlers:
-const pinnedHandler = require(path.join(__dirname, 'handlers', 'diversao', 'pinned'));
-// ← A linha duplicada que estava aqui no final foi removida com sucesso!
+const pinnedHandler         = require(path.join(__dirname, 'handlers', 'diversao', 'pinned'));
+const pescaHandler          = require(path.join(__dirname, 'handlers', 'diversao', 'pesca'));
+
+const { handleRankGold, handleGive }                                        = require(path.join(__dirname, 'handlers', 'diversao', 'economia'));
+const { handleEmprestimo, handlePayEmprestimo, handleDivida }               = require(path.join(__dirname, 'handlers', 'diversao', 'emprestimo'));
+const { initPetScheduler, registerActiveGroup }                             = require(path.join(__dirname, 'handlers', 'diversao'));
+const { initQuizRankingScheduler }                                          = require(path.join(__dirname, 'handlers', 'quizRanking'));
 
 
 // ─── Silenciar logs de sessão ─────────────────────────────────────────────────
@@ -154,35 +153,30 @@ const contactNames     = {};
 const mutedUsers       = new Map();
 const pendingMusic     = new Map();
 const prefixMap        = new Map();
-const activeGroups     = new Set(); // ← NOVO
+const activeGroups     = new Set();
 const relacionamentos  = new Map(Object.entries(_savedData.relacionamentos || {}));
 const pedidosPendentes = new Map();
 const pinnedMessages   = new Map(Object.entries(_savedData.pinnedMessages || {}));
 const lastTexts        = new Map();
 
-if (_savedData.relacionamentoXp && typeof _savedData.relacionamentoXp === 'object') {
-  for (const [key, xp] of Object.entries(_savedData.relacionamentoXp)) {
-    relacionamentoHandler.xpCasais.set(key, Number(xp) || 0);
-  }
-}
-if (_savedData.relacionamentoBloqueados && typeof _savedData.relacionamentoBloqueados === 'object') {
-  for (const [jid, expiry] of Object.entries(_savedData.relacionamentoBloqueados)) {
-    relacionamentoHandler.bloqueados.set(jid, Number(expiry) || 0);
-  }
-}
-if (_savedData.relacionamentoDiarios && typeof _savedData.relacionamentoDiarios === 'object') {
-  for (const [key, used] of Object.entries(_savedData.relacionamentoDiarios)) {
-    if (used) relacionamentoHandler.diariosUsados.set(key, true);
-  }
-}
-if (_savedData.relacionamentoXpBonus && typeof _savedData.relacionamentoXpBonus === 'object') {
-  for (const [key, bonus] of Object.entries(_savedData.relacionamentoXpBonus)) {
-    if (bonus && typeof bonus === 'object') relacionamentoHandler.xpBonus.set(key, bonus);
+// ── Restaurar estado de relacionamentos do data.json ──────────────────────────
+const _relRestores = [
+  ['relacionamentoXp',        (k, v) => relacionamentoHandler.xpCasais.set(k, Number(v) || 0)],
+  ['relacionamentoBloqueados',(k, v) => relacionamentoHandler.bloqueados.set(k, Number(v) || 0)],
+  ['relacionamentoDiarios',   (k, v) => { if (v) relacionamentoHandler.diariosUsados.set(k, true); }],
+  ['relacionamentoXpBonus',   (k, v) => { if (v && typeof v === 'object') relacionamentoHandler.xpBonus.set(k, v); }],
+];
+
+for (const [field, setter] of _relRestores) {
+  const data = _savedData[field];
+  if (data && typeof data === 'object') {
+    for (const [k, v] of Object.entries(data)) setter(k, v);
   }
 }
 
 let botJid = null;
 
+// ── Configuração de grupo salva ───────────────────────────────────────────────
 const _cfg = _savedData.groupConfig || {};
 const antiLinkGroups    = new Set(_cfg.antiLink    || []);
 const autoStickerGroups = new Set(_cfg.autoSticker || []);
@@ -192,6 +186,7 @@ if (_cfg.prefixos) {
 
 function getPrefix(jid) { return prefixMap.get(jid) || '!'; }
 
+// ── XP do usuário ─────────────────────────────────────────────────────────────
 async function addUserXp(userId, xp = 1, pushName = null) {
   if (!userId) return null;
   try {
@@ -216,11 +211,12 @@ async function addUserXp(userId, xp = 1, pushName = null) {
     }
     return updated;
   } catch (e) {
-    console.error('âš ï¸ Erro ao atualizar XP do usuÃ¡rio:', e.message);
+    console.error('⚠️ Erro ao atualizar XP do usuário:', e.message);
     return null;
   }
 }
 
+// ── Carregar relacionamentos do MongoDB ───────────────────────────────────────
 async function loadRelationshipsFromDb() {
   try {
     const users = await Usuario.find({ casadoCom: { $ne: null } }).lean();
@@ -229,16 +225,16 @@ async function loadRelationshipsFromDb() {
       const key = relacionamentoHandler.relKey(user.idWhatsApp, user.casadoCom);
       if (relacionamentos.has(key)) continue;
       relacionamentos.set(key, {
-        tipo: user.casadoTipo || 'casamento',
+        tipo:  user.casadoTipo || 'casamento',
         nomeA: user.idWhatsApp.split('@')[0],
         nomeB: user.casadoCom.split('@')[0],
-        jidA: user.idWhatsApp,
-        jidB: user.casadoCom,
+        jidA:  user.idWhatsApp,
+        jidB:  user.casadoCom,
         desde: Date.now(),
       });
     }
   } catch (e) {
-    console.error('âš ï¸ Erro ao carregar relacionamentos do MongoDB:', e.message);
+    console.error('⚠️ Erro ao carregar relacionamentos do MongoDB:', e.message);
   }
 }
 
@@ -373,9 +369,6 @@ async function startBot() {
       console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
     }
 
-    // ── PROCESSAMENTO EM PARALELO ──
-    // Criamos uma função assíncrona imediata para processar esta mensagem.
-    // Como não usamos 'await' antes dela, o loop passa instantaneamente para a próxima mensagem da fila.
     (async () => {
       try {
         if (!_isPrivate) {
@@ -387,7 +380,7 @@ async function startBot() {
           await CarteiraGrupo.findOneAndUpdate(
             { idWhatsApp: remetente, idGrupo: _jid },
             {
-              $inc: { mensagens: 1, 'dailyMissions.progress.msg50': 1 },
+              $inc: { mensagens: 1 },
               $set: { nome: nomeDoCara },
             },
             { upsert: true }
@@ -403,7 +396,6 @@ async function startBot() {
           );
         }
 
-        // Executa o comando de forma independente
         await handleMessage(sock, msg);
 
         if (_jid.endsWith('@g.us')) {
@@ -414,14 +406,13 @@ async function startBot() {
       } catch (err) {
         console.error('❌ Erro no processamento da mensagem:', err.message);
       }
-    })(); // Executa imediatamente em segundo plano
+    })();
   }
 });
 
   // ── Eventos de grupo (entradas/saídas) ───────────────────────────────────────
   sock.ev.on('group-participants.update', async ({ id: groupJid, participants, action }) => {
     
-    // Seção: Entradas (Bem-vindo)
     if (action === 'add') {
       for (const userJid of participants) {
         const nome = contactNames[userJid] || userJid.split('@')[0];
@@ -433,7 +424,6 @@ async function startBot() {
       }
     }
 
-    // Seção: Saídas/Banimentos (Terminar relacionamento automaticamente)
     if (action === 'remove') {
       for (const participantJid of participants) {
         const found = relacionamentoHandler.findRelByJid(participantJid, relacionamentos);
@@ -442,16 +432,13 @@ async function startBot() {
         const { key, rel } = found;
         const parceiro = rel.jidA === participantJid ? rel.jidB : rel.jidA;
 
-        // Limpa as variáveis locais de memória
         relacionamentos.delete(key);
         if (relacionamentoHandler.xpCasais) {
           relacionamentoHandler.xpCasais.delete(key);
         }
 
-        // Remove do banco de dados
         await relacionamentoHandler.clearCasamentoDb(participantJid, parceiro);
 
-        // Avisa o grupo sobre o término forçado
         await sock.sendMessage(groupJid, { 
           text: `💔 *@${participantJid.split('@')[0]}* saiu do grupo e o relacionamento foi encerrado automaticamente.`, 
           mentions: [participantJid, parceiro].filter(Boolean),
@@ -698,7 +685,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'menupet'))
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
 
-  // ── ECONOMIA ──────────────────────────────────────────────────
+ // ── ECONOMIA ──────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'gold'))
   { await diversaoHandler.handleGold(sock, msg, jid, getPrefix, contactNames); return; }
 if (matchCmd(cmdWord, 'loja'))
@@ -711,21 +698,23 @@ if (matchCmd(cmdWord, 'lojatec'))
   { await diversaoHandler.handleLojaTec(sock, msg, jid, getPrefix); return; }
 if (matchCmd(cmdWord, 'lojacasal'))
   { await diversaoHandler.handleLojaCasal(sock, msg, jid, getPrefix); return; }
-if (matchCmdStart(cmd, 'give'))
+if (matchCmdStart(cmd, 'buy ') || matchCmd(cmdWord, 'buy'))
+  { await diversaoHandler.handleComprar(sock, msg, jid, caption); return; }
+if (matchCmdStart(cmd, 'give ') || matchCmd(cmdWord, 'give'))
   { await handleGive(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'vender'))
+if (matchCmd(cmdWord, 'vender') || matchCmdStart(cmd, 'vender '))
   { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'inventario') || matchCmd(cmdWord, 'inv'))
   { await diversaoHandler.handleInventario(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'usar'))
+if (matchCmd(cmdWord, 'usar') || matchCmdStart(cmd, 'usar '))
   { await diversaoHandler.handleUsarItem(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir'))
+if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir') || matchCmdStart(cmd, 'pix ') || matchCmdStart(cmd, 'transferir '))
   { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'apostar'))
+if (matchCmd(cmdWord, 'apostar') || matchCmdStart(cmd, 'apostar '))
   { await diversaoHandler.handleApostar(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'slots'))
+if (matchCmd(cmdWord, 'slots') || matchCmdStart(cmd, 'slots '))
   { await diversaoHandler.handleSlots(sock, msg, jid, senderJid, caption); return; }
-if (matchCmd(cmdWord, 'corrida'))
+if (matchCmd(cmdWord, 'corrida') || matchCmdStart(cmd, 'corrida '))
   { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
 if (matchCmd(cmdWord, 'extrato'))
   { await diversaoHandler.handleExtrato(sock, msg, jid); return; }
@@ -739,8 +728,8 @@ if (matchCmd(cmdWord, 'divida'))
   { await handleDivida(sock, msg, jid); return; }
 
   // â”€â”€ MISSÃ•ES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes') || matchCmd(cmdWord, 'missoes'))
-    { await diversaoHandler.handleMissao(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes'))
+  { await diversaoHandler.handleMissao(sock, msg, jid, caption, getPrefix); return; }
 
   // ── PETS ──────────────────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'capturar'))

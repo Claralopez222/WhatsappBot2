@@ -358,18 +358,26 @@ const PET_EMOJIS = {
   coruja: '🦉', fenix: '🔥', feneco: '🦝', leao_marinho: '🦭',
 };
 
-const ITENS_ROUBO_NOMES = {
-  mascara: '🎭 Máscara', chave: '🔧 Chave Inglesa', dinamite: '💣 Dinamite',
-  lockpick: '🔓 Kit de Arrombamento', corda: '🪢 Corda Ninja',
-  disfarce: '🕵️ Disfarce Premium', explorador: '📡 Detector de Alarmes',
-  cavador: '⛏️ Picareta de Diamante',
-};
+// Helpers de utilidade de JID
+function extractNumber(jidStr) {
+  if (!jidStr) return '';
+  const raw = jidStr.split('@')[0];
+  return raw.split(':')[0];
+}
 
-const ITENS_SEGURANCA_NOMES = {
-  cofre: '🔐 Cofre Forte', alarme: '🚨 Sistema de Alarme',
-  camera: '📹 Câmera de Vigilância', cachorro: '🐕 Cão de Guarda',
-  seguranca: '👮 Guarda de Segurança', bunker: '🛡️ Bunker Subterrâneo',
-  laser: '🔴 Raios Laser', militares: '🪖 Segurança Militar',
+function isLidJid(jidStr) {
+  return jidStr?.endsWith('@lid');
+}
+
+// Handler Principal
+// ─── !perfil ─────────────────────────────────────────────────────────────────
+
+// Constantes de Mapeamento
+const PET_EMOJIS = {
+  tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',
+  lobo: '🐺', urso: '🐻', macaco: '🐵', raposa: '🦊', coelho: '🐰',
+  gato: '🐱', cachorro: '🐶', elefante: '🐘', girafa: '🦒', pinguim: '🐧',
+  coruja: '🦉', fenix: '🔥', feneco: '🦝', leao_marinho: '🦭',
 };
 
 // Helpers de utilidade de JID
@@ -394,7 +402,6 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   let resolvedJid = alvoJid;
   let number      = extractNumber(alvoJid);
 
-  // Tratamento de segurança para contas vinculadas via LID JID
   if (isLidJid(alvoJid)) {
     try {
       const results = await sock.onWhatsApp(number);
@@ -406,10 +413,10 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     if (isLidJid(resolvedJid)) number = 'N/D';
   }
 
-  const nome = contactNames?.[alvoJid] || contactNames?.[resolvedJid] || number;
-  const mentionsList = []; // Guarda os JIDs que precisam ser marcados pelo bot
+  const nome         = contactNames?.[alvoJid] || contactNames?.[resolvedJid] || number;
+  const mentionsList = [];
 
-  // Carregamento de dados de usuário (Banco de Dados)
+  // ── Dados do usuário ──────────────────────────────────────────
   let userData = null;
   try {
     if (typeof Usuario !== 'undefined') {
@@ -420,7 +427,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // Carregamento da Economia local do grupo
+  // ── Economia local do grupo ───────────────────────────────────
   let userGold = 0;
   try {
     const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
@@ -428,7 +435,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     userGold = carteira?.gold ?? 0;
   } catch {}
 
-  // Cálculos de Estatísticas de Atividade e Nível
+  // ── Atividade e nível ─────────────────────────────────────────
   const msgsRec = msgCount?.get?.(alvoJid)?.count ?? 0;
   const xp      = userData?.xp ?? msgsRec;
   const level   = userData?.level ?? (Math.floor(xp / 50) + 1);
@@ -452,7 +459,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
   } catch {}
 
-  // Metadados do grupo e permissões de Admin
+  // ── Admin e nome do grupo ─────────────────────────────────────
   let isAdmin   = false;
   let groupName = '';
   if (jid.endsWith('@g.us')) {
@@ -463,18 +470,22 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     } catch {}
   }
 
-  // Dados Financeiros / Banco
+  // ── Banco ─────────────────────────────────────────────────────
   let bankText = '❌ Sem investimento ativo';
   try {
-    if (userData?.bank?.amount > 0) {
-      const elapsed  = Math.floor((Date.now() - new Date(userData.bank.startDate)) / 86400000);
-      const daysLeft = Math.max(0, (userData.bank.daysRemaining || 0) - elapsed);
-      const status   = daysLeft > 0 ? `⏳ Faltam ${daysLeft} dia(s)` : '✅ Pronto para resgatar!';
-      bankText = `💳 ${userData.bank.amount}g investido (${userData.bank.interest}% juros)  ${status}`;
+    const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: resolvedJid, idGrupo: jid });
+    const banco    = carteira?.banco;
+    if (banco?.amount > 0) {
+      const msLeft  = Math.max(0, new Date(banco.startDate).getTime() + 3 * 60 * 60 * 1000 - Date.now());
+      const status  = msLeft > 0
+        ? `⏳ Faltam ${Math.ceil(msLeft / 60000)}min`
+        : '✅ Pronto para resgatar!';
+      bankText = `💳 ${banco.amount}g investido (${banco.interest}% juros)  ${status}`;
     }
   } catch {}
 
-  // Progresso de Missões Diárias
+  // ── Missões diárias ───────────────────────────────────────────
   let missaoText = '';
   try {
     const { dailyMissionDefinitions } = require('./missoes');
@@ -489,15 +500,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // Inventário de Equipamentos Equipados
-  let equipRouboText = '❌ Nenhum';
-  let equipSecText   = '❌ Nenhum';
-  try {
-    if (userData?.equiparoubo) equipRouboText = ITENS_ROUBO_NOMES[userData.equiparoubo] || userData.equiparoubo;
-    if (userData?.equiparsec)  equipSecText   = ITENS_SEGURANCA_NOMES[userData.equiparsec] || userData.equiparsec;
-  } catch {}
-
-  // Atributos de Pet
+  // ── Pet ───────────────────────────────────────────────────────
   let petText = '❌ Sem pet';
   try {
     if (userData?.pet?.name) {
@@ -508,7 +511,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // Sistema de Aniversários externo
+  // ── Aniversário ───────────────────────────────────────────────
   let birthdayText = '';
   try {
     const dataPath = path.resolve(__dirname, '../../../data.json');
@@ -521,29 +524,26 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
         const currentYear = today.getFullYear();
         const next        = new Date(currentYear, Number(month) - 1, Number(day));
         if (next < today) next.setFullYear(currentYear + 1);
-        const age      = next.getFullYear() - Number(year);
+        const age       = next.getFullYear() - Number(year);
         const daysUntil = Math.ceil((next - today) / 86400000);
         birthdayText = `🎂 ${day}/${month}/${year}  ·  ${age} anos  ·  ${daysUntil === 0 ? '🥳 Hoje!' : `em ${daysUntil} dia(s)`}`;
       }
     }
   } catch {}
 
-  // ── SISTEMA DE MARCAÇÃO EM RELACIONAMENTOS ──
-  let relStatus = '💔 Solteiro(a)';
+  // ── Relacionamento ────────────────────────────────────────────
+  let relStatus   = '💔 Solteiro(a)';
+  let parceiroJid = null;
   try {
-    let parceiroJid = null;
-
     if (relacionamentos) {
       for (const [k, v] of relacionamentos) {
         if (k.includes(number)) {
-          // Extrai o ID do parceiro a partir do mapa ou chaves de relacionamentos
           parceiroJid = k.find(id => !id.includes(number)) || '';
           if (parceiroJid && !parceiroJid.endsWith('@s.whatsapp.net')) {
             parceiroJid = `${parceiroJid}@s.whatsapp.net`;
           }
-          
-          relStatus = v.tipo === 'casamento' 
-            ? `💍 Casado(a) com @${extractNumber(parceiroJid)}` 
+          relStatus = v.tipo === 'casamento'
+            ? `💍 Casado(a) com @${extractNumber(parceiroJid)}`
             : `❤️ Namorando com @${extractNumber(parceiroJid)}`;
           break;
         }
@@ -555,36 +555,36 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
       if (!parceiroJid.includes('@')) {
         parceiroJid = `${parceiroJid.split(':')[0]}@s.whatsapp.net`;
       }
-      
       relStatus = userData.casadoTipo === 'namoro'
         ? `❤️ Namorando com @${extractNumber(parceiroJid)}`
         : `💍 Casado(a) com @${extractNumber(parceiroJid)}`;
     }
 
-    // Injeta o JID do parceiro na array de menções da mensagem se ele existir
-    if (parceiroJid) {
-      mentionsList.push(parceiroJid);
-    }
+    if (parceiroJid) mentionsList.push(parceiroJid);
   } catch {}
 
-  // Coleta de Imagem de Perfil
+  // ── Bio ───────────────────────────────────────────────────────
+  const bio = userData?.bio?.trim() || '';
+
+  // ── Foto de perfil ────────────────────────────────────────────
   let picBuffer = null;
   try {
     const url = await sock.profilePictureUrl(alvoJid, 'image');
-    if (url) picBuffer = await fetchBuffer(url); // Garanta que a função global fetchBuffer existe no escopo
+    if (url) picBuffer = await fetchBuffer(url);
   } catch {}
 
-  // Montagem do Layout de Resposta
+  // ── Montar perfil ─────────────────────────────────────────────
   const L = [
     `🔎 *PERFIL DO USUÁRIO* 🔎`,
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `👤 *Nome:* ${nome}`,
-    `📞 *Número:* @${number}`
+    `📞 *Número:* @${number}`,
   ];
-  
-  if (groupName) L.push(`🏠 *Grupo:* ${groupName}`);
+
+  if (groupName)          L.push(`🏠 *Grupo:* ${groupName}`);
   if (jid.endsWith('@g.us')) L.push(`👑 *Admin:* ${isAdmin ? '✅ Sim' : '❌ Não'}`);
-  
+  if (bio)                L.push(`📝 *Bio:* ${bio}`);
+
   L.push(
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `📊 *ATIVIDADE*`,
@@ -595,23 +595,19 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `⭐ *PROGRESSO*`,
     `🏅 Level *${level}*  ·  XP ${xp}/${xpNext} (${xpPct}%)`,
-    `[${xpBar}]`
+    `[${xpBar}]`,
   );
 
   if (missaoText) L.push(`🎯 Missões: ${missaoText}`);
-  
+
   L.push(
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `💰 *ECONOMIA*`,
     `👛 Carteira: *${userGold}g*`,
     `🏦 Banco: ${bankText}`,
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
-    `⚔️ *EQUIPAMENTO*`,
-    `🎭 Roubo:  ${equipRouboText}`,
-    `🔐 Defesa: ${equipSecText}`,
-    `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `🐾 *PET ATIVO*`,
-    petText
+    petText,
   );
 
   if (birthdayText) {
@@ -623,12 +619,11 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     `💑 *RELACIONAMENTO*`,
     relStatus,
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
-    `🤖 _Piroquinhas Bot_`
+    `🤖 _Piroquinhas Bot_`,
   );
 
   const texto = L.join('\n');
 
-  // Envio Inteligente (com suporte a foto de capa e menções injetadas)
   try {
     if (picBuffer) {
       await sock.sendMessage(jid, { image: picBuffer, caption: texto, mentions: mentionsList }, { quoted: msg });
@@ -636,11 +631,47 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
       await sock.sendMessage(jid, { text: texto, mentions: mentionsList }, { quoted: msg });
     }
   } catch (e) {
-    console.error('⚠️ Erro ao enviar perfil completo:', e.message);
+    console.error('⚠️ Erro ao enviar perfil:', e.message);
     try { await sock.sendMessage(jid, { text: texto, mentions: mentionsList }, { quoted: msg }); } catch {}
   }
 }
 
+// ─── !bio ─────────────────────────────────────────────────────────────────
+async function handleBio(sock, msg, jid, caption) {
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const bio       = caption.replace(/^[!.,\/]bio\s*/i, '').trim();
+
+  if (!bio) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Digite sua bio!\nExemplo: *!bio Amo jogar e ouvir música*\n\n_Máximo: 150 caracteres_',
+    }, { quoted: msg });
+    return;
+  }
+
+  if (bio.length > 150) {
+    await sock.sendMessage(jid, {
+      text: `⚠️ Bio muito longa! Máximo de *150 caracteres*.\nSua bio tem *${bio.length}* caracteres.`,
+    }, { quoted: msg });
+    return;
+  }
+
+  try {
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: senderJid },
+      { $set: { bio } },
+      { upsert: true }
+    );
+
+    await sock.sendMessage(jid, {
+      text: `✅ *Bio atualizada!*\n\n📝 _${bio}_`,
+    }, { quoted: msg });
+  } catch (e) {
+    console.error('⚠️ Erro ao salvar bio:', e.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Erro ao salvar sua bio. Tente novamente.',
+    }, { quoted: msg });
+  }
+}
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -668,6 +699,7 @@ module.exports = {
   handleDecodificarMorse,
   handleLetra,
   handlePerfil,
+  handleBio,
   handleSave,
   handleSaveRec,
   handleTiktok,

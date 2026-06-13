@@ -669,9 +669,12 @@ async function handleMessage(sock, msg) {
   // â”€â”€â”€ ROTEADOR
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-  // â”€â”€ PERFIL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (matchCmd(cmdWord, 'perfil'))
-    { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
+  // ── PERFIL ────────────────────────────────────────────────────────────────────
+if (matchCmd(cmdWord, 'perfil'))
+  { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
+if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
+  { await utilidadeHandler.handleBio(sock, msg, jid, caption); return; }
+
   // â”€â”€ MENUS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmd(cmdWord, 'menu') || matchCmdStart(cmd, 'menu '))
     { await utilidadeHandler.handleMenu(sock, msg, jid, caption, getPrefix, author); return; }

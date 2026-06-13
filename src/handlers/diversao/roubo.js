@@ -664,8 +664,8 @@ module.exports = {
   handleComprarSec,
   handleEquiparRoubo,
   handleEquiparSec,
-  handleMeusItensRoubo,
-  handleMeusSec,
+  handleInvRoubo,
+  handleInvSec,
   handleMeioSec,
   handleRoubar,
 };

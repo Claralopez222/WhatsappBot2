@@ -51,7 +51,7 @@ const missaoBoolSchema = new mongoose.Schema({
 }, { _id: false });
 
 const dailyMissionsSchema = new mongoose.Schema({
-  date:      { type: String,           default: null }, // 'YYYY-MM-DD'
+  date:      { type: String,           default: null },
   progress:  { type: missaoNumSchema,  default: () => ({}) },
   completed: { type: missaoBoolSchema, default: () => ({}) },
   claimed:   { type: missaoBoolSchema, default: () => ({}) },
@@ -69,8 +69,8 @@ const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
   idWhatsApp: { type: String, required: true, unique: true, index: true, trim: true },
   nome:       { type: String, default: null,  trim: true },
-  uid:        { type: String, unique: true, sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
-  bio: { type: String, default: null, trim: true, maxlength: 150 },
+  uid:        { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
+  bio:        { type: String, default: null,  trim: true, maxlength: 150 },
 
   // ── Progressão global ────────────────────────────────────────
   xp:         { type: Number, default: 0,   min: 0 },
@@ -117,7 +117,6 @@ const usuarioSchema = new mongoose.Schema({
 usuarioSchema.index({ gold: -1 });
 usuarioSchema.index({ xp: -1 });
 usuarioSchema.index({ quizPoints: -1 });
-usuarioSchema.index({ uid: 1 }, { unique: true, sparse: true });
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 module.exports = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);

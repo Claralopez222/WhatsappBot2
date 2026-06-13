@@ -2661,4 +2661,5 @@ module.exports = {
   handleGordo,
   handleCuzudo,
   handleSexo,
+  handleBucetudo,
 };

@@ -277,11 +277,12 @@ async function handleSave(sock, msg, jid, caption) {
     try { link = await expandirUrl(link); } catch {}
   }
 
-  const ytdlp     = await getYtDlpPath();
-  const ffmpegBin = getFfmpegPath();
+  const ytdlp       = await getYtDlpPath();
+  const ffmpegBin   = getFfmpegPath();
   const id          = require('crypto').randomUUID();
   const outTemplate = tmpPath(id, '_raw.%(ext)s');
 
+  // Meta em paralelo com o download
   const metaPromise = fetchMeta(ytdlp, link);
 
   const baseArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m'];
@@ -298,9 +299,9 @@ async function handleSave(sock, msg, jid, caption) {
     return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
   }
 
-  const base    = outTemplate.replace('.%(ext)s', '');
-  const exts    = ['.mp4','.mkv','.webm','.mov','.mp3','.m4a','.jpg','.jpeg','.png','.gif','.webp','.opus','.ogg','.pdf','.zip','.txt'];
-  let filePath  = exts.map(e => base + e).find(p => fs.existsSync(p)) || null;
+  const base   = outTemplate.replace('.%(ext)s', '');
+  const exts   = ['.mp4','.mkv','.webm','.mov','.mp3','.m4a','.jpg','.jpeg','.png','.gif','.webp','.opus','.ogg','.pdf','.zip','.txt'];
+  let filePath = exts.map(e => base + e).find(p => fs.existsSync(p)) || null;
 
   if (!filePath) {
     return sock.sendMessage(jid, { text: '❌ Arquivo baixado não encontrado.' }, { quoted: msg });
@@ -316,6 +317,7 @@ async function handleSave(sock, msg, jid, caption) {
   let lower = filePath.toLowerCase();
   let name  = path.basename(filePath);
 
+  // Reencoda vídeo apenas se necessário
   const videoExt = lower.match(/\.(mp4|mov|webm|mkv)$/);
   if (videoExt) {
     const inPath  = tmpPath(id, `_in${videoExt[0]}`);
@@ -323,8 +325,10 @@ async function handleSave(sock, msg, jid, caption) {
     fs.writeFileSync(inPath, buffer);
     const ok = await ffmpeg(ffmpegBin, [
       '-y', '-i', inPath,
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-r', '30',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-r', '30',
       '-profile:v', 'baseline', '-level', '3.0',
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', outPath,
     ]);
     safeDel(inPath);
@@ -335,27 +339,51 @@ async function handleSave(sock, msg, jid, caption) {
     }
   }
 
-  const meta     = await metaPromise;
-  const infoText = formatMeta(meta);
-  const cap      = (txt) => infoText ? infoText + txt : txt;
+  // Caption detalhada
+  const meta = await metaPromise;
+  const buildCaption = (sufixo) => {
+    const titulo   = meta?.title || meta?.description?.slice(0, 80) || null;
+    const autor    = meta?.uploader || meta?.creator || meta?.channel || null;
+    const durSec   = meta?.duration || 0;
+    const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
+    const views    = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+    const likes    = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+    const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+    const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+
+    // Se não tiver nenhum dado de meta, retorna só o sufixo
+    if (!titulo && !autor && !views) return sufixo;
+
+    let txt = `━━━ [ 💾 *Save* 💾 ] ━━━\n\n`;
+    if (titulo)   txt += `📌 *Título:* ${titulo}\n`;
+    if (autor)    txt += `👤 *Canal:* ${autor}\n`;
+    if (durStr)   txt += `⏱️ *Duração:* ${durStr}\n`;
+    if (views)    txt += `👁️ *Views:* ${views}\n`;
+    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+    txt += `\n🔗 ${link}\n\n${sufixo}`;
+    return txt;
+  };
 
   if (buffer.length > SIZE_LIMIT) {
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Arquivo muito grande — enviado como documento.') }, { quoted: msg });
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Arquivo muito grande — enviado como documento.') }, { quoted: msg });
   } else if (lower.match(/\.(jpg|jpeg|png|webp|gif)$/)) {
-    await sock.sendMessage(jid, { image: buffer, caption: cap('🖼️ Aqui está a imagem') }, { quoted: msg });
+    await sock.sendMessage(jid, { image: buffer, caption: buildCaption('🖼️ Aqui está a imagem') }, { quoted: msg });
   } else if (lower.match(/\.(mp4|mov)$/)) {
     try {
-      await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: cap('🎬 Aqui está o vídeo') }, { quoted: msg });
+      await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: buildCaption('🎬 Aqui está o vídeo') }, { quoted: msg });
     } catch {
-      await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Vídeo enviado como documento.') }, { quoted: msg });
+      await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Vídeo enviado como documento.') }, { quoted: msg });
     }
   } else if (lower.match(/\.(webm|mkv)$/)) {
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Vídeo enviado como documento.') }, { quoted: msg });
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Vídeo enviado como documento.') }, { quoted: msg });
   } else if (lower.match(/\.(mp3|m4a|opus|ogg)$/)) {
-    if (infoText) await sock.sendMessage(jid, { text: infoText }, { quoted: msg });
+    const cap = buildCaption('🎵 Aqui está o áudio');
+    if (cap) await sock.sendMessage(jid, { text: cap }, { quoted: msg });
     await sock.sendMessage(jid, { audio: buffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
   } else {
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Aqui está o arquivo') }, { quoted: msg });
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Aqui está o arquivo') }, { quoted: msg });
   }
 
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
@@ -379,7 +407,9 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const id          = require('crypto').randomUUID();
   const outTemplate = tmpPath(id, '_raw.%(ext)s');
 
-  // Baixa em resolução já reduzida para economizar RAM
+  // Busca meta em paralelo com o download
+  const metaPromise = fetchMeta(ytdlp, link);
+
   const dlArgs = [
     ...getYtDlpArgs(),
     '--no-playlist',
@@ -403,8 +433,8 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const ok = await ffmpeg(ffmpegBin, [
     '-y', '-i', filePath,
     '-t', '10',
-    '-vf', 'scale=480:-2:flags=lanczos',   // 480p — economiza RAM
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32',  // ultrafast = menos RAM/CPU
+    '-vf', 'scale=480:-2:flags=lanczos',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32',
     '-c:a', 'aac', '-b:a', '96k',
     '-movflags', '+faststart',
     recPath,
@@ -418,13 +448,36 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const buffer = fs.readFileSync(recPath);
   safeDel(recPath);
 
+  // Monta caption detalhada
+  const meta = await metaPromise;
+  const buildCaption = () => {
+    const titulo   = meta?.title || meta?.description?.slice(0, 80) || '—';
+    const autor    = meta?.uploader || meta?.creator || meta?.channel || '—';
+    const durSec   = meta?.duration || 0;
+    const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+    const views    = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+    const likes    = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+    const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+    const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+
+    let txt = `━━━ [ 🎬 *SaveRec* 🎬 ] ━━━\n\n`;
+    txt += `📌 *Título:* ${titulo}\n`;
+    txt += `👤 *Canal:* ${autor}\n`;
+    txt += `⏱️ *Duração total:* ${durStr} _(recortado: 10s)_\n`;
+    if (views)    txt += `👁️ *Views:* ${views}\n`;
+    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+    txt += `\n🔗 ${link}`;
+    return txt;
+  };
+
   if (buffer.length > SIZE_LIMIT) {
     const name = path.basename(recPath);
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: '📄 Vídeo muito grande — enviado como documento.' }, { quoted: msg });
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption() }, { quoted: msg });
   } else {
-    await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: '🎬 Aqui está o vídeo recortado!' }, { quoted: msg });
+    await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: buildCaption() }, { quoted: msg });
 
-    // Sticker só se couber na RAM — pula silenciosamente se o buffer for grande
     if (buffer.length < 8 * 1024 * 1024) {
       try {
         const stickerBuffer = await convertVideoToSticker(buffer);
@@ -477,7 +530,6 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const rawPath = tmpPath(id, '_raw.mp4');
   const outPath = tmpPath(id, '_out.mp4');
 
-  // Baixa já em 720p máximo para economizar RAM
   const dlArgs = [
     ...getYtDlpArgs(),
     '--no-playlist',
@@ -505,15 +557,39 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
     return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
   }
 
+  // Monta caption detalhada com os dados do meta
+  const buildCaption = (meta) => {
+    const titulo   = meta?.title || meta?.description?.slice(0, 80) || '—';
+    const autor    = meta?.uploader || meta?.creator || meta?.uploader_id || '—';
+    const durSec   = meta?.duration || 0;
+    const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+    const views    = meta?.view_count   ? Number(meta.view_count).toLocaleString('pt-BR')   : null;
+    const likes    = meta?.like_count   ? Number(meta.like_count).toLocaleString('pt-BR')   : null;
+    const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+    const shares   = meta?.repost_count  ? Number(meta.repost_count).toLocaleString('pt-BR')  : null;
+    const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ')  : null;
+
+    let txt = `━━━ [ 🎵 *TikTok* 🎵 ] ━━━\n\n`;
+    txt += `📌 *Título:* ${titulo}\n`;
+    txt += `👤 *Criador:* @${autor}\n`;
+    txt += `⏱️ *Duração:* ${durStr}\n`;
+    if (views)    txt += `👁️ *Views:* ${views}\n`;
+    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+    if (shares)   txt += `🔁 *Compartilhamentos:* ${shares}\n`;
+    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+    txt += `\n🔗 ${link}`;
+    return txt;
+  };
+
   const rawSize = fs.statSync(rawPath).size;
 
-  // Se já está dentro do limite, envia direto sem reencodar — economiza RAM
+  // Envia direto se já estiver dentro do limite — sem ffmpeg, economiza RAM
   if (rawSize <= SIZE_LIMIT) {
     const videoBuffer = fs.readFileSync(rawPath);
     safeDel(rawPath);
     const meta         = await metaPromise;
-    const infoText     = formatMeta(meta);
-    const finalCaption = infoText ? infoText + '🎵 Aqui está o vídeo!' : '🎵 Aqui está o vídeo!';
+    const finalCaption = buildCaption(meta);
     await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
     cleanupCookie();
@@ -546,8 +622,7 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   }
 
   const meta         = await metaPromise;
-  const infoText     = formatMeta(meta);
-  const finalCaption = infoText ? infoText + '🎵 Aqui está o vídeo!' : '🎵 Aqui está o vídeo!';
+  const finalCaption = buildCaption(meta);
 
   await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });

@@ -350,7 +350,6 @@ async function handleLetra(sock, msg, jid, caption) {
 
 // ─── !perfil ─────────────────────────────────────────────────────────────────
 
-// Constantes de Mapeamento
 const PET_EMOJIS = {
   tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',
   lobo: '🐺', urso: '🐻', macaco: '🐵', raposa: '🦊', coelho: '🐰',
@@ -358,46 +357,21 @@ const PET_EMOJIS = {
   coruja: '🦉', fenix: '🔥', feneco: '🦝', leao_marinho: '🦭',
 };
 
-// Helpers de utilidade de JID
 function extractNumber(jidStr) {
   if (!jidStr) return '';
-  const raw = jidStr.split('@')[0];
-  return raw.split(':')[0];
+  return jidStr.split('@')[0].split(':')[0];
 }
 
 function isLidJid(jidStr) {
   return jidStr?.endsWith('@lid');
 }
 
-// Handler Principal
-// ─── !perfil ─────────────────────────────────────────────────────────────────
-
-// Constantes de Mapeamento
-const PET_EMOJIS = {
-  tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',
-  lobo: '🐺', urso: '🐻', macaco: '🐵', raposa: '🦊', coelho: '🐰',
-  gato: '🐱', cachorro: '🐶', elefante: '🐘', girafa: '🦒', pinguim: '🐧',
-  coruja: '🦉', fenix: '🔥', feneco: '🦝', leao_marinho: '🦭',
-};
-
-// Helpers de utilidade de JID
-function extractNumber(jidStr) {
-  if (!jidStr) return '';
-  const raw = jidStr.split('@')[0];
-  return raw.split(':')[0];
-}
-
-function isLidJid(jidStr) {
-  return jidStr?.endsWith('@lid');
-}
-
-// Handler Principal
 async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
   const contextInfo = content?.extendedTextMessage?.contextInfo
                     || msg?.message?.extendedTextMessage?.contextInfo;
-  const mentions    = contextInfo?.mentionedJid || [];
-  const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const alvoJid     = mentions[0] || contextInfo?.participant || senderJid;
+  const mentions  = contextInfo?.mentionedJid || [];
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const alvoJid   = mentions[0] || contextInfo?.participant || senderJid;
 
   let resolvedJid = alvoJid;
   let number      = extractNumber(alvoJid);
@@ -419,20 +393,27 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   // ── Dados do usuário ──────────────────────────────────────────
   let userData = null;
   try {
-    if (typeof Usuario !== 'undefined') {
-      userData = await Usuario.findOne({ idWhatsApp: resolvedJid });
-      if (!userData && resolvedJid !== alvoJid) {
-        userData = await Usuario.findOne({ idWhatsApp: alvoJid });
-      }
+    userData = await Usuario.findOne({ idWhatsApp: resolvedJid });
+    if (!userData && resolvedJid !== alvoJid) {
+      userData = await Usuario.findOne({ idWhatsApp: alvoJid });
     }
   } catch {}
 
-  // ── Economia local do grupo ───────────────────────────────────
+  // ── Carteira do grupo (gold + banco) ─────────────────────────
   let userGold = 0;
+  let bankText = '❌ Sem investimento ativo';
   try {
     const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: resolvedJid, idGrupo: jid });
     userGold = carteira?.gold ?? 0;
+    const banco = carteira?.banco;
+    if (banco?.amount > 0) {
+      const msLeft = Math.max(0, new Date(banco.startDate).getTime() + 3 * 60 * 60 * 1000 - Date.now());
+      const status = msLeft > 0
+        ? `⏳ Faltam ${Math.ceil(msLeft / 60000)}min`
+        : '✅ Pronto para resgatar!';
+      bankText = `💳 ${banco.amount}g investido (${banco.interest}% juros)  ${status}`;
+    }
   } catch {}
 
   // ── Atividade e nível ─────────────────────────────────────────
@@ -447,10 +428,10 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   const cmdsRec = cmdCount?.get?.(alvoJid) ?? 0;
   const sticks  = stickerCount?.get?.(alvoJid) ?? 0;
   const total   = msgsRec + cmdsRec + sticks;
-  let activity  = '📉 Calmo';
-  if      (total > 1000) activity = '🔥 Hiperativo';
-  else if (total > 500)  activity = '⚡ Ativo';
-  else if (total > 100)  activity = '😊 Participativo';
+  const activity =
+    total > 1000 ? '🔥 Hiperativo' :
+    total > 500  ? '⚡ Ativo'      :
+    total > 100  ? '😊 Participativo' : '📉 Calmo';
 
   let rankText = '';
   try {
@@ -463,27 +444,12 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   let isAdmin   = false;
   let groupName = '';
   if (jid.endsWith('@g.us')) {
-    try { const meta = await sock.groupMetadata(jid); groupName = meta.subject || ''; } catch {}
+    try { groupName = (await sock.groupMetadata(jid)).subject || ''; } catch {}
     try {
       const grupoHandler = require(path.join(__dirname, '..', 'grupo'));
       isAdmin = await grupoHandler.isAdmin(sock, jid, alvoJid);
     } catch {}
   }
-
-  // ── Banco ─────────────────────────────────────────────────────
-  let bankText = '❌ Sem investimento ativo';
-  try {
-    const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: resolvedJid, idGrupo: jid });
-    const banco    = carteira?.banco;
-    if (banco?.amount > 0) {
-      const msLeft  = Math.max(0, new Date(banco.startDate).getTime() + 3 * 60 * 60 * 1000 - Date.now());
-      const status  = msLeft > 0
-        ? `⏳ Faltam ${Math.ceil(msLeft / 60000)}min`
-        : '✅ Pronto para resgatar!';
-      bankText = `💳 ${banco.amount}g investido (${banco.interest}% juros)  ${status}`;
-    }
-  } catch {}
 
   // ── Missões diárias ───────────────────────────────────────────
   let missaoText = '';
@@ -521,9 +487,8 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
       if (bday) {
         const [day, month, year] = bday.split('/');
         const today       = new Date();
-        const currentYear = today.getFullYear();
-        const next        = new Date(currentYear, Number(month) - 1, Number(day));
-        if (next < today) next.setFullYear(currentYear + 1);
+        const next        = new Date(today.getFullYear(), Number(month) - 1, Number(day));
+        if (next < today) next.setFullYear(today.getFullYear() + 1);
         const age       = next.getFullYear() - Number(year);
         const daysUntil = Math.ceil((next - today) / 86400000);
         birthdayText = `🎂 ${day}/${month}/${year}  ·  ${age} anos  ·  ${daysUntil === 0 ? '🥳 Hoje!' : `em ${daysUntil} dia(s)`}`;
@@ -552,9 +517,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 
     if (relStatus === '💔 Solteiro(a)' && userData?.casadoCom) {
       parceiroJid = userData.casadoCom;
-      if (!parceiroJid.includes('@')) {
-        parceiroJid = `${parceiroJid.split(':')[0]}@s.whatsapp.net`;
-      }
+      if (!parceiroJid.includes('@')) parceiroJid = `${parceiroJid.split(':')[0]}@s.whatsapp.net`;
       relStatus = userData.casadoTipo === 'namoro'
         ? `❤️ Namorando com @${extractNumber(parceiroJid)}`
         : `💍 Casado(a) com @${extractNumber(parceiroJid)}`;
@@ -581,9 +544,9 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     `📞 *Número:* @${number}`,
   ];
 
-  if (groupName)          L.push(`🏠 *Grupo:* ${groupName}`);
+  if (groupName)             L.push(`🏠 *Grupo:* ${groupName}`);
   if (jid.endsWith('@g.us')) L.push(`👑 *Admin:* ${isAdmin ? '✅ Sim' : '❌ Não'}`);
-  if (bio)                L.push(`📝 *Bio:* ${bio}`);
+  if (bio)                   L.push(`📝 *Bio:* ${bio}`);
 
   L.push(
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,

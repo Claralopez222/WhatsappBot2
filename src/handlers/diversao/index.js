@@ -143,7 +143,7 @@ module.exports = {
   handleCuzudo,
   handleGado,
   handleBucetudo,
-  handleWordCup,
+  handleWorldCup,
 
   // ── Economia (17 itens) ────────────────────────────────────────────────────
   handleGold,

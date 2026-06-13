@@ -1,211 +1,112 @@
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
-const sharp = require('sharp');
-const { fetchBuffer } = require(path.join(__dirname, '..', 'fetchurl'));
-const { convertVideoToSticker } = require(path.join(__dirname, '..', 'sticker'));
+// ─── Adicionar no topo do downloads.js (junto aos outros requires) ─────────────
+// const YTDlpWrap  = require('yt-dlp-wrap').default;
+// const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+//
+// const ytDlpWrap = new YTDlpWrap();
+//
+// async function ensureYtDlp() {
+//   const binPath = path.join(require('os').tmpdir(), 'yt-dlp');
+//   if (!fs.existsSync(binPath)) {
+//     await YTDlpWrap.downloadFromGithub(binPath);
+//   }
+//   ytDlpWrap.setBinaryPath(binPath);
+// }
 
-let _cachedYtDlpPath = null;
-let _cachedFfmpegPath = null;
-let _logger = console;
+// ─── !audio ───────────────────────────────────────────────────────────────────
 
-function setLogger(loggerInstance) {
-  if (loggerInstance && typeof loggerInstance.info === 'function') {
-    _logger = loggerInstance;
-  }
-}
+async function handleAudioDownload(sock, msg, jid, caption) {
+  const link = caption.replace(/^[!.,\/]*audio\s*/i, '').trim();
 
-const log = {
-  info:  (...a) => _logger.info  ? _logger.info(...a)  : console.log(...a),
-  warn:  (...a) => _logger.warn  ? _logger.warn(...a)  : console.warn(...a),
-  error: (...a) => _logger.error ? _logger.error(...a) : console.error(...a),
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-// Expande URLs encurtadas comuns (TikTok, Pinterest, Twitter, etc)
-async function expandirUrl(urlEncurtada) {
-  const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
-  for (const method of ['head', 'get']) {
-    try {
-      const res = await axios[method](urlEncurtada, { maxRedirects: 5, timeout: 10000, headers });
-      const final = res.request?.res?.responseUrl;
-      if (final) return final;
-    } catch {}
-  }
-  return urlEncurtada;
-}
-
-function getFfmpegPath() {
-  if (_cachedFfmpegPath && fs.existsSync(_cachedFfmpegPath)) return _cachedFfmpegPath;
-
-  try {
-    const p = require('ffmpeg-static');
-    if (p && fs.existsSync(p)) { _cachedFfmpegPath = p; return p; }
-  } catch {}
-
-  const candidates = process.platform === 'win32'
-    ? ['C:\\ffmpeg\\bin\\ffmpeg.exe', 'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe']
-    : ['/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
-
-  for (const c of candidates) {
-    if (fs.existsSync(c)) { _cachedFfmpegPath = c; return c; }
-  }
-  return 'ffmpeg';
-}
-
-function getFfprobePath() {
-  try {
-    const s = require('ffprobe-static');
-    if (s?.path && fs.existsSync(s.path)) return s.path;
-  } catch {}
-  const candidates = process.platform === 'win32'
-    ? [path.resolve(__dirname, '../node_modules/ffprobe-static/bin/win32/x64/ffprobe.exe')]
-    : ['/usr/local/bin/ffprobe', '/usr/bin/ffprobe'];
-  for (const c of candidates) { if (fs.existsSync(c)) return c; }
-  return 'ffprobe';
-}
-
-function getYtDlpArgs() {
-  const args = [];
-  const ffmpegPath = getFfmpegPath();
-  if (ffmpegPath && ffmpegPath !== 'ffmpeg') args.push('--ffmpeg-location', path.dirname(ffmpegPath));
-  try {
-    const { execSync } = require('child_process');
-    const cmd = process.platform === 'win32' ? 'where node' : 'which node';
-    const nodeExe = execSync(cmd, { timeout: 3000 }).toString().trim().split('\n')[0].trim();
-    if (nodeExe) args.push('--js-runtimes', `node:${nodeExe}`);
-  } catch {}
-  return args;
-}
-
-
-async function getYtDlpPath() {
-  if (_cachedYtDlpPath) {
-    try {
-      require('child_process').execSync(`"${_cachedYtDlpPath}" --version`, { timeout: 3000 });
-      return _cachedYtDlpPath;
-    } catch { _cachedYtDlpPath = null; }
+  if (!link || !link.startsWith('http')) {
+    return sock.sendMessage(jid, {
+      text: '⚠️ Envie o link do vídeo.\nExemplo: *!audio https://youtu.be/xxx*',
+    }, { quoted: msg });
   }
 
-  const { execSync } = require('child_process');
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  // 1. which/where
+  const ytdlp       = await getYtDlpPath();
+  const ffmpegBin   = getFfmpegPath();
+  const id          = require('crypto').randomUUID();
+  const rawTemplate = tmpPath(id, '_raw.%(ext)s');
+  const outPath     = tmpPath(id, '_out.mp3');
+  let rawPath       = null;
+
   try {
-    const cmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
-    const p = execSync(cmd, { timeout: 3000 }).toString().trim().split('\n')[0].trim();
-    if (p) { _cachedYtDlpPath = p; return p; }
-  } catch {}
-
-  // 2. Caminhos comuns Linux (pip instala aqui)
-  if (process.platform !== 'win32') {
-    const linuxCandidates = [
-      '/usr/local/bin/yt-dlp',
-      '/usr/bin/yt-dlp',
-      path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp'),
-      '/opt/render/project/.venv/bin/yt-dlp',
-      '/opt/render/project/python/bin/yt-dlp',
-      path.resolve(__dirname, '../yt-dlp'),
+    // ── Download ──────────────────────────────────────────────────────────────
+    const dlArgs = [
+      ...getYtDlpArgs(),
+      '--no-playlist',
+      '-x',
+      '--audio-format', 'best',
+      '--audio-quality', '0',
+      '--max-filesize', '100m',
+      '-o', rawTemplate,
+      link,
     ];
-    for (const c of linuxCandidates) {
-      try { if (fs.existsSync(c)) { _cachedYtDlpPath = c; return c; } } catch {}
+
+    const { ok: dlOk, stderr } = await ytDlp(ytdlp, dlArgs, 90_000);
+    if (!dlOk) {
+      const msg_erro = stderr.includes('max-filesize')
+        ? '❌ Vídeo muito grande para baixar (máx 100 MB).'
+        : stderr.includes('Unsupported URL') || stderr.includes('no video')
+          ? '❌ Link inválido ou não suportado.'
+          : '❌ Não consegui baixar o áudio.';
+      return sock.sendMessage(jid, { text: msg_erro }, { quoted: msg });
     }
 
-    // 3. Procura em todos os bin/ do sistema
-    try {
-      const found = execSync('find /usr /opt /root /home -name "yt-dlp" -type f 2>/dev/null | head -1', { timeout: 5000 }).toString().trim();
-      if (found) { _cachedYtDlpPath = found; return found; }
-    } catch {}
+    // ── Localizar arquivo baixado ─────────────────────────────────────────────
+    const base = rawTemplate.replace('.%(ext)s', '');
+    rawPath = ['.mp3', '.m4a', '.opus', '.ogg', '.webm', '.aac', '.flac', '.wav']
+      .map(ext => base + ext)
+      .find(p => fs.existsSync(p)) ?? null;
 
-    // 4. Fallback: python -m yt_dlp
-    for (const py of ['python3', 'python']) {
-      try {
-        execSync(`${py} -m yt_dlp --version`, { timeout: 3000 });
-        const wrapper = path.resolve(__dirname, '../yt-dlp-wrapper.sh');
-        fs.writeFileSync(wrapper, `#!/bin/sh\nexec ${py} -m yt_dlp "$@"\n`);
-        fs.chmodSync(wrapper, 0o755);
-        _cachedYtDlpPath = wrapper;
-        log.info(`yt-dlp via ${py} -m yt_dlp (wrapper criado)`);
-        return wrapper;
-      } catch {}
+    if (!rawPath) {
+      return sock.sendMessage(jid, {
+        text: '❌ Arquivo de áudio não encontrado após o download.',
+      }, { quoted: msg });
     }
+
+    // ── Converter para MP3 ────────────────────────────────────────────────────
+    const encOk = await ffmpeg(ffmpegBin, [
+      '-y', '-i', rawPath,
+      '-vn', '-c:a', 'libmp3lame', '-b:a', '192k', '-ar', '44100', '-ac', '2',
+      outPath,
+    ]);
+    safeDel(rawPath);
+    rawPath = null;
+
+    if (!encOk || !fs.existsSync(outPath)) {
+      return sock.sendMessage(jid, {
+        text: '❌ Falha ao converter o áudio.',
+      }, { quoted: msg });
+    }
+
+    // ── Verificar tamanho e enviar ────────────────────────────────────────────
+    const audioBuffer = fs.readFileSync(outPath);
+    safeDel(outPath);
+
+    if (audioBuffer.length > SIZE_LIMIT) {
+      return sock.sendMessage(jid, {
+        text: '❌ Áudio muito grande (máx 64 MB).',
+      }, { quoted: msg });
+    }
+
+    await sock.sendMessage(jid,
+      { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false },
+      { quoted: msg }
+    );
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    log.info(`[audio] MP3 enviado — ${(audioBuffer.length / 1_048_576).toFixed(1)} MB`);
+
+  } catch (e) {
+    log.error('[audio] handleAudioDownload:', e.message);
+    safeDel(rawPath, outPath);
+    return sock.sendMessage(jid, {
+      text: '❌ Erro inesperado ao processar o áudio. Tente novamente.',
+    }, { quoted: msg });
   }
-
-  // 5. Windows
-  if (process.platform === 'win32') {
-    const winCandidates = [
-      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
-      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
-      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
-      'C:\\Python312\\Scripts\\yt-dlp.exe',
-      path.resolve(__dirname, '../yt-dlp.exe'),
-    ];
-    for (const c of winCandidates) {
-      try { if (fs.existsSync(c)) { _cachedYtDlpPath = c; return c; } } catch {}
-    }
-  }
-
-  log.warn('yt-dlp nao encontrado — usando "yt-dlp" do PATH');
-  return 'yt-dlp';
 }
-
-// Executa yt-dlp como Promise
-function ytDlp(ytdlp, args, timeout = 120000) {
-  const { execFile } = require('child_process');
-  return new Promise((resolve) => {
-    execFile(ytdlp, args, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
-      if (err) {
-        log.warn('yt-dlp err:', stderr?.slice(-400) || err.message);
-        resolve({ ok: false, stdout: '', stderr: stderr || '' });
-      } else {
-        resolve({ ok: true, stdout: stdout || '', stderr: '' });
-      }
-    });
-  });
-}
-
-// Executa ffmpeg como Promise
-function ffmpeg(bin, args, timeout = 120000) {
-  const { execFile } = require('child_process');
-  return new Promise((resolve) => {
-    execFile(bin, args, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, _stdout, stderr) => {
-      if (err) {
-        log.warn('ffmpeg err:', stderr?.slice(-400) || err.message);
-        resolve(false);
-      } else {
-        resolve(true);
-      }
-    });
-  });
-}
-
-// Lê metadados via yt-dlp (não bloqueia o fluxo principal)
-async function fetchMeta(ytdlp, link, extraArgs = []) {
-  const args = [...getYtDlpArgs(), '--no-playlist', '--skip-download', '--print-json', '-o', 'dummy', ...extraArgs, link];
-  const { ok, stdout } = await ytDlp(ytdlp, args, 15000);
-  if (!ok || !stdout) return null;
-  try { return JSON.parse(stdout.trim()); } catch { return null; }
-}
-
-function formatMeta(meta) {
-  if (!meta) return '';
-  const parts = [];
-  if (meta.title)      parts.push(`📌 *Título:* ${meta.title}`);
-  if (meta.uploader || meta.channel) parts.push(`👤 *Canal:* ${meta.uploader || meta.channel}`);
-  if (meta.duration)   parts.push(`⏱️ *Duração:* ${Math.floor(meta.duration/60)}:${String(meta.duration%60).padStart(2,'0')}`);
-  if (meta.view_count) parts.push(`👁️ *Views:* ${Number(meta.view_count).toLocaleString('pt-BR')}`);
-  return parts.length ? parts.join('\n') + '\n\n' : '';
-}
-
-function tmpPath(id, suffix) {
-  return path.join(require('os').tmpdir(), `${id}${suffix}`);
-}
-
-function safeDel(...paths) {
-  for (const p of paths) { try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch {} }
-}
-
-const SIZE_LIMIT = 64 * 1024 * 1024;
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 

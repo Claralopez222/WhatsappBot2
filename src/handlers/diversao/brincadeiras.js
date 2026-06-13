@@ -2626,36 +2626,34 @@ async function handleWorldCup(sock, msg, jid) {
   }, { quoted: msg });
 
   try {
-    const res = await fetch('https://api.sofascore.com/api/v1/unique-tournament/16/season/61627/standings/total', {
+    const res = await fetch('https://api.football-data.org/v4/competitions/WC/standings', {
       headers: {
-        'User-Agent': 'Mozilla/5.0',
+        'X-Auth-Token': 'cf81a64d606848a68787d279ecba7826',
         'Accept': 'application/json',
       },
     });
 
     const data = await res.json();
-    const standings = data?.standings;
 
-    if (!standings || standings.length === 0) throw new Error('Sem dados');
+    if (!data?.standings) throw new Error('Sem dados');
 
     let texto = `⚽ *COPA DO MUNDO 2026* ⚽\n🇺🇸🇨🇦🇲🇽 EUA • Canadá • México\n${'─'.repeat(30)}\n\n`;
 
-    for (const grupo of standings) {
-      texto += `🔷 *${grupo.name}*\n`;
+    for (const grupo of data.standings) {
+      texto += `🔷 *${grupo.group}*\n`;
 
-      for (const row of grupo.rows) {
-        const { team, played, wins, draws, losses, scoresFor, scoresAgainst, points } = row;
-        const saldo = scoresFor - scoresAgainst;
+      for (const row of grupo.table) {
+        const saldo = row.goalsFor - row.goalsAgainst;
         const saldoStr = saldo >= 0 ? `+${saldo}` : `${saldo}`;
         texto +=
-          `${row.position}. *${team.name}*\n` +
-          `   PJ:${played} V:${wins} E:${draws} D:${losses} GP:${scoresFor} GC:${scoresAgainst} SD:${saldoStr} • *${points} pts*\n`;
+          `${row.position}. *${row.team.name}*\n` +
+          `   PJ:${row.playedGames} V:${row.won} E:${row.draw} D:${row.lost} GP:${row.goalsFor} GC:${row.goalsAgainst} SD:${saldoStr} • *${row.points} pts*\n`;
       }
 
       texto += '\n';
     }
 
-    texto += `🔄 _Atualizado em: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}_`;
+    texto += `🔄 _${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}_`;
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 

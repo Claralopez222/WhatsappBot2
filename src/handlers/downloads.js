@@ -171,7 +171,7 @@ async function getYtDlpPath() {
     // 4. Fallback: python -m yt_dlp
     for (const py of ['python3', 'python']) {
       try {
-        execSync(`${py} -m yt_dlp --version`, { timeout: 3000 });
+        execSync(`${py} -m yt_dlp --version`, { timeout: 3000, stdio: 'ignore' });
         const wrapper = path.resolve(__dirname, '../yt-dlp-wrapper.sh');
         fs.writeFileSync(wrapper, `#!/bin/sh\nexec ${py} -m yt_dlp "$@"\n`);
         fs.chmodSync(wrapper, 0o755);
@@ -379,7 +379,15 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const id          = require('crypto').randomUUID();
   const outTemplate = tmpPath(id, '_raw.%(ext)s');
 
-  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m', '-o', outTemplate, link];
+  // Baixa em resolução já reduzida para economizar RAM
+  const dlArgs = [
+    ...getYtDlpArgs(),
+    '--no-playlist',
+    '--max-filesize', '100m',
+    '-f', 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best',
+    '-o', outTemplate,
+    link,
+  ];
   if (/pinterest|pin\.it/i.test(link)) {
     dlArgs.push('--referer', 'https://www.pinterest.com', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
   }
@@ -387,36 +395,43 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 120000);
   if (!dlOk) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
 
-  const base     = outTemplate.replace('.%(ext)s', '');
-  let filePath   = ['.mp4','.mkv','.webm','.mov'].map(e => base + e).find(p => fs.existsSync(p)) || null;
+  const base   = outTemplate.replace('.%(ext)s', '');
+  let filePath = ['.mp4', '.mkv', '.webm', '.mov'].map(e => base + e).find(p => fs.existsSync(p)) || null;
   if (!filePath) return sock.sendMessage(jid, { text: '❌ Arquivo de vídeo não encontrado.' }, { quoted: msg });
 
   const recPath = tmpPath(id, '_rec.mp4');
   const ok = await ffmpeg(ffmpegBin, [
     '-y', '-i', filePath,
-    '-t', '10', '-vf', 'scale=512:-2:flags=lanczos',
-    '-c:v', 'libx264', '-preset', 'fast', '-crf', '28',
-    '-c:a', 'aac', '-b:a', '128k', recPath,
+    '-t', '10',
+    '-vf', 'scale=480:-2:flags=lanczos',   // 480p — economiza RAM
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32',  // ultrafast = menos RAM/CPU
+    '-c:a', 'aac', '-b:a', '96k',
+    '-movflags', '+faststart',
+    recPath,
   ]);
   safeDel(filePath);
 
-  const usePath = (ok && fs.existsSync(recPath)) ? recPath : null;
-  if (!usePath) return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+  if (!ok || !fs.existsSync(recPath)) {
+    return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+  }
 
-  const buffer = fs.readFileSync(usePath);
-  safeDel(usePath);
+  const buffer = fs.readFileSync(recPath);
+  safeDel(recPath);
 
-  const name = path.basename(usePath);
   if (buffer.length > SIZE_LIMIT) {
+    const name = path.basename(recPath);
     await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: '📄 Vídeo muito grande — enviado como documento.' }, { quoted: msg });
   } else {
     await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: '🎬 Aqui está o vídeo recortado!' }, { quoted: msg });
-  }
 
-  try {
-    const stickerBuffer = await convertVideoToSticker(buffer);
-    await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
-  } catch (e) { log.warn('sticker err:', e.message); }
+    // Sticker só se couber na RAM — pula silenciosamente se o buffer for grande
+    if (buffer.length < 8 * 1024 * 1024) {
+      try {
+        const stickerBuffer = await convertVideoToSticker(buffer);
+        await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
+      } catch (e) { log.warn('sticker err:', e.message); }
+    }
+  }
 
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
@@ -462,11 +477,13 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const rawPath = tmpPath(id, '_raw.mp4');
   const outPath = tmpPath(id, '_out.mp4');
 
+  // Baixa já em 720p máximo para economizar RAM
   const dlArgs = [
     ...getYtDlpArgs(),
     '--no-playlist',
-    '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+    '-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]/best',
     '--merge-output-format', 'mp4',
+    '--max-filesize', '80m',
     '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
     '--referer', 'https://www.tiktok.com/',
   ];
@@ -488,13 +505,29 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
     return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
   }
 
+  const rawSize = fs.statSync(rawPath).size;
+
+  // Se já está dentro do limite, envia direto sem reencodar — economiza RAM
+  if (rawSize <= SIZE_LIMIT) {
+    const videoBuffer = fs.readFileSync(rawPath);
+    safeDel(rawPath);
+    const meta         = await metaPromise;
+    const infoText     = formatMeta(meta);
+    const finalCaption = infoText ? infoText + '🎵 Aqui está o vídeo!' : '🎵 Aqui está o vídeo!';
+    await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    cleanupCookie();
+    return;
+  }
+
+  // Arquivo grande — reencoda em 480p com ultrafast para economizar RAM
   const encOk = await ffmpeg(ffmpegBin, [
     '-y', '-i', rawPath,
+    '-vf', 'scale=480:-2:flags=lanczos',
     '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
-    '-preset', 'fast', '-crf', '28',
-    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+    '-preset', 'ultrafast', '-crf', '32',
     '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '128k',
+    '-c:a', 'aac', '-b:a', '96k',
     '-movflags', '+faststart', outPath,
   ]);
   safeDel(rawPath);
@@ -509,7 +542,7 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 
   if (videoBuffer.length > SIZE_LIMIT) {
     cleanupCookie();
-    return sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
+    return sock.sendMessage(jid, { text: '❌ Vídeo muito grande mesmo após compressão (máx 64MB).' }, { quoted: msg });
   }
 
   const meta         = await metaPromise;
@@ -632,18 +665,24 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const outTemplate = tmpPath(id, '.%(ext)s');
   const query       = `ytsearch1:${nome} official audio`;
 
+  // Meta e download em paralelo — mais rápido
   const metaPromise = fetchMeta(ytdlp, query, ['--match-filter', '!is_live']);
 
   const dlArgs = [
-    ...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'mp3',
-    '--audio-quality', '0', '--match-filter', '!is_live',
-    '--max-filesize', '50m', '-o', outTemplate, query,
+    ...getYtDlpArgs(),
+    '--no-playlist', '-x',
+    '--audio-format', 'mp3',
+    '--audio-quality', '5',      // 0 = melhor qualidade mas mais pesado; 5 é suficiente e mais leve
+    '--match-filter', '!is_live',
+    '--max-filesize', '30m',     // músicas raramente passam de 30MB; economiza RAM
+    '-o', outTemplate,
+    query,
   ];
   const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
   if (!ok) return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
 
   const base      = outTemplate.replace('.%(ext)s', '');
-  const finalPath = ['.mp3','.m4a','.opus','.ogg','.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
+  const finalPath = ['.mp3', '.m4a', '.opus', '.ogg', '.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
   if (!finalPath) return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
 
   const audioBuffer = fs.readFileSync(finalPath);
@@ -652,27 +691,42 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
 
   const meta = await metaPromise;
 
+  // Thumbnail — reduz para 640x360 para economizar RAM no sharp
   let cardBuffer = null;
   const thumbUrl = meta?.thumbnail || (meta?.thumbnails?.length ? meta.thumbnails[meta.thumbnails.length - 1]?.url : null);
   if (thumbUrl) {
     try {
       const thumbBuffer = await fetchBuffer(thumbUrl);
-      const base64      = (await sharp(thumbBuffer).resize(800, 450, { fit: 'cover', position: 'centre' }).jpeg({ quality: 85 }).toBuffer()).toString('base64');
-      const baseImage   = Buffer.from(base64, 'base64');
-      const overlay     = Buffer.from(`<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="50%" stop-color="black" stop-opacity="0"/><stop offset="100%" stop-color="black" stop-opacity="0.82"/></linearGradient></defs><rect width="800" height="450" fill="url(#g)"/></svg>`);
-      cardBuffer = await sharp(baseImage).composite([{ input: overlay, blend: 'over' }]).jpeg({ quality: 88 }).toBuffer();
+      const resized     = await sharp(thumbBuffer)
+        .resize(640, 360, { fit: 'cover', position: 'centre' })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+      const overlay = Buffer.from(
+        `<svg width="640" height="360" xmlns="http://www.w3.org/2000/svg">` +
+        `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
+        `<stop offset="50%" stop-color="black" stop-opacity="0"/>` +
+        `<stop offset="100%" stop-color="black" stop-opacity="0.82"/>` +
+        `</linearGradient></defs>` +
+        `<rect width="640" height="360" fill="url(#g)"/>` +
+        `</svg>`
+      );
+      cardBuffer = await sharp(resized)
+        .composite([{ input: overlay, blend: 'over' }])
+        .jpeg({ quality: 80 })
+        .toBuffer();
     } catch {}
   }
   if (!cardBuffer) {
     try {
-      const svg = Buffer.from(`<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg"><rect width="800" height="450" fill="#0f3460"/></svg>`);
-      cardBuffer = await sharp(svg).jpeg({ quality: 90 }).toBuffer();
+      cardBuffer = await sharp({
+        create: { width: 640, height: 360, channels: 3, background: { r: 15, g: 52, b: 96 } },
+      }).jpeg({ quality: 80 }).toBuffer();
     } catch {}
   }
 
   const titulo   = meta?.title || nome;
   const durSec   = meta?.duration || 0;
-  const durStr   = durSec ? `${Math.floor(durSec/60)}:${String(durSec%60).padStart(2,'0')}` : '—';
+  const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
   const uploader = meta?.uploader || meta?.channel || null;
   const views    = meta?.view_count ? Number(meta.view_count).toLocaleString('pt-BR') : null;
 
@@ -718,27 +772,56 @@ async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
   const outPath   = tmpPath(id, '_out.mp4');
   const target    = pending.meta?.webpage_url || `ytsearch1:${pending.nome} official video`;
 
-  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '--max-filesize', '120m', '-o', rawPath, target];
+  // Limita a 720p e 80MB para não estourar RAM
+  const dlArgs = [
+    ...getYtDlpArgs(),
+    '--no-playlist',
+    '-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]/best',
+    '--merge-output-format', 'mp4',
+    '--max-filesize', '80m',
+    '-o', rawPath,
+    target,
+  ];
   const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 180000);
+  if (!dlOk || !fs.existsSync(rawPath)) {
+    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+  }
 
-  if (!dlOk || !fs.existsSync(rawPath)) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+  const rawSize = fs.statSync(rawPath).size;
 
+  // Envia direto se já estiver dentro do limite — evita ffmpeg e economiza RAM
+  if (rawSize <= SIZE_LIMIT) {
+    const videoBuffer = fs.readFileSync(rawPath);
+    safeDel(rawPath);
+    await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: `🎬 *${pending.titulo}*` }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    return;
+  }
+
+  // Arquivo grande — reencoda em 480p com ultrafast
   const encOk = await ffmpeg(ffmpegBin, [
     '-y', '-i', rawPath,
+    '-vf', 'scale=480:-2:flags=lanczos',
     '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
-    '-preset', 'fast', '-crf', '28',
-    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+    '-preset', 'ultrafast', '-crf', '32',
     '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '128k',
-    '-movflags', '+faststart', '-max_muxing_queue_size', '1024', outPath,
+    '-c:a', 'aac', '-b:a', '96k',
+    '-movflags', '+faststart',
+    '-max_muxing_queue_size', '1024',
+    outPath,
   ]);
   safeDel(rawPath);
-  if (!encOk || !fs.existsSync(outPath)) return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+
+  if (!encOk || !fs.existsSync(outPath)) {
+    return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+  }
 
   const videoBuffer = fs.readFileSync(outPath);
   safeDel(outPath);
 
-  if (videoBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
+  if (videoBuffer.length > SIZE_LIMIT) {
+    return sock.sendMessage(jid, { text: '❌ Vídeo muito grande mesmo após compressão (máx 64MB).' }, { quoted: msg });
+  }
 
   await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: `🎬 *${pending.titulo}*` }, { quoted: msg });
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
@@ -753,13 +836,19 @@ async function handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic) {
   if (!pending) return sock.sendMessage(jid, { text: `⚠️ Nenhuma música recente. Use *${P}som <música>* primeiro.` }, { quoted: msg });
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  const safeName = (pending.titulo || 'musica').replace(/[^\w\s\-]/g, '').replace(/\s+/g, '_').slice(0, 60);
+
+  const safeName = (pending.titulo || 'musica')
+    .replace(/[^\w\s\-]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 60);
+
   await sock.sendMessage(jid, {
     document: pending.audioBuffer,
     mimetype: 'audio/mpeg',
     fileName: `${safeName}.mp3`,
     caption:  `📄 *${pending.titulo}*\n_Enviado como documento_`,
   }, { quoted: msg });
+
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
 

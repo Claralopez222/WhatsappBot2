@@ -453,8 +453,9 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
             `• 👤 *Nome:*\n` +
             `• 🎂 *Idade:*\n` +
             `• 📍 *De onde é:*\n` +
+            `• 📷 *Foto do semblante:*\n` +
             `• 🎯 *O que te trouxe aqui:*\n\n` +
-            `_toma no cu! 😄_`;
+            `_Seja bem vindo!! 😄_`;
 
           if (fs.existsSync(joinImagePath)) {
             await sock.sendMessage(groupJid, {

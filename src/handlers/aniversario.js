@@ -5,8 +5,8 @@
  */
 
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const Aniversario = require('../../models/Aniversario');
-const GrupoConfig = require('../../models/GrupoConfig');
+const Aniversario = require('../models/Aniversario');
+const GrupoConfig = require('../models/GrupoConfig');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

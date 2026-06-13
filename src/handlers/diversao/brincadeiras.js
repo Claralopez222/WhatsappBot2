@@ -2619,6 +2619,54 @@ async function handleSexo(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
+// ─── !worldcup
+async function handleWorldCup(sock, msg, jid) {
+  await sock.sendMessage(jid, {
+    text: '⏳ Buscando dados da Copa 2026...',
+  }, { quoted: msg });
+
+  try {
+    const res = await fetch('https://api.sofascore.com/api/v1/unique-tournament/16/season/61627/standings/total', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'application/json',
+      },
+    });
+
+    const data = await res.json();
+    const standings = data?.standings;
+
+    if (!standings || standings.length === 0) throw new Error('Sem dados');
+
+    let texto = `⚽ *COPA DO MUNDO 2026* ⚽\n🇺🇸🇨🇦🇲🇽 EUA • Canadá • México\n${'─'.repeat(30)}\n\n`;
+
+    for (const grupo of standings) {
+      texto += `🔷 *${grupo.name}*\n`;
+
+      for (const row of grupo.rows) {
+        const { team, played, wins, draws, losses, scoresFor, scoresAgainst, points } = row;
+        const saldo = scoresFor - scoresAgainst;
+        const saldoStr = saldo >= 0 ? `+${saldo}` : `${saldo}`;
+        texto +=
+          `${row.position}. *${team.name}*\n` +
+          `   PJ:${played} V:${wins} E:${draws} D:${losses} GP:${scoresFor} GC:${scoresAgainst} SD:${saldoStr} • *${points} pts*\n`;
+      }
+
+      texto += '\n';
+    }
+
+    texto += `🔄 _Atualizado em: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}_`;
+
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+
+  } catch (err) {
+    console.error('[worldcup] Erro ao buscar dados:', err.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Não foi possível buscar os dados da Copa agora. Tente novamente em instantes!',
+    }, { quoted: msg });
+  }
+}
+
 module.exports = {
   handleGay,
   handleGado,
@@ -2662,4 +2710,5 @@ module.exports = {
   handleCuzudo,
   handleSexo,
   handleBucetudo,
+  handleWorldCup,
 };

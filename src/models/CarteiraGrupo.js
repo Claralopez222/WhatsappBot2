@@ -37,6 +37,29 @@ const pescaStatsSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const bancoHistoricoSchema = new mongoose.Schema(
+  {
+    data:      { type: Date,   default: Date.now },
+    investido: { type: Number, required: true },
+    resgate:   { type: Number, required: true },
+    juros:     { type: Number, required: true },
+    lucro:     { type: Number, required: true },
+  },
+  { _id: false }
+);
+
+const bancoSchema = new mongoose.Schema(
+  {
+    amount:           { type: Number, default: 0,    min: 0 },
+    interest:         { type: Number, default: 0,    min: 0 },
+    startDate:        { type: Date,   default: null },
+    depositedToday:   { type: Number, default: 0,    min: 0 },
+    lastDepositDate:  { type: String, default: null },
+    historico:        { type: [bancoHistoricoSchema], default: [] },
+  },
+  { _id: false }
+);
+
 // ─── Schema principal ─────────────────────────────────────────────────────────
 
 const carteiraGrupoSchema = new mongoose.Schema(
@@ -53,6 +76,12 @@ const carteiraGrupoSchema = new mongoose.Schema(
     xp:         { type: Number, default: 0, min: 0 },
     level:      { type: Number, default: 1, min: 1 },
 
+    // ── Bônus diário de mensagem ──────────────────────────────────
+    ultimoBonusDiario: { type: Date, default: null },
+
+    // ── Banco (isolado por grupo) ────────────────────────────────
+    banco: { type: bancoSchema, default: () => ({}) },
+
     // ── Pesca (isolada por grupo) ────────────────────────────────
     ultimaPesca:  { type: Date,   default: null },
     varaEquipada: { type: String, default: null },
@@ -66,7 +95,7 @@ const carteiraGrupoSchema = new mongoose.Schema(
 
     // ── Emprego (isolado por grupo) ──────────────────────────────
     empregoAtual:             { type: String,  default: null },
-    totalTrabalhosComSucesso: { type: Number,  default: 0,     min: 0 },
+    totalTrabalhosComSucesso: { type: Number,  default: 0,   min: 0 },
     ultimoTrabalho:           { type: Date,    default: null },
     historicoSujo:            { type: Boolean, default: false },
 
@@ -112,13 +141,13 @@ carteiraGrupoSchema.methods.registrarGold = function (tipo, item, amount, limite
 
 carteiraGrupoSchema.methods.toSafeObject = function () {
   return {
-    idWhatsApp:  this.idWhatsApp,
-    idGrupo:     this.idGrupo,
-    nome:        this.nome,
-    gold:        this.gold,
-    xp:          this.xp,
-    level:       this.level,
-    mensagens:   this.mensagens,
+    idWhatsApp:   this.idWhatsApp,
+    idGrupo:      this.idGrupo,
+    nome:         this.nome,
+    gold:         this.gold,
+    xp:           this.xp,
+    level:        this.level,
+    mensagens:    this.mensagens,
     empregoAtual: this.empregoAtual,
   };
 };

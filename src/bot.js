@@ -354,9 +354,9 @@ async function startBot() {
   });
 
   // ── Mensagens ─────────────────────────────────────────────────────────────────
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+sock.ev.on('messages.upsert', async ({ messages, type }) => {
   if (type !== 'notify' && type !== 'append') return;
-  
+
   for (const msg of messages) {
     if (msg.key.fromMe) continue;
     if (!msg.message)   continue;
@@ -377,12 +377,29 @@ async function startBot() {
 
           await prepareDailyMissionState(remetente);
 
+          // ── Bônus diário de 100 gold (primeira mensagem do dia no grupo) ──
+          const hoje = new Date();
+          hoje.setHours(0, 0, 0, 0);
+
+          const carteiraAtual = await CarteiraGrupo.findOne(
+            { idWhatsApp: remetente, idGrupo: _jid },
+            { ultimoBonusDiario: 1 }
+          ).lean();
+
+          const recebeuHoje = carteiraAtual?.ultimoBonusDiario
+            && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
+
+          const incCarteira = { mensagens: 1 };
+          const setCarteira = { nome: nomeDoCara };
+
+          if (!recebeuHoje) {
+            incCarteira.gold = 100;
+            setCarteira.ultimoBonusDiario = new Date();
+          }
+
           await CarteiraGrupo.findOneAndUpdate(
             { idWhatsApp: remetente, idGrupo: _jid },
-            {
-              $inc: { mensagens: 1 },
-              $set: { nome: nomeDoCara },
-            },
+            { $inc: incCarteira, $set: setCarteira },
             { upsert: true }
           );
 
@@ -400,7 +417,7 @@ async function startBot() {
 
         if (_jid.endsWith('@g.us')) {
           registerActiveGroup(_jid);
-          activeGroups.add(_jid); 
+          activeGroups.add(_jid);
         }
 
       } catch (err) {

@@ -283,11 +283,11 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
     texto += `${cat}\n`;
     for (const k of keys) {
       const item = ITENS_LOJA[k];
-      if (item) texto += `  • ${item.nome} — ${item.preco} gold\n`;
+      if (item) texto += `  • ${item.nome} — ${item.preco} gold | chave: \`${k}\`\n`;
     }
     texto += '\n';
   }
-  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <chave_do_item>`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -308,11 +308,11 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
     texto += `${cat}\n`;
     for (const k of keys) {
       const item = ITENS_LOJA[k];
-      if (item) texto += `  • ${item.nome} — ${item.preco} gold\n`;
+      if (item) texto += `  • ${item.nome} — ${item.preco} gold | chave: \`${k}\`\n`;
     }
     texto += '\n';
   }
-  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <chave_do_item>`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -335,11 +335,11 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
     texto += `${cat}\n`;
     for (const k of keys) {
       const item = ITENS_LOJA[k];
-      if (item) texto += `  • ${item.nome} — ${item.preco} gold\n`;
+      if (item) texto += `  • ${item.nome} — ${item.preco} gold | chave: \`${k}\`\n`;
     }
     texto += '\n';
   }
-  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <nome_item>`;
+  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <chave_do_item>`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -361,13 +361,13 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
     texto += `${cat}\n`;
     for (const k of keys) {
       const item = ITENS_LOJA[k];
-      if (item) texto += `  • ${item.nome} — ${item.preco} gold\n`;
+      if (item) texto += `  • ${item.nome} — ${item.preco} gold | chave: \`${k}\`\n`;
     }
     texto += '\n';
   }
   texto +=
     `━━━━━━━━━━━━━━━━\n` +
-    `*COMO COMPRAR?*\n  ${P}buy <nome_item>\n\n` +
+    `*COMO COMPRAR?*\n  ${P}buy <chave_do_item>\n\n` +
     `💑 _Mostre seu amor com presentes incríveis!_`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });

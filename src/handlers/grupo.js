@@ -404,7 +404,6 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
       return;
     }
 
-    // Exclui apenas o bot e o próprio remetente — admins são incluídos
     const targets = meta.participants
       .filter(p => {
         if (isBotJid(p.id, botJid)) return false;
@@ -438,17 +437,16 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  // ─── Apenas o bot é protegido ────────────────────────────────
   if (isBotJid(targetJid, botJid)) {
     await sock.sendMessage(jid, { text: '🤖 Não é possível mutar o bot.' }, { quoted: msg });
     return;
   }
 
-  const nome = contactNames[targetJid] || targetJid.split('@')[0];
+  const tag = `@${targetJid.split('@')[0]}`;
 
   if (isMuted(jid, targetJid)) {
     await sock.sendMessage(jid, {
-      text: `ℹ️ *${nome}* já está mutado(a).`,
+      text: `ℹ️ *${tag}* já está mutado(a).`,
       mentions: [targetJid],
     }, { quoted: msg });
     return;
@@ -457,10 +455,12 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   muteUser(jid, targetJid);
 
   await sock.sendMessage(jid, {
-    text: `🔇 *${nome}* foi mutado(a)!\n_Se falar será removido(a) em 20s._`,
+    text: `🔇 *${tag}* foi mutado(a)!\n_Se falar será removido(a) em 20s._`,
     mentions: [targetJid],
-  });
+  }, { quoted: msg });
 }
+
+module.exports = { handleMute };
 
 module.exports = { handleMute };
 

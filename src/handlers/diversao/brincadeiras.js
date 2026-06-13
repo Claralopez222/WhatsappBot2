@@ -2529,7 +2529,7 @@ async function handleSexo(sock, msg, content, jid, author, contactNames) {
 
 module.exports = {
   handleGay,
-  
+  handleGado,
   handleNazista,
   handleLesbica,
   handleAura,

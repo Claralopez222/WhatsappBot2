@@ -34,7 +34,7 @@ const ITEM_NECESSARIO = {
   carta:    { key: 'carta',    nome: 'Carta de Amor 💌'          },
   mimo:     { key: 'caixa',    nome: 'Caixa Presente Luxo 🎁'    },
   beijo:    { key: 'perfume',  nome: 'Perfume Premium 🌸'        },
-  abraco:   { key: 'urso',     nome: 'Ursinho de Pelúcia 🧸'     },
+  // abraco removido — não requer item
   jantar:   { key: 'taça',     nome: 'Taça para Vinho 🍷'        },
   cinema:   { key: 'almofada', nome: 'Almofada Casal 🛋️'         },
   viajar:   { key: 'garrafa',  nome: 'Garrafa Vinho Tinto 🍾'    },
@@ -306,12 +306,37 @@ async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos
   const tagParceiro = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
 
   const declaracoes = [
-    `🔥 ${tagAuthor} se DECLARA APAIXONADO(A) para ${tagParceiro}:\n\n_"De qualquer jeito, é você que eu quero! Te amo demais!" 💘🔥_`,
-    `💋 ${tagAuthor} ABRAÇA ${tagParceiro} na frente de TODOS e diz:\n\n_"Essa pessoa aqui é meu fechamento! E eu sou feliz demais com nosso amor! 💪💕"_`,
-    `🌟 ${tagAuthor} faz uma DECLARAÇÃO ÉPICA para ${tagParceiro}:\n\n_"Você alegra o meu dia todo dia! É incrível estar contigo... Te amo!" 🥰_`,
-    `⚡ ${tagAuthor} para ${tagParceiro}:\n\n_"Se eu pudesse escolher novamente, eu AINDA escolheria você! Sem pestanejar! Sem volta! TE AMO!" 💯💕_`,
-    `🎸 ${tagAuthor} canta pro mundo:\n\n_"EU AMO ESSA PESSOA! É MEU AMOR E PRONTO!" 🎵🔥_`,
-  ];
+  `🔥 ${tagAuthor} se DECLARA APAIXONADO(A) para ${tagParceiro}:\n\n_"De qualquer jeito, é você que eu quero! Te amo demais!" 💘🔥_`,
+
+  `💋 ${tagAuthor} ABRAÇA ${tagParceiro} na frente de TODOS e diz:\n\n_"Essa pessoa aqui é meu fechamento! E eu sou feliz demais com nosso amor! 💪💕"_`,
+
+  `🌟 ${tagAuthor} faz uma DECLARAÇÃO ÉPICA para ${tagParceiro}:\n\n_"Você alegra o meu dia todo dia! É incrível estar contigo... Te amo!" 🥰_`,
+
+  `⚡ ${tagAuthor} para ${tagParceiro}:\n\n_"Se eu pudesse escolher novamente, eu AINDA escolheria você! Sem pestanejar! Sem volta! TE AMO!" 💯💕_`,
+
+  `🎸 ${tagAuthor} canta pro mundo:\n\n_"EU AMO ESSA PESSOA! É MEU AMOR E PRONTO!" 🎵🔥_`,
+
+  `🌹 ${tagAuthor} sussurra para ${tagParceiro}:\n\n_"Em meio a tantas estrelas, eu escolheria sempre a sua luz. Você é o meu lugar favorito no mundo." 🌌💞_`,
+
+  `🌊 ${tagAuthor} declara para ${tagParceiro}:\n\n_"Meu coração encontrou porto seguro em você. Cada dia ao seu lado é uma página nova da nossa história." 📖💙_`,
+
+  `🕊️ ${tagAuthor} olha nos olhos de ${tagParceiro} e diz:\n\n_"Não preciso de mais nada quando tenho você por perto. Você é calma, é lar, é tudo." 🤍✨_`,
+
+  `🌙 ${tagAuthor} para ${tagParceiro}, sob o céu estrelado:\n\n_"Se o amor fosse um lugar, eu moraria em você para sempre." 🌌💫_`,
+
+  `🍯 ${tagAuthor} sorri e diz para ${tagParceiro}:\n\n_"Você adoça meus dias como mel adoça o pão. Te amo mais que ontem, menos que amanhã." 🍞💛_`,
+
+  `🎻 ${tagAuthor} dedica uma melodia para ${tagParceiro}:\n\n_"Cada nota dessa canção fala de você. Meu amor é a trilha sonora da nossa vida." 🎶❤️_`,
+
+  `🌸 ${tagAuthor} entrega uma flor para ${tagParceiro} e fala:\n\n_"Assim como essa flor, nosso amor floresce um pouco mais a cada dia." 🌷💕_`,
+
+  `🔥 ${tagAuthor} grita para o mundo, abraçando ${tagParceiro}:\n\n_"ESSA AQUI É MINHA PESSOA! E EU NÃO TROCO POR NADA!" 🥳💖_`,
+
+  `🌈 ${tagAuthor} segura a mão de ${tagParceiro} e promete:\n\n_"Depois da tempestade, sempre vai ter você e eu, juntos, recomeçando." 🌦️💞_`,
+
+  `📜 ${tagAuthor} escreve uma carta para ${tagParceiro}:\n\n_"Se eu pudesse resumir minha felicidade em uma palavra, essa palavra seria seu nome." ✍️💗_`,
+];
+
 
   // ── Busca e atualiza o XP direto do banco de dados ──
   let xpAtual = 0;

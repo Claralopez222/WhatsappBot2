@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchBuffer, fetchJson } = require(path.join(__dirname, '..', '..', 'fetchurl'));
-const { handleMenu, handleMenuUtil, handleMenuJogos, handleMenuBaixar, handleMenuRelacionamento, handleAlteradores } = require(path.join(__dirname, 'menu'));
+const { handleMenu, handleMenuUtil, handleMenuJogos, handleMenuBaixar, handleMenuRelacionamento, handleAlteradores, handleMenuFilho } = require(path.join(__dirname, 'menu'));
 const { handleMenuWork } = require(path.join(__dirname, '..', 'diversao', 'emprego'));
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { handleLevelOn, handleLevel, handleRankLevel } = require(path.join(__dirname, 'level'));

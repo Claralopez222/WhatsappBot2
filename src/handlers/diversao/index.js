@@ -27,6 +27,7 @@ const {
   handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup,
 } = require('./brincadeiras');
 
+  // ── Filhos (5 itens) ────────────────────────────────────────────────────
 const {
   handleTentarFilho,
   handleVerFilho,

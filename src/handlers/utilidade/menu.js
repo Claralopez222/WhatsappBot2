@@ -4,7 +4,7 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
   const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const [data, hora] = agora.split(', ');
   const [hour] = hora.split(':').map(Number);
-  const timeStr = hora.slice(0, 5); // HH:MM
+  const timeStr = hora.slice(0, 5);
 
   let greeting = 'Olá';
   if (hour >= 5  && hour < 12) greeting = '🌅 Bom dia';
@@ -35,8 +35,6 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
   ▸ ${P}alteradores
   ▸ ${P}menuroubar
   ▸ ${P}menusec
-
-
 
 💑 *RELACIONAMENTOS*
   ▸ ${P}menucasal
@@ -228,6 +226,9 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+}
+
 // !menufilho
 async function handleMenuFilho(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
@@ -259,9 +260,6 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
   😴 Sono • 🎈 Alegria
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
-}
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
@@ -322,41 +320,6 @@ async function handleMenuWork(sock, msg, jid, getPrefix) {
   • Janela de tolerância: *2h* após o cooldown
   • Após *8h30* sem bater ponto → demissão por justa causa
   ⚠️ _Histórico sujo reduz chance de recontratação para 30%_
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
-}
-
-// !menufilho
-async function handleMenuFilho(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
-  const menu =
-`╔══════════════════════╗
-      👶 MENU FILHOS
-╚══════════════════════╝
-
-👨‍👩‍👧 *FAMÍLIA*
-  ▸ ${P}tentarfilho — Tentar ter um filho _(40% chance)_
-  ▸ ${P}filho — Ver seus filhos e status
-  ▸ ${P}cuidarfilho — Cuidar dos filhos _(cooldown 20h)_
-
-💊 *SAÚDE*
-  ▸ ${P}remediofil — Curar filho doente _(300 gold)_
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-📋 *REGRAS*
-  • Limite de *3 filhos* por casal
-  • A cada *7 dias* o filho completa *1 ano*
-  • Atributos caem com o tempo — cuide diariamente!
-  • Felicidade zerada → filho fica *doente*
-  • Em caso de separação → *guarda compartilhada*
-    _(o filho troca de responsável a cada dia)_
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-📊 *ATRIBUTOS*
-  😊 Felicidade • 🍽️ Fome
-  😴 Sono • 🎈 Alegria
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 

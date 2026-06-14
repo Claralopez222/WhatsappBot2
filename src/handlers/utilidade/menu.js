@@ -123,12 +123,15 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
   ▸ ${P}ranklevel
   ▸ ${P}level
 
+⚽ *COPA DO MUNDO*
+  ▸ ${P}worldcup — Tabela da Copa 2026 🏆
+
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
-// !menucasal
+// !alteradores
 async function handleAlteradores(sock, msg, jid) {
   const menu =
 `╔══════════════════════╗

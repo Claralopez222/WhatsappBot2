@@ -201,7 +201,6 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
   ▸ ${P}doces 🍬
   ▸ ${P}carta 💌
   ▸ ${P}mimo 🎁
-  ▸ ${P}beijo 💋
 
 💝 *ROMÂNTICOS*
   ▸ ${P}abraco — Dar um abraço

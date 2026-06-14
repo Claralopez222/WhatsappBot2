@@ -37,7 +37,7 @@ const textoHandler          = require(path.join(__dirname, 'handlers', 'texto'))
 const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js'));
 const aniversarioHandler    = require(path.join(__dirname, 'handlers', 'aniversario'));
 const alteradoresHandler    = require(path.join(__dirname, 'handlers', 'alteradores'));
-const downloadsHandler      = require(path.join(__dirname, 'handlers', 'downloads'));
+const downloadsHandler      = require(path.join(__dirname, 'handlers', 'utilidade', 'downloads'));
 const pinnedHandler         = require(path.join(__dirname, 'handlers', 'diversao', 'pinned'));
 const pescaHandler          = require(path.join(__dirname, 'handlers', 'diversao', 'pesca'));
 
@@ -429,14 +429,25 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
             { upsert: true }
           );
 
-          await Usuario.findOneAndUpdate(
+          // ── XP e Level ────────────────────────────────────────────────────
+          const usuarioAtualizado = await Usuario.findOneAndUpdate(
             { idWhatsApp: remetente },
             {
-              $inc: { mensagens: 1, 'dailyMissions.progress.msg50': 1 },
+              $inc: { mensagens: 1, xp: 1, 'dailyMissions.progress.msg50': 1 },
               $set: { nome: nomeDoCara },
             },
-            { upsert: true }
+            { upsert: true, new: true }
           );
+
+          const xpAtual   = usuarioAtualizado?.xp ?? 0;
+          const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
+
+          if ((usuarioAtualizado?.level ?? 1) !== levelNovo) {
+            await Usuario.findOneAndUpdate(
+              { idWhatsApp: remetente },
+              { $set: { level: levelNovo } }
+            );
+          }
         }
 
         await handleMessage(sock, msg);

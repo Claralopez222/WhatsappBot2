@@ -20,7 +20,7 @@ const { incrementMission } = require('./missoes');
 
 // ─── CONFIGURAÇÕES ────────────────────────────────────────────────────────────
 
-const COOLDOWN_ROUBO_MS = 30 * 60 * 1000; // 30 minutos
+const COOLDOWN_ROUBO_MS = 15 * 60 * 1000; // 15 minutos
 const TAXA_SUCESSO_BASE = 50;              // 50% sem nenhum item
 const TAXA_MIN          = 5;              // piso absoluto
 const TAXA_MAX          = 95;             // teto absoluto

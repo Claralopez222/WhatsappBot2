@@ -13,7 +13,7 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const { prepareDailyMissionState } = require('./missoes');
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 
-const quizState      = new Map(); // senderJid → { r, timeout }
+const quizState      = new Map(); // senderJid → { r, resolvedJid, timeout }
 const pontosMap      = new Map(); // senderJid → pts (cache)
 const quizDailyCount = new Map(); // "senderJid_YYYY-MM-DD" → número de quizzes jogados hoje
 
@@ -105,23 +105,14 @@ async function changeGold(userId, amount, groupJid) {
     return 0;
   }
   try {
-    // ✅ prepareDailyMissionState + CarteiraGrupo disparados em paralelo
-    // quando aplicável — sem dependência entre si
-    const prepOps = [];
-
+    // ✅ CarteiraGrupo atualizado primeiro (gold local do grupo)
     if (groupJid) {
-      prepOps.push(
-        CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp: userId, idGrupo: groupJid },
-          { $inc: { gold: amount } },
-          { upsert: true }   // ✅ new: true removido — valor de retorno não é usado
-        )
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: groupJid },
+        { $inc: { gold: amount } },
+        { upsert: true }
       );
     }
-    if (amount > 0) {
-      prepOps.push(prepareDailyMissionState(userId));
-    }
-    if (prepOps.length > 0) await Promise.all(prepOps);
 
     // ✅ $inc montado de uma vez — MongoDB rejeita dois $inc separados
     const incPayload = { gold: amount };
@@ -132,6 +123,55 @@ async function changeGold(userId, amount, groupJid) {
       { $inc: incPayload },
       { upsert: true, new: true }
     );
+
+    // ✅ prepareDailyMissionState chamado depois do $inc, sem race condition
+    // com o próprio documento que acabou de ser atualizado
+    if (amount > 0) {
+      await prepareDailyMissionState(userId).catch(e =>
+        console.error('⚠️ Erro ao preparar estado de missão diária:', e.message)
+      );
+    }
+
+    console.log(`✅ Gold alterado: ${userId} → ${amount} (novo saldo: ${user?.gold})`);
+    return user?.gold ?? 0;   // ✅ ?? em vez de || — evita retornar 0 quando gold é 0 válido
+  } catch (e) {
+    console.error('⚠️ Erro ao alterar gold:', e.message);
+    return 0;
+  }
+}
+
+async function changeGold(userId, amount, groupJid) {
+  if (!userId || userId.endsWith('@lid')) {
+    console.warn('⚠️ changeGold ignorado: jid inválido:', userId);
+    return 0;
+  }
+  try {
+    // ✅ CarteiraGrupo atualizado em paralelo — não depende do resultado do Usuario
+    if (groupJid) {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: groupJid },
+        { $inc: { gold: amount } },
+        { upsert: true }
+      );
+    }
+
+    // ✅ $inc montado de uma vez — MongoDB rejeita dois $inc separados
+    const incPayload = { gold: amount };
+    if (amount > 0) incPayload['dailyMissions.progress.gold500'] = amount;
+
+    const user = await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      { $inc: incPayload },
+      { upsert: true, new: true }
+    );
+
+    // ✅ prepareDailyMissionState executado APÓS o $inc, evitando race
+    // condition com o progresso de missão que acabou de ser incrementado
+    if (amount > 0) {
+      await prepareDailyMissionState(userId).catch(e =>
+        console.error('⚠️ Erro ao preparar estado de missão diária:', e.message)
+      );
+    }
 
     console.log(`✅ Gold alterado: ${userId} → ${amount} (novo saldo: ${user?.gold})`);
     return user?.gold ?? 0;   // ✅ ?? em vez de || — evita retornar 0 quando gold é 0 válido

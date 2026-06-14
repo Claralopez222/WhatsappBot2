@@ -78,9 +78,57 @@ function getYtDlpArgs() {
   return args;
 }
 
-async function getYtDlpPath() {
-  if (_cachedYtDlpPath && fs.existsSync(_cachedYtDlpPath)) return _cachedYtDlpPath;
+// Caminho do binário yt-dlp em cache
+let _cachedYtDlpPath = null;
 
+// Auto-download do binário yt-dlp no Linux/Render se não encontrado
+async function ensureYtDlpBinary() {
+  const tmpPath = '/tmp/yt-dlp';
+  if (fs.existsSync(tmpPath)) {
+    try {
+      const { execSync } = require('child_process');
+      execSync(`${tmpPath} --version`, { timeout: 5000 });
+      return tmpPath;
+    } catch {
+      try { fs.unlinkSync(tmpPath); } catch {}
+    }
+  }
+
+  log.info('yt-dlp não encontrado — baixando binário do GitHub...');
+  try {
+    await new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(tmpPath);
+      require('https').get(
+        'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp',
+        (res) => {
+          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+          res.pipe(file);
+          file.on('finish', () => file.close(resolve));
+        }
+      ).on('error', (err) => { try { fs.unlinkSync(tmpPath); } catch {} reject(err); });
+    });
+    fs.chmodSync(tmpPath, 0o755);
+    log.info('✅ yt-dlp baixado em', tmpPath);
+    return tmpPath;
+  } catch (e) {
+    log.warn('Não foi possível baixar yt-dlp:', e.message);
+    return null;
+  }
+}
+
+async function getYtDlpPath() {
+  // Valida cache com --version para evitar binário corrompido
+  if (_cachedYtDlpPath) {
+    try {
+      const { execSync } = require('child_process');
+      execSync(`"${_cachedYtDlpPath}" --version`, { timeout: 5000 });
+      return _cachedYtDlpPath;
+    } catch {
+      _cachedYtDlpPath = null;
+    }
+  }
+
+  // 1) which / where
   try {
     const { execSync } = require('child_process');
     const cmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
@@ -88,6 +136,7 @@ async function getYtDlpPath() {
     if (p) { _cachedYtDlpPath = p; return p; }
   } catch {}
 
+  // 2) Caminhos candidatos por plataforma
   const candidates = process.platform === 'win32' ? [
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
@@ -97,14 +146,51 @@ async function getYtDlpPath() {
   ] : [
     '/usr/local/bin/yt-dlp',
     '/usr/bin/yt-dlp',
+    '/home/user/.venv/bin/yt-dlp',
+    '/opt/render/.venv/bin/yt-dlp',
     path.resolve(__dirname, '../yt-dlp'),
+    '/tmp/yt-dlp',
   ];
 
   for (const c of candidates) {
-    try { if (fs.existsSync(c)) { _cachedYtDlpPath = c; return c; } } catch {}
+    try {
+      if (fs.existsSync(c)) {
+        const { execSync } = require('child_process');
+        execSync(`"${c}" --version`, { timeout: 5000 });
+        _cachedYtDlpPath = c;
+        return c;
+      }
+    } catch {}
   }
 
-  // Auto-download yt-dlp.exe no Windows
+  // 3) Busca com `find` no Linux
+  if (process.platform !== 'win32') {
+    try {
+      const { execSync } = require('child_process');
+      const found = execSync('find /usr /opt /home /tmp -name "yt-dlp" -type f 2>/dev/null | head -1', { timeout: 5000 })
+        .toString().trim();
+      if (found) {
+        execSync(`"${found}" --version`, { timeout: 5000 });
+        _cachedYtDlpPath = found;
+        return found;
+      }
+    } catch {}
+  }
+
+  // 4) python -m yt_dlp como fallback no Linux
+  if (process.platform !== 'win32') {
+    try {
+      const { execSync } = require('child_process');
+      execSync('python3 -m yt_dlp --version', { timeout: 5000 });
+      const wrapper = '/tmp/yt-dlp-wrapper.sh';
+      fs.writeFileSync(wrapper, '#!/bin/sh\nexec python3 -m yt_dlp "$@"\n');
+      fs.chmodSync(wrapper, 0o755);
+      _cachedYtDlpPath = wrapper;
+      return wrapper;
+    } catch {}
+  }
+
+  // 5) Auto-download .exe no Windows
   if (process.platform === 'win32') {
     const dlPath = path.resolve(__dirname, '../yt-dlp.exe');
     if (!fs.existsSync(dlPath)) {
@@ -126,37 +212,13 @@ async function getYtDlpPath() {
     if (fs.existsSync(dlPath)) { _cachedYtDlpPath = dlPath; return dlPath; }
   }
 
+  // 6) Auto-download binário Linux (Render)
+  if (process.platform !== 'win32') {
+    const downloaded = await ensureYtDlpBinary();
+    if (downloaded) { _cachedYtDlpPath = downloaded; return downloaded; }
+  }
+
   return 'yt-dlp';
-}
-
-// Executa yt-dlp como Promise
-function ytDlp(ytdlp, args, timeout = 120000) {
-  const { execFile } = require('child_process');
-  return new Promise((resolve) => {
-    execFile(ytdlp, args, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
-      if (err) {
-        log.warn('yt-dlp err:', stderr?.slice(-400) || err.message);
-        resolve({ ok: false, stdout: '', stderr: stderr || '' });
-      } else {
-        resolve({ ok: true, stdout: stdout || '', stderr: '' });
-      }
-    });
-  });
-}
-
-// Executa ffmpeg como Promise
-function ffmpeg(bin, args, timeout = 120000) {
-  const { execFile } = require('child_process');
-  return new Promise((resolve) => {
-    execFile(bin, args, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, _stdout, stderr) => {
-      if (err) {
-        log.warn('ffmpeg err:', stderr?.slice(-400) || err.message);
-        resolve(false);
-      } else {
-        resolve(true);
-      }
-    });
-  });
 }
 
 // Lê metadados via yt-dlp (não bloqueia o fluxo principal)
@@ -189,6 +251,7 @@ const SIZE_LIMIT = 64 * 1024 * 1024;
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
+// !save
 async function handleSave(sock, msg, jid, caption) {
   let link = caption.replace(/^[!.,\/]*save\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
@@ -263,8 +326,57 @@ async function handleSave(sock, msg, jid, caption) {
   }
 
   const meta = await metaPromise;
+
+  // Caption detalhada para vídeos
+  const buildVideoCaption = (meta, fileSizeBytes, sourceLink) => {
+    const titulo     = meta?.title || meta?.description?.slice(0, 100) || null;
+    const autor      = meta?.uploader || meta?.channel || meta?.creator || null;
+    const durSec     = meta?.duration || 0;
+    const durStr     = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
+    const views      = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+    const likes      = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+    const comments   = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+    const shares     = meta?.repost_count  ? Number(meta.repost_count).toLocaleString('pt-BR')  : null;
+    const width      = meta?.width && meta?.height ? `${meta.width}x${meta.height}` : null;
+    const fps        = meta?.fps           ? `${meta.fps} fps`                                  : null;
+    const fileSize   = fileSizeBytes       ? `${(fileSizeBytes / 1024 / 1024).toFixed(1)} MB`  : null;
+    const tags       = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+    const uploadDate = meta?.upload_date
+      ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
+      : null;
+
+    const platform =
+      /tiktok/i.test(sourceLink)           ? '🎵 TikTok'    :
+      /instagram/i.test(sourceLink)        ? '📸 Instagram'  :
+      /youtube\.com|youtu\.be/i.test(sourceLink) ? '▶️ YouTube'  :
+      /twitter\.com|x\.com/i.test(sourceLink)    ? '🐦 Twitter/X' :
+      /pinterest|pin\.it/i.test(sourceLink)      ? '📌 Pinterest' :
+      /facebook|fb\.com/i.test(sourceLink)       ? '📘 Facebook'  :
+      '🌐 Web';
+
+    let txt = `━━━ [ ${platform} ] ━━━\n\n`;
+    if (titulo)     txt += `📌 *Título:* ${titulo}\n`;
+    if (autor)      txt += `👤 *Canal/Autor:* ${autor}\n`;
+    if (durStr)     txt += `⏱️ *Duração:* ${durStr}\n`;
+    if (uploadDate) txt += `📅 *Postado em:* ${uploadDate}\n`;
+    if (width)      txt += `🎞️ *Resolução:* ${width}\n`;
+    if (fps)        txt += `⚡ *FPS:* ${fps}\n`;
+    if (fileSize)   txt += `💾 *Tamanho:* ${fileSize}\n`;
+    if (views || likes || comments || shares) txt += `\n`;
+    if (views)    txt += `👁️ *Views:* ${views}\n`;
+    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+    if (shares)   txt += `🔁 *Compartilhamentos:* ${shares}\n`;
+    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+    txt += `\n🔗 ${sourceLink}`;
+    return txt;
+  };
+
   const infoText = formatMeta(meta);
-  const cap = (txt) => infoText ? infoText + txt : txt;
+  const isVideo = lower.match(/\.(mp4|mov|webm|mkv)$/);
+  const cap = (txt) => isVideo
+    ? buildVideoCaption(meta, buffer.length, link)
+    : (infoText ? infoText + txt : txt);
 
   if (buffer.length > SIZE_LIMIT) {
     await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Arquivo muito grande — enviado como documento.') }, { quoted: msg });
@@ -290,6 +402,7 @@ async function handleSave(sock, msg, jid, caption) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !saverec
 async function handleSaveRec(sock, msg, jid, caption) {
   let link = caption.replace(/^[!.,\/]*saverec\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
@@ -306,6 +419,9 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const { randomUUID } = require('crypto');
   const id = randomUUID();
   const outTemplate = tmpPath(id, '_raw.%(ext)s');
+
+  // Metadados em background
+  const metaPromise = fetchMeta(ytdlp, link);
 
   const dlArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m', '-o', outTemplate, link];
   if (/pinterest|pin\.it/i.test(link)) {
@@ -334,11 +450,60 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const buffer = fs.readFileSync(usePath);
   safeDel(usePath);
 
+  const meta = await metaPromise;
+
+  const buildRecCaption = (meta, fileSizeBytes, sourceLink) => {
+    const titulo     = meta?.title || meta?.description?.slice(0, 100) || null;
+    const autor      = meta?.uploader || meta?.channel || meta?.creator || null;
+    const durSec     = meta?.duration || 0;
+    const durStr     = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
+    const views      = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+    const likes      = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+    const comments   = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+    const shares     = meta?.repost_count  ? Number(meta.repost_count).toLocaleString('pt-BR')  : null;
+    const width      = meta?.width && meta?.height ? `${meta.width}x${meta.height}` : null;
+    const fps        = meta?.fps           ? `${meta.fps} fps`                                  : null;
+    const fileSize   = fileSizeBytes       ? `${(fileSizeBytes / 1024 / 1024).toFixed(1)} MB`  : null;
+    const tags       = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+    const uploadDate = meta?.upload_date
+      ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
+      : null;
+
+    const platform =
+      /tiktok/i.test(sourceLink)                ? '🎵 TikTok'    :
+      /instagram/i.test(sourceLink)             ? '📸 Instagram'  :
+      /youtube\.com|youtu\.be/i.test(sourceLink)? '▶️ YouTube'   :
+      /twitter\.com|x\.com/i.test(sourceLink)   ? '🐦 Twitter/X' :
+      /pinterest|pin\.it/i.test(sourceLink)     ? '📌 Pinterest'  :
+      /facebook|fb\.com/i.test(sourceLink)      ? '📘 Facebook'   :
+      '🌐 Web';
+
+    let txt = `━━━ [ ${platform} ] ━━━\n\n`;
+    txt += `✂️ *Recorte:* primeiros 10 segundos\n\n`;
+    if (titulo)     txt += `📌 *Título:* ${titulo}\n`;
+    if (autor)      txt += `👤 *Canal/Autor:* ${autor}\n`;
+    if (durStr)     txt += `⏱️ *Duração original:* ${durStr}\n`;
+    if (uploadDate) txt += `📅 *Postado em:* ${uploadDate}\n`;
+    if (width)      txt += `🎞️ *Resolução:* ${width}\n`;
+    if (fps)        txt += `⚡ *FPS:* ${fps}\n`;
+    if (fileSize)   txt += `💾 *Tamanho:* ${fileSize}\n`;
+    if (views || likes || comments || shares) txt += `\n`;
+    if (views)    txt += `👁️ *Views:* ${views}\n`;
+    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+    if (shares)   txt += `🔁 *Compartilhamentos:* ${shares}\n`;
+    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+    txt += `\n🔗 ${sourceLink}`;
+    return txt;
+  };
+
+  const finalCaption = buildRecCaption(meta, buffer.length, link);
   const name = path.basename(usePath);
+
   if (buffer.length > SIZE_LIMIT) {
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: '📄 Vídeo muito grande — enviado como documento.' }, { quoted: msg });
+    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: finalCaption }, { quoted: msg });
   } else {
-    await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: '🎬 Aqui está o vídeo recortado!' }, { quoted: msg });
+    await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
   }
 
   try {
@@ -351,6 +516,7 @@ async function handleSaveRec(sock, msg, jid, caption) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !tiktok
 async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const P = getPrefix(jid);
   let link = caption.replace(/^[!.,\/]*tiktok2?\s*/i, '').trim();
@@ -367,7 +533,6 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const { randomUUID } = require('crypto');
   const id = randomUUID();
 
-  // Resolve cookies TikTok
   const tiktokCookiesEnv = process.env.TIKTOK_COOKIES?.trim();
   let cookieFilePath = null;
   let cookieTempFile = null;
@@ -383,8 +548,6 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   }
 
   const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
-
-  // Metadados em background
   const metaExtraArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
   const metaPromise = fetchMeta(ytdlp, link, metaExtraArgs);
 
@@ -447,16 +610,51 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   }
 
   const meta = await metaPromise;
-  const infoText = formatMeta(meta);
-  const finalCaption = infoText ? infoText + '🎵 Aqui está o vídeo!' : '🎵 Aqui está o vídeo!';
+
+  const buildTiktokCaption = (meta, fileSizeBytes) => {
+    const titulo   = meta?.title || meta?.description?.slice(0, 100) || '—';
+    const autor    = meta?.uploader || meta?.creator || meta?.uploader_id || '—';
+    const durSec   = meta?.duration || 0;
+    const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+    const views    = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+    const likes    = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+    const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+    const shares   = meta?.repost_count  ? Number(meta.repost_count).toLocaleString('pt-BR')  : null;
+    const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ')  : null;
+    const width    = meta?.width         ? `${meta.width}x${meta.height}`                      : null;
+    const fps      = meta?.fps           ? `${meta.fps} fps`                                   : null;
+    const fileSize = fileSizeBytes       ? `${(fileSizeBytes / 1024 / 1024).toFixed(1)} MB`   : null;
+    const uploadDate = meta?.upload_date
+      ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
+      : null;
+
+    let txt = `━━━ [ 🎵 *TikTok* 🎵 ] ━━━\n\n`;
+    txt += `📌 *Título:* ${titulo}\n`;
+    txt += `👤 *Criador:* @${autor}\n`;
+    txt += `⏱️ *Duração:* ${durStr}\n`;
+    if (uploadDate) txt += `📅 *Postado em:* ${uploadDate}\n`;
+    if (width)      txt += `🎞️ *Resolução:* ${width}\n`;
+    if (fps)        txt += `⚡ *FPS:* ${fps}\n`;
+    if (fileSize)   txt += `💾 *Tamanho:* ${fileSize}\n`;
+    txt += `\n`;
+    if (views)    txt += `👁️ *Views:* ${views}\n`;
+    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+    if (shares)   txt += `🔁 *Compartilhamentos:* ${shares}\n`;
+    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+    txt += `\n🔗 ${link}`;
+    return txt;
+  };
+
+  const finalCaption = buildTiktokCaption(meta, videoBuffer.length);
 
   await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   cleanupCookie();
 }
-
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !audio
 async function handleAudioDownload(sock, msg, jid, caption) {
   const link = caption.replace(/^[!.,\/]*audio\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
@@ -470,6 +668,9 @@ async function handleAudioDownload(sock, msg, jid, caption) {
   const id = randomUUID();
   const rawTemplate = tmpPath(id, '_raw.%(ext)s');
   const outPath = tmpPath(id, '_out.mp3');
+
+  // Metadados em background
+  const metaPromise = fetchMeta(ytdlp, link);
 
   const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'best', '--audio-quality', '0', '--max-filesize', '100m', '-o', rawTemplate, link];
   const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 90000);
@@ -492,6 +693,49 @@ async function handleAudioDownload(sock, msg, jid, caption) {
 
   if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Áudio muito grande (máx 64MB).' }, { quoted: msg });
 
+  const meta = await metaPromise;
+
+  const buildAudioCaption = (meta, fileSizeBytes, sourceLink) => {
+    const titulo     = meta?.title || null;
+    const autor      = meta?.uploader || meta?.channel || meta?.artist || meta?.creator || null;
+    const album      = meta?.album || null;
+    const durSec     = meta?.duration || 0;
+    const durStr     = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
+    const views      = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+    const likes      = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+    const fileSize   = fileSizeBytes       ? `${(fileSizeBytes / 1024 / 1024).toFixed(1)} MB`  : null;
+    const tags       = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+    const uploadDate = meta?.upload_date
+      ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
+      : null;
+
+    const platform =
+      /youtube\.com|youtu\.be/i.test(sourceLink) ? '▶️ YouTube'   :
+      /soundcloud/i.test(sourceLink)             ? '🔊 SoundCloud' :
+      /spotify/i.test(sourceLink)                ? '🎧 Spotify'    :
+      /tiktok/i.test(sourceLink)                 ? '🎵 TikTok'     :
+      /instagram/i.test(sourceLink)              ? '📸 Instagram'   :
+      /twitter\.com|x\.com/i.test(sourceLink)    ? '🐦 Twitter/X'  :
+      '🌐 Web';
+
+    let txt = `━━━ [ ${platform} ] ━━━\n\n`;
+    if (titulo)     txt += `🎵 *Título:* ${titulo}\n`;
+    if (autor)      txt += `👤 *Artista/Canal:* ${autor}\n`;
+    if (album)      txt += `💿 *Álbum:* ${album}\n`;
+    if (durStr)     txt += `⏱️ *Duração:* ${durStr}\n`;
+    if (uploadDate) txt += `📅 *Postado em:* ${uploadDate}\n`;
+    txt += `🎚️ *Qualidade:* MP3 192kbps\n`;
+    if (fileSize)   txt += `💾 *Tamanho:* ${fileSize}\n`;
+    if (views || likes) txt += `\n`;
+    if (views)      txt += `👁️ *Views:* ${views}\n`;
+    if (likes)      txt += `❤️ *Curtidas:* ${likes}\n`;
+    if (tags)       txt += `\n🏷️ *Tags:* ${tags}\n`;
+    txt += `\n🔗 ${sourceLink}`;
+    return txt;
+  };
+
+  const infoCaption = buildAudioCaption(meta, audioBuffer.length, link);
+  await sock.sendMessage(jid, { text: infoCaption }, { quoted: msg });
   await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   log.info('✅ Áudio MP3 enviado!');
@@ -499,6 +743,7 @@ async function handleAudioDownload(sock, msg, jid, caption) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !som
 async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const P = getPrefix(jid);
   const nome = caption.replace(/^[!.,\/]*som\s*/i, '').trim();
@@ -554,22 +799,40 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
     } catch {}
   }
 
-  const titulo = meta?.title || nome;
-  const durSec = meta?.duration || 0;
-  const durStr = durSec ? `${Math.floor(durSec/60)}:${String(durSec%60).padStart(2,'0')}` : '—';
-  const uploader = meta?.uploader || meta?.channel || null;
-  const views = meta?.view_count ? Number(meta.view_count).toLocaleString('pt-BR') : null;
+  const titulo      = meta?.title || nome;
+  const autor       = meta?.uploader || meta?.channel || meta?.artist || null;
+  const album       = meta?.album || null;
+  const durSec      = meta?.duration || 0;
+  const durStr      = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+  const views       = meta?.view_count  ? Number(meta.view_count).toLocaleString('pt-BR')  : null;
+  const likes       = meta?.like_count  ? Number(meta.like_count).toLocaleString('pt-BR')  : null;
+  const comments    = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+  const fileSize    = `${(audioBuffer.length / 1024 / 1024).toFixed(1)} MB`;
+  const tags        = meta?.tags?.length ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+  const uploadDate  = meta?.upload_date
+    ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
+    : null;
+  const videoUrl    = meta?.webpage_url || meta?.url || null;
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
   pendingMusic.set(senderJid, { audioBuffer, titulo, meta, nome });
   setTimeout(() => pendingMusic.delete(senderJid), 10 * 60 * 1000);
 
   let texto = `━━━ [ 🎧 *Piroquinhas* 🎧 ] ━━━\n\n`;
-  texto += `• 🔎 *Pesquisa:* _${nome}_\n\n`;
-  texto += `• 🎵 *Título:* _${titulo}_\n\n`;
-  texto += `• ⏱️ *Duração:* ${durStr}\n`;
-  if (uploader) texto += `• 👤 *Canal:* _${uploader}_\n`;
-  if (views)    texto += `• 👁️ *Views:* ${views}\n`;
+  texto += `🔎 *Pesquisa:* _${nome}_\n\n`;
+  texto += `🎵 *Título:* _${titulo}_\n`;
+  if (autor)      texto += `👤 *Artista/Canal:* _${autor}_\n`;
+  if (album)      texto += `💿 *Álbum:* _${album}_\n`;
+  texto += `⏱️ *Duração:* ${durStr}\n`;
+  if (uploadDate) texto += `📅 *Postado em:* ${uploadDate}\n`;
+  texto += `🎚️ *Qualidade:* MP3 192kbps\n`;
+  texto += `💾 *Tamanho:* ${fileSize}\n`;
+  if (views || likes || comments) texto += `\n`;
+  if (views)    texto += `👁️ *Views:* ${views}\n`;
+  if (likes)    texto += `❤️ *Curtidas:* ${likes}\n`;
+  if (comments) texto += `💬 *Comentários:* ${comments}\n`;
+  if (tags)     texto += `\n🏷️ *Tags:* ${tags}\n`;
+  if (videoUrl) texto += `\n🔗 ${videoUrl}\n`;
   texto += `\n━━━ [ 📱 *MAIS OPÇÕES* 📱 ] ━━━\n`;
   texto += `🎬 *${P}playmp4* - _Baixa como vídeo_\n`;
   texto += `📄 *${P}playdoc* - _Baixa como documento_`;
@@ -587,6 +850,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !playmp4
 async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const pending = pendingMusic.get(senderJid);
@@ -626,12 +890,48 @@ async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
 
   if (videoBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
 
-  await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: `🎬 *${pending.titulo}*` }, { quoted: msg });
+  const meta = pending.meta;
+
+  const titulo      = meta?.title || pending.titulo || pending.nome;
+  const autor       = meta?.uploader || meta?.channel || meta?.artist || null;
+  const album       = meta?.album || null;
+  const durSec      = meta?.duration || 0;
+  const durStr      = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
+  const views       = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+  const likes       = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+  const comments    = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+  const width       = meta?.width && meta?.height ? `${meta.width}x${meta.height}` : null;
+  const fps         = meta?.fps           ? `${meta.fps} fps`                                  : null;
+  const fileSize    = `${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB`;
+  const tags        = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+  const uploadDate  = meta?.upload_date
+    ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
+    : null;
+  const videoUrl    = meta?.webpage_url || null;
+
+  let finalCaption = `━━━ [ ▶️ *YouTube* ] ━━━\n\n`;
+  finalCaption += `🎵 *Título:* ${titulo}\n`;
+  if (autor)      finalCaption += `👤 *Artista/Canal:* ${autor}\n`;
+  if (album)      finalCaption += `💿 *Álbum:* ${album}\n`;
+  if (durStr)     finalCaption += `⏱️ *Duração:* ${durStr}\n`;
+  if (uploadDate) finalCaption += `📅 *Postado em:* ${uploadDate}\n`;
+  if (width)      finalCaption += `🎞️ *Resolução:* ${width}\n`;
+  if (fps)        finalCaption += `⚡ *FPS:* ${fps}\n`;
+  finalCaption += `💾 *Tamanho:* ${fileSize}\n`;
+  if (views || likes || comments) finalCaption += `\n`;
+  if (views)    finalCaption += `👁️ *Views:* ${views}\n`;
+  if (likes)    finalCaption += `❤️ *Curtidas:* ${likes}\n`;
+  if (comments) finalCaption += `💬 *Comentários:* ${comments}\n`;
+  if (tags)     finalCaption += `\n🏷️ *Tags:* ${tags}\n`;
+  if (videoUrl) finalCaption += `\n🔗 ${videoUrl}`;
+
+  await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// !playdoc
 async function handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const pending = pendingMusic.get(senderJid);
@@ -639,13 +939,48 @@ async function handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic) {
   if (!pending) return sock.sendMessage(jid, { text: `⚠️ Nenhuma música recente. Use *${P}som <música>* primeiro.` }, { quoted: msg });
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
-  const safeName = (pending.titulo || 'musica').replace(/[^\w\s\-]/g, '').replace(/\s+/g, '_').slice(0, 60);
+
+  const meta = pending.meta;
+
+  const titulo      = meta?.title || pending.titulo || pending.nome;
+  const autor       = meta?.uploader || meta?.channel || meta?.artist || null;
+  const album       = meta?.album || null;
+  const durSec      = meta?.duration || 0;
+  const durStr      = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
+  const views       = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+  const likes       = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+  const comments    = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+  const fileSize    = `${(pending.audioBuffer.length / 1024 / 1024).toFixed(1)} MB`;
+  const tags        = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+  const uploadDate  = meta?.upload_date
+    ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
+    : null;
+  const videoUrl    = meta?.webpage_url || null;
+
+  let docCaption = `━━━ [ 🎵 *Música* ] ━━━\n\n`;
+  docCaption += `🎵 *Título:* ${titulo}\n`;
+  if (autor)      docCaption += `👤 *Artista/Canal:* ${autor}\n`;
+  if (album)      docCaption += `💿 *Álbum:* ${album}\n`;
+  if (durStr)     docCaption += `⏱️ *Duração:* ${durStr}\n`;
+  if (uploadDate) docCaption += `📅 *Postado em:* ${uploadDate}\n`;
+  docCaption += `🎚️ *Qualidade:* MP3 192kbps\n`;
+  docCaption += `💾 *Tamanho:* ${fileSize}\n`;
+  if (views || likes || comments) docCaption += `\n`;
+  if (views)    docCaption += `👁️ *Views:* ${views}\n`;
+  if (likes)    docCaption += `❤️ *Curtidas:* ${likes}\n`;
+  if (comments) docCaption += `💬 *Comentários:* ${comments}\n`;
+  if (tags)     docCaption += `\n🏷️ *Tags:* ${tags}\n`;
+  if (videoUrl) docCaption += `\n🔗 ${videoUrl}`;
+
+  const safeName = titulo.replace(/[^\w\s\-]/g, '').replace(/\s+/g, '_').slice(0, 60);
+
   await sock.sendMessage(jid, {
     document: pending.audioBuffer,
     mimetype: 'audio/mpeg',
     fileName: `${safeName}.mp3`,
-    caption: `📄 *${pending.titulo}*\n_Enviado como documento_`
+    caption: docCaption
   }, { quoted: msg });
+
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
 
@@ -684,6 +1019,7 @@ function limparTmpAntigos(maxIdadeMs = 10 * 60 * 1000) {
     log.error('[limparTmpAntigos] Erro:', e.message);
   }
 }
+
 // ──────────────────────────────────────────────────────────────────────────────
 
 module.exports = {

@@ -470,7 +470,7 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
 
         // Mensagem de apresentação com imagem
         try {
-          const joinImagePath = path.join(__dirname, 'Audio-Image', 'imagejoin.jpg');
+          const joinImagePath = path.join(__dirname, '..', 'Audio-Image', 'imagejoin.jpg');
 
           const texto =
             `👋 Olá, @${userJid.split('@')[0]}! Seja muito bem-vindo(a) ao grupo!\n\n` +
@@ -575,8 +575,8 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       initFilhosScheduler();
 
       // Limpeza periódica de arquivos temporários (a cada 5min, remove >10min)
-      setInterval(() => limparTmpAntigos(10 * 60 * 1000), 5 * 60 * 1000);
-      limparTmpAntigos(10 * 60 * 1000);
+      setInterval(() => downloadsHandler.limparTmpAntigos(10 * 60 * 1000), 5 * 60 * 1000);
+downloadsHandler.limparTmpAntigos(10 * 60 * 1000);
 
       schedulersIniciados = true;
       console.log('[Schedulers] Iniciados.');

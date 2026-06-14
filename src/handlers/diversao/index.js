@@ -221,6 +221,13 @@ const {
   findDailyMission,
   dailyMissionDefinitions,
 
+  // ── Filhos (5 itens) ─────────────────────────────────────────────────────
+handleTentarFilho,
+handleVerFilho,
+handleCuidarFilho,
+handleRemedioFilho,
+initFilhosScheduler,
+
   // ── Pets (14 itens) ───────────────────────────────────────────────────────
   handleCapturarPet,
   handleAdoptarPet,

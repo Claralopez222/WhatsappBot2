@@ -95,12 +95,6 @@ function _makeCarinhHandler(comando) {
   };
 }
 
-// ─── Handlers de carinho gerados automaticamente ──────────────
-const handleJantar   = _makeCarinhHandler('jantar');
-const handleCinema   = _makeCarinhHandler('cinema');
-const handleViajar   = _makeCarinhHandler('viajar');
-const handleSerenata = _makeCarinhHandler('serenata');
-
 // ─── !presente ────────────────────────────────────────────────
 async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption = '') {
   const temCaption = caption.toLowerCase().trim();
@@ -236,7 +230,7 @@ async function handleJantar(sock, msg, jid, author, senderJid, relacionamentos) 
     'numa pizzaria italiana 🍕',
   ];
   const r = restaurantes[Math.floor(Math.random() * restaurantes.length)];
-  
+
   // Repassa todos os parâmetros necessários para o handleCarinh processar o grupo e as marcações
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'jantar', '🍽️', `levou para jantar ${r}`, 5);
 }
@@ -251,7 +245,7 @@ async function handleCinemaRel(sock, msg, jid, author, senderJid, relacionamento
     'um drama e os dois choraram 😭',
   ];
   const f = filmes[Math.floor(Math.random() * filmes.length)];
-  
+
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'cinema', '🎬', `levou ao cinema para assistir ${f}`, 5);
 }
 
@@ -259,7 +253,7 @@ async function handleCinemaRel(sock, msg, jid, author, senderJid, relacionamento
 async function handleViajar(sock, msg, jid, author, senderJid, relacionamentos) {
   const destinos = ['Paris 🗼', 'Maldivas 🏝️', 'Roma 🏛️', 'Tokyo 🗾', 'Cancún 🌊', 'Gramado ❄️'];
   const d = destinos[Math.floor(Math.random() * destinos.length)];
-  
+
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'viajar', '✈️', `planejou uma viagem para ${d}`, 10);
 }
 
@@ -273,7 +267,7 @@ async function handleSerenata(sock, msg, jid, author, senderJid, relacionamentos
     '"Can\'t Help Falling in Love" ❤️',
   ];
   const m = musicas[Math.floor(Math.random() * musicas.length)];
-  
+
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'serenata', '🎤', `fez uma serenata cantando ${m}`, 8);
 }
 

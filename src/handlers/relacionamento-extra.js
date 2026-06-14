@@ -1285,26 +1285,20 @@ async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos)
 
 // ─── Exports ──────────────────────────────────────────────────
 module.exports = {
-  handleFlores,
-  handleDoces,
-  handleCarta,
-  handleMimo,
-  handleBeijo,
-  handleAbraco,
-  handlePresente,
-  handleJantar,
-  handleCinemaRel,
-  handleViajar,
-  handleSerenata,
-  handleDeclarar,
-  handleCiumento,
-  handleStatu,
-  handleMeuPar,
-  handleXpDobro,
-  handleAniversarioCasal,
-  handleDueloDeCasais,
-  handleRankCasais,
-  handleDesafioCasal,
-  handleSurpresa,
-  handleDomingo,
+  handlePresente
+handleJantar
+handleCinemaRel
+handleViajar
+handleSerenata
+handleDeclarar
+handleCiumento
+handleStatu
+handleMeuPar
+handleXpDobro
+handleAniversarioCasal
+handleDueloDeCasais
+handleRankCasais
+handleDesafioCasal
+handleSurpresa
+handleDomingo
 };  

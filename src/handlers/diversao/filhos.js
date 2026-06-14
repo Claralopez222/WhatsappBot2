@@ -6,11 +6,12 @@ const Usuario= require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
-const CHANCE_FILHO     = 0.40;  // 40% de chance
-const MAX_FILHOS       = 3;
-const DIAS_POR_ANO     = 7;     // 7 dias reais = 1 ano
-const COOLDOWN_CUIDAR  = 20 * 60 * 60 * 1000; // 20h
-const CUSTO_REMEDIO    = 300;   // gold
+const CHANCE_FILHO       = 0.40;  // 40% de chance
+const MAX_FILHOS         = 3;
+const DIAS_POR_ANO       = 7;     // 7 dias reais = 1 ano
+const COOLDOWN_CUIDAR    = 20 * 60 * 60 * 1000; // 20h
+const COOLDOWN_TENTAR    = 25 * 60 * 1000;      // 25 minutos
+const CUSTO_REMEDIO      = 300;   // gold
 
 const PERSONALIDADES = [
   'curioso 🔍', 'agitado ⚡', 'tímido 🌸', 'corajoso 🦁',
@@ -35,16 +36,35 @@ function calcularIdade(nascidoEm) {
 }
 
 function statusBar(valor, tamanho = 8) {
-  const preenchido = Math.round((valor / 100) * tamanho);
+  const v = Math.max(0, Math.min(100, valor));
+  const preenchido = Math.round((v / 100) * tamanho);
   const vazio = tamanho - preenchido;
-  return `[${'█'.repeat(preenchido)}${'░'.repeat(vazio)}] ${valor}%`;
+  return `[${'█'.repeat(preenchido)}${'░'.repeat(vazio)}] ${v}%`;
 }
 
-function getGuardaAtual(filho) {
-  if (!filho.guardaAtual) return filho.jidA;
-  const diasDesdeUltimaTroca = (Date.now() - new Date(filho.ultimaTroca).getTime()) / (1000 * 60 * 60 * 24);
-  if (diasDesdeUltimaTroca >= 1) return null; // precisa trocar
-  return filho.guardaAtual;
+function formatarTempo(ms) {
+  const horas = Math.floor(ms / 3_600_000);
+  const min   = Math.floor((ms % 3_600_000) / 60_000);
+  const seg   = Math.floor((ms % 60_000) / 1000);
+  if (horas > 0) return `${horas}h ${min}min`;
+  if (min > 0)   return `${min}min ${seg}s`;
+  return `${seg}s`;
+}
+
+async function buscarUsuarioComParceiro(userId) {
+  const usuario = await Usuario.findOne({ idWhatsApp: userId }).lean();
+  if (!usuario?.casadoCom) return null;
+  return { usuario, parceiro: usuario.casadoCom };
+}
+
+function filtroFilhos(jid, userId, parceiro) {
+  return {
+    idGrupo: jid,
+    $or: [
+      { jidA: userId, jidB: parceiro },
+      { jidA: parceiro, jidB: userId },
+    ],
+  };
 }
 
 async function atualizarGuarda(filho) {
@@ -61,24 +81,27 @@ async function atualizarGuarda(filho) {
 async function handleTentarFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
-  // Busca usuário e parceiro
-  const usuario = await Usuario.findOne({ idWhatsApp: userId }).lean();
-  if (!usuario?.casadoCom) {
+  const info = await buscarUsuarioComParceiro(userId);
+  if (!info) {
     return sock.sendMessage(jid, {
       text: '❌ Você precisa estar em um relacionamento para ter filhos!',
     }, { quoted: msg });
   }
 
-  const parceiro = usuario.casadoCom;
+  const { usuario, parceiro } = info;
+
+  // Cooldown de tentativa
+  if (usuario.ultimaTentativaFilho) {
+    const restante = COOLDOWN_TENTAR - (Date.now() - new Date(usuario.ultimaTentativaFilho).getTime());
+    if (restante > 0) {
+      return sock.sendMessage(jid, {
+        text: `⏳ Aguarde *${formatarTempo(restante)}* para tentar ter um filho novamente.`,
+      }, { quoted: msg });
+    }
+  }
 
   // Verifica limite de filhos
-  const totalFilhos = await Filho.countDocuments({
-    idGrupo: jid,
-    $or: [
-      { jidA: userId, jidB: parceiro },
-      { jidA: parceiro, jidB: userId },
-    ],
-  });
+  const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, userId, parceiro));
 
   if (totalFilhos >= MAX_FILHOS) {
     return sock.sendMessage(jid, {
@@ -86,10 +109,16 @@ async function handleTentarFilho(sock, msg, jid) {
     }, { quoted: msg });
   }
 
+  // Registra a tentativa (independente do resultado)
+  await Usuario.updateOne(
+    { idWhatsApp: userId },
+    { $set: { ultimaTentativaFilho: new Date() } }
+  );
+
   // Sorteio
   if (Math.random() > CHANCE_FILHO) {
     const tentativas = [
-      '😔 Dessa vez não rolou... Tentem novamente mais tarde!',
+      '😔 Dessa vez não rolou... Tentem novamente em 25 minutos!',
       '🍀 Quase! A sorte não sorriu dessa vez. Não desistam!',
       '💔 Não foi dessa vez. Continuem tentando!',
     ];
@@ -105,15 +134,21 @@ async function handleTentarFilho(sock, msg, jid) {
   const personalidade = PERSONALIDADES[Math.floor(Math.random() * PERSONALIDADES.length)];
   const emoji = sexo === 'menino' ? '👦' : '👧';
 
-  const filho = await Filho.create({
+  await Filho.create({
     jidA: userId,
     jidB: parceiro,
     idGrupo: jid,
     nome,
     sexo,
     personalidade,
+    felicidade: 100,
+    fome: 100,
+    sono: 100,
+    alegria: 100,
+    doente: false,
     guardaAtual: userId,
     ultimaTroca: new Date(),
+    nascidoEm: new Date(),
   });
 
   return sock.sendMessage(jid, {
@@ -136,22 +171,16 @@ async function handleTentarFilho(sock, msg, jid) {
 async function handleVerFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
-  const usuario = await Usuario.findOne({ idWhatsApp: userId }).lean();
-  if (!usuario?.casadoCom) {
+  const info = await buscarUsuarioComParceiro(userId);
+  if (!info) {
     return sock.sendMessage(jid, {
       text: '❌ Você não está em um relacionamento.',
     }, { quoted: msg });
   }
 
-  const parceiro = usuario.casadoCom;
+  const { parceiro } = info;
 
-  const filhos = await Filho.find({
-    idGrupo: jid,
-    $or: [
-      { jidA: userId, jidB: parceiro },
-      { jidA: parceiro, jidB: userId },
-    ],
-  });
+  const filhos = await Filho.find(filtroFilhos(jid, userId, parceiro));
 
   if (filhos.length === 0) {
     return sock.sendMessage(jid, {
@@ -187,20 +216,14 @@ async function handleVerFilho(sock, msg, jid) {
 async function handleCuidarFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
-  const usuario = await Usuario.findOne({ idWhatsApp: userId }).lean();
-  if (!usuario?.casadoCom) {
+  const info = await buscarUsuarioComParceiro(userId);
+  if (!info) {
     return sock.sendMessage(jid, { text: '❌ Você não está em um relacionamento.' }, { quoted: msg });
   }
 
-  const parceiro = usuario.casadoCom;
+  const { parceiro } = info;
 
-  const filhos = await Filho.find({
-    idGrupo: jid,
-    $or: [
-      { jidA: userId, jidB: parceiro },
-      { jidA: parceiro, jidB: userId },
-    ],
-  });
+  const filhos = await Filho.find(filtroFilhos(jid, userId, parceiro));
 
   if (filhos.length === 0) {
     return sock.sendMessage(jid, { text: '👶 Vocês não têm filhos ainda!' }, { quoted: msg });
@@ -209,6 +232,7 @@ async function handleCuidarFilho(sock, msg, jid) {
   const agora = Date.now();
   let texto = `💝 *CUIDANDO DOS FILHOS*\n\n`;
   let algumCuidado = false;
+  let algumIndisponivel = false;
 
   for (const filho of filhos) {
     const guarda = await atualizarGuarda(filho);
@@ -216,15 +240,15 @@ async function handleCuidarFilho(sock, msg, jid) {
     // Só quem está com a guarda pode cuidar
     if (guarda !== userId) {
       texto += `👶 *${filho.nome}* está com seu parceiro(a) hoje.\n\n`;
+      algumIndisponivel = true;
       continue;
     }
 
     // Cooldown
     if (filho.ultimoCuidado && agora - new Date(filho.ultimoCuidado).getTime() < COOLDOWN_CUIDAR) {
       const restante = COOLDOWN_CUIDAR - (agora - new Date(filho.ultimoCuidado).getTime());
-      const horas = Math.floor(restante / 3_600_000);
-      const min   = Math.floor((restante % 3_600_000) / 60_000);
-      texto += `👶 *${filho.nome}* — já foi cuidado(a)! Próximo em *${horas}h ${min}min*.\n\n`;
+      texto += `👶 *${filho.nome}* — já foi cuidado(a)! Próximo em *${formatarTempo(restante)}*.\n\n`;
+      algumIndisponivel = true;
       continue;
     }
 
@@ -247,7 +271,7 @@ async function handleCuidarFilho(sock, msg, jid) {
       `🎈 Alegria    : ${statusBar(filho.alegria)}\n\n`;
   }
 
-  if (!algumCuidado && texto === `💝 *CUIDANDO DOS FILHOS*\n\n`) {
+  if (!algumCuidado && !algumIndisponivel) {
     texto += 'Nenhum filho disponível para cuidar agora.';
   }
 
@@ -258,20 +282,16 @@ async function handleCuidarFilho(sock, msg, jid) {
 async function handleRemedioFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
-  const usuario = await Usuario.findOne({ idWhatsApp: userId }).lean();
-  if (!usuario?.casadoCom) {
+  const info = await buscarUsuarioComParceiro(userId);
+  if (!info) {
     return sock.sendMessage(jid, { text: '❌ Você não está em um relacionamento.' }, { quoted: msg });
   }
 
-  const parceiro = usuario.casadoCom;
+  const { parceiro } = info;
 
   const filhoDoente = await Filho.findOne({
-    idGrupo: jid,
+    ...filtroFilhos(jid, userId, parceiro),
     doente: true,
-    $or: [
-      { jidA: userId, jidB: parceiro },
-      { jidA: parceiro, jidB: userId },
-    ],
   });
 
   if (!filhoDoente) {

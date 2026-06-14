@@ -179,6 +179,45 @@ if (_cfg.prefixos) {
 
 function getPrefix(jid) { return prefixMap.get(jid) || '!'; }
 
+// ─── Estado Global adicional (faltante) ────────────────────────────────────
+const contactNames     = {};
+const mutedUsers       = new Map();
+const pendingMusic     = new Map();
+const activeGroups     = new Set();
+const pedidosPendentes = new Map();
+const pinnedMessages   = new Map(Object.entries(_savedData.pinnedMessages || {}));
+const lastTexts        = new Map();
+
+// ─── Limpeza de arquivos temporários ───────────────────────────────────────
+const TMP_DIR = path.resolve(__dirname, '../tmp');
+
+function limparTmpAntigos(maxAgeMs = 10 * 60 * 1000) {
+  try {
+    if (!fs.existsSync(TMP_DIR)) return;
+
+    const agora = Date.now();
+    const arquivos = fs.readdirSync(TMP_DIR);
+
+    for (const nome of arquivos) {
+      const caminho = path.join(TMP_DIR, nome);
+      try {
+        const stat = fs.statSync(caminho);
+        if (!stat.isFile()) continue;
+
+        const idadeMs = agora - stat.mtimeMs;
+        if (idadeMs > maxAgeMs) {
+          fs.unlinkSync(caminho);
+          console.log(`🧹 Removido tmp antigo: ${nome}`);
+        }
+      } catch (e) {
+        console.log(`⚠️ Erro ao processar tmp "${nome}":`, e.message);
+      }
+    }
+  } catch (e) {
+    console.log('⚠️ Erro ao limpar pasta tmp:', e.message);
+  }
+}
+
 // ── XP do usuário ─────────────────────────────────────────────────────────────
 async function addUserXp(userId, xp = 1, pushName = null) {
   if (!userId) return null;

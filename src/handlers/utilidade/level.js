@@ -1,118 +1,132 @@
 'use strict';
 
-// ── IMPORTAÇÕES ───────────────────────────────────────────────
-// Certifique-se de que o caminho até a pasta models está correto
-const Usuario = require('../../models/Usuario'); 
+const Usuario = require('../../models/Usuario');
 
 /**
- * !level — Mostra o nível e XP atual do próprio usuário que chamou o comando
+ * !level — Mostra o nível e XP atual do próprio usuário
  */
-async function handleLevel(sock, msg, jid, author, msgCount) {
-  const chatJid = jid;
-  
-  // Captura quem enviou a mensagem de forma segura
+async function handleLevel(sock, msg, jid, author) {
   const rawSender = author || msg.key.participant || msg.key.remoteJid;
   if (!rawSender) return;
 
-  // Limpa o JID para evitar problemas com múltiplos dispositivos (:1@s.whatsapp.net)
-  const numero = rawSender.split('@')[0].split(':')[0];
+  const numero  = rawSender.split('@')[0].split(':')[0].replace(/\D/g, '');
   const fullJid = `${numero}@s.whatsapp.net`;
 
   try {
-    // Busca os dados do usuário no banco de dados
     const user = await Usuario.findOne({ idWhatsApp: fullJid }).lean();
 
     if (!user) {
-      return sock.sendMessage(chatJid, {
-        text: `📊 *NÍVEL DE PROGRESSO*\n\nOlá @${numero}! Você ainda não possui registros de XP no nosso sistema. Continue interagindo para começar a pontuar!`,
+      return sock.sendMessage(jid, {
+        text: `📊 *NÍVEL DE PROGRESSO*\n\n@${numero}, você ainda não tem XP registrado.\nContinue interagindo para começar a pontuar!`,
         mentions: [fullJid]
       }, { quoted: msg });
     }
 
-    const xp = user.xp ?? 0;
+    const xp    = user.xp    ?? 0;
     const level = user.level ?? 1;
 
-    const texto = 
-      `📊 *SEU STATUS DE NÍVEL* 📊\n` +
-      `━━━━━━━━━━━━━━━━\n\n` +
-      `👤 *Usuário:* @${numero}\n` +
-      `⭐ *Nível Atual:* Nível *${level}*\n` +
-      `✨ *Total de XP:* *${xp.toLocaleString('pt-BR')}* XP\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `_💬 Continue ativo nos chats para subir de nível!_`;
+    const xpProximo    = Math.floor(100 * Math.pow(level, 1.5));
+    const xpAtualLevel = Math.floor(100 * Math.pow(level - 1, 1.5));
+    const xpNoLevel    = Math.max(0, xp - xpAtualLevel);
+    const xpNecessario = Math.max(1, xpProximo - xpAtualLevel);
+    const progresso    = Math.min(100, Math.floor((xpNoLevel / xpNecessario) * 100));
+    const barras       = Math.floor(progresso / 10);
+    const barraVisual  = '█'.repeat(barras) + '░'.repeat(10 - barras);
 
-    return sock.sendMessage(chatJid, { text: texto, mentions: [fullJid] }, { quoted: msg });
+    const texto =
+      `📊 *SEU STATUS DE NÍVEL*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `👤 *Usuário:* @${numero}\n` +
+      `⭐ *Nível:* ${level}\n` +
+      `✨ *XP Total:* ${xp.toLocaleString('pt-BR')} XP\n\n` +
+      `📈 *Progresso para o nível ${level + 1}:*\n` +
+      `[${barraVisual}] ${progresso}%\n` +
+      `${xpNoLevel.toLocaleString('pt-BR')} / ${xpNecessario.toLocaleString('pt-BR')} XP\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `_💬 Continue ativo para subir de nível!_`;
+
+    return sock.sendMessage(jid, { text: texto, mentions: [fullJid] }, { quoted: msg });
 
   } catch (err) {
-    console.error('[handleLevel] Erro ao carregar nível:', err);
-    return sock.sendMessage(chatJid, {
-      text: '⚠️ Não foi possível carregar seu nível no momento. Tente novamente mais tarde.'
+    console.error('[handleLevel] Erro:', err);
+    return sock.sendMessage(jid, {
+      text: '⚠️ Não foi possível carregar seu nível. Tente novamente mais tarde.'
     }, { quoted: msg });
   }
 }
 
 /**
- * !ranklevel — Top 10 usuários com mais XP ativos no grupo atual
+ * !ranklevel — Top 10 usuários com mais XP ativos no grupo
  */
-async function handleRankLevel(sock, msg, jid, contactNames, msgCount) {
+async function handleRankLevel(sock, msg, jid) {
   if (!jid?.endsWith('@g.us')) {
-    return sock.sendMessage(
-      jid,
-      { text: '⚠️ Este comando só pode ser usado em grupos.' },
-      { quoted: msg }
-    );
+    return sock.sendMessage(jid, {
+      text: '⚠️ Este comando só pode ser usado em grupos.'
+    }, { quoted: msg });
   }
 
   try {
-    // ── Membros atuais do grupo ───────────────────────────────
     const metadata = await sock.groupMetadata(jid);
-    
-    // Normaliza os IDs dos participantes para garantir o cruzamento correto com o Banco
-    const membrosAtuais = new Set(
-      metadata.participants.map(p => p.id.split('@')[0].split(':')[0] + '@s.whatsapp.net')
-    );
 
-    if (membrosAtuais.size === 0) {
-      return sock.sendMessage(
-        jid,
-        { text: '❌ Não foi possível obter os membros deste grupo.' },
-        { quoted: msg }
-      );
+    // Normaliza todos os JIDs dos membros para numero@s.whatsapp.net
+    const membrosNormalizados = metadata.participants.map(p => {
+      const num = p.id.split('@')[0].split(':')[0].replace(/\D/g, '');
+      return `${num}@s.whatsapp.net`;
+    });
+    const membrosSet = new Set(membrosNormalizados);
+
+    if (membrosSet.size === 0) {
+      return sock.sendMessage(jid, {
+        text: '❌ Não foi possível obter os membros deste grupo.'
+      }, { quoted: msg });
     }
 
-    // ── Busca no Banco filtrando apenas membros do grupo ──────
-    const candidatos = await Usuario
-      .find({ idWhatsApp: { $in: [...membrosAtuais] } })
+    // Busca todos os usuários e filtra pelos membros do grupo
+    const todosCandidatos = await Usuario
+      .find({ xp: { $gt: 0 } })
       .sort({ xp: -1, level: -1 })
-      .limit(10)
       .lean();
 
+    const candidatos = todosCandidatos.filter(u => {
+      const num = u.idWhatsApp?.split('@')[0].split(':')[0].replace(/\D/g, '');
+      return membrosSet.has(`${num}@s.whatsapp.net`);
+    }).slice(0, 10);
+
     if (candidatos.length === 0) {
-      return sock.sendMessage(
-        jid,
-        { text: '❌ Nenhum membro deste grupo possui registro de XP armazenado.' },
-        { quoted: msg }
-      );
+      return sock.sendMessage(jid, {
+        text: '❌ Nenhum membro deste grupo possui XP registrado ainda.\n_Interaja no grupo para ganhar XP!_'
+      }, { quoted: msg });
     }
 
-    // ── Montagem do Ranking Visual ────────────────────────────
-    const MEDALS = ['🥇', '🥈', '🥉'];
+    const MEDALS  = ['🥇', '🥈', '🥉'];
     const mentions = [];
-    
+
     const linhas = candidatos.map((user, i) => {
-      const numero = user.idWhatsApp.split('@')[0].split(':')[0];
+      const numero  = user.idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '');
       const fullJid = `${numero}@s.whatsapp.net`;
       mentions.push(fullJid);
 
       const prefix = MEDALS[i] ?? `🔹 *${i + 1}.*`;
-      const xp = (user.xp ?? 0).toLocaleString('pt-BR');
-      const level = user.level ?? 1;
+      const xp     = (user.xp    ?? 0).toLocaleString('pt-BR');
+      const level  =  user.level ?? 1;
 
-      return `${prefix} @${numero}\n┗━━━ XP: *${xp}* • Nível *${level}*`;
+      const xpProximo    = Math.floor(100 * Math.pow(level, 1.5));
+      const xpAnterior   = Math.floor(100 * Math.pow(level - 1, 1.5));
+      const xpNoLevel    = Math.max(0, (user.xp ?? 0) - xpAnterior);
+      const xpNecessario = Math.max(1, xpProximo - xpAnterior);
+      const progresso    = Math.min(100, Math.floor((xpNoLevel / xpNecessario) * 100));
+      const barras       = Math.floor(progresso / 20);
+      const barraVisual  = '█'.repeat(barras) + '░'.repeat(5 - barras);
+
+      return (
+        `${prefix} @${numero}\n` +
+        `┣ 🏅 Nível *${level}*  •  ✨ *${xp} XP*\n` +
+        `┗ [${barraVisual}] ${progresso}% → nível ${level + 1}`
+      );
     });
 
     const texto =
-      `🏆 *RANKING DE XP — TOP ${candidatos.length} ATIVOS* 🏆\n` +
+      `🏆 *RANKING DE XP — TOP ${candidatos.length}* 🏆\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       linhas.join('\n\n') +
       `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -121,17 +135,11 @@ async function handleRankLevel(sock, msg, jid, contactNames, msgCount) {
     return sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
 
   } catch (err) {
-    console.error('[handleRankLevel] Erro ao gerar ranking:', err);
-    return sock.sendMessage(
-      jid,
-      { text: '⚠️ Erro interno ao processar o ranking. Tente novamente.' },
-      { quoted: msg }
-    );
+    console.error('[handleRankLevel] Erro:', err);
+    return sock.sendMessage(jid, {
+      text: '⚠️ Erro ao processar o ranking. Tente novamente.'
+    }, { quoted: msg });
   }
 }
 
-// ── EXPORTAÇÃO DAS FUNÇÕES ────────────────────────────────────
-module.exports = { 
-  handleLevel, 
-  handleRankLevel 
-};
+module.exports = { handleLevel, handleRankLevel };

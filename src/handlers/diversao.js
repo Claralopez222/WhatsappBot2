@@ -1,4 +1,4 @@
-﻿/**
+﻿﻿/**
  * Handler de Diversão — Piroquinhas Bot
  * Arquivo compatibilidade que re-exporta tudo do módulo diversao/
  * 

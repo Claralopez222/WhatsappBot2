@@ -282,111 +282,130 @@ async function handleSave(sock, msg, jid, caption) {
   const id          = require('crypto').randomUUID();
   const outTemplate = tmpPath(id, '_raw.%(ext)s');
 
-  // Meta em paralelo com o download
-  const metaPromise = fetchMeta(ytdlp, link);
+  try {
+    // Meta em paralelo com o download
+    const metaPromise = fetchMeta(ytdlp, link);
 
-  const baseArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m'];
-  if (/pinterest|pin\.it/i.test(link)) {
-    baseArgs.push(
-      '--referer', 'https://www.pinterest.com',
-      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    );
-  }
-  baseArgs.push('-o', outTemplate, link);
+    const baseArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m'];
+    if (/pinterest|pin\.it/i.test(link)) {
+      baseArgs.push(
+        '--referer', 'https://www.pinterest.com',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      );
+    }
+    baseArgs.push('-o', outTemplate, link);
 
-  const { ok: dlOk } = await ytDlp(ytdlp, baseArgs, 120000);
-  if (!dlOk) {
-    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
-  }
+    const { ok: dlOk } = await ytDlp(ytdlp, baseArgs, 120000);
+    if (!dlOk) {
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
+    }
 
-  const base   = outTemplate.replace('.%(ext)s', '');
-  const exts   = ['.mp4','.mkv','.webm','.mov','.mp3','.m4a','.jpg','.jpeg','.png','.gif','.webp','.opus','.ogg','.pdf','.zip','.txt'];
-  let filePath = exts.map(e => base + e).find(p => fs.existsSync(p)) || null;
+    const base   = outTemplate.replace('.%(ext)s', '');
+    const exts   = ['.mp4','.mkv','.webm','.mov','.mp3','.m4a','.jpg','.jpeg','.png','.gif','.webp','.opus','.ogg','.pdf','.zip','.txt'];
+    let filePath = exts.map(e => base + e).find(p => fs.existsSync(p)) || null;
 
-  if (!filePath) {
-    return sock.sendMessage(jid, { text: '❌ Arquivo baixado não encontrado.' }, { quoted: msg });
-  }
+    if (!filePath) {
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Arquivo baixado não encontrado.' }, { quoted: msg });
+    }
 
-  let buffer = fs.readFileSync(filePath);
-  if (buffer.length < 1000) {
+    let buffer = fs.readFileSync(filePath);
+    if (buffer.length < 1000) {
+      safeDel(filePath);
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Conteúdo baixado está vazio.' }, { quoted: msg });
+    }
     safeDel(filePath);
-    return sock.sendMessage(jid, { text: '❌ Conteúdo baixado está vazio.' }, { quoted: msg });
-  }
-  safeDel(filePath);
 
-  let lower = filePath.toLowerCase();
-  let name  = path.basename(filePath);
+    let lower = filePath.toLowerCase();
+    let name  = path.basename(filePath);
 
-  // Reencoda vídeo apenas se necessário
-  const videoExt = lower.match(/\.(mp4|mov|webm|mkv)$/);
-  if (videoExt) {
-    const inPath  = tmpPath(id, `_in${videoExt[0]}`);
-    const outPath = tmpPath(id, '_out.mp4');
-    fs.writeFileSync(inPath, buffer);
-    const ok = await ffmpeg(ffmpegBin, [
-      '-y', '-i', inPath,
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-r', '30',
-      '-profile:v', 'baseline', '-level', '3.0',
-      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-      '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', outPath,
-    ]);
-    safeDel(inPath);
-    if (ok && fs.existsSync(outPath)) {
-      const conv = fs.readFileSync(outPath);
-      if (conv.length > 1000) { buffer = conv; lower = outPath.toLowerCase(); name = name.replace(videoExt[0], '.mp4'); }
-      safeDel(outPath);
+    // Reencoda vídeo apenas se necessário
+    const videoExt = lower.match(/\.(mp4|mov|webm|mkv)$/);
+    if (videoExt) {
+      const inPath  = tmpPath(id, `_in${videoExt[0]}`);
+      const outPath = tmpPath(id, '_out.mp4');
+      fs.writeFileSync(inPath, buffer);
+      const ok = await ffmpeg(ffmpegBin, [
+        '-y', '-i', inPath,
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-r', '30',
+        '-profile:v', 'baseline', '-level', '3.0',
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', outPath,
+      ]);
+      safeDel(inPath);
+      if (ok && fs.existsSync(outPath)) {
+        const conv = fs.readFileSync(outPath);
+        if (conv.length > 1000) { buffer = conv; lower = outPath.toLowerCase(); name = name.replace(videoExt[0], '.mp4'); }
+        safeDel(outPath);
+      } else {
+        safeDel(outPath); // garante limpeza mesmo se ffmpeg falhar parcialmente
+      }
     }
-  }
 
-  // Caption detalhada
-  const meta = await metaPromise;
-  const buildCaption = (sufixo) => {
-    const titulo   = meta?.title || meta?.description?.slice(0, 80) || null;
-    const autor    = meta?.uploader || meta?.creator || meta?.channel || null;
-    const durSec   = meta?.duration || 0;
-    const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
-    const views    = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
-    const likes    = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
-    const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
-    const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+    // Caption detalhada
+    const meta = await metaPromise;
+    const buildCaption = (sufixo) => {
+      const titulo   = meta?.title || meta?.description?.slice(0, 80) || null;
+      const autor    = meta?.uploader || meta?.creator || meta?.channel || null;
+      const durSec   = meta?.duration || 0;
+      const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
+      const views    = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+      const likes    = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+      const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+      const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
 
-    // Se não tiver nenhum dado de meta, retorna só o sufixo
-    if (!titulo && !autor && !views) return sufixo;
+      // Se não tiver nenhum dado de meta, retorna só o sufixo
+      if (!titulo && !autor && !views) return sufixo;
 
-    let txt = `━━━ [ 💾 *Save* 💾 ] ━━━\n\n`;
-    if (titulo)   txt += `📌 *Título:* ${titulo}\n`;
-    if (autor)    txt += `👤 *Canal:* ${autor}\n`;
-    if (durStr)   txt += `⏱️ *Duração:* ${durStr}\n`;
-    if (views)    txt += `👁️ *Views:* ${views}\n`;
-    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
-    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
-    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
-    txt += `\n🔗 ${link}\n\n${sufixo}`;
-    return txt;
-  };
+      let txt = `━━━ [ 💾 *Save* 💾 ] ━━━\n\n`;
+      if (titulo)   txt += `📌 *Título:* ${titulo}\n`;
+      if (autor)    txt += `👤 *Canal:* ${autor}\n`;
+      if (durStr)   txt += `⏱️ *Duração:* ${durStr}\n`;
+      if (views)    txt += `👁️ *Views:* ${views}\n`;
+      if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+      if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+      if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+      txt += `\n🔗 ${link}\n\n${sufixo}`;
+      return txt;
+    };
 
-  if (buffer.length > SIZE_LIMIT) {
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Arquivo muito grande — enviado como documento.') }, { quoted: msg });
-  } else if (lower.match(/\.(jpg|jpeg|png|webp|gif)$/)) {
-    await sock.sendMessage(jid, { image: buffer, caption: buildCaption('🖼️ Aqui está a imagem') }, { quoted: msg });
-  } else if (lower.match(/\.(mp4|mov)$/)) {
-    try {
-      await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: buildCaption('🎬 Aqui está o vídeo') }, { quoted: msg });
-    } catch {
+    if (buffer.length > SIZE_LIMIT) {
+      await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Arquivo muito grande — enviado como documento.') }, { quoted: msg });
+    } else if (lower.match(/\.(jpg|jpeg|png|webp|gif)$/)) {
+      await sock.sendMessage(jid, { image: buffer, caption: buildCaption('🖼️ Aqui está a imagem') }, { quoted: msg });
+    } else if (lower.match(/\.(mp4|mov)$/)) {
+      try {
+        await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: buildCaption('🎬 Aqui está o vídeo') }, { quoted: msg });
+      } catch {
+        await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Vídeo enviado como documento.') }, { quoted: msg });
+      }
+    } else if (lower.match(/\.(webm|mkv)$/)) {
       await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Vídeo enviado como documento.') }, { quoted: msg });
+    } else if (lower.match(/\.(mp3|m4a|opus|ogg)$/)) {
+      const cap = buildCaption('🎵 Aqui está o áudio');
+      if (cap) await sock.sendMessage(jid, { text: cap }, { quoted: msg });
+      await sock.sendMessage(jid, { audio: buffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+    } else {
+      await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Aqui está o arquivo') }, { quoted: msg });
     }
-  } else if (lower.match(/\.(webm|mkv)$/)) {
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Vídeo enviado como documento.') }, { quoted: msg });
-  } else if (lower.match(/\.(mp3|m4a|opus|ogg)$/)) {
-    const cap = buildCaption('🎵 Aqui está o áudio');
-    if (cap) await sock.sendMessage(jid, { text: cap }, { quoted: msg });
-    await sock.sendMessage(jid, { audio: buffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-  } else {
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption('📄 Aqui está o arquivo') }, { quoted: msg });
-  }
 
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    log.error(`❌ Erro em handleSave: ${err.message}`);
+    // Limpeza de qualquer resíduo em disco relacionado a esse id
+    try {
+      const dir  = path.dirname(outTemplate);
+      const base = path.basename(outTemplate).split('.')[0]; // id_raw
+      for (const f of fs.readdirSync(dir)) {
+        if (f.startsWith(id)) safeDel(path.join(dir, f));
+      }
+    } catch {}
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    await sock.sendMessage(jid, { text: '❌ Erro ao processar o link. Tente novamente.' }, { quoted: msg }).catch(() => {});
+  }
 }
 
 // ─── !saverec ─────────────────────────────────────────────────────────────────

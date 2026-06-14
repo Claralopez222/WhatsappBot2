@@ -546,6 +546,7 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       // Primeira conexão — inicializa os schedulers
       initPetScheduler(sock);
       initQuizRankingScheduler(sock, activeGroups);
+      initFilhosScheduler();
       schedulersIniciados = true;
       console.log('[Schedulers] Iniciados.');
     } else {

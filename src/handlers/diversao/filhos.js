@@ -21,11 +21,19 @@ const PERSONALIDADES = [
 const NOMES_MENINO = [
   'Miguel', 'Arthur', 'Heitor', 'Davi', 'Gabriel',
   'Pedro', 'Lucas', 'Matheus', 'Rafael', 'Enzo',
+  'Bernardo', 'Théo', 'Gael', 'Noah', 'Samuel',
+  'Benício', 'Joaquim', 'Anthony', 'Ravi', 'Lorenzo',
+  'Vicente', 'Henrique', 'Bryan', 'Daniel', 'Caio',
+  'Nicolas', 'Felipe', 'Thiago', 'Eduardo', 'Vinícius',
 ];
 
 const NOMES_MENINA = [
   'Alice', 'Sofia', 'Isabella', 'Valentina', 'Júlia',
   'Laura', 'Manuela', 'Luiza', 'Heloísa', 'Lívia',
+  'Helena', 'Maria Alice', 'Maite', 'Cecília', 'Eloá',
+  'Lorena', 'Beatriz', 'Maria Clara', 'Mariana', 'Antonella',
+  'Liz', 'Isadora', 'Yasmin', 'Clara', 'Esther',
+  'Giovanna', 'Melissa', 'Gabriela', 'Rafaela', 'Letícia',
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────

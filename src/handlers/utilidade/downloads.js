@@ -649,10 +649,22 @@ async function handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic) {
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
 
+function tmpPath(id, suffix) {
+  const dir = path.join(require('os').tmpdir(), 'piroquinhas-tmp');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, `${id}${suffix}`);
+}
+
+function safeDel(...paths) {
+  for (const p of paths) { try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch {} }
+}
+
 // ─── Limpeza de arquivos temporários órfãos ────────────────────────────────────
 function limparTmpAntigos(maxIdadeMs = 10 * 60 * 1000) {
   try {
-    const dir = require('os').tmpdir();
+    const dir = path.join(require('os').tmpdir(), 'piroquinhas-tmp');
+    if (!fs.existsSync(dir)) return;
+
     const agora = Date.now();
     let removidos = 0;
 
@@ -672,7 +684,6 @@ function limparTmpAntigos(maxIdadeMs = 10 * 60 * 1000) {
     log.error('[limparTmpAntigos] Erro:', e.message);
   }
 }
-
 // ──────────────────────────────────────────────────────────────────────────────
 
 module.exports = {

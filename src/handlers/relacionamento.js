@@ -112,26 +112,66 @@ const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 // Comandos que NÃO exigem item do inventário (carinhos "gratuitos")
 const CARINHOS_SEM_ITEM = new Set(['abraco']);
 
+// Comandos que podem ser usados mesmo sem relacionamento (precisam de @menção)
+const CARINHOS_SEM_RELACIONAMENTO = new Set(['abraco']);
+
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
   // ── Normaliza o JID de quem enviou o comando ──
   const senderJidNormalizado = jidNormalizedUser(senderJid);
 
   const found = findRelByJid(senderJidNormalizado, relacionamentos);
-  if (!found) {
-    await sock.sendMessage(jid, {
-      text: `💔 Você precisa estar em um relacionamento para usar *!${cmd}*!\n_Use *!casar @alguem* ou *!namorar @alguem* primeiro._`,
-    }, { quoted: msg });
-    return;
+
+  let key, rel;
+  let jidANormalizado = null;
+  let jidBNormalizado = null;
+  let parcJid = null;
+  let temRelacionamento = !!found;
+
+  if (found) {
+    ({ key, rel } = found);
+
+    // Garante os JIDs limpos e normalizados de ambos
+    jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
+    jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
+
+    // Descobre de forma cirúrgica quem é o parceiro usando os IDs normalizados
+    parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+  } else {
+    if (!CARINHOS_SEM_RELACIONAMENTO.has(cmd)) {
+      await sock.sendMessage(jid, {
+        text: `💔 Você precisa estar em um relacionamento para usar *!${cmd}*!\n_Use *!casar @alguem* ou *!namorar @alguem* primeiro._`,
+      }, { quoted: msg });
+      return;
+    }
+
+    // ── !abraco (e outros liberados) funcionam sem relacionamento, mas exigem @menção ──
+    const mentionedJid =
+      msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
+      msg.message?.extendedTextMessage?.contextInfo?.participant ||
+      null;
+
+    if (!mentionedJid) {
+      await sock.sendMessage(jid, {
+        text: `🤗 Marque a pessoa que vai receber o abraço!\n_Ex: *!abraco @alguem*_`,
+      }, { quoted: msg });
+      return;
+    }
+
+    parcJid = jidNormalizedUser(mentionedJid);
+
+    if (parcJid === senderJidNormalizado) {
+      await sock.sendMessage(jid, {
+        text: `🤔 Você não pode dar *!${cmd}* em você mesmo(a)!`,
+      }, { quoted: msg });
+      return;
+    }
+
+    jidANormalizado = senderJidNormalizado;
+    jidBNormalizado = parcJid;
+
+    // Chave estável independente de quem manda primeiro (cooldown compartilhado pela dupla)
+    key = [senderJidNormalizado, parcJid].sort().join('_');
   }
-
-  const { key, rel } = found;
-
-  // Garante os JIDs limpos e normalizados de ambos
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-
-  // Descobre de forma cirúrgica quem é o parceiro usando os IDs normalizados
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
 
   const exigeItem = !CARINHOS_SEM_ITEM.has(cmd);
   let consumo = null;
@@ -167,7 +207,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     }
   }
 
-  // ── Cooldown diário por casal+comando (não só por sender) ──
+  // ── Cooldown diário por casal/dupla+comando (não só por sender) ──
   const diarioKey = `${key}:${cmd}:${hoje()}`;
   if (diariosUsados.has(diarioKey)) {
     if (exigeItem) {
@@ -189,16 +229,21 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
   // ── Cálculo de XP baseado no banco de dados para evitar perdas ao reiniciar ──
   let xpAtual = 0;
-  const temBonus = typeof temXpBonus === 'function' && temXpBonus(key);
+  const temBonus = temRelacionamento && typeof temXpBonus === 'function' && temXpBonus(key);
   const ganho    = temBonus ? xpValor * 2 : xpValor;
 
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
+  // Sem relacionamento: XP é só simbólico/individual do remetente, não soma "casal"
+  const jidsParaXp = temRelacionamento
+    ? [jidANormalizado, jidBNormalizado].filter(Boolean)
+    : [senderJidNormalizado];
 
-    const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
+  try {
+    const usuarios = await Usuario.find(
+      { idWhatsApp: { $in: jidsParaXp } },
+      { idWhatsApp: 1, xpCasal: 1 }
+    ).lean();
+
+    const xpAntigo = usuarios.reduce((acc, u) => acc + (u?.xpCasal || 0), 0);
     xpAtual = xpAntigo + ganho;
   } catch (err) {
     console.error(`[handleCarinh:${cmd}] Erro ao calcular XP prévio do banco:`, err.message);
@@ -212,7 +257,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   // ── Persiste XP no banco ──
   try {
     await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
+      { idWhatsApp: { $in: jidsParaXp } },
       { $inc: { xpCasal: ganho } }
     );
   } catch (e) {
@@ -236,7 +281,9 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
   // ── FORMATAÇÃO DAS MARCAÇÕES (@MENCÕES) DIRETO PELO NÚMERO JID ──
   const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
+  const tagParceiro  = parcJid
+    ? `@${parcJid.split('@')[0]}`
+    : (rel?.nomeA === author ? rel?.nomeB : rel?.nomeA);
 
   const bonusStr = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
 
@@ -245,6 +292,9 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     ? `\n🎒 *${cmd}* restantes no seu inventário: *${consumo.inventory?.[cmd] ?? 0}*`
     : '';
 
+  // Texto do XP muda dependendo de ter ou não relacionamento
+  const xpLabel = temRelacionamento ? 'Total do casal' : 'Seu total';
+
   // Lista de JIDs que vão receber o ping/marcação azul de verdade no chat
   const listaMentions = [senderJidNormalizado];
   if (parcJid) listaMentions.push(parcJid);
@@ -252,14 +302,13 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   await sock.sendMessage(jid, {
     text:
       `${emoji} ${tagRemetente} ${verbo} para ${tagParceiro}! 💕\n\n` +
-      `💰 *+${ganho} XP*${bonusStr} | Total do casal: *${xpAtual} XP*` +
+      `💰 *+${ganho} XP*${bonusStr} | ${xpLabel}: *${xpAtual} XP*` +
       inventarioStr,
     mentions: listaMentions,
   }, { quoted: msg });
 }
 
 module.exports = { handleCarinh };
-
 // ═══════════════════════════════════════════════════════════════
 // ─── PEDIDO DE CASAMENTO / NAMORO ─────────────────────────────
 // ═══════════════════════════════════════════════════════════════

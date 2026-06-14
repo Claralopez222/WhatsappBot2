@@ -109,6 +109,20 @@ const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils
 // handleCarinh
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
+// ─── Mapa: comando → item obrigatório no inventário ────────────
+const ITEM_NECESSARIO = {
+  flores:   { key: 'flores',   nome: 'Flores 🌹'                },
+  doces:    { key: 'morango',  nome: 'Morango com Chocolate 🍓'  },
+  carta:    { key: 'carta',    nome: 'Carta de Amor 💌'          },
+  mimo:     { key: 'caixa',    nome: 'Caixa Presente Luxo 🎁'    },
+  beijo:    { key: 'perfume',  nome: 'Perfume Premium 🌸'        },
+  // abraco removido — não requer item
+  jantar:   { key: 'taça',     nome: 'Taça para Vinho 🍷'        },
+  cinema:   { key: 'almofada', nome: 'Almofada Casal 🛋️'         },
+  viajar:   { key: 'garrafa',  nome: 'Garrafa Vinho Tinto 🍾'    },
+  serenata: { key: 'vela',     nome: 'Vela Aromática 🕯️'         },
+};
+
 // Comandos que NÃO exigem item do inventário (carinhos "gratuitos")
 const CARINHOS_SEM_ITEM = new Set(['abraco']);
 
@@ -173,29 +187,34 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     key = [senderJidNormalizado, parcJid].sort().join('_');
   }
 
-  const exigeItem = !CARINHOS_SEM_ITEM.has(cmd);
+  // ── Define se o comando exige item, e qual chave/nome usar no inventário ──
+  const itemInfo  = ITEM_NECESSARIO[cmd] || null;
+  const exigeItem = !CARINHOS_SEM_ITEM.has(cmd) && !!itemInfo;
+  const itemKey   = itemInfo?.key  ?? cmd; // chave real dentro de inventory.*
+  const itemNome  = itemInfo?.nome ?? cmd; // nome bonito pra mensagens
+
   let consumo = null;
 
   if (exigeItem) {
     // ── Verifica se o item existe no inventário do sender ──
     const userDoc = await Usuario.findOne(
       { idWhatsApp: senderJidNormalizado },
-      { [`inventory.${cmd}`]: 1 }
+      { [`inventory.${itemKey}`]: 1 }
     ).lean();
 
-    const qtdItem = userDoc?.inventory?.[cmd] ?? 0;
+    const qtdItem = userDoc?.inventory?.[itemKey] ?? 0;
 
     if (qtdItem < 1) {
       await sock.sendMessage(jid, {
-        text: `🛒 Você não tem *${cmd}* para dar!\nCompre na *!lojacasal* e surpreenda seu par! 💝`,
+        text: `🛒 Você não tem *${itemNome}* para dar!\nCompre na *!lojacasal* e surpreenda seu par! 💝`,
       }, { quoted: msg });
       return;
     }
 
     // ── Consome 1 unidade do item antes de qualquer outra operação ──
     consumo = await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJidNormalizado, [`inventory.${cmd}`]: { $gte: 1 } },
-      { $inc: { [`inventory.${cmd}`]: -1 } },
+      { idWhatsApp: senderJidNormalizado, [`inventory.${itemKey}`]: { $gte: 1 } },
+      { $inc: { [`inventory.${itemKey}`]: -1 } },
       { new: true }
     );
 
@@ -214,7 +233,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
       // Devolve o item consumido acima para não prejudicar o usuário
       await Usuario.updateOne(
         { idWhatsApp: senderJidNormalizado },
-        { $inc: { [`inventory.${cmd}`]: 1 } }
+        { $inc: { [`inventory.${itemKey}`]: 1 } }
       ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no cooldown:`, e.message));
     }
 
@@ -269,7 +288,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     if (exigeItem) {
       await Usuario.updateOne(
         { idWhatsApp: senderJidNormalizado },
-        { $inc: { [`inventory.${cmd}`]: 1 } }
+        { $inc: { [`inventory.${itemKey}`]: 1 } }
       ).catch(err => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no rollback de XP:`, err.message));
     }
 
@@ -289,7 +308,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
   // Linha de inventário só aparece para carinhos que consomem item
   const inventarioStr = exigeItem
-    ? `\n🎒 *${cmd}* restantes no seu inventário: *${consumo.inventory?.[cmd] ?? 0}*`
+    ? `\n🎒 *${itemNome}* restantes no seu inventário: *${consumo.inventory?.[itemKey] ?? 0}*`
     : '';
 
   // Texto do XP muda dependendo de ter ou não relacionamento
@@ -307,8 +326,6 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     mentions: listaMentions,
   }, { quoted: msg });
 }
-
-module.exports = { handleCarinh };
 // ═══════════════════════════════════════════════════════════════
 // ─── PEDIDO DE CASAMENTO / NAMORO ─────────────────────────────
 // ═══════════════════════════════════════════════════════════════

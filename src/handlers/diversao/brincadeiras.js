@@ -2619,51 +2619,27 @@ async function handleSexo(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// ─── !worldcup
-async function handleWorldCup(sock, msg, jid) {
-  await sock.sendMessage(jid, {
-    text: '⏳ Buscando dados da Copa 2026...',
-  }, { quoted: msg });
+let texto = `⚽ *COPA DO MUNDO 2026* ⚽\n🇺🇸🇨🇦🇲🇽 EUA • Canadá • México\n\n`;
 
-  try {
-    const res = await fetch('https://api.football-data.org/v4/competitions/WC/standings', {
-      headers: {
-        'X-Auth-Token': 'cf81a64d606848a68787d279ecba7826',
-        'Accept': 'application/json',
-      },
-    });
+for (const grupo of data.standings) {
+  const letra = grupo.group.replace('GROUP_', '');
+  texto += `━━━━━━━━━━━━━━━━━━━━\n`;
+  texto += `🔷 *GRUPO ${letra}*\n`;
+  texto += `━━━━━━━━━━━━━━━━━━━━\n`;
 
-    const data = await res.json();
+  for (const row of grupo.table) {
+    const saldo = row.goalsFor - row.goalsAgainst;
+    const saldoStr = saldo >= 0 ? `+${saldo}` : `${saldo}`;
+    const medal = ['🥇','🥈','🥉','4️⃣'][row.position - 1] ?? `${row.position}.`;
 
-    if (!data?.standings) throw new Error('Sem dados');
-
-    let texto = `⚽ *COPA DO MUNDO 2026* ⚽\n🇺🇸🇨🇦🇲🇽 EUA • Canadá • México\n${'─'.repeat(30)}\n\n`;
-
-    for (const grupo of data.standings) {
-      texto += `🔷 *${grupo.group}*\n`;
-
-      for (const row of grupo.table) {
-        const saldo = row.goalsFor - row.goalsAgainst;
-        const saldoStr = saldo >= 0 ? `+${saldo}` : `${saldo}`;
-        texto +=
-          `${row.position}. *${row.team.name}*\n` +
-          `   PJ:${row.playedGames} V:${row.won} E:${row.draw} D:${row.lost} GP:${row.goalsFor} GC:${row.goalsAgainst} SD:${saldoStr} • *${row.points} pts*\n`;
-      }
-
-      texto += '\n';
-    }
-
-    texto += `🔄 _${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}_`;
-
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-
-  } catch (err) {
-    console.error('[worldcup] Erro ao buscar dados:', err.message);
-    await sock.sendMessage(jid, {
-      text: '❌ Não foi possível buscar os dados da Copa agora. Tente novamente em instantes!',
-    }, { quoted: msg });
+    texto += `${medal} *${row.team.name}*\n`;
+    texto += `   ${row.playedGames}J • ${row.won}V ${row.draw}E ${row.lost}D • ${row.goalsFor}:${row.goalsAgainst} (${saldoStr}) • *${row.points}pts*\n`;
   }
+
+  texto += `\n`;
 }
+
+texto += `🔄 _${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}_`;
 
 module.exports = {
   handleGay,

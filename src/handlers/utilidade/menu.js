@@ -1,14 +1,15 @@
 async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
   const P = getPrefix(jid);
-  const now     = new Date();
-  const hour    = now.getHours();
-  const minute  = String(now.getMinutes()).padStart(2, '0');
-  const timeStr = `${hour}:${minute}`;
+
+  const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const [data, hora] = agora.split(', ');
+  const [hour] = hora.split(':').map(Number);
+  const timeStr = hora.slice(0, 5); // HH:MM
 
   let greeting = 'Olá';
-  if (hour < 12)      greeting = '🌅 Bom dia';
-  else if (hour < 18) greeting = '☀️ Boa tarde';
-  else                greeting = '🌙 Boa noite';
+  if (hour >= 5  && hour < 12) greeting = '🌅 Bom dia';
+  else if (hour >= 12 && hour < 18) greeting = '☀️ Boa tarde';
+  else                               greeting = '🌙 Boa noite';
 
   const userMention = author ? `*${author}*` : '';
 
@@ -36,6 +37,7 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
 💑 *RELACIONAMENTOS*
   ▸ ${P}menucasal
   ▸ ${P}menuaniversario
+  ▸ ${P}menufilho
 
 💼 *EMPREGOS*
   ▸ ${P}menuwork

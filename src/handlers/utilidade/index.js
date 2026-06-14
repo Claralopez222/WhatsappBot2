@@ -635,8 +635,6 @@ async function handleBio(sock, msg, jid, caption) {
     }, { quoted: msg });
   }
 }
-// ─── Exportar ─────────────────────────────────────────────────────────────────
-
 module.exports = {
   handleMenu,
   handleMenuUtil,
@@ -644,6 +642,7 @@ module.exports = {
   handleMenuBaixar,
   handleMenuRelacionamento,
   handleAlteradores,
+  handleMenuFilho,
   handleMenuWork,
   handleLevelOn,
   handleLevel,

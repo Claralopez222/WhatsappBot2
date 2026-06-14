@@ -1277,22 +1277,22 @@ async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos)
   }, { quoted: msg });
 }
 
-// ─── Exports ──────────────────────────────────────────────────
 module.exports = {
   handlePresente,
-handleJantar,
-handleCinemaRel,
-handleViajar,
-handleSerenata,
-handleDeclarar,
-handleCiumento,
-handleStatu,
-handleMeuPar,
-handleXpDobro,
-handleAniversarioCasal,
-handleDueloDeCasais,
-handleRankCasais,
-handleDesafioCasal,
-handleSurpresa,
-handleDomingo,
-};  
+  handleJantar,
+  handleCinemaRel,
+  handleViajar,
+  handleSerenata,
+  handleDeclarar,
+  handleCiumento,
+  handleStatu,
+  handleMeuPar,
+  handleXpDobro,
+  handleAniversarioCasal,
+  handleDueloDeCasais,
+  handleRankCasais,
+  handleDesafioCasal,
+  handleSurpresa,
+  handleDomingo,
+  handleAbraco,
+};

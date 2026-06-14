@@ -1,14 +1,15 @@
 async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
   const P = getPrefix(jid);
-  const now     = new Date();
-  const hour    = now.getHours();
-  const minute  = String(now.getMinutes()).padStart(2, '0');
-  const timeStr = `${hour}:${minute}`;
+
+  const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const [data, hora] = agora.split(', ');
+  const [hour] = hora.split(':').map(Number);
+  const timeStr = hora.slice(0, 5);
 
   let greeting = 'Olá';
-  if (hour < 12)      greeting = '🌅 Bom dia';
-  else if (hour < 18) greeting = '☀️ Boa tarde';
-  else                greeting = '🌙 Boa noite';
+  if (hour >= 5  && hour < 12) greeting = '🌅 Bom dia';
+  else if (hour >= 12 && hour < 18) greeting = '☀️ Boa tarde';
+  else                               greeting = '🌙 Boa noite';
 
   const userMention = author ? `*${author}*` : '';
 
@@ -32,10 +33,13 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
   ▸ ${P}menujogos
   ▸ ${P}brincadeiras
   ▸ ${P}alteradores
+  ▸ ${P}menuroubar
+  ▸ ${P}menusec
 
 💑 *RELACIONAMENTOS*
   ▸ ${P}menucasal
   ▸ ${P}menuaniversario
+  ▸ ${P}menufilho
 
 💼 *EMPREGOS*
   ▸ ${P}menuwork
@@ -123,12 +127,15 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
   ▸ ${P}ranklevel
   ▸ ${P}level
 
+⚽ *COPA DO MUNDO*
+  ▸ ${P}worldcup — Tabela da Copa 2026 🏆
+
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
-// !menucasal
+// !alteradores
 async function handleAlteradores(sock, msg, jid) {
   const menu =
 `╔══════════════════════╗
@@ -194,7 +201,6 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
   ▸ ${P}doces 🍬
   ▸ ${P}carta 💌
   ▸ ${P}mimo 🎁
-  ▸ ${P}beijo 💋
 
 💝 *ROMÂNTICOS*
   ▸ ${P}abraco — Dar um abraço
@@ -222,6 +228,41 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
+// !menufilho
+async function handleMenuFilho(sock, msg, jid, getPrefix) {
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const menu =
+`╔══════════════════════╗
+      👶 MENU FILHOS
+╚══════════════════════╝
+
+👨‍👩‍👧 *FAMÍLIA*
+  ▸ ${P}tentarfilho — Tentar ter um filho _(40% chance)_
+  ▸ ${P}filho — Ver seus filhos e status
+  ▸ ${P}cuidarfilho — Cuidar dos filhos _(cooldown 20h)_
+
+💊 *SAÚDE*
+  ▸ ${P}remediofil — Curar filho doente _(300 gold)_
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📋 *REGRAS*
+  • Limite de *3 filhos* por casal
+  • A cada *7 dias* o filho completa *1 ano*
+  • Atributos caem com o tempo — cuide diariamente!
+  • Felicidade zerada → filho fica *doente*
+  • Em caso de separação → *guarda compartilhada*
+    _(o filho troca de responsável a cada dia)_
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 *ATRIBUTOS*
+  😊 Felicidade • 🍽️ Fome
+  😴 Sono • 🎈 Alegria
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+}
+
 // !menubaixar
 async function handleMenuBaixar(sock, msg, jid, getPrefix) {
   const P = getPrefix ? getPrefix(jid) : '!';
@@ -236,9 +277,9 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
 
 📱 *VÍDEO & REDES SOCIAIS*
   ▸ ${P}tiktok _(link)_
-  ▸ ${P}save _(link)_
-  ▸ ${P}saverec _(link)_ _(recorta 10s)_
-  ▸ ${P}pinterest _(nome ou link)_
+  ▸ ${P}save _(link)_ - manutenção 
+  ▸ ${P}saverec _(link)_ _- manutenção_ 
+  ▸ ${P}pinterest _- manutenção_
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -292,4 +333,5 @@ module.exports = {
   handleMenuRelacionamento,
   handleAlteradores,
   handleMenuWork,
+  handleMenuFilho,
 };

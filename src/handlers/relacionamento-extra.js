@@ -96,12 +96,10 @@ function _makeCarinhHandler(comando) {
 }
 
 // ─── Handlers de carinho gerados automaticamente ──────────────
-const handleFlores = _makeCarinhHandler('flores');
-const handleDoces  = _makeCarinhHandler('doces');
-const handleCarta  = _makeCarinhHandler('carta');
-const handleMimo   = _makeCarinhHandler('mimo');
-const handleBeijo  = _makeCarinhHandler('beijo');
-const handleAbraco = _makeCarinhHandler('abraco');
+const handleJantar   = _makeCarinhHandler('jantar');
+const handleCinema   = _makeCarinhHandler('cinema');
+const handleViajar   = _makeCarinhHandler('viajar');
+const handleSerenata = _makeCarinhHandler('serenata');
 
 // ─── !presente ────────────────────────────────────────────────
 async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption = '') {

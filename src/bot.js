@@ -43,7 +43,7 @@ const pescaHandler          = require(path.join(__dirname, 'handlers', 'diversao
 
 const { handleRankGold, handleGive }                                        = require(path.join(__dirname, 'handlers', 'diversao', 'economia'));
 const { handleEmprestimo, handlePayEmprestimo, handleDivida }               = require(path.join(__dirname, 'handlers', 'diversao', 'emprestimo'));
-const { initPetScheduler, registerActiveGroup }                             = require(path.join(__dirname, 'handlers', 'diversao'));
+const { initPetScheduler, registerActiveGroup, initFilhosScheduler }        = require(path.join(__dirname, 'handlers', 'diversao'));
 const { initQuizRankingScheduler }                                          = require(path.join(__dirname, 'handlers', 'quizRanking'));
 
 

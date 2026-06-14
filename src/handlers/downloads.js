@@ -407,7 +407,6 @@ async function handleSave(sock, msg, jid, caption) {
     await sock.sendMessage(jid, { text: '❌ Erro ao processar o link. Tente novamente.' }, { quoted: msg }).catch(() => {});
   }
 }
-
 // ─── !saverec ─────────────────────────────────────────────────────────────────
 
 async function handleSaveRec(sock, msg, jid, caption) {

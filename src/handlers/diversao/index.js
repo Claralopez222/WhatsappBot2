@@ -27,6 +27,14 @@ const {
   handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup,
 } = require('./brincadeiras');
 
+const {
+  handleTentarFilho,
+  handleVerFilho,
+  handleCuidarFilho,
+  handleRemedioFilho,
+  initFilhosScheduler,
+} = require('./filhos');
+
 // Economia
 const {
   handleGold, handleLoja, handleLojaFood, handleLojaPet, handleLojaTec, handleLojaCasal,

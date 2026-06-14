@@ -16,14 +16,13 @@ const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
 // ─── ESTADO GLOBAL ────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-function relKey(a, b) { return [a, b].sort().join('|'); }
+function relKey(jid, a, b) { return [jid, ...[a, b].sort()].join('|'); }
 
 const xpCasais      = new Map(); // relKey → number
 const bloqueados    = new Map(); // jid → timestamp_expiry
 const diariosUsados = new Map(); // `${relKey}:${cmd}:YYYY-MM-DD` → true
 const ciumentosMap  = new Map(); // jid → timestamp (cooldown de 1h)
 const xpBonus       = new Map(); // relKey → { ativo: bool, expiry: number }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── HELPERS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -44,8 +43,8 @@ function minutosRestantes(jid) {
   return Math.ceil((bloqueados.get(jid) - Date.now()) / (1000 * 60));
 }
 
-function getRelacionamento(a, b, relacionamentos) {
-  return relacionamentos.get(relKey(a, b)) || null;
+function getRelacionamento(jid, a, b, relacionamentos) {
+  return relacionamentos.get(relKey(jid, a, b)) || null;
 }
 
 async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.now()) {
@@ -78,10 +77,10 @@ async function clearCasamentoDb(jidA, jidB) {
   }
 }
 
-function findRelByJid(jid, relacionamentos) {
-  const num = jid.split('@')[0];
+function findRelByJid(jid, userJid, relacionamentos) {
+  const num = userJid.split('@')[0];
   for (const [key, rel] of relacionamentos) {
-    if (key.includes(num)) return { key, rel };
+    if (key.startsWith(jid + '|') && key.includes(num)) return { key, rel };
   }
   return null;
 }
@@ -385,7 +384,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  if (getRelacionamento(senderJid, alvoJid, relacionamentos)) {
+  if (getRelacionamento(jid, senderJid, alvoJid, relacionamentos)) {
     const frases = [
       `😂 Vocês já tão juntos, mas quer fazer um evento de renovação de votos? Que romântico... ou dramático!`,
       `😒 Tá querendo propor NOVAMENTE? Já era pra ter pedido em outro lugar!`,
@@ -397,7 +396,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  const jaSender = findRelByJid(senderJid, relacionamentos);
+  const jaSender = findRelByJid(jid, senderJid, relacionamentos);
   if (jaSender) {
     const frases = [
       `💔 TRAIDOR(A)! Você já tem alguém! Quer derramar todo o drama com *!cancelarcasamento*? 😤`,
@@ -410,7 +409,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  const jaAlvo = findRelByJid(alvoJid, relacionamentos);
+  const jaAlvo = findRelByJid(jid, alvoJid, relacionamentos);
   if (jaAlvo) {
     const frases = [
       `😂 *${nomeAlvo}* JÁ tá comprometido(a)! Vai afastar esse lobisomem aí!`,
@@ -484,7 +483,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
 
   const nomeAlvo = msg.pushName || contactNames[senderJid] || senderJid.split('@')[0];
   const { jidPedinte, nomePedinte, jid: jidOrigem, tipo } = pedido;
-  const key  = relKey(senderJid, jidPedinte);
+  const key  = relKey(jidOrigem || jid, senderJid, jidPedinte);
   const agora = Date.now(); // ← captura uma vez só
 
   relacionamentos.set(key, {
@@ -563,7 +562,7 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
 
 // !terminar
 async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos) {
-  const found = findRelByJid(senderJid, relacionamentos);
+  const found = findRelByJid(jid, senderJid, relacionamentos);
   if (!found) {
     await sock.sendMessage(jid, {
       text: '💔 Você não está em nenhum relacionamento para terminar.',

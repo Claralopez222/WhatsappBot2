@@ -222,6 +222,41 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
+// !menufilho
+async function handleMenuFilho(sock, msg, jid, getPrefix) {
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const menu =
+`╔══════════════════════╗
+      👶 MENU FILHOS
+╚══════════════════════╝
+
+👨‍👩‍👧 *FAMÍLIA*
+  ▸ ${P}tentarfilho — Tentar ter um filho _(40% chance)_
+  ▸ ${P}filho — Ver seus filhos e status
+  ▸ ${P}cuidarfilho — Cuidar dos filhos _(cooldown 20h)_
+
+💊 *SAÚDE*
+  ▸ ${P}remediofil — Curar filho doente _(300 gold)_
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📋 *REGRAS*
+  • Limite de *3 filhos* por casal
+  • A cada *7 dias* o filho completa *1 ano*
+  • Atributos caem com o tempo — cuide diariamente!
+  • Felicidade zerada → filho fica *doente*
+  • Em caso de separação → *guarda compartilhada*
+    _(o filho troca de responsável a cada dia)_
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 *ATRIBUTOS*
+  😊 Felicidade • 🍽️ Fome
+  😴 Sono • 🎈 Alegria
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+}
+
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 

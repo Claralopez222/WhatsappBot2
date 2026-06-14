@@ -221,26 +221,37 @@ function limparTmpAntigos(maxAgeMs = 10 * 60 * 1000) {
 // ── XP do usuário ─────────────────────────────────────────────────────────────
 async function addUserXp(userId, xp = 1, pushName = null) {
   if (!userId) return null;
+
+  // Normaliza o JID antes de qualquer operação
+  const userIdNorm = userId.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+
   try {
-    await prepareDailyMissionState(userId);
+    await prepareDailyMissionState(userIdNorm);
 
     const update = {
-      $inc: { xp, 'dailyMissions.progress.xp100': xp },
-      $setOnInsert: { level: 1, idWhatsApp: userId, createdAt: new Date() },
+      $inc: { xp, mensagens: 1, 'dailyMissions.progress.xp100': xp },
+      $setOnInsert: { level: 1, idWhatsApp: userIdNorm, createdAt: new Date() },
     };
     if (pushName) update.$set = { nome: pushName };
 
     const updated = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
+      { idWhatsApp: userIdNorm },
       update,
       { new: true, upsert: true }
     );
 
-    const computedLevel = Math.floor((updated.xp || 0) / 50) + 1;
-    if (updated.level !== computedLevel) {
-      updated.level = computedLevel;
-      await updated.save();
+    // Mesma fórmula do bot.js — progressão exponencial
+    const xpAtual   = updated?.xp ?? 0;
+    const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
+
+    if ((updated?.level ?? 1) !== levelNovo) {
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: userIdNorm },
+        { $set: { level: levelNovo } }
+      );
+      updated.level = levelNovo;
     }
+
     return updated;
   } catch (e) {
     console.error('⚠️ Erro ao atualizar XP do usuário:', e.message);
@@ -379,7 +390,7 @@ async function startBot() {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
 
-  // ── Mensagens ─────────────────────────────────────────────────────────────────
+// ── Mensagens ─────────────────────────────────────────────────────────────────
 sock.ev.on('messages.upsert', async ({ messages, type }) => {
   if (type !== 'notify' && type !== 'append') return;
 
@@ -398,17 +409,18 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
     (async () => {
       try {
         if (!_isPrivate) {
-          const remetente  = msg.key.participant || msg.key.remoteJid;
-          const nomeDoCara = msg.pushName || 'Usuário do Zap';
+          const remetente     = msg.key.participant || msg.key.remoteJid;
+          const remetenteNorm = remetente.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+          const nomeDoCara    = msg.pushName || 'Usuário do Zap';
 
-          await prepareDailyMissionState(remetente);
+          await prepareDailyMissionState(remetenteNorm);
 
           // ── Bônus diário de 100 gold (primeira mensagem do dia no grupo) ──
           const hoje = new Date();
           hoje.setHours(0, 0, 0, 0);
 
           const carteiraAtual = await CarteiraGrupo.findOne(
-            { idWhatsApp: remetente, idGrupo: _jid },
+            { idWhatsApp: remetenteNorm, idGrupo: _jid },
             { ultimoBonusDiario: 1 }
           ).lean();
 
@@ -424,14 +436,14 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
           }
 
           await CarteiraGrupo.findOneAndUpdate(
-            { idWhatsApp: remetente, idGrupo: _jid },
+            { idWhatsApp: remetenteNorm, idGrupo: _jid },
             { $inc: incCarteira, $set: setCarteira },
             { upsert: true }
           );
 
           // ── XP e Level ────────────────────────────────────────────────────
           const usuarioAtualizado = await Usuario.findOneAndUpdate(
-            { idWhatsApp: remetente },
+            { idWhatsApp: remetenteNorm },
             {
               $inc: { mensagens: 1, xp: 1, 'dailyMissions.progress.msg50': 1 },
               $set: { nome: nomeDoCara },
@@ -444,7 +456,7 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
 
           if ((usuarioAtualizado?.level ?? 1) !== levelNovo) {
             await Usuario.findOneAndUpdate(
-              { idWhatsApp: remetente },
+              { idWhatsApp: remetenteNorm },
               { $set: { level: levelNovo } }
             );
           }
@@ -481,7 +493,7 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
 
         // Mensagem de apresentação com imagem
         try {
-          const joinImagePath = path.join(__dirname, '..', 'Audio-Image', 'imagejoin.jpg');
+          const joinImagePath = path.join(__dirname, '..', 'Audio-Image', 'imagejoin2.jpg');
 
           const texto =
             `👋 Olá, @${userJid.split('@')[0]}! Seja muito bem-vindo(a) ao grupo!\n\n` +

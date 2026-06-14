@@ -57,6 +57,7 @@ async function buscarUsuarioComParceiro(userId) {
   return { usuario, parceiro: usuario.casadoCom };
 }
 
+// Filtro para quando AINDA se conhece o parceiro (ex: tentar ter filho)
 function filtroFilhos(jid, userId, parceiro) {
   return {
     idGrupo: jid,
@@ -67,7 +68,58 @@ function filtroFilhos(jid, userId, parceiro) {
   };
 }
 
+// Filtro independente de relacionamento ativo: pega todos os filhos
+// onde o usuário é um dos pais, dentro do grupo — funciona mesmo
+// depois de uma separação, preservando a guarda compartilhada.
+function filtroFilhosPorPai(jid, userId) {
+  return {
+    idGrupo: jid,
+    $or: [
+      { jidA: userId },
+      { jidB: userId },
+    ],
+  };
+}
+
+// Retorna true se jidA e jidB do filho estão atualmente casados/namorando
+// um com o outro — ou seja, o casal reconciliou. Nesse caso a guarda
+// compartilhada é desativada e qualquer um dos pais pode cuidar.
+async function estaoJuntos(filho) {
+  if (!filho.jidB) return false; // sem segundo pai cadastrado, nada a checar
+
+  const pais = await Usuario.find(
+    { idWhatsApp: { $in: [filho.jidA, filho.jidB] } },
+    { idWhatsApp: 1, casadoCom: 1 }
+  ).lean();
+
+  const a = pais.find(p => p.idWhatsApp === filho.jidA);
+  const b = pais.find(p => p.idWhatsApp === filho.jidB);
+
+  return !!(a?.casadoCom === filho.jidB && b?.casadoCom === filho.jidA);
+}
+
+// Troca a guarda do filho 1x por dia, apenas enquanto o casal está separado.
+// Se reconciliarem, a guarda fica "livre" (null) e ambos podem cuidar.
 async function atualizarGuarda(filho) {
+  const juntos = await estaoJuntos(filho);
+
+  if (juntos) {
+    // Casal reconciliou: guarda compartilhada desativada
+    if (filho.guardaAtual !== null) {
+      filho.guardaAtual = null;
+      await filho.save();
+    }
+    return null; // null = guarda livre, qualquer um dos pais cuida
+  }
+
+  // Separados: garante que a guarda esteja definida e troca 1x/dia
+  if (!filho.guardaAtual) {
+    filho.guardaAtual = filho.jidA;
+    filho.ultimaTroca = new Date();
+    await filho.save();
+    return filho.guardaAtual;
+  }
+
   const diasDesdeUltimaTroca = (Date.now() - new Date(filho.ultimaTroca).getTime()) / (1000 * 60 * 60 * 24);
   if (diasDesdeUltimaTroca >= 1) {
     filho.guardaAtual = filho.guardaAtual === filho.jidA ? filho.jidB : filho.jidA;
@@ -78,6 +130,7 @@ async function atualizarGuarda(filho) {
 }
 
 // ─── !tentarfilho ─────────────────────────────────────────────────────────────
+// Só faz sentido com relacionamento ativo — continua exigindo casadoCom.
 async function handleTentarFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
@@ -100,7 +153,7 @@ async function handleTentarFilho(sock, msg, jid) {
     }
   }
 
-  // Verifica limite de filhos
+  // Verifica limite de filhos (apenas com o parceiro atual)
   const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, userId, parceiro));
 
   if (totalFilhos >= MAX_FILHOS) {
@@ -146,7 +199,9 @@ async function handleTentarFilho(sock, msg, jid) {
     sono: 100,
     alegria: 100,
     doente: false,
-    guardaAtual: userId,
+    // Enquanto o casal está junto, guarda livre (null) — qualquer um cuida.
+    // Só passa a alternar quando (e se) eles se separarem.
+    guardaAtual: null,
     ultimaTroca: new Date(),
     nascidoEm: new Date(),
   });
@@ -168,23 +223,16 @@ async function handleTentarFilho(sock, msg, jid) {
 }
 
 // ─── !filho ───────────────────────────────────────────────────────────────────
+// Funciona independente de relacionamento ativo — guarda compartilhada
+// só vale enquanto o casal estiver separado.
 async function handleVerFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
-  const info = await buscarUsuarioComParceiro(userId);
-  if (!info) {
-    return sock.sendMessage(jid, {
-      text: '❌ Você não está em um relacionamento.',
-    }, { quoted: msg });
-  }
-
-  const { parceiro } = info;
-
-  const filhos = await Filho.find(filtroFilhos(jid, userId, parceiro));
+  const filhos = await Filho.find(filtroFilhosPorPai(jid, userId));
 
   if (filhos.length === 0) {
     return sock.sendMessage(jid, {
-      text: '👶 Vocês ainda não têm filhos! Use *!tentarfilho* para tentar.',
+      text: '👶 Você ainda não tem filhos! Use *!tentarfilho* (com um relacionamento ativo) para tentar.',
     }, { quoted: msg });
   }
 
@@ -194,8 +242,17 @@ async function handleVerFilho(sock, msg, jid) {
     const idade   = calcularIdade(filho.nascidoEm);
     const emoji   = filho.sexo === 'menino' ? '👦' : '👧';
     const guarda  = await atualizarGuarda(filho);
-    const comQuem = guarda === userId ? 'com você' : 'com seu parceiro(a)';
-    const doente  = filho.doente ? '\n⚠️ *DOENTE!* Use *!remediofil* para curar.' : '';
+
+    let guardaStr;
+    if (guarda === null) {
+      guardaStr = 'compartilhada (vocês estão juntos)';
+    } else if (guarda === userId) {
+      guardaStr = 'com você hoje';
+    } else {
+      guardaStr = 'com seu ex-parceiro(a) hoje';
+    }
+
+    const doente = filho.doente ? '\n⚠️ *DOENTE!* Use *!remediofil* para curar.' : '';
 
     texto +=
       `${emoji} *${filho.nome}* — ${idade} ano(s)\n` +
@@ -204,7 +261,7 @@ async function handleVerFilho(sock, msg, jid) {
       `🍽️ Fome       : ${statusBar(filho.fome)}\n` +
       `😴 Sono       : ${statusBar(filho.sono)}\n` +
       `🎈 Alegria    : ${statusBar(filho.alegria)}\n` +
-      `🏠 Guarda     : *${comQuem}*` +
+      `🏠 Guarda     : *${guardaStr}*` +
       doente +
       `\n\n`;
   }
@@ -213,20 +270,16 @@ async function handleVerFilho(sock, msg, jid) {
 }
 
 // ─── !cuidarfilho ─────────────────────────────────────────────────────────────
+// Funciona independente de relacionamento ativo. Se o casal está junto,
+// guarda é livre (null) e qualquer um dos pais pode cuidar. Se separados,
+// só quem está com a guarda no dia pode cuidar.
 async function handleCuidarFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
-  const info = await buscarUsuarioComParceiro(userId);
-  if (!info) {
-    return sock.sendMessage(jid, { text: '❌ Você não está em um relacionamento.' }, { quoted: msg });
-  }
-
-  const { parceiro } = info;
-
-  const filhos = await Filho.find(filtroFilhos(jid, userId, parceiro));
+  const filhos = await Filho.find(filtroFilhosPorPai(jid, userId));
 
   if (filhos.length === 0) {
-    return sock.sendMessage(jid, { text: '👶 Vocês não têm filhos ainda!' }, { quoted: msg });
+    return sock.sendMessage(jid, { text: '👶 Você não tem filhos ainda!' }, { quoted: msg });
   }
 
   const agora = Date.now();
@@ -237,9 +290,10 @@ async function handleCuidarFilho(sock, msg, jid) {
   for (const filho of filhos) {
     const guarda = await atualizarGuarda(filho);
 
-    // Só quem está com a guarda pode cuidar
-    if (guarda !== userId) {
-      texto += `👶 *${filho.nome}* está com seu parceiro(a) hoje.\n\n`;
+    // guarda === null → casal junto, guarda livre, qualquer um cuida.
+    // guarda !== null → separados, só quem está com a guarda cuida.
+    if (guarda !== null && guarda !== userId) {
+      texto += `👶 *${filho.nome}* está com seu ex-parceiro(a) hoje.\n\n`;
       algumIndisponivel = true;
       continue;
     }
@@ -279,18 +333,12 @@ async function handleCuidarFilho(sock, msg, jid) {
 }
 
 // ─── !remediofil ─────────────────────────────────────────────────────────────
+// Funciona independente de relacionamento ativo.
 async function handleRemedioFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
-  const info = await buscarUsuarioComParceiro(userId);
-  if (!info) {
-    return sock.sendMessage(jid, { text: '❌ Você não está em um relacionamento.' }, { quoted: msg });
-  }
-
-  const { parceiro } = info;
-
   const filhoDoente = await Filho.findOne({
-    ...filtroFilhos(jid, userId, parceiro),
+    ...filtroFilhosPorPai(jid, userId),
     doente: true,
   });
 

@@ -713,7 +713,7 @@ if (matchCmd(cmdWord, 'perfil'))
 if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
   { await utilidadeHandler.handleBio(sock, msg, jid, caption); return; }
 
-  // â”€â”€ MENUS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── MENUS ─────────────────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'menu') || matchCmdStart(cmd, 'menu '))
     { await utilidadeHandler.handleMenu(sock, msg, jid, caption, getPrefix, author); return; }
   if (matchCmd(cmdWord, 'menuutil'))
@@ -724,6 +724,8 @@ if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
     { await utilidadeHandler.handleMenuBaixar(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menucasal') || matchCmd(cmdWord, 'menurelacionamento') || matchCmd(cmdWord, 'menurelacionamentos'))
     { await utilidadeHandler.handleMenuRelacionamento(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'menufilho'))
+    { await utilidadeHandler.handleMenuFilho(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menuadm'))
     { await grupoHandler.handleMenuAdm(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menufig'))

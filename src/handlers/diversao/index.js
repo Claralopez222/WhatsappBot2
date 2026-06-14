@@ -144,15 +144,6 @@ module.exports = {
   handleGado,
   handleBucetudo,
   handleWorldCup,
-
-const {
-  handleTentarFilho,
-  handleVerFilho,
-  handleCuidarFilho,
-  handleRemedioFilho,
-  initFilhosScheduler,
-} = require('./filhos');
-
   // ── Economia (17 itens) ────────────────────────────────────────────────────
   handleGold,
   handleLoja,

@@ -78,9 +78,6 @@ function getYtDlpArgs() {
   return args;
 }
 
-// Caminho do binário yt-dlp em cache
-let _cachedYtDlpPath = null;
-
 // Auto-download do binário yt-dlp no Linux/Render se não encontrado
 async function ensureYtDlpBinary() {
   const tmpPath = '/tmp/yt-dlp';

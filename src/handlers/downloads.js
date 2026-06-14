@@ -724,8 +724,6 @@ async function handleAudioDownload(sock, msg, jid, caption) {
   }
 }
 
-// ─── !som ─────────────────────────────────────────────────────────────────────
-
 async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const P    = getPrefix(jid);
   const nome = caption.replace(/^[!.,\/]*(som|play)\s*/i, '').trim();
@@ -735,99 +733,112 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  const ytdlp       = await getYtDlpPath();
-  const id          = require('crypto').randomUUID();
-  const outTemplate = tmpPath(id, '.%(ext)s');
-  const query       = `ytsearch1:${nome} official audio`;
+  try {
+    const ytdlp       = await getYtDlpPath();
+    const id          = require('crypto').randomUUID();
+    const outTemplate = tmpPath(id, '.%(ext)s');
+    const query       = `ytsearch1:${nome} official audio`;
 
-  // Meta e download em paralelo — mais rápido
-  const metaPromise = fetchMeta(ytdlp, query, ['--match-filter', '!is_live']);
+    const metaPromise = fetchMeta(ytdlp, query, ['--match-filter', '!is_live']);
 
-  const dlArgs = [
-    ...getYtDlpArgs(),
-    '--no-playlist', '-x',
-    '--audio-format', 'mp3',
-    '--audio-quality', '5',      // 0 = melhor qualidade mas mais pesado; 5 é suficiente e mais leve
-    '--match-filter', '!is_live',
-    '--max-filesize', '30m',     // músicas raramente passam de 30MB; economiza RAM
-    '-o', outTemplate,
-    query,
-  ];
-  const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
-  if (!ok) return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+    const dlArgs = [
+      ...getYtDlpArgs(),
+      '--no-playlist', '-x',
+      '--audio-format', 'mp3',
+      '--audio-quality', '5',
+      '--match-filter', '!is_live',
+      '--max-filesize', '30m',
+      '-o', outTemplate,
+      query,
+    ];
+    const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
+    if (!ok) {
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+    }
 
-  const base      = outTemplate.replace('.%(ext)s', '');
-  const finalPath = ['.mp3', '.m4a', '.opus', '.ogg', '.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
-  if (!finalPath) return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+    const base      = outTemplate.replace('.%(ext)s', '');
+    const finalPath = ['.mp3', '.m4a', '.opus', '.ogg', '.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
+    if (!finalPath) {
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+    }
 
-  const audioBuffer = fs.readFileSync(finalPath);
-  safeDel(finalPath);
-  if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Arquivo muito grande (máx 64MB).' }, { quoted: msg });
+    const audioBuffer = fs.readFileSync(finalPath);
+    safeDel(finalPath);
+    if (audioBuffer.length > SIZE_LIMIT) {
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Arquivo muito grande (máx 64MB).' }, { quoted: msg });
+    }
 
-  const meta = await metaPromise;
+    const meta = await metaPromise;
 
-  // Thumbnail — reduz para 640x360 para economizar RAM no sharp
-  let cardBuffer = null;
-  const thumbUrl = meta?.thumbnail || (meta?.thumbnails?.length ? meta.thumbnails[meta.thumbnails.length - 1]?.url : null);
-  if (thumbUrl) {
-    try {
-      const thumbBuffer = await fetchBuffer(thumbUrl);
-      const resized     = await sharp(thumbBuffer)
-        .resize(640, 360, { fit: 'cover', position: 'centre' })
-        .jpeg({ quality: 80 })
-        .toBuffer();
-      const overlay = Buffer.from(
-        `<svg width="640" height="360" xmlns="http://www.w3.org/2000/svg">` +
-        `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
-        `<stop offset="50%" stop-color="black" stop-opacity="0"/>` +
-        `<stop offset="100%" stop-color="black" stop-opacity="0.82"/>` +
-        `</linearGradient></defs>` +
-        `<rect width="640" height="360" fill="url(#g)"/>` +
-        `</svg>`
-      );
-      cardBuffer = await sharp(resized)
-        .composite([{ input: overlay, blend: 'over' }])
-        .jpeg({ quality: 80 })
-        .toBuffer();
-    } catch {}
+    let cardBuffer = null;
+    const thumbUrl = meta?.thumbnail || (meta?.thumbnails?.length ? meta.thumbnails[meta.thumbnails.length - 1]?.url : null);
+    if (thumbUrl) {
+      try {
+        const thumbBuffer = await fetchBuffer(thumbUrl);
+        const resized     = await sharp(thumbBuffer)
+          .resize(640, 360, { fit: 'cover', position: 'centre' })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+        const overlay = Buffer.from(
+          `<svg width="640" height="360" xmlns="http://www.w3.org/2000/svg">` +
+          `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="50%" stop-color="black" stop-opacity="0"/>` +
+          `<stop offset="100%" stop-color="black" stop-opacity="0.82"/>` +
+          `</linearGradient></defs>` +
+          `<rect width="640" height="360" fill="url(#g)"/>` +
+          `</svg>`
+        );
+        cardBuffer = await sharp(resized)
+          .composite([{ input: overlay, blend: 'over' }])
+          .jpeg({ quality: 80 })
+          .toBuffer();
+      } catch {}
+    }
+    if (!cardBuffer) {
+      try {
+        cardBuffer = await sharp({
+          create: { width: 640, height: 360, channels: 3, background: { r: 15, g: 52, b: 96 } },
+        }).jpeg({ quality: 80 }).toBuffer();
+      } catch {}
+    }
+
+    const titulo   = meta?.title || nome;
+    const durSec   = meta?.duration || 0;
+    const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+    const uploader = meta?.uploader || meta?.channel || null;
+    const views    = meta?.view_count ? Number(meta.view_count).toLocaleString('pt-BR') : null;
+
+    const senderJid = msg.key.participant || msg.key.remoteJid;
+    pendingMusic.set(senderJid, { audioBuffer, titulo, meta, nome });
+    setTimeout(() => pendingMusic.delete(senderJid), 10 * 60 * 1000);
+
+    let texto = `━━━ [ 🎧 *Piroquinhas* 🎧 ] ━━━\n\n`;
+    texto += `• 🔎 *Pesquisa:* _${nome}_\n\n`;
+    texto += `• 🎵 *Título:* _${titulo}_\n\n`;
+    texto += `• ⏱️ *Duração:* ${durStr}\n`;
+    if (uploader) texto += `• 👤 *Canal:* _${uploader}_\n`;
+    if (views)    texto += `• 👁️ *Views:* ${views}\n`;
+    texto += `\n━━━ [ 📱 *MAIS OPÇÕES* 📱 ] ━━━\n`;
+    texto += `🎬 *${P}playmp4* - _Baixa como vídeo_\n`;
+    texto += `📄 *${P}playdoc* - _Baixa como documento_`;
+
+    if (cardBuffer) {
+      await sock.sendMessage(jid, { image: cardBuffer, caption: texto }, { quoted: msg });
+    } else {
+      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    }
+
+    await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    log.info(`✅ Música "${titulo}" enviada!`);
+  } catch (err) {
+    log.error(`❌ Erro em handleSom: ${err.message}`);
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    await sock.sendMessage(jid, { text: `❌ Erro ao processar *"${nome}"*. Tente novamente.` }, { quoted: msg }).catch(() => {});
   }
-  if (!cardBuffer) {
-    try {
-      cardBuffer = await sharp({
-        create: { width: 640, height: 360, channels: 3, background: { r: 15, g: 52, b: 96 } },
-      }).jpeg({ quality: 80 }).toBuffer();
-    } catch {}
-  }
-
-  const titulo   = meta?.title || nome;
-  const durSec   = meta?.duration || 0;
-  const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
-  const uploader = meta?.uploader || meta?.channel || null;
-  const views    = meta?.view_count ? Number(meta.view_count).toLocaleString('pt-BR') : null;
-
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  pendingMusic.set(senderJid, { audioBuffer, titulo, meta, nome });
-  setTimeout(() => pendingMusic.delete(senderJid), 10 * 60 * 1000);
-
-  let texto = `━━━ [ 🎧 *Piroquinhas* 🎧 ] ━━━\n\n`;
-  texto += `• 🔎 *Pesquisa:* _${nome}_\n\n`;
-  texto += `• 🎵 *Título:* _${titulo}_\n\n`;
-  texto += `• ⏱️ *Duração:* ${durStr}\n`;
-  if (uploader) texto += `• 👤 *Canal:* _${uploader}_\n`;
-  if (views)    texto += `• 👁️ *Views:* ${views}\n`;
-  texto += `\n━━━ [ 📱 *MAIS OPÇÕES* 📱 ] ━━━\n`;
-  texto += `🎬 *${P}playmp4* - _Baixa como vídeo_\n`;
-  texto += `📄 *${P}playdoc* - _Baixa como documento_`;
-
-  if (cardBuffer) {
-    await sock.sendMessage(jid, { image: cardBuffer, caption: texto }, { quoted: msg });
-  } else {
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-  }
-
-  await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  log.info(`✅ Música "${titulo}" enviada!`);
 }
 
 // ─── !playmp4 ─────────────────────────────────────────────────────────────────

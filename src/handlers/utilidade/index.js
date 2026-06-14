@@ -502,16 +502,17 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   try {
     if (relacionamentos) {
       for (const [k, v] of relacionamentos) {
-        if (k.includes(number)) {
-          parceiroJid = k.find(id => !id.includes(number)) || '';
-          if (parceiroJid && !parceiroJid.endsWith('@s.whatsapp.net')) {
-            parceiroJid = `${parceiroJid}@s.whatsapp.net`;
-          }
-          relStatus = v.tipo === 'casamento'
-            ? `💍 Casado(a) com @${extractNumber(parceiroJid)}`
-            : `❤️ Namorando com @${extractNumber(parceiroJid)}`;
-          break;
-        }
+        if (!k.startsWith(jid + '|')) continue; // só relacionamentos deste grupo
+
+        const ehA = v.jidA === resolvedJid || v.jidA === alvoJid;
+        const ehB = v.jidB === resolvedJid || v.jidB === alvoJid;
+        if (!ehA && !ehB) continue;
+
+        parceiroJid = ehA ? v.jidB : v.jidA;
+        relStatus = v.tipo === 'casamento'
+          ? `💍 Casado(a) com @${extractNumber(parceiroJid)}`
+          : `❤️ Namorando com @${extractNumber(parceiroJid)}`;
+        break;
       }
     }
 

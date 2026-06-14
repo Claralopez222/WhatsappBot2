@@ -109,6 +109,9 @@ const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils
 // handleCarinh
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
+// Comandos que NÃO exigem item do inventário (carinhos "gratuitos")
+const CARINHOS_SEM_ITEM = new Set(['abraco']);
+
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
   // ── Normaliza o JID de quem enviou o comando ──
   const senderJidNormalizado = jidNormalizedUser(senderJid);
@@ -130,47 +133,56 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   // Descobre de forma cirúrgica quem é o parceiro usando os IDs normalizados
   const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
 
-  // ── Verifica se o item existe no inventário do sender ──
-  const userDoc = await Usuario.findOne(
-    { idWhatsApp: senderJidNormalizado },
-    { [`inventory.${cmd}`]: 1 }
-  ).lean();
+  const exigeItem = !CARINHOS_SEM_ITEM.has(cmd);
+  let consumo = null;
 
-  const qtdItem = userDoc?.inventory?.[cmd] ?? 0;
+  if (exigeItem) {
+    // ── Verifica se o item existe no inventário do sender ──
+    const userDoc = await Usuario.findOne(
+      { idWhatsApp: senderJidNormalizado },
+      { [`inventory.${cmd}`]: 1 }
+    ).lean();
 
-  if (qtdItem < 1) {
-    await sock.sendMessage(jid, {
-      text: `🛒 Você não tem *${cmd}* para dar!\nCompre na *!lojacasal* e surpreenda seu par! 💝`,
-    }, { quoted: msg });
-    return;
-  }
+    const qtdItem = userDoc?.inventory?.[cmd] ?? 0;
 
-  // ── Consome 1 unidade do item antes de qualquer outra operação ──
-  const consumo = await Usuario.findOneAndUpdate(
-    { idWhatsApp: senderJidNormalizado, [`inventory.${cmd}`]: { $gte: 1 } },
-    { $inc: { [`inventory.${cmd}`]: -1 } },
-    { new: true }
-  );
+    if (qtdItem < 1) {
+      await sock.sendMessage(jid, {
+        text: `🛒 Você não tem *${cmd}* para dar!\nCompre na *!lojacasal* e surpreenda seu par! 💝`,
+      }, { quoted: msg });
+      return;
+    }
 
-  if (!consumo) {
-    await sock.sendMessage(jid, {
-      text: `⚠️ Não foi possível usar o item agora. Tente novamente.`,
-    }, { quoted: msg });
-    return;
+    // ── Consome 1 unidade do item antes de qualquer outra operação ──
+    consumo = await Usuario.findOneAndUpdate(
+      { idWhatsApp: senderJidNormalizado, [`inventory.${cmd}`]: { $gte: 1 } },
+      { $inc: { [`inventory.${cmd}`]: -1 } },
+      { new: true }
+    );
+
+    if (!consumo) {
+      await sock.sendMessage(jid, {
+        text: `⚠️ Não foi possível usar o item agora. Tente novamente.`,
+      }, { quoted: msg });
+      return;
+    }
   }
 
   // ── Cooldown diário por casal+comando (não só por sender) ──
   const diarioKey = `${key}:${cmd}:${hoje()}`;
   if (diariosUsados.has(diarioKey)) {
-    // Devolve o item consumido acima para não prejudicar o usuário
-    await Usuario.updateOne(
-      { idWhatsApp: senderJidNormalizado },
-      { $inc: { [`inventory.${cmd}`]: 1 } }
-    ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no cooldown:`, e.message));
+    if (exigeItem) {
+      // Devolve o item consumido acima para não prejudicar o usuário
+      await Usuario.updateOne(
+        { idWhatsApp: senderJidNormalizado },
+        { $inc: { [`inventory.${cmd}`]: 1 } }
+      ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no cooldown:`, e.message));
+    }
 
-    await sock.sendMessage(jid, {
-      text: `⏰ Você já usou *!${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`,
-    }, { quoted: msg });
+    const msgCooldown = cmd === 'abraco'
+      ? `⏰ Vocês já trocaram um abraço hoje! Volte amanhã para mais um carinho. 🤗`
+      : `⏰ Você já usou *!${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`;
+
+    await sock.sendMessage(jid, { text: msgCooldown }, { quoted: msg });
     return;
   }
   diariosUsados.set(diarioKey, true);
@@ -208,10 +220,13 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     // Reverte Map, cooldown e item consumido
     if (typeof xpCasais !== 'undefined') xpCasais.set(key, xpAtual - ganho);
     diariosUsados.delete(diarioKey);
-    await Usuario.updateOne(
-      { idWhatsApp: senderJidNormalizado },
-      { $inc: { [`inventory.${cmd}`]: 1 } }
-    ).catch(err => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no rollback de XP:`, err.message));
+
+    if (exigeItem) {
+      await Usuario.updateOne(
+        { idWhatsApp: senderJidNormalizado },
+        { $inc: { [`inventory.${cmd}`]: 1 } }
+      ).catch(err => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no rollback de XP:`, err.message));
+    }
 
     await sock.sendMessage(jid, {
       text: '⚠️ Erro ao registrar o carinho. Tente novamente.',
@@ -223,8 +238,12 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
   const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
 
-  const qtdRestante = (consumo.inventory?.[cmd] ?? 0);
-  const bonusStr    = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
+  const bonusStr = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
+
+  // Linha de inventário só aparece para carinhos que consomem item
+  const inventarioStr = exigeItem
+    ? `\n🎒 *${cmd}* restantes no seu inventário: *${consumo.inventory?.[cmd] ?? 0}*`
+    : '';
 
   // Lista de JIDs que vão receber o ping/marcação azul de verdade no chat
   const listaMentions = [senderJidNormalizado];
@@ -233,11 +252,13 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   await sock.sendMessage(jid, {
     text:
       `${emoji} ${tagRemetente} ${verbo} para ${tagParceiro}! 💕\n\n` +
-      `💰 *+${ganho} XP*${bonusStr} | Total do casal: *${xpAtual} XP*\n` +
-      `🎒 *${cmd}* restantes no seu inventário: *${qtdRestante}*`,
+      `💰 *+${ganho} XP*${bonusStr} | Total do casal: *${xpAtual} XP*` +
+      inventarioStr,
     mentions: listaMentions,
   }, { quoted: msg });
 }
+
+module.exports = { handleCarinh };
 
 // ═══════════════════════════════════════════════════════════════
 // ─── PEDIDO DE CASAMENTO / NAMORO ─────────────────────────────

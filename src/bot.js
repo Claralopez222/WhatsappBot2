@@ -258,13 +258,16 @@ function contarMensagem(jid, nome) {
   if (cur.count % 10 === 0) saveData();
 }
 
-// â”€â”€â”€ Configurar Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Logger global (usado pelo socket e pelos handlers) ───────────────────────
+const logger = pino({ level: 'silent' });
+
+// ─── Configurar Handlers ────────────────────────────────────────────────────
 figurinhaHandler.setLogger(logger);
 imagemHandler.setLogger(logger);
 alteradoresHandler.setLogger(logger);
 downloadsHandler.setLogger(logger);
 
-// â”€â”€â”€ Helpers de formataÃ§Ã£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers de formatação ──────────────────────────────────────────────────
 function formatarNumeroBR(jid) {
   const numeroPuro = jid.split('@')[0];
 
@@ -286,11 +289,8 @@ function formatarNumeroBR(jid) {
 }
 
 function getSenderName(msg) {
-  return msg.pushName || msg.key.remoteJid?.split('@')[0] || 'UsuÃ¡rio';
+  return msg.pushName || msg.key.remoteJid?.split('@')[0] || 'Usuário';
 }
-
-// ─── Logger global (usado pelo socket e pelos handlers) ───────────────────────
-const logger = pino({ level: 'silent' });
 
 // ── Iniciar bot ───────────────────────────────────────────────────────────────
 async function startBot() {

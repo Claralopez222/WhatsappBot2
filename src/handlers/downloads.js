@@ -425,88 +425,108 @@ async function handleSaveRec(sock, msg, jid, caption) {
   const id          = require('crypto').randomUUID();
   const outTemplate = tmpPath(id, '_raw.%(ext)s');
 
-  // Busca meta em paralelo com o download
-  const metaPromise = fetchMeta(ytdlp, link);
+  try {
+    // Busca meta em paralelo com o download
+    const metaPromise = fetchMeta(ytdlp, link);
 
-  const dlArgs = [
-    ...getYtDlpArgs(),
-    '--no-playlist',
-    '--max-filesize', '100m',
-    '-f', 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best',
-    '-o', outTemplate,
-    link,
-  ];
-  if (/pinterest|pin\.it/i.test(link)) {
-    dlArgs.push('--referer', 'https://www.pinterest.com', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-  }
-
-  const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 120000);
-  if (!dlOk) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
-
-  const base   = outTemplate.replace('.%(ext)s', '');
-  let filePath = ['.mp4', '.mkv', '.webm', '.mov'].map(e => base + e).find(p => fs.existsSync(p)) || null;
-  if (!filePath) return sock.sendMessage(jid, { text: '❌ Arquivo de vídeo não encontrado.' }, { quoted: msg });
-
-  const recPath = tmpPath(id, '_rec.mp4');
-  const ok = await ffmpeg(ffmpegBin, [
-    '-y', '-i', filePath,
-    '-t', '10',
-    '-vf', 'scale=480:-2:flags=lanczos',
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32',
-    '-c:a', 'aac', '-b:a', '96k',
-    '-movflags', '+faststart',
-    recPath,
-  ]);
-  safeDel(filePath);
-
-  if (!ok || !fs.existsSync(recPath)) {
-    return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
-  }
-
-  const buffer = fs.readFileSync(recPath);
-  safeDel(recPath);
-
-  // Monta caption detalhada
-  const meta = await metaPromise;
-  const buildCaption = () => {
-    const titulo   = meta?.title || meta?.description?.slice(0, 80) || '—';
-    const autor    = meta?.uploader || meta?.creator || meta?.channel || '—';
-    const durSec   = meta?.duration || 0;
-    const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
-    const views    = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
-    const likes    = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
-    const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
-    const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
-
-    let txt = `━━━ [ 🎬 *SaveRec* 🎬 ] ━━━\n\n`;
-    txt += `📌 *Título:* ${titulo}\n`;
-    txt += `👤 *Canal:* ${autor}\n`;
-    txt += `⏱️ *Duração total:* ${durStr} _(recortado: 10s)_\n`;
-    if (views)    txt += `👁️ *Views:* ${views}\n`;
-    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
-    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
-    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
-    txt += `\n🔗 ${link}`;
-    return txt;
-  };
-
-  if (buffer.length > SIZE_LIMIT) {
-    const name = path.basename(recPath);
-    await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption() }, { quoted: msg });
-  } else {
-    await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: buildCaption() }, { quoted: msg });
-
-    if (buffer.length < 8 * 1024 * 1024) {
-      try {
-        const stickerBuffer = await convertVideoToSticker(buffer);
-        await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
-      } catch (e) { log.warn('sticker err:', e.message); }
+    const dlArgs = [
+      ...getYtDlpArgs(),
+      '--no-playlist',
+      '--max-filesize', '100m',
+      '-f', 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best',
+      '-o', outTemplate,
+      link,
+    ];
+    if (/pinterest|pin\.it/i.test(link)) {
+      dlArgs.push('--referer', 'https://www.pinterest.com', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
     }
+
+    const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 120000);
+    if (!dlOk) {
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
+    }
+
+    const base   = outTemplate.replace('.%(ext)s', '');
+    let filePath = ['.mp4', '.mkv', '.webm', '.mov'].map(e => base + e).find(p => fs.existsSync(p)) || null;
+    if (!filePath) {
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Arquivo de vídeo não encontrado.' }, { quoted: msg });
+    }
+
+    const recPath = tmpPath(id, '_rec.mp4');
+    const ok = await ffmpeg(ffmpegBin, [
+      '-y', '-i', filePath,
+      '-t', '10',
+      '-vf', 'scale=480:-2:flags=lanczos',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32',
+      '-c:a', 'aac', '-b:a', '96k',
+      '-movflags', '+faststart',
+      recPath,
+    ]);
+    safeDel(filePath);
+
+    if (!ok || !fs.existsSync(recPath)) {
+      safeDel(recPath);
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+    }
+
+    const buffer = fs.readFileSync(recPath);
+    safeDel(recPath);
+
+    // Monta caption detalhada
+    const meta = await metaPromise;
+    const buildCaption = () => {
+      const titulo   = meta?.title || meta?.description?.slice(0, 80) || '—';
+      const autor    = meta?.uploader || meta?.creator || meta?.channel || '—';
+      const durSec   = meta?.duration || 0;
+      const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+      const views    = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+      const likes    = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+      const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+      const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+
+      let txt = `━━━ [ 🎬 *SaveRec* 🎬 ] ━━━\n\n`;
+      txt += `📌 *Título:* ${titulo}\n`;
+      txt += `👤 *Canal:* ${autor}\n`;
+      txt += `⏱️ *Duração total:* ${durStr} _(recortado: 10s)_\n`;
+      if (views)    txt += `👁️ *Views:* ${views}\n`;
+      if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+      if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+      if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+      txt += `\n🔗 ${link}`;
+      return txt;
+    };
+
+    if (buffer.length > SIZE_LIMIT) {
+      const name = path.basename(recPath);
+      await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: buildCaption() }, { quoted: msg });
+    } else {
+      await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: buildCaption() }, { quoted: msg });
+
+      if (buffer.length < 8 * 1024 * 1024) {
+        try {
+          const stickerBuffer = await convertVideoToSticker(buffer);
+          await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
+        } catch (e) { log.warn('sticker err:', e.message); }
+      }
+    }
+
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    log.error(`❌ Erro em handleSaveRec: ${err.message}`);
+    // Limpeza de qualquer resíduo em disco relacionado a esse id
+    try {
+      const dir = path.dirname(outTemplate);
+      for (const f of fs.readdirSync(dir)) {
+        if (f.startsWith(id)) safeDel(path.join(dir, f));
+      }
+    } catch {}
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    await sock.sendMessage(jid, { text: '❌ Erro ao processar o link. Tente novamente.' }, { quoted: msg }).catch(() => {});
   }
-
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
 }
-
 // ─── !tiktok ──────────────────────────────────────────────────────────────────
 
 async function handleTiktok(sock, msg, jid, caption, getPrefix) {
@@ -548,105 +568,123 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const rawPath = tmpPath(id, '_raw.mp4');
   const outPath = tmpPath(id, '_out.mp4');
 
-  const dlArgs = [
-    ...getYtDlpArgs(),
-    '--no-playlist',
-    '-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]/best',
-    '--merge-output-format', 'mp4',
-    '--max-filesize', '80m',
-    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-    '--referer', 'https://www.tiktok.com/',
-  ];
-  if (cookieFilePath) { dlArgs.push('--cookies', cookieFilePath); log.info('🍪 Usando cookies'); }
-  dlArgs.push('-o', rawPath, link);
+  try {
+    const dlArgs = [
+      ...getYtDlpArgs(),
+      '--no-playlist',
+      '-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]/best',
+      '--merge-output-format', 'mp4',
+      '--max-filesize', '80m',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+      '--referer', 'https://www.tiktok.com/',
+    ];
+    if (cookieFilePath) { dlArgs.push('--cookies', cookieFilePath); log.info('🍪 Usando cookies'); }
+    dlArgs.push('-o', rawPath, link);
 
-  const { ok: dlOk, stderr: dlStderr } = await ytDlp(ytdlp, dlArgs, 60000);
-  if (!dlOk) {
-    cleanupCookie();
-    return sock.sendMessage(jid, {
-      text: /photo/i.test(dlStderr)
-        ? '⚠️ Esse link é um *post de foto* do TikTok, não um vídeo!'
-        : '❌ Não consegui baixar o vídeo.\nVerifique se o link é válido.',
-    }, { quoted: msg });
-  }
+    const { ok: dlOk, stderr: dlStderr } = await ytDlp(ytdlp, dlArgs, 60000);
+    if (!dlOk) {
+      safeDel(rawPath);
+      cleanupCookie();
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, {
+        text: /photo/i.test(dlStderr)
+          ? '⚠️ Esse link é um *post de foto* do TikTok, não um vídeo!'
+          : '❌ Não consegui baixar o vídeo.\nVerifique se o link é válido.',
+      }, { quoted: msg });
+    }
 
-  if (!fs.existsSync(rawPath)) {
-    cleanupCookie();
-    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
-  }
+    if (!fs.existsSync(rawPath)) {
+      cleanupCookie();
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+    }
 
-  // Monta caption detalhada com os dados do meta
-  const buildCaption = (meta) => {
-    const titulo   = meta?.title || meta?.description?.slice(0, 80) || '—';
-    const autor    = meta?.uploader || meta?.creator || meta?.uploader_id || '—';
-    const durSec   = meta?.duration || 0;
-    const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
-    const views    = meta?.view_count   ? Number(meta.view_count).toLocaleString('pt-BR')   : null;
-    const likes    = meta?.like_count   ? Number(meta.like_count).toLocaleString('pt-BR')   : null;
-    const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
-    const shares   = meta?.repost_count  ? Number(meta.repost_count).toLocaleString('pt-BR')  : null;
-    const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ')  : null;
+    // Monta caption detalhada com os dados do meta
+    const buildCaption = (meta) => {
+      const titulo   = meta?.title || meta?.description?.slice(0, 80) || '—';
+      const autor    = meta?.uploader || meta?.creator || meta?.uploader_id || '—';
+      const durSec   = meta?.duration || 0;
+      const durStr   = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+      const views    = meta?.view_count   ? Number(meta.view_count).toLocaleString('pt-BR')   : null;
+      const likes    = meta?.like_count   ? Number(meta.like_count).toLocaleString('pt-BR')   : null;
+      const comments = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+      const shares   = meta?.repost_count  ? Number(meta.repost_count).toLocaleString('pt-BR')  : null;
+      const tags     = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ')  : null;
 
-    let txt = `━━━ [ 🎵 *TikTok* 🎵 ] ━━━\n\n`;
-    txt += `📌 *Título:* ${titulo}\n`;
-    txt += `👤 *Criador:* @${autor}\n`;
-    txt += `⏱️ *Duração:* ${durStr}\n`;
-    if (views)    txt += `👁️ *Views:* ${views}\n`;
-    if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
-    if (comments) txt += `💬 *Comentários:* ${comments}\n`;
-    if (shares)   txt += `🔁 *Compartilhamentos:* ${shares}\n`;
-    if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
-    txt += `\n🔗 ${link}`;
-    return txt;
-  };
+      let txt = `━━━ [ 🎵 *TikTok* 🎵 ] ━━━\n\n`;
+      txt += `📌 *Título:* ${titulo}\n`;
+      txt += `👤 *Criador:* @${autor}\n`;
+      txt += `⏱️ *Duração:* ${durStr}\n`;
+      if (views)    txt += `👁️ *Views:* ${views}\n`;
+      if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+      if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+      if (shares)   txt += `🔁 *Compartilhamentos:* ${shares}\n`;
+      if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+      txt += `\n🔗 ${link}`;
+      return txt;
+    };
 
-  const rawSize = fs.statSync(rawPath).size;
+    const rawSize = fs.statSync(rawPath).size;
 
-  // Envia direto se já estiver dentro do limite — sem ffmpeg, economiza RAM
-  if (rawSize <= SIZE_LIMIT) {
-    const videoBuffer = fs.readFileSync(rawPath);
+    // Envia direto se já estiver dentro do limite — sem ffmpeg, economiza RAM
+    if (rawSize <= SIZE_LIMIT) {
+      const videoBuffer = fs.readFileSync(rawPath);
+      safeDel(rawPath);
+      const meta         = await metaPromise;
+      const finalCaption = buildCaption(meta);
+      await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+      cleanupCookie();
+      return;
+    }
+
+    // Arquivo grande — reencoda em 480p com ultrafast para economizar RAM
+    const encOk = await ffmpeg(ffmpegBin, [
+      '-y', '-i', rawPath,
+      '-vf', 'scale=480:-2:flags=lanczos',
+      '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
+      '-preset', 'ultrafast', '-crf', '32',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '96k',
+      '-movflags', '+faststart', outPath,
+    ]);
     safeDel(rawPath);
+
+    if (!encOk || !fs.existsSync(outPath)) {
+      safeDel(outPath);
+      cleanupCookie();
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+    }
+
+    const videoBuffer = fs.readFileSync(outPath);
+    safeDel(outPath);
+
+    if (videoBuffer.length > SIZE_LIMIT) {
+      cleanupCookie();
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Vídeo muito grande mesmo após compressão (máx 64MB).' }, { quoted: msg });
+    }
+
     const meta         = await metaPromise;
     const finalCaption = buildCaption(meta);
+
     await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
     cleanupCookie();
-    return;
-  }
-
-  // Arquivo grande — reencoda em 480p com ultrafast para economizar RAM
-  const encOk = await ffmpeg(ffmpegBin, [
-    '-y', '-i', rawPath,
-    '-vf', 'scale=480:-2:flags=lanczos',
-    '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
-    '-preset', 'ultrafast', '-crf', '32',
-    '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '96k',
-    '-movflags', '+faststart', outPath,
-  ]);
-  safeDel(rawPath);
-
-  if (!encOk || !fs.existsSync(outPath)) {
+  } catch (err) {
+    log.error(`❌ Erro em handleTiktok: ${err.message}`);
     cleanupCookie();
-    return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+    try {
+      const dir = path.dirname(rawPath);
+      for (const f of fs.readdirSync(dir)) {
+        if (f.startsWith(id)) safeDel(path.join(dir, f));
+      }
+    } catch {}
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    await sock.sendMessage(jid, { text: '❌ Erro ao processar o vídeo. Tente novamente.' }, { quoted: msg }).catch(() => {});
   }
-
-  const videoBuffer = fs.readFileSync(outPath);
-  safeDel(outPath);
-
-  if (videoBuffer.length > SIZE_LIMIT) {
-    cleanupCookie();
-    return sock.sendMessage(jid, { text: '❌ Vídeo muito grande mesmo após compressão (máx 64MB).' }, { quoted: msg });
-  }
-
-  const meta         = await metaPromise;
-  const finalCaption = buildCaption(meta);
-
-  await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  cleanupCookie();
 }
-
 // ─── !audio ───────────────────────────────────────────────────────────────────
 
 async function handleAudioDownload(sock, msg, jid, caption) {

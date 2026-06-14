@@ -480,7 +480,7 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
     // ── Saída de membros ────────────────────────────────────────────────────
     if (action === 'remove') {
       for (const participantJid of participants) {
-        const found = relacionamentoHandler.findRelByJid(participantJid, relacionamentos);
+        const found = relacionamentoHandler.findRelByJid(groupJid, participantJid, relacionamentos);
         if (!found) continue;
 
         const { key, rel } = found;
@@ -547,6 +547,11 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       initPetScheduler(sock);
       initQuizRankingScheduler(sock, activeGroups);
       initFilhosScheduler();
+
+      // Limpeza periódica de arquivos temporários (a cada 5min, remove >10min)
+      setInterval(() => limparTmpAntigos(10 * 60 * 1000), 5 * 60 * 1000);
+      limparTmpAntigos(10 * 60 * 1000);
+
       schedulersIniciados = true;
       console.log('[Schedulers] Iniciados.');
     } else {
@@ -558,7 +563,6 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
   }
 });
 } // fim do startBot
-
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

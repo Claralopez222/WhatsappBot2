@@ -132,7 +132,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   // ── Normaliza o JID de quem enviou o comando ──
   const senderJidNormalizado = jidNormalizedUser(senderJid);
 
-  const found = findRelByJid(senderJidNormalizado, relacionamentos);
+  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
 
   let key, rel;
   let jidANormalizado = null;
@@ -182,8 +182,8 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     jidANormalizado = senderJidNormalizado;
     jidBNormalizado = parcJid;
 
-    // Chave estável independente de quem manda primeiro (cooldown compartilhado pela dupla)
-    key = [senderJidNormalizado, parcJid].sort().join('_');
+    // Chave estável independente de quem manda primeiro (cooldown compartilhado pela dupla, por grupo)
+    key = relKey(jid, senderJidNormalizado, parcJid);
   }
 
   // ── Define se o comando exige item, e qual chave/nome usar no inventário ──

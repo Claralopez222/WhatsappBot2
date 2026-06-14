@@ -1277,6 +1277,20 @@ async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos)
   }, { quoted: msg });
 }
 
+// handleAbraco
+async function handleAbraco(sock, msg, jid, author, senderJid, relacionamentos) {
+  const abracos = [
+    'um abraço apertado 🤗',
+    'um abraço de urso 🐻',
+    'um abraço cheio de carinho 💞',
+    'um abraço que durou minutos ⏳',
+    'um abraço surpresa por trás 😄',
+  ];
+  const a = abracos[Math.floor(Math.random() * abracos.length)];
+
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'abraco', '🤗', `deu ${a}`, 3);
+}
+
 module.exports = {
   handlePresente,
   handleJantar,

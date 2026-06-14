@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchBuffer, fetchJson } = require(path.join(__dirname, '..', '..', 'fetchurl'));
-const { handleMenu, handleMenuUtil, handleMenuJogos, handleMenuBaixar, handleMenuRelacionamento, handleAlteradores } = require(path.join(__dirname, 'menu'));
+const { handleMenu, handleMenuUtil, handleMenuJogos, handleMenuBaixar, handleMenuRelacionamento, handleAlteradores, handleMenuFilho } = require(path.join(__dirname, 'menu'));
 const { handleMenuWork } = require(path.join(__dirname, '..', 'diversao', 'emprego'));
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { handleLevelOn, handleLevel, handleRankLevel } = require(path.join(__dirname, 'level'));
@@ -502,16 +502,17 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   try {
     if (relacionamentos) {
       for (const [k, v] of relacionamentos) {
-        if (k.includes(number)) {
-          parceiroJid = k.find(id => !id.includes(number)) || '';
-          if (parceiroJid && !parceiroJid.endsWith('@s.whatsapp.net')) {
-            parceiroJid = `${parceiroJid}@s.whatsapp.net`;
-          }
-          relStatus = v.tipo === 'casamento'
-            ? `💍 Casado(a) com @${extractNumber(parceiroJid)}`
-            : `❤️ Namorando com @${extractNumber(parceiroJid)}`;
-          break;
-        }
+        if (!k.startsWith(jid + '|')) continue; // só relacionamentos deste grupo
+
+        const ehA = v.jidA === resolvedJid || v.jidA === alvoJid;
+        const ehB = v.jidB === resolvedJid || v.jidB === alvoJid;
+        if (!ehA && !ehB) continue;
+
+        parceiroJid = ehA ? v.jidB : v.jidA;
+        relStatus = v.tipo === 'casamento'
+          ? `💍 Casado(a) com @${extractNumber(parceiroJid)}`
+          : `❤️ Namorando com @${extractNumber(parceiroJid)}`;
+        break;
       }
     }
 
@@ -635,8 +636,6 @@ async function handleBio(sock, msg, jid, caption) {
     }, { quoted: msg });
   }
 }
-// ─── Exportar ─────────────────────────────────────────────────────────────────
-
 module.exports = {
   handleMenu,
   handleMenuUtil,
@@ -644,6 +643,7 @@ module.exports = {
   handleMenuBaixar,
   handleMenuRelacionamento,
   handleAlteradores,
+  handleMenuFilho,
   handleMenuWork,
   handleLevelOn,
   handleLevel,

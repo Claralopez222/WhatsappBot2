@@ -330,4 +330,5 @@ module.exports = {
   handleMenuRelacionamento,
   handleAlteradores,
   handleMenuWork,
+  handleMenuFilho,
 };

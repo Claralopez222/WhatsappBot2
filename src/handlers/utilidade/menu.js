@@ -33,6 +33,10 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
   ▸ ${P}menujogos
   ▸ ${P}brincadeiras
   ▸ ${P}alteradores
+  ▸ ${P}menuroubar
+  ▸ ${P}menusec
+
+
 
 💑 *RELACIONAMENTOS*
   ▸ ${P}menucasal

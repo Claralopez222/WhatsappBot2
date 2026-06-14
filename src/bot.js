@@ -43,7 +43,7 @@ const pescaHandler          = require(path.join(__dirname, 'handlers', 'diversao
 
 const { handleRankGold, handleGive }                                        = require(path.join(__dirname, 'handlers', 'diversao', 'economia'));
 const { handleEmprestimo, handlePayEmprestimo, handleDivida }               = require(path.join(__dirname, 'handlers', 'diversao', 'emprestimo'));
-const { initPetScheduler, registerActiveGroup }                             = require(path.join(__dirname, 'handlers', 'diversao'));
+const { initPetScheduler, registerActiveGroup, initFilhosScheduler }        = require(path.join(__dirname, 'handlers', 'diversao'));
 const { initQuizRankingScheduler }                                          = require(path.join(__dirname, 'handlers', 'quizRanking'));
 
 
@@ -94,6 +94,11 @@ function loadData() {
     pinnedMessages: {},
     groupConfig:    {},
     warnings:       {},
+    relacionamentos:          {},
+    relacionamentoXp:         {},
+    relacionamentoBloqueados: {},
+    relacionamentoDiarios:    {},
+    relacionamentoXpBonus:    {},
   };
 }
 
@@ -108,7 +113,23 @@ for (const [gJid, usersObj] of Object.entries(_savedData.warnings || {})) {
   if (typeof usersObj === 'object') warnings.set(gJid, new Map(Object.entries(usersObj)));
 }
 
-console.log(`ðŸ“‚ Dados carregados: ${msgCount.size} usuÃ¡rios no histÃ³rico`);
+// ── Restaura relacionamentos e estados associados ──
+const relacionamentos = new Map(Object.entries(_savedData.relacionamentos || {}));
+
+for (const [k, v] of Object.entries(_savedData.relacionamentoXp || {})) {
+  relacionamentoHandler.xpCasais.set(k, v);
+}
+for (const [k, v] of Object.entries(_savedData.relacionamentoBloqueados || {})) {
+  relacionamentoHandler.bloqueados.set(k, v);
+}
+for (const [k, v] of Object.entries(_savedData.relacionamentoDiarios || {})) {
+  relacionamentoHandler.diariosUsados.set(k, v);
+}
+for (const [k, v] of Object.entries(_savedData.relacionamentoXpBonus || {})) {
+  relacionamentoHandler.xpBonus.set(k, v);
+}
+
+console.log(`📂 Dados carregados: ${msgCount.size} usuário(s) no histórico, ${relacionamentos.size} relacionamento(s)`);
 
 function saveData() {
   try {
@@ -132,54 +153,26 @@ function saveData() {
         autoSticker: [...autoStickerGroups],
         prefixos:    Object.fromEntries([...prefixMap.entries()]),
       },
-      relacionamentos:              Object.fromEntries([...relacionamentos.entries()]),
-      relacionamentoXp:             Object.fromEntries([...relacionamentoHandler.xpCasais.entries()]),
-      relacionamentoBloqueados:     Object.fromEntries([...relacionamentoHandler.bloqueados.entries()]),
-      relacionamentoDiarios:        Object.fromEntries([...relacionamentoHandler.diariosUsados.entries()]),
-      relacionamentoXpBonus:        Object.fromEntries([...relacionamentoHandler.xpBonus.entries()]),
+      relacionamentos:          Object.fromEntries([...relacionamentos.entries()]),
+      relacionamentoXp:         Object.fromEntries([...relacionamentoHandler.xpCasais.entries()]),
+      relacionamentoBloqueados: Object.fromEntries([...relacionamentoHandler.bloqueados.entries()]),
+      relacionamentoDiarios:    Object.fromEntries([...relacionamentoHandler.diariosUsados.entries()]),
+      relacionamentoXpBonus:    Object.fromEntries([...relacionamentoHandler.xpBonus.entries()]),
     };
 
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (e) { console.log('âš ï¸ Erro ao salvar data.json:', e.message); }
+  } catch (e) { console.log('⚠️ Erro ao salvar data.json:', e.message); }
 }
 
 setInterval(saveData, 60 * 1000);
 process.on('SIGINT',  () => { saveData(); process.exit(); });
 process.on('SIGTERM', () => { saveData(); process.exit(); });
 
-// ─── Estado Global ────────────────────────────────────────────────────────────
-const logger           = pino({ level: 'silent' });
-const contactNames     = {};
-const mutedUsers       = new Map();
-const pendingMusic     = new Map();
-const prefixMap        = new Map();
-const activeGroups     = new Set();
-const relacionamentos  = new Map(Object.entries(_savedData.relacionamentos || {}));
-const pedidosPendentes = new Map();
-const pinnedMessages   = new Map(Object.entries(_savedData.pinnedMessages || {}));
-const lastTexts        = new Map();
-
-// ── Restaurar estado de relacionamentos do data.json ──────────────────────────
-const _relRestores = [
-  ['relacionamentoXp',        (k, v) => relacionamentoHandler.xpCasais.set(k, Number(v) || 0)],
-  ['relacionamentoBloqueados',(k, v) => relacionamentoHandler.bloqueados.set(k, Number(v) || 0)],
-  ['relacionamentoDiarios',   (k, v) => { if (v) relacionamentoHandler.diariosUsados.set(k, true); }],
-  ['relacionamentoXpBonus',   (k, v) => { if (v && typeof v === 'object') relacionamentoHandler.xpBonus.set(k, v); }],
-];
-
-for (const [field, setter] of _relRestores) {
-  const data = _savedData[field];
-  if (data && typeof data === 'object') {
-    for (const [k, v] of Object.entries(data)) setter(k, v);
-  }
-}
-
-let botJid = null;
-
 // ── Configuração de grupo salva ───────────────────────────────────────────────
 const _cfg = _savedData.groupConfig || {};
 const antiLinkGroups    = new Set(_cfg.antiLink    || []);
 const autoStickerGroups = new Set(_cfg.autoSticker || []);
+const prefixMap         = new Map();
 if (_cfg.prefixos) {
   for (const [k, v] of Object.entries(_cfg.prefixos)) prefixMap.set(k, v);
 }
@@ -217,28 +210,20 @@ async function addUserXp(userId, xp = 1, pushName = null) {
 }
 
 // ── Carregar relacionamentos do MongoDB ───────────────────────────────────────
+// NOTA: desativada. `Usuario.casadoCom` é um campo GLOBAL por pessoa, mas
+// `relacionamentos` agora é escopado por grupo (relKey(jid, a, b)).
+// Não é possível reconstruir o casamento por grupo a partir desse campo —
+// ele serve apenas para checagens de bigamia/fidelidade em handleRelacionamento.
+// Os relacionamentos por grupo são restaurados via data.json no boot.
+// Se data.json for perdido (deploy no Render), os casamentos por grupo
+// precisam ser recriados — recomenda-se migrar para um model `Relacionamento`
+// com idGrupo, jidA, jidB, tipo e desde no MongoDB.
 async function loadRelationshipsFromDb() {
-  try {
-    const users = await Usuario.find({ casadoCom: { $ne: null } }).lean();
-    for (const user of users) {
-      if (!user.idWhatsApp || !user.casadoCom) continue;
-      const key = relacionamentoHandler.relKey(user.idWhatsApp, user.casadoCom);
-      if (relacionamentos.has(key)) continue;
-      relacionamentos.set(key, {
-        tipo:  user.casadoTipo || 'casamento',
-        nomeA: user.idWhatsApp.split('@')[0],
-        nomeB: user.casadoCom.split('@')[0],
-        jidA:  user.idWhatsApp,
-        jidB:  user.casadoCom,
-        desde: Date.now(),
-      });
-    }
-  } catch (e) {
-    console.error('⚠️ Erro ao carregar relacionamentos do MongoDB:', e.message);
-  }
+  // Desativada — ver nota acima.
+  return;
 }
 
-// â”€â”€â”€ Helpers de prefixo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers de prefixo ─────────────────────────────────────────────────────
 const VALID_PREFIXES = ['!', '.', '/', ','];
 
 function isAnyCmd(text) {
@@ -256,7 +241,6 @@ function matchCmdStart(raw, cmdName) {
   }
   return false;
 }
-
 // â”€â”€â”€ Contadores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function contarSticker(jid) {
   stickerCount.set(jid, (stickerCount.get(jid) || 0) + 1);
@@ -304,6 +288,9 @@ function formatarNumeroBR(jid) {
 function getSenderName(msg) {
   return msg.pushName || msg.key.remoteJid?.split('@')[0] || 'UsuÃ¡rio';
 }
+
+// ─── Logger global (usado pelo socket e pelos handlers) ───────────────────────
+const logger = pino({ level: 'silent' });
 
 // ── Iniciar bot ───────────────────────────────────────────────────────────────
 async function startBot() {
@@ -480,7 +467,7 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
     // ── Saída de membros ────────────────────────────────────────────────────
     if (action === 'remove') {
       for (const participantJid of participants) {
-        const found = relacionamentoHandler.findRelByJid(participantJid, relacionamentos);
+        const found = relacionamentoHandler.findRelByJid(groupJid, participantJid, relacionamentos);
         if (!found) continue;
 
         const { key, rel } = found;
@@ -546,6 +533,12 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       // Primeira conexão — inicializa os schedulers
       initPetScheduler(sock);
       initQuizRankingScheduler(sock, activeGroups);
+      initFilhosScheduler();
+
+      // Limpeza periódica de arquivos temporários (a cada 5min, remove >10min)
+      setInterval(() => limparTmpAntigos(10 * 60 * 1000), 5 * 60 * 1000);
+      limparTmpAntigos(10 * 60 * 1000);
+
       schedulersIniciados = true;
       console.log('[Schedulers] Iniciados.');
     } else {
@@ -557,7 +550,6 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
   }
 });
 } // fim do startBot
-
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -712,7 +704,7 @@ if (matchCmd(cmdWord, 'perfil'))
 if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
   { await utilidadeHandler.handleBio(sock, msg, jid, caption); return; }
 
-  // â”€â”€ MENUS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── MENUS ─────────────────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'menu') || matchCmdStart(cmd, 'menu '))
     { await utilidadeHandler.handleMenu(sock, msg, jid, caption, getPrefix, author); return; }
   if (matchCmd(cmdWord, 'menuutil'))
@@ -723,6 +715,8 @@ if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
     { await utilidadeHandler.handleMenuBaixar(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menucasal') || matchCmd(cmdWord, 'menurelacionamento') || matchCmd(cmdWord, 'menurelacionamentos'))
     { await utilidadeHandler.handleMenuRelacionamento(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'menufilho'))
+    { await utilidadeHandler.handleMenuFilho(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menuadm'))
     { await grupoHandler.handleMenuAdm(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menufig'))
@@ -987,6 +981,10 @@ if (matchCmd(cmdWord, 'xpdobro'))          { await relacionamentoHandler.handleX
 if (matchCmd(cmdWord, 'aniversario_casal')){ await relacionamentoHandler.handleAniversarioCasal(sock, msg, jid, author, senderJid, relacionamentos); return; }
 if (matchCmdStart(cmd, 'duelodecasais'))   { await relacionamentoHandler.handleDueloDeCasais(sock, msg, content, jid, author, senderJid, relacionamentos, contactNames); return; }
 if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleRankCasais(sock, msg, jid, relacionamentos); return; }
+if (matchCmd(cmdWord, 'tentarfilho'))  { await diversaoHandler.handleTentarFilho(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'filho'))        { await diversaoHandler.handleVerFilho(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'cuidarfilho'))  { await diversaoHandler.handleCuidarFilho(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'remediofil'))   { await diversaoHandler.handleRemedioFilho(sock, msg, jid); return; }
 
 // ── PINNED ────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'fixar'))
@@ -1071,6 +1069,8 @@ if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleR
   if (matchCmd(cmdWord, 'anagrama') || matchCmdStart(cmd, 'anagrama '))
     { await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid); return; }
   if (matchCmdStart(cmd, 'ppt'))           { await diversaoHandler.handlePpt(sock, msg, jid, caption, author, senderJid); return; }
+if (matchCmdStart(cmd, 'bucetudo'))      { await diversaoHandler.handleBucetudo(sock, msg, content, jid, author, contactNames); return; }
+if (matchCmd(cmdWord, 'worldcup'))       { await diversaoHandler.handleWorldCup(sock, msg, jid); return; }
 
   // â”€â”€ GRUPO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmdStart(cmd, 'ban'))          { await grupoHandler.handleBan(sock, msg, content, jid, botJid, contactNames); return; }

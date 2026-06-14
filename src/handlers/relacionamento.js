@@ -16,14 +16,13 @@ const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
 // ─── ESTADO GLOBAL ────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-function relKey(a, b) { return [a, b].sort().join('|'); }
+function relKey(jid, a, b) { return [jid, ...[a, b].sort()].join('|'); }
 
 const xpCasais      = new Map(); // relKey → number
 const bloqueados    = new Map(); // jid → timestamp_expiry
 const diariosUsados = new Map(); // `${relKey}:${cmd}:YYYY-MM-DD` → true
 const ciumentosMap  = new Map(); // jid → timestamp (cooldown de 1h)
 const xpBonus       = new Map(); // relKey → { ativo: bool, expiry: number }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── HELPERS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -44,8 +43,8 @@ function minutosRestantes(jid) {
   return Math.ceil((bloqueados.get(jid) - Date.now()) / (1000 * 60));
 }
 
-function getRelacionamento(a, b, relacionamentos) {
-  return relacionamentos.get(relKey(a, b)) || null;
+function getRelacionamento(jid, a, b, relacionamentos) {
+  return relacionamentos.get(relKey(jid, a, b)) || null;
 }
 
 async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.now()) {
@@ -78,10 +77,10 @@ async function clearCasamentoDb(jidA, jidB) {
   }
 }
 
-function findRelByJid(jid, relacionamentos) {
-  const num = jid.split('@')[0];
+function findRelByJid(jid, userJid, relacionamentos) {
+  const num = userJid.split('@')[0];
   for (const [key, rel] of relacionamentos) {
-    if (key.includes(num)) return { key, rel };
+    if (key.startsWith(jid + '|') && key.includes(num)) return { key, rel };
   }
   return null;
 }
@@ -109,84 +108,160 @@ const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils
 // handleCarinh
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
+// ─── Mapa: comando → item obrigatório no inventário ────────────
+const ITEM_NECESSARIO = {
+  flores:   { key: 'flores',   nome: 'Flores 🌹'                },
+  doces:    { key: 'morango',  nome: 'Morango com Chocolate 🍓'  },
+  carta:    { key: 'carta',    nome: 'Carta de Amor 💌'          },
+  mimo:     { key: 'caixa',    nome: 'Caixa Presente Luxo 🎁'    },
+  beijo:    { key: 'perfume',  nome: 'Perfume Premium 🌸'        },
+  // abraco removido — não requer item
+  jantar:   { key: 'taça',     nome: 'Taça para Vinho 🍷'        },
+  cinema:   { key: 'almofada', nome: 'Almofada Casal 🛋️'         },
+  viajar:   { key: 'garrafa',  nome: 'Garrafa Vinho Tinto 🍾'    },
+  serenata: { key: 'vela',     nome: 'Vela Aromática 🕯️'         },
+};
+
+// Comandos que NÃO exigem item do inventário (carinhos "gratuitos")
+const CARINHOS_SEM_ITEM = new Set(['abraco']);
+
+// Comandos que podem ser usados mesmo sem relacionamento (precisam de @menção)
+const CARINHOS_SEM_RELACIONAMENTO = new Set(['abraco']);
+
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
   // ── Normaliza o JID de quem enviou o comando ──
   const senderJidNormalizado = jidNormalizedUser(senderJid);
 
-  const found = findRelByJid(senderJidNormalizado, relacionamentos);
-  if (!found) {
-    await sock.sendMessage(jid, {
-      text: `💔 Você precisa estar em um relacionamento para usar *!${cmd}*!\n_Use *!casar @alguem* ou *!namorar @alguem* primeiro._`,
-    }, { quoted: msg });
-    return;
+  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+
+  let key, rel;
+  let jidANormalizado = null;
+  let jidBNormalizado = null;
+  let parcJid = null;
+  let temRelacionamento = !!found;
+
+  if (found) {
+    ({ key, rel } = found);
+
+    // Garante os JIDs limpos e normalizados de ambos
+    jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
+    jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
+
+    // Descobre de forma cirúrgica quem é o parceiro usando os IDs normalizados
+    parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+  } else {
+    if (!CARINHOS_SEM_RELACIONAMENTO.has(cmd)) {
+      await sock.sendMessage(jid, {
+        text: `💔 Você precisa estar em um relacionamento para usar *!${cmd}*!\n_Use *!casar @alguem* ou *!namorar @alguem* primeiro._`,
+      }, { quoted: msg });
+      return;
+    }
+
+    // ── !abraco (e outros liberados) funcionam sem relacionamento, mas exigem @menção ──
+    const mentionedJid =
+      msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
+      msg.message?.extendedTextMessage?.contextInfo?.participant ||
+      null;
+
+    if (!mentionedJid) {
+      await sock.sendMessage(jid, {
+        text: `🤗 Marque a pessoa que vai receber o abraço!\n_Ex: *!abraco @alguem*_`,
+      }, { quoted: msg });
+      return;
+    }
+
+    parcJid = jidNormalizedUser(mentionedJid);
+
+    if (parcJid === senderJidNormalizado) {
+      await sock.sendMessage(jid, {
+        text: `🤔 Você não pode dar *!${cmd}* em você mesmo(a)!`,
+      }, { quoted: msg });
+      return;
+    }
+
+    jidANormalizado = senderJidNormalizado;
+    jidBNormalizado = parcJid;
+
+    // Chave estável independente de quem manda primeiro (cooldown compartilhado pela dupla, por grupo)
+    key = relKey(jid, senderJidNormalizado, parcJid);
   }
 
-  const { key, rel } = found;
+  // ── Define se o comando exige item, e qual chave/nome usar no inventário ──
+  const itemInfo  = ITEM_NECESSARIO[cmd] || null;
+  const exigeItem = !CARINHOS_SEM_ITEM.has(cmd) && !!itemInfo;
+  const itemKey   = itemInfo?.key  ?? cmd; // chave real dentro de inventory.*
+  const itemNome  = itemInfo?.nome ?? cmd; // nome bonito pra mensagens
 
-  // Garante os JIDs limpos e normalizados de ambos
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
+  let consumo = null;
 
-  // Descobre de forma cirúrgica quem é o parceiro usando os IDs normalizados
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+  if (exigeItem) {
+    // ── Verifica se o item existe no inventário do sender ──
+    const userDoc = await Usuario.findOne(
+      { idWhatsApp: senderJidNormalizado },
+      { [`inventory.${itemKey}`]: 1 }
+    ).lean();
 
-  // ── Verifica se o item existe no inventário do sender ──
-  const userDoc = await Usuario.findOne(
-    { idWhatsApp: senderJidNormalizado },
-    { [`inventory.${cmd}`]: 1 }
-  ).lean();
+    const qtdItem = userDoc?.inventory?.[itemKey] ?? 0;
 
-  const qtdItem = userDoc?.inventory?.[cmd] ?? 0;
+    if (qtdItem < 1) {
+      await sock.sendMessage(jid, {
+        text: `🛒 Você não tem *${itemNome}* para dar!\nCompre na *!lojacasal* e surpreenda seu par! 💝`,
+      }, { quoted: msg });
+      return;
+    }
 
-  if (qtdItem < 1) {
-    await sock.sendMessage(jid, {
-      text: `🛒 Você não tem *${cmd}* para dar!\nCompre na *!lojacasal* e surpreenda seu par! 💝`,
-    }, { quoted: msg });
-    return;
+    // ── Consome 1 unidade do item antes de qualquer outra operação ──
+    consumo = await Usuario.findOneAndUpdate(
+      { idWhatsApp: senderJidNormalizado, [`inventory.${itemKey}`]: { $gte: 1 } },
+      { $inc: { [`inventory.${itemKey}`]: -1 } },
+      { new: true }
+    );
+
+    if (!consumo) {
+      await sock.sendMessage(jid, {
+        text: `⚠️ Não foi possível usar o item agora. Tente novamente.`,
+      }, { quoted: msg });
+      return;
+    }
   }
 
-  // ── Consome 1 unidade do item antes de qualquer outra operação ──
-  const consumo = await Usuario.findOneAndUpdate(
-    { idWhatsApp: senderJidNormalizado, [`inventory.${cmd}`]: { $gte: 1 } },
-    { $inc: { [`inventory.${cmd}`]: -1 } },
-    { new: true }
-  );
-
-  if (!consumo) {
-    await sock.sendMessage(jid, {
-      text: `⚠️ Não foi possível usar o item agora. Tente novamente.`,
-    }, { quoted: msg });
-    return;
-  }
-
-  // ── Cooldown diário por casal+comando (não só por sender) ──
+  // ── Cooldown diário por casal/dupla+comando (não só por sender) ──
   const diarioKey = `${key}:${cmd}:${hoje()}`;
   if (diariosUsados.has(diarioKey)) {
-    // Devolve o item consumido acima para não prejudicar o usuário
-    await Usuario.updateOne(
-      { idWhatsApp: senderJidNormalizado },
-      { $inc: { [`inventory.${cmd}`]: 1 } }
-    ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no cooldown:`, e.message));
+    if (exigeItem) {
+      // Devolve o item consumido acima para não prejudicar o usuário
+      await Usuario.updateOne(
+        { idWhatsApp: senderJidNormalizado },
+        { $inc: { [`inventory.${itemKey}`]: 1 } }
+      ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no cooldown:`, e.message));
+    }
 
-    await sock.sendMessage(jid, {
-      text: `⏰ Você já usou *!${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`,
-    }, { quoted: msg });
+    const msgCooldown = cmd === 'abraco'
+      ? `⏰ Vocês já trocaram um abraço hoje! Volte amanhã para mais um carinho. 🤗`
+      : `⏰ Você já usou *!${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`;
+
+    await sock.sendMessage(jid, { text: msgCooldown }, { quoted: msg });
     return;
   }
   diariosUsados.set(diarioKey, true);
 
   // ── Cálculo de XP baseado no banco de dados para evitar perdas ao reiniciar ──
   let xpAtual = 0;
-  const temBonus = typeof temXpBonus === 'function' && temXpBonus(key);
+  const temBonus = temRelacionamento && typeof temXpBonus === 'function' && temXpBonus(key);
   const ganho    = temBonus ? xpValor * 2 : xpValor;
 
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
+  // Sem relacionamento: XP é só simbólico/individual do remetente, não soma "casal"
+  const jidsParaXp = temRelacionamento
+    ? [jidANormalizado, jidBNormalizado].filter(Boolean)
+    : [senderJidNormalizado];
 
-    const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
+  try {
+    const usuarios = await Usuario.find(
+      { idWhatsApp: { $in: jidsParaXp } },
+      { idWhatsApp: 1, xpCasal: 1 }
+    ).lean();
+
+    const xpAntigo = usuarios.reduce((acc, u) => acc + (u?.xpCasal || 0), 0);
     xpAtual = xpAntigo + ganho;
   } catch (err) {
     console.error(`[handleCarinh:${cmd}] Erro ao calcular XP prévio do banco:`, err.message);
@@ -200,7 +275,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   // ── Persiste XP no banco ──
   try {
     await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
+      { idWhatsApp: { $in: jidsParaXp } },
       { $inc: { xpCasal: ganho } }
     );
   } catch (e) {
@@ -208,10 +283,13 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     // Reverte Map, cooldown e item consumido
     if (typeof xpCasais !== 'undefined') xpCasais.set(key, xpAtual - ganho);
     diariosUsados.delete(diarioKey);
-    await Usuario.updateOne(
-      { idWhatsApp: senderJidNormalizado },
-      { $inc: { [`inventory.${cmd}`]: 1 } }
-    ).catch(err => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no rollback de XP:`, err.message));
+
+    if (exigeItem) {
+      await Usuario.updateOne(
+        { idWhatsApp: senderJidNormalizado },
+        { $inc: { [`inventory.${itemKey}`]: 1 } }
+      ).catch(err => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no rollback de XP:`, err.message));
+    }
 
     await sock.sendMessage(jid, {
       text: '⚠️ Erro ao registrar o carinho. Tente novamente.',
@@ -221,10 +299,19 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
   // ── FORMATAÇÃO DAS MARCAÇÕES (@MENCÕES) DIRETO PELO NÚMERO JID ──
   const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
+  const tagParceiro  = parcJid
+    ? `@${parcJid.split('@')[0]}`
+    : (rel?.nomeA === author ? rel?.nomeB : rel?.nomeA);
 
-  const qtdRestante = (consumo.inventory?.[cmd] ?? 0);
-  const bonusStr    = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
+  const bonusStr = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
+
+  // Linha de inventário só aparece para carinhos que consomem item
+  const inventarioStr = exigeItem
+    ? `\n🎒 *${itemNome}* restantes no seu inventário: *${consumo.inventory?.[itemKey] ?? 0}*`
+    : '';
+
+  // Texto do XP muda dependendo de ter ou não relacionamento
+  const xpLabel = temRelacionamento ? 'Total do casal' : 'Seu total';
 
   // Lista de JIDs que vão receber o ping/marcação azul de verdade no chat
   const listaMentions = [senderJidNormalizado];
@@ -233,12 +320,11 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   await sock.sendMessage(jid, {
     text:
       `${emoji} ${tagRemetente} ${verbo} para ${tagParceiro}! 💕\n\n` +
-      `💰 *+${ganho} XP*${bonusStr} | Total do casal: *${xpAtual} XP*\n` +
-      `🎒 *${cmd}* restantes no seu inventário: *${qtdRestante}*`,
+      `💰 *+${ganho} XP*${bonusStr} | ${xpLabel}: *${xpAtual} XP*` +
+      inventarioStr,
     mentions: listaMentions,
   }, { quoted: msg });
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── PEDIDO DE CASAMENTO / NAMORO ─────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -298,7 +384,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  if (getRelacionamento(senderJid, alvoJid, relacionamentos)) {
+  if (getRelacionamento(jid, senderJid, alvoJid, relacionamentos)) {
     const frases = [
       `😂 Vocês já tão juntos, mas quer fazer um evento de renovação de votos? Que romântico... ou dramático!`,
       `😒 Tá querendo propor NOVAMENTE? Já era pra ter pedido em outro lugar!`,
@@ -310,7 +396,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  const jaSender = findRelByJid(senderJid, relacionamentos);
+  const jaSender = findRelByJid(jid, senderJid, relacionamentos);
   if (jaSender) {
     const frases = [
       `💔 TRAIDOR(A)! Você já tem alguém! Quer derramar todo o drama com *!cancelarcasamento*? 😤`,
@@ -323,7 +409,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  const jaAlvo = findRelByJid(alvoJid, relacionamentos);
+  const jaAlvo = findRelByJid(jid, alvoJid, relacionamentos);
   if (jaAlvo) {
     const frases = [
       `😂 *${nomeAlvo}* JÁ tá comprometido(a)! Vai afastar esse lobisomem aí!`,
@@ -397,7 +483,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
 
   const nomeAlvo = msg.pushName || contactNames[senderJid] || senderJid.split('@')[0];
   const { jidPedinte, nomePedinte, jid: jidOrigem, tipo } = pedido;
-  const key  = relKey(senderJid, jidPedinte);
+  const key  = relKey(jidOrigem || jid, senderJid, jidPedinte);
   const agora = Date.now(); // ← captura uma vez só
 
   relacionamentos.set(key, {
@@ -476,7 +562,7 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
 
 // !terminar
 async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos) {
-  const found = findRelByJid(senderJid, relacionamentos);
+  const found = findRelByJid(jid, senderJid, relacionamentos);
   if (!found) {
     await sock.sendMessage(jid, {
       text: '💔 Você não está em nenhum relacionamento para terminar.',

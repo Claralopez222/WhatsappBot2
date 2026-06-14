@@ -15,7 +15,6 @@ const {
   handleMenuWork,
 } = require('./emprego');
 
-// Brincadeiras
 const {
   handleGay, handleSexo, handleNazista, handleLesbica, handleAura,
   handleDado, handleMoeda, handle8ball, handleShip, handleRolar,
@@ -25,8 +24,17 @@ const {
   handleVerdadeOuDesafio, handleConfissao, handleJulgamento, handlePodre, handleFrango,
   handleMaldizer, handleFortuna, handleCompatibilidade,
   handleTrans, handleCorno, handlePeitudo, handlePauzudo,
-  handleBundudo, handleGordo, handleCuzudo,handleGado,
+  handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup,
 } = require('./brincadeiras');
+
+  // ── Filhos (5 itens) ────────────────────────────────────────────────────
+const {
+  handleTentarFilho,
+  handleVerFilho,
+  handleCuidarFilho,
+  handleRemedioFilho,
+  initFilhosScheduler,
+} = require('./filhos');
 
 // Economia
 const {
@@ -143,7 +151,8 @@ module.exports = {
   handleGordo,
   handleCuzudo,
   handleGado,
-
+  handleBucetudo,
+  handleWorldCup,
   // ── Economia (17 itens) ────────────────────────────────────────────────────
   handleGold,
   handleLoja,
@@ -211,6 +220,13 @@ module.exports = {
   prepareDailyMissionState,
   findDailyMission,
   dailyMissionDefinitions,
+
+  // ── Filhos (5 itens) ─────────────────────────────────────────────────────
+handleTentarFilho,
+handleVerFilho,
+handleCuidarFilho,
+handleRemedioFilho,
+initFilhosScheduler,
 
   // ── Pets (14 itens) ───────────────────────────────────────────────────────
   handleCapturarPet,

@@ -417,7 +417,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   } catch {}
 
   // ── Atividade e nível ─────────────────────────────────────────
-  const msgsRec = msgCount?.get?.(alvoJid)?.count ?? 0;
+  const msgsRec = userData?.mensagens ?? (msgCount?.get?.(alvoJid)?.count ?? 0);
   const xp      = userData?.xp ?? msgsRec;
   const level   = userData?.level ?? (Math.floor(xp / 50) + 1);
   const xpNext  = level * 50;
@@ -636,6 +636,7 @@ async function handleBio(sock, msg, jid, caption) {
     }, { quoted: msg });
   }
 }
+
 module.exports = {
   handleMenu,
   handleMenuUtil,

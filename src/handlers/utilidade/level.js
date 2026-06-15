@@ -6,10 +6,12 @@ const Usuario = require('../../models/Usuario');
  * !level — Mostra o nível e XP atual do próprio usuário
  */
 async function handleLevel(sock, msg, jid, author) {
-  const rawSender = author || msg.key.participant || msg.key.remoteJid;
+  const rawSender = msg.key.participant || msg.key.remoteJid;
   if (!rawSender) return;
 
-  const numero  = rawSender.split('@')[0].split(':')[0].replace(/\D/g, '');
+  const numero = rawSender.split('@')[0].split(':')[0].replace(/\D/g, '');
+  if (!numero) return; // JID inválido/inesperado — evita @s.whatsapp.net sem número
+
   const fullJid = `${numero}@s.whatsapp.net`;
 
   try {
@@ -22,15 +24,15 @@ async function handleLevel(sock, msg, jid, author) {
       }, { quoted: msg });
     }
 
-    const xp    = user.xp    ?? 0;
-    const level = user.level ?? 1;
+    const xp    = Math.max(0, user.xp ?? 0);
+    const level = Math.max(1, user.level ?? 1);
 
     const xpProximo    = Math.floor(100 * Math.pow(level, 1.5));
     const xpAtualLevel = Math.floor(100 * Math.pow(level - 1, 1.5));
     const xpNoLevel    = Math.max(0, xp - xpAtualLevel);
     const xpNecessario = Math.max(1, xpProximo - xpAtualLevel);
     const progresso    = Math.min(100, Math.floor((xpNoLevel / xpNecessario) * 100));
-    const barras       = Math.floor(progresso / 10);
+    const barras       = Math.min(10, Math.max(0, Math.floor(progresso / 10)));
     const barraVisual  = '█'.repeat(barras) + '░'.repeat(10 - barras);
 
     const texto =
@@ -69,10 +71,13 @@ async function handleRankLevel(sock, msg, jid) {
     const metadata = await sock.groupMetadata(jid);
 
     // Normaliza todos os JIDs dos membros para numero@s.whatsapp.net
-    const membrosNormalizados = metadata.participants.map(p => {
-      const num = p.id.split('@')[0].split(':')[0].replace(/\D/g, '');
-      return `${num}@s.whatsapp.net`;
-    });
+    const membrosNormalizados = metadata.participants
+      .map(p => {
+        const num = p.id.split('@')[0].split(':')[0].replace(/\D/g, '');
+        return num ? `${num}@s.whatsapp.net` : null;
+      })
+      .filter(Boolean);
+
     const membrosSet = new Set(membrosNormalizados);
 
     if (membrosSet.size === 0) {
@@ -89,6 +94,7 @@ async function handleRankLevel(sock, msg, jid) {
 
     const candidatos = todosCandidatos.filter(u => {
       const num = u.idWhatsApp?.split('@')[0].split(':')[0].replace(/\D/g, '');
+      if (!num) return false;
       return membrosSet.has(`${num}@s.whatsapp.net`);
     }).slice(0, 10);
 
@@ -107,15 +113,16 @@ async function handleRankLevel(sock, msg, jid) {
       mentions.push(fullJid);
 
       const prefix = MEDALS[i] ?? `🔹 *${i + 1}.*`;
-      const xp     = (user.xp    ?? 0).toLocaleString('pt-BR');
-      const level  =  user.level ?? 1;
+      const xpRaw  = Math.max(0, user.xp ?? 0);
+      const xp     = xpRaw.toLocaleString('pt-BR');
+      const level  = Math.max(1, user.level ?? 1);
 
       const xpProximo    = Math.floor(100 * Math.pow(level, 1.5));
       const xpAnterior   = Math.floor(100 * Math.pow(level - 1, 1.5));
-      const xpNoLevel    = Math.max(0, (user.xp ?? 0) - xpAnterior);
+      const xpNoLevel    = Math.max(0, xpRaw - xpAnterior);
       const xpNecessario = Math.max(1, xpProximo - xpAnterior);
       const progresso    = Math.min(100, Math.floor((xpNoLevel / xpNecessario) * 100));
-      const barras       = Math.floor(progresso / 20);
+      const barras       = Math.min(5, Math.max(0, Math.floor(progresso / 20)));
       const barraVisual  = '█'.repeat(barras) + '░'.repeat(5 - barras);
 
       return (

@@ -1255,15 +1255,11 @@ app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}
 
 // ─── Iniciar (apenas uma vez) ─────────────────────────────────────────────────
 async function main() {
-  const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb+srv://santossasuke94_db_user:3NQHCXCnzmhEED4Z@cluster0.bv3ycgm.mongodb.net/piroquinhas?appName=Cluster0';
+  const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+  if (!mongoUri) throw new Error('MONGO_URI não definida! Configure o .env ou variável de ambiente.');
   mongoose.set('strictQuery', false);
   await mongoose.connect(mongoUri);
   console.log('✅ MongoDB conectado');
-
-  // Limpar sessão antiga (remova após primeiro login bem-sucedido)
- // const AuthData = mongoose.models.AuthData || mongoose.model('AuthData', new mongoose.Schema({ _id: String, data: String }, { timestamps: true }));
-  //await AuthData.deleteMany({});
-  //console.log('🗑️ Sessão antiga removida');
 
   await diversaoHandler.initializePersistedData();
   await loadRelationshipsFromDb();

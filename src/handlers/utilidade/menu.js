@@ -35,6 +35,7 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
   ▸ ${P}alteradores
   ▸ ${P}menuroubar
   ▸ ${P}menusec
+  ▸ ${P}menupet
 
 💑 *RELACIONAMENTOS*
   ▸ ${P}menucasal
@@ -97,7 +98,6 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 
 💰 *ECONOMIA*
   ▸ ${P}menugold
-  ▸ ${P}menupet
   ▸ ${P}missao
   ▸ ${P}garimpar
   ▸ ${P}extrato
@@ -201,6 +201,7 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
   ▸ ${P}doces 🍬
   ▸ ${P}carta 💌
   ▸ ${P}mimo 🎁
+  ▸ ${P}beijo 😘
 
 💝 *ROMÂNTICOS*
   ▸ ${P}abraco — Dar um abraço

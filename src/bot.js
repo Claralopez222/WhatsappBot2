@@ -491,45 +491,10 @@ if (!remetenteNorm) return; // remetente inválido, ignora
     if (action === 'add') {
       for (const userJid of participants) {
         const nome = contactNames[userJid] || userJid.split('@')[0];
-
-        // Boas-vindas existente (mantido)
         try {
           await grupoHandler.processarBemVindo(sock, groupJid, userJid, nome);
         } catch (e) {
           console.log('⚠️ Erro no bem-vindo:', e.message);
-        }
-
-        // Mensagem de apresentação com imagem
-        try {
-          const joinImagePath = path.join(__dirname, '..', 'Audio-Image', 'imagejoin3.jpg');
-
-          const texto =
-            `👋 Olá, @${userJid.split('@')[0]}! Seja muito bem-vindo(a) ao grupo!\n\n` +
-            `📌 Para começar, que tal se *apresentar* para a galera?\n\n` +
-            `Conta pra gente:\n` +
-            `• 👤 *Nome:*\n` +
-            `• 🎂 *Idade:*\n` +
-            `• 📍 *De onde é:*\n` +
-            `• 📷 *Foto do semblante:*\n` +
-            `• 🎯 *O que te trouxe aqui:*\n\n` +
-            `_Seja bem vindo!! 😄_`;
-
-          if (fs.existsSync(joinImagePath)) {
-            await sock.sendMessage(groupJid, {
-              image:    fs.readFileSync(joinImagePath),
-              caption:  texto,
-              mentions: [userJid],
-            });
-          } else {
-            // Fallback: só texto se a imagem não existir
-            console.log('⚠️ imagejoin.jpg não encontrado em Audio-Image, enviando só texto.');
-            await sock.sendMessage(groupJid, {
-              text:     texto,
-              mentions: [userJid],
-            });
-          }
-        } catch (e) {
-          console.log('⚠️ Erro na mensagem de apresentação:', e.message);
         }
       }
     }

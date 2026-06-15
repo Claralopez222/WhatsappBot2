@@ -5,7 +5,7 @@
 
 // ─── Importar módulos específicos (mesma pasta) ───────────────────────────
 
-
+// Emprego
 const {
   handleProcurarEmprego,
   handleTrabalhar,
@@ -15,6 +15,7 @@ const {
   handleMenuWork,
 } = require('./emprego');
 
+// brincadeiras
 const {
   handleGay, handleSexo, handleNazista, handleLesbica, handleAura,
   handleDado, handleMoeda, handle8ball, handleShip, handleRolar,
@@ -73,6 +74,7 @@ const {
   handleQuiz, handlePontos, handleRankJogos, quizState
 } = require('./quiz');
 
+// Economia - Banco do Quiz
 const { handleBanco, handleResgatar, handleHistoricoBanco } = require('./banco');
 
 // Missões
@@ -81,11 +83,11 @@ const {
 } = require('./missoes');
 
 
-// Pets
 const {
   handleCapturarPet, handleAlimentarPet, handleBrincarPet,
   handleStatusPet, handlePetRank, handlePets, handleAbrigo,
-  handleAdoptarPet, handleRenomearPet, initPetScheduler, registerActiveGroup
+  handleAdoptarPet, handleRenomearPet, initPetScheduler, registerActiveGroup,
+  handleCurarPet,
 } = require('./pets');
 
 // Roubo (Sistema de assaltos)
@@ -240,6 +242,7 @@ initFilhosScheduler,
   initPetScheduler,
   registerActiveGroup,
   handleRenomearPet,
+  handleCurarPet,
 
   // ── Roubo (7 itens) ───────────────────────────────────────────────────────
   handleMenuRoubo,

@@ -1291,6 +1291,31 @@ async function handleAbraco(sock, msg, jid, author, senderJid, relacionamentos) 
   await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'abraco', '🤗', `deu ${a}`, 3);
 }
 
+// handleFlores
+async function handleFlores(sock, msg, jid, author, senderJid, relacionamentos) {
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'flores', '🌹', 'enviou um buquê de rosas');
+}
+
+// handleDoces
+async function handleDoces(sock, msg, jid, author, senderJid, relacionamentos) {
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'doces', '🍬', 'mandou uma caixa de doces');
+}
+
+// handleCarta
+async function handleCarta(sock, msg, jid, author, senderJid, relacionamentos) {
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'carta', '💌', 'escreveu uma carta de amor');
+}
+
+// handleMimo
+async function handleMimo(sock, msg, jid, author, senderJid, relacionamentos) {
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'mimo', '🎁', 'fez um mimo especial');
+}
+
+// handleBeijo
+async function handleBeijo(sock, msg, jid, author, senderJid, relacionamentos) {
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'beijo', '💋', 'deu um beijão');
+}
+
 module.exports = {
   handlePresente,
   handleJantar,
@@ -1309,4 +1334,9 @@ module.exports = {
   handleSurpresa,
   handleDomingo,
   handleAbraco,
+  handleFlores,
+handleDoces,
+handleCarta,
+handleMimo,
+handleBeijo,
 };

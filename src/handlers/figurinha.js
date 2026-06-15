@@ -697,7 +697,7 @@ async function handleFigtexto(sock, msg, jid, caption, getPrefix, stickerCount) 
 async function handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, versao = 1) {
   const P   = getPrefix(jid);
   const cmd = versao === 2 ? 'attp2' : 'attp';
-  const text = caption.replace(new RegExp(`^[!.,\\/]${cmd}\\s*`, 'i'), '').trim();
+  const text = caption.replace(new RegExp(`^[!.,\\/]*${cmd}\\s*`, 'i'), '').trim();
 
   if (!text) {
     await sock.sendMessage(jid, {
@@ -717,12 +717,17 @@ async function handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, vers
 
     const senderJid = msg.key.participant || msg.key.remoteJid;
     if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+
     await sock.sendMessage(jid, { sticker: buf });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (err) {
     console.error(`[${cmd}] API falhou, usando fallback figtexto:`, err.message);
+
+    // Remove a reação de loading antes de passar pro fallback (evita reação "presa" em ⏳)
+    await sock.sendMessage(jid, { react: { text: '', key: msg.key } });
+
     // Fallback para figtexto local — repassa a caption adaptada
-    const captionFallback = caption.replace(new RegExp(`^[!.,\\/]${cmd}`, 'i'), '!figtexto');
+    const captionFallback = caption.replace(new RegExp(`^[!.,\\/]*${cmd}`, 'i'), '!figtexto');
     await handleFigtexto(sock, msg, jid, captionFallback, getPrefix, stickerCount);
   }
 }
@@ -734,7 +739,7 @@ async function handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, vers
 async function handleQc(sock, msg, jid, caption, getPrefix, stickerCount, versao = 1) {
   const P   = getPrefix(jid);
   const cmd = versao === 2 ? 'qc2' : 'qc';
-  const text = caption.replace(new RegExp(`^[!.,\\/]${cmd}\\s*`, 'i'), '').trim();
+  const text = caption.replace(new RegExp(`^[!.,\\/]*${cmd}\\s*`, 'i'), '').trim();
 
   if (!text) {
     await sock.sendMessage(jid, {
@@ -764,17 +769,28 @@ async function handleQc(sock, msg, jid, caption, getPrefix, stickerCount, versao
     }
     if (cur.trim()) lines.push(cur.trim());
 
+    // ── Limita o número de linhas para não gerar imagens absurdas
+    const MAX_LINES = 15;
+    if (lines.length > MAX_LINES) {
+      lines.length = MAX_LINES;
+      lines[MAX_LINES - 1] = lines[MAX_LINES - 1].slice(0, 25).trim() + '...';
+    }
+
     const lineHeight = 38;
     const padding    = 80;
-    const h          = Math.max(200, padding + lines.length * lineHeight + 60);
+    const h          = Math.max(200, lines.length * lineHeight + padding);
 
     // ── Escapar caracteres especiais XML
     const escape = (s) =>
       s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+    // ── Centraliza o bloco de texto verticalmente
+    const blockHeight = lines.length * lineHeight;
+    const startY      = (h - blockHeight) / 2 + lineHeight * 0.7;
+
     const textSvgLines = lines
       .map((l, i) =>
-        `<text x="256" y="${padding + i * lineHeight}" font-family="Arial, sans-serif" font-size="24" fill="${txtColor}" text-anchor="middle">${escape(l)}</text>`
+        `<text x="256" y="${startY + i * lineHeight}" font-family="Arial, sans-serif" font-size="24" fill="${txtColor}" text-anchor="middle">${escape(l)}</text>`
       )
       .join('\n    ');
 
@@ -803,7 +819,7 @@ async function handleQc(sock, msg, jid, caption, getPrefix, stickerCount, versao
 
 async function handleEmojiMix(sock, msg, jid, caption, getPrefix, stickerCount) {
   const P     = getPrefix(jid);
-  const args  = caption.replace(/^[!.,\/]emojimix\s*/i, '').trim();
+  const args  = caption.replace(/^[!.,\/]*emojimix\s*/i, '').trim();
   const parts = args.split('+').map(s => s.trim()).filter(Boolean);
 
   if (parts.length < 2) {
@@ -826,15 +842,25 @@ async function handleEmojiMix(sock, msg, jid, caption, getPrefix, stickerCount) 
 
   // A Emoji Kitchen tem datas de lançamento diferentes — tenta as principais
   const dates = ['20201001', '20211115', '20220406', '20220815', '20230301'];
+
+  // Combinações possíveis: ordem normal e invertida, pasta baseada no primeiro emoji
+  const combos = [
+    { folder: cp1, pair: `u${cp1}_u${cp2}` },
+    { folder: cp2, pair: `u${cp2}_u${cp1}` },
+  ];
+
   let buf = null;
 
+  outer:
   for (const date of dates) {
-    try {
-      const url = `https://www.gstatic.com/android/keyboard/emojikitchen/${date}/u${cp1}/u${cp1}_u${cp2}.png`;
-      buf = await fetchBuffer(url);
-      if (buf && buf.length > 100) break;
-    } catch {
-      // tenta próxima data
+    for (const combo of combos) {
+      try {
+        const url = `https://www.gstatic.com/android/keyboard/emojikitchen/${date}/u${combo.folder}/${combo.pair}.png`;
+        buf = await fetchBuffer(url);
+        if (buf && buf.length > 100) break outer;
+      } catch {
+        // tenta próxima combinação/data
+      }
     }
   }
 
@@ -865,7 +891,7 @@ async function handleEmojiMix(sock, msg, jid, caption, getPrefix, stickerCount) 
 
 async function handleEmoji(sock, msg, jid, caption, getPrefix, stickerCount) {
   const P    = getPrefix(jid);
-  const args = caption.replace(/^[!.,\/]emoji\s*/i, '').trim();
+  const args = caption.replace(/^[!.,\/]*emoji\s*/i, '').trim();
 
   if (!args) {
     await sock.sendMessage(jid, {
@@ -877,19 +903,30 @@ async function handleEmoji(sock, msg, jid, caption, getPrefix, stickerCount) {
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   const [emojiPart, provider = 'twitter'] = args.split('/').map(s => s.trim());
-  const cp = emojiPart.codePointAt(0)?.toString(16);
 
-  if (!cp) {
+  // ── Extrai TODOS os code points do emoji (suporta ZWJ, variação, tom de pele, bandeiras)
+  const codePoints = [...emojiPart]
+    .map(ch => ch.codePointAt(0))
+    .filter(Boolean)
+    // remove o seletor de variação (FE0F), que normalmente não entra no nome do arquivo
+    .filter(cp => cp !== 0xFE0F)
+    .map(cp => cp.toString(16));
+
+  if (codePoints.length === 0) {
     await sock.sendMessage(jid, { text: '⚠️ Emoji inválido!' }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
     return;
   }
 
+  const cpHyphen   = codePoints.join('-');  // ex: twemoji multi-codepoint
+  const cpUnderscore = codePoints.join('_'); // ex: noto/google multi-codepoint
+  const cpSingle   = codePoints[0];          // primeiro code point (fallback / apple)
+
   // URLs por provedor (com fallback para twitter)
   const urls = {
-    apple:   `https://em-content.zobj.net/source/apple/354/${cp}.png`,
-    twitter: `https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/${cp}.png`,
-    google:  `https://fonts.gstatic.com/s/e/notoemoji/latest/${cp}/emoji.svg`,
+    apple:   `https://em-content.zobj.net/source/apple/354/${cpSingle}.png`,
+    twitter: `https://cdn.jsdelivr.net/npm/twemoji@14.0.2/assets/72x72/${cpHyphen}.png`,
+    google:  `https://fonts.gstatic.com/s/e/notoemoji/latest/${cpUnderscore}/emoji.svg`,
   };
   const url = urls[provider] || urls.twitter;
 
@@ -911,6 +948,7 @@ async function handleEmoji(sock, msg, jid, caption, getPrefix, stickerCount) {
     await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
 }
+
 // ═══════════════════════════════════════════════════════════════
 // ─── BUSCA DE FIGURINHAS (Tenor) ──────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -978,6 +1016,8 @@ async function buscarFigurinha(sock, msg, jid, query, qtd, stickerCount) {
         await sock.sendMessage(jid, { sticker });
         if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
         sent++;
+        // Pequeno delay entre envios para evitar rate-limit em pedidos com limit > 1
+        if (limit > 1) await new Promise(r => setTimeout(r, 600));
       } catch (err) {
         console.warn('[figurinha] Falha ao enviar sticker:', err.message);
       }
@@ -998,7 +1038,7 @@ async function buscarFigurinha(sock, msg, jid, query, qtd, stickerCount) {
 // ─── Categorias predefinidas ──────────────────────────────────
 
 async function handleFigCategoria(sock, msg, jid, caption, cmd, query, stickerCount) {
-  const rawQtd = caption.replace(new RegExp(`^[!.,\\/]${cmd}\\s*`, 'i'), '').trim();
+  const rawQtd = caption.replace(new RegExp(`^[!.,\\/]*${cmd}\\s*`, 'i'), '').trim();
   const qtd    = rawQtd || '1';
   await buscarFigurinha(sock, msg, jid, query, qtd, stickerCount);
 }
@@ -1007,7 +1047,7 @@ async function handleFigCategoria(sock, msg, jid, caption, cmd, query, stickerCo
 
 async function handlePesquisaFig(sock, msg, jid, caption, getPrefix, stickerCount) {
   const P     = getPrefix(jid);
-  const query = caption.replace(/^[!.,\/]pesquisafig\s*/i, '').trim();
+  const query = caption.replace(/^[!.,\/]*pesquisafig\s*/i, '').trim();
 
   if (!query) {
     await sock.sendMessage(jid, {

@@ -106,6 +106,9 @@ const usuarioSchema = new mongoose.Schema({
   equiparsec:  { type: String, default: null },
   ultimoRoubo: { type: Date,   default: null },
 
+  // ── Acessórios de casal equipados (itemKey → boolean) ────────
+  acessoriosCasal: { type: Map, of: Boolean, default: {} },
+
   // ── Advertências (jid do grupo → contagem) ───────────────────
   warnings: { type: Map, of: Number, default: {} },
 

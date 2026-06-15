@@ -733,6 +733,14 @@ async function handleMessage(sock, msg) {
   // â”€â”€â”€ ROTEADOR
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+  // ── ACESSÓRIOS DE CASAL (equipar via .item) ──────────────────────────────────
+if (cmdWord.startsWith('.')) {
+  const itemKey = cmdWord.slice(1);
+  const { handleEquiparAcessorio } = require(path.join(__dirname, 'handlers', 'diversao', 'acessoriosCasal'));
+  const tratado = await handleEquiparAcessorio(sock, msg, jid, senderJid, itemKey);
+  if (tratado) return;
+}
+
   // ── PERFIL ────────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'perfil'))
   { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }

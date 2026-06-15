@@ -90,12 +90,12 @@ const {
   handleCurarPet,
 } = require('./pets');
 
-// Roubo (Sistema de assaltos)
+// Roubo
 const {
   handleMenuRoubo, handleMenuSec, handleComprarRoubo, handleComprarSec,
-  handleEquiparRoubo, handleEquiparSec, handleRoubar
+  handleEquiparRoubo, handleEquiparSec, handleInvRoubo, handleInvSec,
+  handleMeioSec, handleRoubar,
 } = require('./roubo');
-
 // ─── Utilitários ────────────────────────────────────────────────────────────
 
 function getUserId(msg) {
@@ -244,13 +244,16 @@ initFilhosScheduler,
   handleRenomearPet,
   handleCurarPet,
 
-  // ── Roubo (7 itens) ───────────────────────────────────────────────────────
+// ── Roubo (10 itens) ──────────────────────────────────────────────────────
   handleMenuRoubo,
   handleMenuSec,
   handleComprarRoubo,
   handleComprarSec,
   handleEquiparRoubo,
   handleEquiparSec,
+  handleInvRoubo,
+  handleInvSec,
+  handleMeioSec,
   handleRoubar,
 
 // Emprego

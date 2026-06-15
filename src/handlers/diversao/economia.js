@@ -754,6 +754,9 @@ const EXTRATO_ICONES = {
   gasto:    '📉',
 };
 
+// Regex única para capturar "@numero" opcionalmente seguido de "@s.whatsapp.net" ou "@lid"
+const JID_MENTION_REGEX = /@(\d+)(@(?:s\.whatsapp\.net|lid))?/g;
+
 function formatarDataHora(date) {
   if (!date) return { data: '??/??', hora: '??:??' };
   const d = new Date(date);
@@ -764,13 +767,18 @@ function formatarDataHora(date) {
 }
 
 /**
- * Extrai JID mencionado no campo item, ex: "PIX para @5511999" → "5511999@s.whatsapp.net"
- * Retorna null se não houver menção.
+ * Extrai todos os JIDs mencionados no campo item.
+ * Suporta: "@5511999999999", "@5511999999999@s.whatsapp.net", "@187085235466489@lid"
+ * Retorna um array de JIDs completos (ex: "5511999999999@s.whatsapp.net").
  */
-function extrairJidDoItem(item = '') {
-  const match = item.match(/@(\d+)/);
-  if (!match) return null;
-  return `${match[1]}@s.whatsapp.net`;
+function extrairJidsDoItem(item = '') {
+  const jids = [];
+  for (const match of item.matchAll(JID_MENTION_REGEX)) {
+    const numero  = match[1];
+    const dominio = match[2] || '@s.whatsapp.net';
+    jids.push(`${numero}${dominio}`);
+  }
+  return jids;
 }
 
 function buildLinhaTransacao(t, index) {
@@ -779,8 +787,8 @@ function buildLinhaTransacao(t, index) {
   const sinal = t.type === 'recebido' ? '+' : '-';
   const num   = String(index + 1).padStart(2, '0');
 
-  // Substitui "@numero" no item por menção nativa do WhatsApp
-  const itemFormatado = t.item.replace(/@(\d+)/g, '@$1');
+  // Remove o domínio (@s.whatsapp.net ou @lid), deixando apenas "@numero" para exibição
+  const itemFormatado = t.item.replace(JID_MENTION_REGEX, '@$1');
 
   return `  ${num}. ${icone} *${sinal}${t.amount}g* — ${itemFormatado}\n      🕐 ${data} às ${hora}`;
 }
@@ -811,8 +819,9 @@ async function handleExtrato(sock, msg, jid) {
     if (t.type === 'recebido') totalEntrada += t.amount;
     else                       totalSaida   += t.amount;
 
-    const jidMencionado = extrairJidDoItem(t.item);
-    if (jidMencionado) mentionsSet.add(jidMencionado);
+    for (const jidMencionado of extrairJidsDoItem(t.item)) {
+      mentionsSet.add(jidMencionado);
+    }
 
     return buildLinhaTransacao(t, i);
   });

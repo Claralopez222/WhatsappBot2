@@ -350,6 +350,8 @@ async function handleLetra(sock, msg, jid, caption) {
 
 // ─── !perfil ─────────────────────────────────────────────────────────────────
 
+const { ACESSORIOS_CASAL } = require('./acessoriosCasal');
+
 const PET_EMOJIS = {
   tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',
   lobo: '🐺', urso: '🐻', macaco: '🐵', raposa: '🦊', coelho: '🐰',
@@ -527,6 +529,20 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     if (parceiroJid) mentionsList.push(parceiroJid);
   } catch {}
 
+  // ── Acessórios de casal equipados ──────────────────────────────
+  let acessoriosText = '';
+  try {
+    const equipados = userData?.acessoriosCasal;
+    if (equipados) {
+      const ativos = [];
+      for (const [key, info] of Object.entries(ACESSORIOS_CASAL)) {
+        const isAtivo = typeof equipados.get === 'function' ? equipados.get(key) : equipados[key];
+        if (isAtivo) ativos.push(`${info.emoji} ${info.nome}`);
+      }
+      if (ativos.length > 0) acessoriosText = ativos.join('  ');
+    }
+  } catch {}
+
   // ── Bio ───────────────────────────────────────────────────────
   const bio = userData?.bio?.trim() || '';
 
@@ -582,6 +598,11 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `💑 *RELACIONAMENTO*`,
     relStatus,
+  );
+
+  if (acessoriosText) L.push(`💎 *Acessórios:* ${acessoriosText}`);
+
+  L.push(
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `🤖 _Piroquinhas Bot_`,
   );

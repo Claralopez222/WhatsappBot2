@@ -744,14 +744,14 @@ async function handleApostar(sock, msg, jid, caption) {
 
 // ─── !extrato ─────────────────────────────────────────────────────────────────
 
-const EXTRATO_LIMITE   = 15;
+const EXTRATO_LIMITE   = 10;
 const EXTRATO_DATE_FMT = { day: '2-digit', month: '2-digit' };
 const EXTRATO_HORA_FMT = { hour: '2-digit', minute: '2-digit' };
 
 const EXTRATO_ICONES = {
   recebido: '📈',
   enviado:  '📤',
-  default:  '📉',
+  gasto:    '📉',
 };
 
 function formatarDataHora(date) {
@@ -763,13 +763,26 @@ function formatarDataHora(date) {
   };
 }
 
+/**
+ * Extrai JID mencionado no campo item, ex: "PIX para @5511999" → "5511999@s.whatsapp.net"
+ * Retorna null se não houver menção.
+ */
+function extrairJidDoItem(item = '') {
+  const match = item.match(/@(\d+)/);
+  if (!match) return null;
+  return `${match[1]}@s.whatsapp.net`;
+}
+
 function buildLinhaTransacao(t, index) {
   const { data, hora } = formatarDataHora(t.date);
-  const recebido = t.type === 'recebido';
-  const icone    = EXTRATO_ICONES[t.type] ?? EXTRATO_ICONES.default;
-  const sinal    = recebido ? '+' : '-';
-  const num      = String(index + 1).padStart(2, '0');
-  return `  ${num}. ${icone} *${sinal}${t.amount}g* — ${t.item}\n      🕐 ${data} às ${hora}`;
+  const icone = EXTRATO_ICONES[t.type] ?? '📉';
+  const sinal = t.type === 'recebido' ? '+' : '-';
+  const num   = String(index + 1).padStart(2, '0');
+
+  // Substitui "@numero" no item por menção nativa do WhatsApp
+  const itemFormatado = t.item.replace(/@(\d+)/g, '@$1');
+
+  return `  ${num}. ${icone} *${sinal}${t.amount}g* — ${itemFormatado}\n      🕐 ${data} às ${hora}`;
 }
 
 async function handleExtrato(sock, msg, jid) {
@@ -787,20 +800,28 @@ async function handleExtrato(sock, msg, jid) {
     return;
   }
 
-  const ultimas     = historico.slice(-EXTRATO_LIMITE).reverse();
-  let totalEntrada  = 0;
-  let totalSaida    = 0;
+  const ultimas    = historico.slice(-EXTRATO_LIMITE).reverse();
+  let totalEntrada = 0;
+  let totalSaida   = 0;
+
+  // Coleta JIDs mencionados para o campo mentions
+  const mentionsSet = new Set();
 
   const linhas = ultimas.map((t, i) => {
     if (t.type === 'recebido') totalEntrada += t.amount;
     else                       totalSaida   += t.amount;
+
+    const jidMencionado = extrairJidDoItem(t.item);
+    if (jidMencionado) mentionsSet.add(jidMencionado);
+
     return buildLinhaTransacao(t, i);
   });
 
-  const saldo      = carteira.gold ?? 0;
-  const balanco    = totalEntrada - totalSaida;
+  const saldo        = carteira.gold ?? 0;
+  const balanco      = totalEntrada - totalSaida;
   const iconeBalanco = balanco >= 0 ? '📈' : '📉';
   const sinalBalanco = balanco >= 0 ? '+' : '';
+  const mentions     = [...mentionsSet];
 
   await sock.sendMessage(jid, {
     text:
@@ -815,6 +836,7 @@ async function handleExtrato(sock, msg, jid) {
       `  ${iconeBalanco} Balanço:   *${sinalBalanco}${balanco} gold*\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `  💰 Saldo atual: *${saldo} gold*`,
+    mentions,
   }, { quoted: msg });
 }
 

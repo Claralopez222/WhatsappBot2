@@ -182,9 +182,11 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
   if (deIdWhatsApp === paraIdWhatsApp) throw new Error('transferirGold: remetente e destinatário são o mesmo usuário.');
 
   const label = descricao.trim();
+  const numDe   = deIdWhatsApp.split('@')[0].split(':')[0];
+  const numPara = paraIdWhatsApp.split('@')[0].split(':')[0];
 
-  const carteiraDE   = await alterarGold(deIdWhatsApp,   idGrupo, -valor, `${label} (enviado)`);
-  const carteiraPARA = await alterarGold(paraIdWhatsApp,  idGrupo,  valor, `${label} (recebido)`);
+  const carteiraDE   = await alterarGold(deIdWhatsApp,  idGrupo, -valor, `${label} para @${numPara}`);
+  const carteiraPARA = await alterarGold(paraIdWhatsApp, idGrupo,  valor, `${label} de @${numDe}`);
 
   return { de: carteiraDE, para: carteiraPARA };
 }

@@ -2,6 +2,9 @@
  * WhatsApp Sticker Bot – Piroquinhas
  * bot.js principal – roteador completo
  */
+require('dotenv').config();
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 // ─── Core Node.js (SEMPRE PRIMEIRO) ──────────────────────────────────────────
 const path = require('path');
@@ -24,6 +27,9 @@ const mongoose  = require('mongoose');
 // ─── Models ───────────────────────────────────────────────────────────────────
 const Usuario       = require(path.join(__dirname, 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
+
+// ─── Utils ───────────────────────────────────────────────────────────────────
+const { normalizarJid } = require('./utils/jid');
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
@@ -223,7 +229,8 @@ async function addUserXp(userId, xp = 1, pushName = null) {
   if (!userId) return null;
 
   // Normaliza o JID antes de qualquer operação
-  const userIdNorm = userId.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  const userIdNorm = normalizarJid(userId);
+if (!userIdNorm) return null;
 
   try {
     await prepareDailyMissionState(userIdNorm);
@@ -410,7 +417,8 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
       try {
         if (!_isPrivate) {
           const remetente     = msg.key.participant || msg.key.remoteJid;
-          const remetenteNorm = remetente.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+          const remetenteNorm = normalizarJid(remetente);
+if (!remetenteNorm) return; // remetente inválido, ignora
           const nomeDoCara    = msg.pushName || 'Usuário do Zap';
 
           await prepareDailyMissionState(remetenteNorm);
@@ -1247,7 +1255,7 @@ app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}
 
 // ─── Iniciar (apenas uma vez) ─────────────────────────────────────────────────
 async function main() {
-  const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/piroquinhas';
+  const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb+srv://santossasuke94_db_user:3NQHCXCnzmhEED4Z@cluster0.bv3ycgm.mongodb.net/piroquinhas?appName=Cluster0';
   mongoose.set('strictQuery', false);
   await mongoose.connect(mongoUri);
   console.log('✅ MongoDB conectado');

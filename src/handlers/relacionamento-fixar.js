@@ -55,12 +55,13 @@ async function handleFixar(sock, msg, jid, pinnedMessages) {
 
     // Salva na memória do bot para consultas do comando !pinned posterior
     pinnedMessages.set(chatJid, {
-      text: msgText,
-      time: Date.now(),
-      by: `@${senderJid.split('@')[0]}`,
-      orig: jidNormalizedUser(quotedParticipant),
-      messageId: quotedSign
-    });
+  text: msgText,
+  time: Date.now(),
+  by: `@${senderJid.split('@')[0]}`, // texto para exibição
+  byJid: senderJid,                  // ✅ JID completo (@lid ou @s.whatsapp.net) para mentions
+  orig: jidNormalizedUser(quotedParticipant),
+  messageId: quotedSign
+});
 
     await sock.sendMessage(chatJid, {
       text: `📌 Mensagem fixada com sucesso *no topo do WhatsApp*!\n⏱️ Duração: ${durationInSeconds === 86400 ? '24 Horas' : durationInSeconds === 2592000 ? '30 Dias' : '7 Dias'}.`,
@@ -91,17 +92,20 @@ async function handlePinned(sock, msg, jid, pinnedMessages) {
   }
 
   const when = new Date(pm.time).toLocaleString('pt-BR');
-  const tagFixador = pm.by; // Já vem formatado como @numero
-  const jidOrigem = jidNormalizedUser(pm.orig);
-  const tagOrigem = `@${jidOrigem.split('@')[0]}`;
+  const tagFixador = pm.by; // texto formatado como @numero
+const jidOrigem = jidNormalizedUser(pm.orig);
+const tagOrigem = `@${jidOrigem.split('@')[0]}`;
 
-  const header = `📌 *Mensagem de:* ${tagOrigem}\n👤 *Fixada por:* ${tagFixador}\n📅 *Data:* ${when}`;
-  
-  // Coleta as menções necessárias para os pings ficarem azuis
-  const mentions = [jidOrigem];
-  // Extrai o jid limpo de quem fixou a partir do texto "@12345"
-  const jidFixadorCompleto = pm.by.replace('@', '') + '@s.whatsapp.net';
-  mentions.push(jidFixadorCompleto);
+const header = `📌 *Mensagem de:* ${tagOrigem}\n👤 *Fixada por:* ${tagFixador}\n📅 *Data:* ${when}`;
+
+// Coleta as menções necessárias para os pings ficarem azuis
+const mentions = [jidOrigem];
+
+// ✅ Usa o JID completo salvo no momento do !fixar (preserva @lid ou
+// @s.whatsapp.net). Fallback para registros antigos sem byJid.
+const jidFixadorCompleto = pm.byJid?.toLowerCase()
+  || (pm.by.replace('@', '') + '@s.whatsapp.net');
+mentions.push(jidFixadorCompleto);
 
   await sock.sendMessage(chatJid, { 
     text: `${header}\n\n📝 *Conteúdo:*\n${pm.text}`,

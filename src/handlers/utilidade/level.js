@@ -4,6 +4,47 @@ const Usuario = require('../../models/Usuario');
 const path = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 
+// ─────────────────────────────────────────────────────────────────────────
+// ⚠️ IMPORTANTE — Identidade do usuário (idWhatsApp)
+//
+// Hoje o WhatsApp pode enviar o remetente em DOIS formatos de JID:
+//   - "5511999999999@s.whatsapp.net"  (número de telefone "tradicional")
+//   - "73396520337564@lid"            (LID — Linked Identifier, NÃO é telefone)
+//
+// O LID é apenas um identificador interno do WhatsApp. NUNCA extraia os
+// dígitos de um @lid e monte um "@s.whatsapp.net" falso com eles — isso
+// gera um JID inválido (ex: "73396520337564@s.whatsapp.net") que o
+// WhatsApp tenta exibir como número de telefone, resultando em algo como
+// "+1 73396520337564" na menção.
+//
+// A regra correta é: usar o JID original (em lowercase, com o sufixo que
+// ele já tem — @lid ou @s.whatsapp.net) como idWhatsApp, tanto para salvar
+// quanto para consultar e para a menção. O texto "@<dígitos>" no corpo da
+// mensagem deve usar os dígitos DESSE MESMO jid (funciona para @lid e para
+// @s.whatsapp.net, pois o WhatsApp casa o "@<dígitos>" do texto com o JID
+// correspondente em "mentions").
+//
+// ⚠️ Essa MESMA normalização precisa ser usada em qualquer outro ponto do
+// bot que grava idWhatsApp (ex: handler que concede XP por mensagem,
+// economia, banco etc.), senão os registros ficam com identidades
+// diferentes e !level/!ranklevel nunca vão coincidir.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Normaliza o JID do remetente de uma mensagem.
+ * Retorna { fullJid, numero } ou null se inválido.
+ */
+function normalizarRemetente(msg) {
+  const rawSender = (msg.key.participant || msg.key.remoteJid)?.toLowerCase();
+  if (!rawSender) return null;
+
+  const numero = rawSender.split('@')[0].split(':')[0].replace(/\D/g, '');
+  if (!numero) return null;
+
+  // ✅ Mantém o sufixo original (@lid ou @s.whatsapp.net) — não converte!
+  return { fullJid: rawSender, numero };
+}
+
 /**
  * !level — Mostra o nível e XP atual do próprio usuário NESTE grupo
  */
@@ -16,13 +57,10 @@ async function handleLevel(sock, msg, jid, author) {
     }, { quoted: msg });
   }
 
-  const rawSender = msg.key.participant || msg.key.remoteJid;
-  if (!rawSender) return;
+  const remetente = normalizarRemetente(msg);
+  if (!remetente) return; // JID inválido/inesperado
 
-  const numero = rawSender.split('@')[0].split(':')[0].replace(/\D/g, '');
-  if (!numero) return; // JID inválido/inesperado — evita @s.whatsapp.net sem número
-
-  const fullJid = `${numero}@s.whatsapp.net`;
+  const { fullJid, numero } = remetente;
 
   try {
     const user = await CarteiraGrupo.findOne({ idWhatsApp: fullJid, idGrupo: jid }).lean();
@@ -73,21 +111,6 @@ async function handleLevel(sock, msg, jid, author) {
 /**
  * !ranklevel — Top 10 usuários com mais XP ativos no grupo (ranking por grupo)
  */
-
-// ── Fórmulas de XP/Nível ──────────────────────────────────────────────────
-// IMPORTANTE: o nível exibido é SEMPRE calculado a partir do XP, nunca lido
-// direto do campo "level" do banco. Isso elimina o problema de "nível 163
-// com 8.143 XP e 0%" — nível e progresso ficam sempre coerentes entre si.
-
-function xpParaLevel(level) {
-  return Math.floor(100 * Math.pow(Math.max(0, level - 1), 1.5));
-}
-
-function levelFromXp(xp) {
-  const xpSeguro = Math.max(0, xp);
-  return Math.max(1, Math.floor(Math.pow(xpSeguro / 100, 1 / 1.5)) + 1);
-}
-
 async function handleRankLevel(sock, msg, jid) {
   if (!jid?.endsWith('@g.us')) {
     return sock.sendMessage(jid, {
@@ -98,21 +121,13 @@ async function handleRankLevel(sock, msg, jid) {
   try {
     const metadata = await sock.groupMetadata(jid);
 
-    // ── Conjunto com TODOS os formatos possíveis de identificação dos
-    // membros atuais do grupo (number@s.whatsapp.net, number@lid e o id
-    // "crú" do Baileys) — cobre tanto participantes @lid quanto número normal
+    // ── Conjunto com os JIDs reais dos membros atuais do grupo (já vêm
+    // como @lid ou @s.whatsapp.net, dependendo do participante) ──
     const membrosSet = new Set();
     for (const p of metadata.participants) {
       const rawId = p.id?.toLowerCase();
       if (!rawId) continue;
-
       membrosSet.add(rawId);
-
-      const num = rawId.split('@')[0].split(':')[0].replace(/\D/g, '');
-      if (num) {
-        membrosSet.add(`${num}@s.whatsapp.net`);
-        membrosSet.add(`${num}@lid`);
-      }
     }
 
     if (membrosSet.size === 0) {
@@ -128,16 +143,12 @@ async function handleRankLevel(sock, msg, jid) {
       .lean();
 
     // ── Remove quem saiu/foi banido (checagem em tempo real contra o grupo) ──
-    const candidatos = todosCandidatos.filter(u => {
-      const idRaw = u.idWhatsApp?.toLowerCase();
-      if (!idRaw) return false;
-      if (membrosSet.has(idRaw)) return true;
-
-      const num = idRaw.split('@')[0].split(':')[0].replace(/\D/g, '');
-      return num
-        ? (membrosSet.has(`${num}@s.whatsapp.net`) || membrosSet.has(`${num}@lid`))
-        : false;
-    }).slice(0, 10);
+    const candidatos = todosCandidatos
+      .filter(u => {
+        const idRaw = u.idWhatsApp?.toLowerCase();
+        return idRaw ? membrosSet.has(idRaw) : false;
+      })
+      .slice(0, 10);
 
     if (candidatos.length === 0) {
       return sock.sendMessage(jid, {
@@ -149,17 +160,19 @@ async function handleRankLevel(sock, msg, jid) {
     const mentions = [];
 
     const linhas = candidatos.map((user, i) => {
-      const numero = user.idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '');
-      mentions.push(user.idWhatsApp);
+      const fullJid = user.idWhatsApp.toLowerCase();
+      const numero  = fullJid.split('@')[0].split(':')[0].replace(/\D/g, '');
+      mentions.push(fullJid);
 
       const prefix = MEDALS[i] ?? `🔹 *${i + 1}.*`;
       const xpRaw  = Math.max(0, user.xp ?? 0);
       const xp     = xpRaw.toLocaleString('pt-BR');
 
-      // Nível e progresso SEMPRE derivados do XP — sem dessincronia
-      const level        = levelFromXp(xpRaw);
-      const xpAnterior   = xpParaLevel(level);
-      const xpProximo    = xpParaLevel(level + 1);
+      // ✅ Nível e progresso SEMPRE derivados do XP, usando a mesma fórmula
+      // centralizada do model (sem reimplementar localmente)
+      const level        = CarteiraGrupo.levelFromXp(xpRaw);
+      const xpAnterior   = CarteiraGrupo.xpParaLevel(level);
+      const xpProximo    = CarteiraGrupo.xpParaLevel(level + 1);
       const xpNoLevel    = Math.max(0, xpRaw - xpAnterior);
       const xpNecessario = Math.max(1, xpProximo - xpAnterior);
       const progresso    = Math.min(100, Math.floor((xpNoLevel / xpNecessario) * 100));
@@ -190,4 +203,4 @@ async function handleRankLevel(sock, msg, jid) {
   }
 }
 
-module.exports = { handleLevel, handleRankLevel };
+module.exports = { handleLevel, handleRankLevel, normalizarRemetente };

@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: piroquinhas-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: node src/bot.js
+    envVars:
+      - key: MONGO_URI
+        value: mongodb+srv://santossasuke94_db_user:3NQHCXCnzmhEED4Z@cluster0.bv3ycgm.mongodb.net/piroquinhas?appName=Cluster0

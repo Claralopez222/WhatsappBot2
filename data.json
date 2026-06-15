@@ -2,7 +2,7 @@
   "msgCount": {
     "173396520337564@lid": {
       "nome": "Felipe",
-      "count": 771
+      "count": 774
     },
     "203770445209609@lid": {
       "nome": "Biel",
@@ -206,7 +206,7 @@
     },
     "HorseBT@lid": {
       "nome": "Resenhudo",
-       "count": 15
+      "count": 15
     },
     "125031447290070@lid": {
       "nome": "Murillo🫶🏽",
@@ -243,5 +243,10 @@
       "120363408172364744@g.us"
     ],
     "prefixos": {}
-  }
+  },
+  "relacionamentos": {},
+  "relacionamentoXp": {},
+  "relacionamentoBloqueados": {},
+  "relacionamentoDiarios": {},
+  "relacionamentoXpBonus": {}
 }

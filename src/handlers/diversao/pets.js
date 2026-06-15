@@ -752,19 +752,12 @@ async function handlePetRank(sock, msg, jid) {
       );
     }
 
-    // ── Normalizar JIDs (resolve @lid para @s.whatsapp.net) ──
-    const membrosAtuais = new Set(
-      metadata.participants
-        .map(p => {
-          const id = p.id || '';
-          if (id.endsWith('@lid')) {
-            const numero = id.split('@')[0].split(':')[0];
-            return `${numero}@s.whatsapp.net`;
-          }
-          return id;
-        })
-        .filter(Boolean)
-    );
+    // ── JIDs reais dos membros atuais — sem reconstruir @lid como telefone ──
+const membrosAtuais = new Set(
+  metadata.participants
+    .map(p => p.id?.toLowerCase())
+    .filter(Boolean)
+);
 
     if (membrosAtuais.size === 0) {
       return reply(sock, jid, msg, `🐾 *RANKING DE PETS*\n\nNenhum membro encontrado no grupo.`);
@@ -794,9 +787,9 @@ async function handlePetRank(sock, msg, jid) {
     // ── Montar linhas ─────────────────────────────────────────
     const mentions = [];
     const linhas   = ranks.map((entry, i) => {
-      const numero  = entry.idWhatsApp.split('@')[0].split(':')[0];
-      const fullJid = `${numero}@s.whatsapp.net`;
-      mentions.push(fullJid);
+      const fullJid = entry.idWhatsApp.toLowerCase();
+const numero  = fullJid.split('@')[0].split(':')[0];
+mentions.push(fullJid);
 
       const def   = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
       const re    = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';

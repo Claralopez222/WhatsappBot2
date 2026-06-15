@@ -960,30 +960,37 @@ async function buscarFigurinha(sock, msg, jid, query, qtd, stickerCount) {
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   try {
-    const key  = process.env.TENOR_KEY || 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCyk';
-    const url  = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${key}&limit=${limit}&media_filter=gif`;
+    const key  = process.env.GIPHY_KEY;
+    if (!key) throw new Error('GIPHY_KEY não configurada no .env');
+
+    const url  = `https://api.giphy.com/v1/gifs/search?q=${encodeURIComponent(query)}&api_key=${key}&limit=${limit}&rating=pg-13&lang=pt`;
     const buf  = await fetchBuffer(url);
 
     let data;
     try {
       data = JSON.parse(buf.toString('utf8'));
     } catch {
-      throw new Error('Resposta inválida da API do Tenor');
+      throw new Error('Resposta inválida da API do GIPHY');
     }
 
-    const results = data.results || [];
+    if (data.meta?.status !== 200) {
+      throw new Error(`GIPHY API error: ${data.meta?.msg || JSON.stringify(data.meta)}`);
+    }
+
+    const results = data.data || [];
     if (!results.length) throw new Error('sem resultados');
 
     let sent = 0;
     for (const item of results) {
-      // Prefere gif completo; fallback para tinygif (menor tamanho)
+      // Prefere mp4 (melhor qualidade/tamanho); fallback para gif
       const gifUrl =
-        item.media_formats?.gif?.url ||
-        item.media_formats?.tinygif?.url ||
-        item.media_formats?.mediumgif?.url;
+        item.images?.original?.mp4 ||
+        item.images?.downsized?.mp4 ||
+        item.images?.original?.url ||
+        item.images?.downsized?.url;
 
       if (!gifUrl) {
-        console.warn('[figurinha] Item sem URL de gif, pulando.');
+        console.warn('[figurinha] Item sem URL de mídia, pulando.');
         continue;
       }
 
@@ -1016,7 +1023,6 @@ async function buscarFigurinha(sock, msg, jid, query, qtd, stickerCount) {
         await sock.sendMessage(jid, { sticker });
         if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
         sent++;
-        // Pequeno delay entre envios para evitar rate-limit em pedidos com limit > 1
         if (limit > 1) await new Promise(r => setTimeout(r, 600));
       } catch (err) {
         console.warn('[figurinha] Falha ao enviar sticker:', err.message);

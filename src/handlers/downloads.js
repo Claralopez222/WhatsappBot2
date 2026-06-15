@@ -1010,16 +1010,22 @@ async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
 
     // Arquivo grande — reencoda em 480p
     const encOk = await ffmpeg(ffmpegBin, [
-      '-y', '-i', rawPath,
-      '-vf', 'scale=480:-2:flags=lanczos',
-      '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
-      '-preset', 'fast', '-crf', '28',
-      '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '128k',
-      '-movflags', '+faststart',
-      '-max_muxing_queue_size', '1024',
-      outPath,
-    ]);
+  '-y', '-i', rawPath,
+  '-c:v', 'libx264',
+  '-profile:v', 'baseline',
+  '-level', '3.0',
+  '-preset', 'fast',
+  '-crf', '28',
+  '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+  '-pix_fmt', 'yuv420p',
+  '-c:a', 'aac',
+  '-b:a', '128k',
+  '-ar', '44100',
+  '-movflags', '+faststart',
+  '-max_muxing_queue_size', '1024',
+  '-avoid_negative_ts', 'make_zero',
+  outPath,
+]);
 
     safeDel(rawPath);
 

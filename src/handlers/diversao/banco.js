@@ -11,7 +11,7 @@ const BANCO_CONFIG = {
   PRAZO_MS:         3 * 60 * 60 * 1000,
   JUROS_MIN:        5,
   JUROS_MAX:        15,
-  DAILY_LIMIT:      5000,
+  DAILY_LIMIT: 15000,
   HISTORICO_LIMITE: 10,
 };
 
@@ -69,6 +69,7 @@ async function getCarteiraGrupo(userId, idGrupo) {
 
 // ─── handleBanco ─────────────────────────────────────────────────────────────
 
+// !banco
 async function handleBanco(sock, msg, jid, caption) {
   const userId  = await resolverUserId(sock, msg);
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
@@ -98,7 +99,16 @@ async function handleBanco(sock, msg, jid, caption) {
 
   const saldoDisponivel = carteira.gold ?? 0;
   const depositedToday  = banco.depositedToday ?? 0;
-  const remainingLimit  = BANCO_CONFIG.DAILY_LIMIT - depositedToday;
+
+  // ✅ Math.max evita exibir/limite negativo caso depositedToday > DAILY_LIMIT
+  // (ex: limite reduzido manualmente após o usuário já ter depositado mais)
+  const remainingLimit  = Math.max(0, BANCO_CONFIG.DAILY_LIMIT - depositedToday);
+
+  // ✅ Bloco de limite diário reutilizado em 2 lugares — evita duplicação
+  const linhaLimite =
+    `*LIMITE DIÁRIO:*\n` +
+    `  📊 Depositado hoje: *${depositedToday}* gold\n` +
+    `  🔓 Disponível: *${remainingLimit}* gold`;
 
   // ── Exibir status (sem argumento) ────────────────────────────────────────────
   if (!match) {
@@ -120,9 +130,7 @@ async function handleBanco(sock, msg, jid, caption) {
           `*RESGATE:*\n` +
           `  💎 Use: *!resgatar* (neste grupo)\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
-          `*LIMITE DIÁRIO:*\n` +
-          `  📊 Depositado hoje: *${depositedToday}* gold\n` +
-          `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
+          `${linhaLimite}\n\n` +
           `*SEU SALDO (grupo):* 💰 *${saldoDisponivel}* gold\n\n` +
           `_Deixe seu dinheiro trabalhar para você!_ 🚀`,
       }, { quoted: msg });
@@ -147,9 +155,7 @@ async function handleBanco(sock, msg, jid, caption) {
         `  💎 Retorno esperado: *${futureAmount}* gold\n` +
         `  💹 Lucro previsto: *+${ganho}* gold\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `*LIMITE DIÁRIO:*\n` +
-        `  📊 Depositado hoje: *${depositedToday}* gold\n` +
-        `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
+        `${linhaLimite}\n\n` +
         `*SEU SALDO (grupo):* 💰 *${saldoDisponivel}* gold\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         (msLeft > 0
@@ -163,9 +169,10 @@ async function handleBanco(sock, msg, jid, caption) {
   // ── Processar depósito ───────────────────────────────────────────────────────
   const amount = parseInt(match[1], 10);
 
-  if (!amount || amount <= 0) {
+  // ✅ Number.isSafeInteger evita números absurdamente grandes (overflow/precisão)
+  if (!amount || amount <= 0 || !Number.isSafeInteger(amount)) {
     await sock.sendMessage(jid, {
-      text: `⚠️ *QUANTIDADE INVÁLIDA*\n\nA quantia deve ser um número positivo!\n\n*EXEMPLO:*\n  *!banco 500*`,
+      text: `⚠️ *QUANTIDADE INVÁLIDA*\n\nA quantia deve ser um número positivo válido!\n\n*EXEMPLO:*\n  *!banco 500*`,
     }, { quoted: msg });
     return;
   }
@@ -216,20 +223,22 @@ async function handleBanco(sock, msg, jid, caption) {
   }
 
   // ── Atualizar dados do banco no CarteiraGrupo ────────────────────────────────
-  const newDepositedToday = depositedToday + amount;
+  const newDepositedToday  = depositedToday + amount;
+  const limiteRestanteHoje = Math.max(0, BANCO_CONFIG.DAILY_LIMIT - newDepositedToday);
   const hasActiveInvestment = (banco.amount ?? 0) > 0;
 
   if (hasActiveInvestment) {
-    const newTotal = (banco.amount ?? 0) + amount;
+    // ✅ $inc evita condição de corrida — soma direto sobre o valor já
+    // persistido no banco, sem depender do snapshot lido no início da função
     await CarteiraGrupo.updateOne(
       { idWhatsApp: userId, idGrupo },
-      { $set: {
-        'banco.amount':          newTotal,
-        'banco.depositedToday':  newDepositedToday,
-        'banco.lastDepositDate': today,
-      }}
+      {
+        $inc: { 'banco.amount': amount, 'banco.depositedToday': amount },
+        $set: { 'banco.lastDepositDate': today },
+      }
     );
 
+    const newTotal     = (banco.amount ?? 0) + amount;
     const futureAmount = calcularResgate(newTotal, banco.interest);
     const ganho        = futureAmount - newTotal;
     const msLeft       = getMsLeft(banco.startDate);
@@ -252,7 +261,7 @@ async function handleBanco(sock, msg, jid, caption) {
         `*SALDO (grupo):*\n` +
         `  💰 Disponível: *${saldoAposDebito}* gold\n` +
         `  🏦 Investido: *${newTotal}* gold\n` +
-        `  🔓 Limite restante hoje: *${BANCO_CONFIG.DAILY_LIMIT - newDepositedToday}* gold`,
+        `  🔓 Limite restante hoje: *${limiteRestanteHoje}* gold`,
     }, { quoted: msg });
 
   } else {
@@ -288,7 +297,7 @@ async function handleBanco(sock, msg, jid, caption) {
         `*SALDO (grupo):*\n` +
         `  💰 Disponível: *${saldoAposDebito}* gold\n` +
         `  🏦 Investido: *${amount}* gold\n` +
-        `  🔓 Limite restante hoje: *${BANCO_CONFIG.DAILY_LIMIT - newDepositedToday}* gold`,
+        `  🔓 Limite restante hoje: *${limiteRestanteHoje}* gold`,
     }, { quoted: msg });
   }
 }

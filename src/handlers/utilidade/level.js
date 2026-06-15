@@ -3,9 +3,17 @@
 const Usuario = require('../../models/Usuario');
 
 /**
- * !level — Mostra o nível e XP atual do próprio usuário
+ * !level — Mostra o nível e XP atual do próprio usuário NESTE grupo
  */
 async function handleLevel(sock, msg, jid, author) {
+  // ✅ !level também é por grupo, então exige uso dentro de um grupo —
+  // consistente com !ranklevel e com o restante da economia (gold, banco etc.)
+  if (!jid?.endsWith('@g.us')) {
+    return sock.sendMessage(jid, {
+      text: '⚠️ Este comando só pode ser usado em grupos.'
+    }, { quoted: msg });
+  }
+
   const rawSender = msg.key.participant || msg.key.remoteJid;
   if (!rawSender) return;
 
@@ -15,20 +23,23 @@ async function handleLevel(sock, msg, jid, author) {
   const fullJid = `${numero}@s.whatsapp.net`;
 
   try {
-    const user = await Usuario.findOne({ idWhatsApp: fullJid }).lean();
+    const user = await CarteiraGrupo.findOne({ idWhatsApp: fullJid, idGrupo: jid }).lean();
 
-    if (!user) {
+    const xp = Math.max(0, user?.xp ?? 0);
+
+    if (!user || xp === 0) {
       return sock.sendMessage(jid, {
-        text: `📊 *NÍVEL DE PROGRESSO*\n\n@${numero}, você ainda não tem XP registrado.\nContinue interagindo para começar a pontuar!`,
+        text: `📊 *NÍVEL DE PROGRESSO*\n\n@${numero}, você ainda não tem XP registrado neste grupo.\nContinue interagindo para começar a pontuar!`,
         mentions: [fullJid]
       }, { quoted: msg });
     }
 
-    const xp    = Math.max(0, user.xp ?? 0);
-    const level = Math.max(1, user.level ?? 1);
-
-    const xpProximo    = Math.floor(100 * Math.pow(level, 1.5));
-    const xpAtualLevel = Math.floor(100 * Math.pow(level - 1, 1.5));
+    // ✅ Nível e progresso SEMPRE derivados do XP via fórmula centralizada
+    // do model — mesma lógica usada no !ranklevel, sem depender do campo
+    // "level" salvo (que pode estar desatualizado)
+    const level        = CarteiraGrupo.levelFromXp(xp);
+    const xpAtualLevel = CarteiraGrupo.xpParaLevel(level);
+    const xpProximo    = CarteiraGrupo.xpParaLevel(level + 1);
     const xpNoLevel    = Math.max(0, xp - xpAtualLevel);
     const xpNecessario = Math.max(1, xpProximo - xpAtualLevel);
     const progresso    = Math.min(100, Math.floor((xpNoLevel / xpNecessario) * 100));
@@ -58,8 +69,23 @@ async function handleLevel(sock, msg, jid, author) {
 }
 
 /**
- * !ranklevel — Top 10 usuários com mais XP ativos no grupo
+ * !ranklevel — Top 10 usuários com mais XP ativos no grupo (ranking por grupo)
  */
+
+// ── Fórmulas de XP/Nível ──────────────────────────────────────────────────
+// IMPORTANTE: o nível exibido é SEMPRE calculado a partir do XP, nunca lido
+// direto do campo "level" do banco. Isso elimina o problema de "nível 163
+// com 8.143 XP e 0%" — nível e progresso ficam sempre coerentes entre si.
+
+function xpParaLevel(level) {
+  return Math.floor(100 * Math.pow(Math.max(0, level - 1), 1.5));
+}
+
+function levelFromXp(xp) {
+  const xpSeguro = Math.max(0, xp);
+  return Math.max(1, Math.floor(Math.pow(xpSeguro / 100, 1 / 1.5)) + 1);
+}
+
 async function handleRankLevel(sock, msg, jid) {
   if (!jid?.endsWith('@g.us')) {
     return sock.sendMessage(jid, {
@@ -70,15 +96,22 @@ async function handleRankLevel(sock, msg, jid) {
   try {
     const metadata = await sock.groupMetadata(jid);
 
-    // Normaliza todos os JIDs dos membros para numero@s.whatsapp.net
-    const membrosNormalizados = metadata.participants
-      .map(p => {
-        const num = p.id.split('@')[0].split(':')[0].replace(/\D/g, '');
-        return num ? `${num}@s.whatsapp.net` : null;
-      })
-      .filter(Boolean);
+    // ── Conjunto com TODOS os formatos possíveis de identificação dos
+    // membros atuais do grupo (number@s.whatsapp.net, number@lid e o id
+    // "crú" do Baileys) — cobre tanto participantes @lid quanto número normal
+    const membrosSet = new Set();
+    for (const p of metadata.participants) {
+      const rawId = p.id?.toLowerCase();
+      if (!rawId) continue;
 
-    const membrosSet = new Set(membrosNormalizados);
+      membrosSet.add(rawId);
+
+      const num = rawId.split('@')[0].split(':')[0].replace(/\D/g, '');
+      if (num) {
+        membrosSet.add(`${num}@s.whatsapp.net`);
+        membrosSet.add(`${num}@lid`);
+      }
+    }
 
     if (membrosSet.size === 0) {
       return sock.sendMessage(jid, {
@@ -86,16 +119,22 @@ async function handleRankLevel(sock, msg, jid) {
       }, { quoted: msg });
     }
 
-    // Busca todos os usuários e filtra pelos membros do grupo
-    const todosCandidatos = await Usuario
-      .find({ xp: { $gt: 0 } })
-      .sort({ xp: -1, level: -1 })
+    // ── Busca o XP por GRUPO (CarteiraGrupo) — ranking separado por grupo ──
+    const todosCandidatos = await CarteiraGrupo
+      .find({ idGrupo: jid, xp: { $gt: 0 } })
+      .sort({ xp: -1 })
       .lean();
 
+    // ── Remove quem saiu/foi banido (checagem em tempo real contra o grupo) ──
     const candidatos = todosCandidatos.filter(u => {
-      const num = u.idWhatsApp?.split('@')[0].split(':')[0].replace(/\D/g, '');
-      if (!num) return false;
-      return membrosSet.has(`${num}@s.whatsapp.net`);
+      const idRaw = u.idWhatsApp?.toLowerCase();
+      if (!idRaw) return false;
+      if (membrosSet.has(idRaw)) return true;
+
+      const num = idRaw.split('@')[0].split(':')[0].replace(/\D/g, '');
+      return num
+        ? (membrosSet.has(`${num}@s.whatsapp.net`) || membrosSet.has(`${num}@lid`))
+        : false;
     }).slice(0, 10);
 
     if (candidatos.length === 0) {
@@ -104,21 +143,21 @@ async function handleRankLevel(sock, msg, jid) {
       }, { quoted: msg });
     }
 
-    const MEDALS  = ['🥇', '🥈', '🥉'];
+    const MEDALS   = ['🥇', '🥈', '🥉'];
     const mentions = [];
 
     const linhas = candidatos.map((user, i) => {
-      const numero  = user.idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '');
-      const fullJid = `${numero}@s.whatsapp.net`;
-      mentions.push(fullJid);
+      const numero = user.idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '');
+      mentions.push(user.idWhatsApp);
 
       const prefix = MEDALS[i] ?? `🔹 *${i + 1}.*`;
       const xpRaw  = Math.max(0, user.xp ?? 0);
       const xp     = xpRaw.toLocaleString('pt-BR');
-      const level  = Math.max(1, user.level ?? 1);
 
-      const xpProximo    = Math.floor(100 * Math.pow(level, 1.5));
-      const xpAnterior   = Math.floor(100 * Math.pow(level - 1, 1.5));
+      // Nível e progresso SEMPRE derivados do XP — sem dessincronia
+      const level        = levelFromXp(xpRaw);
+      const xpAnterior   = xpParaLevel(level);
+      const xpProximo    = xpParaLevel(level + 1);
       const xpNoLevel    = Math.max(0, xpRaw - xpAnterior);
       const xpNecessario = Math.max(1, xpProximo - xpAnterior);
       const progresso    = Math.min(100, Math.floor((xpNoLevel / xpNecessario) * 100));

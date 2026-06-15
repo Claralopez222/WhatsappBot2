@@ -493,7 +493,7 @@ sock.ev.on('messages.upsert', async ({ messages, type }) => {
 
         // Mensagem de apresentação com imagem
         try {
-          const joinImagePath = path.join(__dirname, '..', 'Audio-Image', 'imagejoin2.jpg');
+          const joinImagePath = path.join(__dirname, '..', 'Audio-Image', 'imagejoin3.jpg');
 
           const texto =
             `👋 Olá, @${userJid.split('@')[0]}! Seja muito bem-vindo(a) ao grupo!\n\n` +

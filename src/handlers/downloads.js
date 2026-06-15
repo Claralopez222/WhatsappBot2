@@ -749,7 +749,7 @@ async function handleAudioDownload(sock, msg, jid, caption) {
 
 // !som
 async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
-  const P = getPrefix(jid);
+  const P    = getPrefix(jid);
   const nome = caption.replace(/^[!.,\/]*som\s*/i, '').trim();
   if (!nome) {
     return sock.sendMessage(jid, { text: `⚠️ Digite o nome da música.\nExemplo: *${P}som Ela Deixou um Bilhete*` }, { quoted: msg });
@@ -757,211 +757,327 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  const ytdlp = await getYtDlpPath();
-  const { randomUUID } = require('crypto');
-  const id = randomUUID();
-  const outTemplate = tmpPath(id, '.%(ext)s');
-  const query = `ytsearch1:${nome} official audio`;
+  try {
+    const ytdlp       = await getYtDlpPath();
+    const { randomUUID } = require('crypto');
+    const id          = randomUUID();
+    const outTemplate = tmpPath(id, '.%(ext)s');
+    const query       = `ytsearch1:${nome} official audio`;
 
-  // ── Cookies do YouTube (evita "Sign in to confirm you're not a bot") ──
-  console.log('YOUTUBE_COOKIES:', process.env.YOUTUBE_COOKIES ? `OK (${process.env.YOUTUBE_COOKIES.length} bytes)` : 'VAZIO');
-  const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES?.trim();
-  let cookieFilePath = null;
-  let cookieTempFile = null;
-  if (youtubeCookiesEnv) {
-    log.info(`✅ YOUTUBE_COOKIES encontrado (${youtubeCookiesEnv.length} bytes)`);
-    cookieTempFile = tmpPath(id, '_youtube_cookies.txt');
-    try {
-      fs.writeFileSync(cookieTempFile, youtubeCookiesEnv, 'utf8');
-      cookieFilePath = cookieTempFile;
-    } catch (e) {
-      log.warn('Erro ao gravar cookie do YouTube:', e.message);
-    }
-  } else {
-    const local = path.join(__dirname, '../../youtube_cookies.txt');
-    if (fs.existsSync(local)) {
-      cookieFilePath = local;
-      log.info('✅ Usando cookies locais do YouTube');
+    // ── Cookies do YouTube ──
+    const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES?.trim();
+    let cookieFilePath = null;
+    let cookieTempFile = null;
+
+    if (youtubeCookiesEnv) {
+      log.info(`✅ YOUTUBE_COOKIES encontrado (${youtubeCookiesEnv.length} bytes)`);
+      cookieTempFile = tmpPath(id, '_youtube_cookies.txt');
+      try {
+        fs.writeFileSync(cookieTempFile, youtubeCookiesEnv, 'utf8');
+        cookieFilePath = cookieTempFile;
+      } catch (e) {
+        log.warn('Erro ao gravar cookie do YouTube:', e.message);
+      }
     } else {
-      log.warn('⚠️ Sem cookies do YouTube — pode falhar com "Sign in to confirm"');
+      const local = path.join(__dirname, '../youtube_cookies.txt');
+      if (fs.existsSync(local)) {
+        cookieFilePath = local;
+        log.info('✅ Usando cookies locais do YouTube');
+      } else {
+        log.warn('⚠️ Sem cookies do YouTube — pode falhar com "Sign in to confirm"');
+      }
     }
+
+    const cookieArgs   = cookieFilePath ? ['--cookies', cookieFilePath] : [];
+    const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
+
+    // ── Download do áudio ──
+    const dlArgs = [
+      ...getYtDlpArgs(),
+      '--no-playlist', '-x',
+      '--audio-format', 'mp3',
+      '--audio-quality', '0',
+      '--match-filter', '!is_live',
+      '--max-filesize', '50m',
+      ...cookieArgs,
+      '-o', outTemplate,
+      query,
+    ];
+    const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
+    if (!ok) {
+      cleanupCookie();
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+    }
+
+    const base      = outTemplate.replace('.%(ext)s', '');
+    const finalPath = ['.mp3', '.m4a', '.opus', '.ogg', '.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
+    if (!finalPath) {
+      cleanupCookie();
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+    }
+
+    const audioBuffer = fs.readFileSync(finalPath);
+    safeDel(finalPath);
+
+    if (audioBuffer.length > SIZE_LIMIT) {
+      cleanupCookie();
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Arquivo muito grande (máx 64MB).' }, { quoted: msg });
+    }
+
+    // ── Metadados (após download, cookie ainda existe) ──
+    const meta = await fetchMeta(ytdlp, query, ['--match-filter', '!is_live', ...cookieArgs]);
+    cleanupCookie(); // só limpa APÓS fetchMeta terminar
+
+    // ── Thumbnail ──
+    let cardBuffer = null;
+    const thumbUrl = meta?.thumbnail
+      || (meta?.thumbnails?.length ? meta.thumbnails[meta.thumbnails.length - 1]?.url : null);
+
+    if (thumbUrl) {
+      try {
+        const thumbBuffer = await fetchBuffer(thumbUrl);
+        const resized     = await sharp(thumbBuffer)
+          .resize(800, 450, { fit: 'cover', position: 'centre' })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        const overlay = Buffer.from(
+          `<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg">` +
+          `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="50%" stop-color="black" stop-opacity="0"/>` +
+          `<stop offset="100%" stop-color="black" stop-opacity="0.82"/>` +
+          `</linearGradient></defs>` +
+          `<rect width="800" height="450" fill="url(#g)"/>` +
+          `</svg>`
+        );
+        cardBuffer = await sharp(resized)
+          .composite([{ input: overlay, blend: 'over' }])
+          .jpeg({ quality: 88 })
+          .toBuffer();
+      } catch (e) {
+        log.warn('Erro ao processar thumbnail:', e.message);
+      }
+    }
+
+    // Fallback: card azul escuro
+    if (!cardBuffer) {
+      try {
+        cardBuffer = await sharp({
+          create: { width: 800, height: 450, channels: 3, background: { r: 15, g: 52, b: 96 } },
+        }).jpeg({ quality: 90 }).toBuffer();
+      } catch {}
+    }
+
+    // ── Dados para exibição ──
+    const titulo     = meta?.title || nome;
+    const autor      = meta?.uploader || meta?.channel || meta?.artist || null;
+    const album      = meta?.album || null;
+    const durSec     = meta?.duration || 0;
+    const durStr     = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+    const views      = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+    const likes      = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+    const comments   = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+    const fileSize   = `${(audioBuffer.length / 1024 / 1024).toFixed(1)} MB`;
+    const tags       = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+    const uploadDate = meta?.upload_date
+      ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
+      : null;
+    const videoUrl   = meta?.webpage_url || null;
+
+    // ── Salva para !playmp4 / !playdoc ──
+    const senderJid = msg.key.participant || msg.key.remoteJid;
+    pendingMusic.set(senderJid, { audioBuffer, titulo, meta, nome });
+    setTimeout(() => pendingMusic.delete(senderJid), 10 * 60 * 1000);
+
+    // ── Monta texto ──
+    let texto = `━━━ [ 🎧 *Piroquinhas* 🎧 ] ━━━\n\n`;
+    texto += `🔎 *Pesquisa:* _${nome}_\n\n`;
+    texto += `🎵 *Título:* _${titulo}_\n`;
+    if (autor)      texto += `👤 *Artista/Canal:* _${autor}_\n`;
+    if (album)      texto += `💿 *Álbum:* _${album}_\n`;
+    texto += `⏱️ *Duração:* ${durStr}\n`;
+    if (uploadDate) texto += `📅 *Postado em:* ${uploadDate}\n`;
+    texto += `🎚️ *Qualidade:* MP3 320kbps\n`;
+    texto += `💾 *Tamanho:* ${fileSize}\n`;
+    if (views || likes || comments) texto += `\n`;
+    if (views)    texto += `👁️ *Views:* ${views}\n`;
+    if (likes)    texto += `❤️ *Curtidas:* ${likes}\n`;
+    if (comments) texto += `💬 *Comentários:* ${comments}\n`;
+    if (tags)     texto += `\n🏷️ *Tags:* ${tags}\n`;
+    if (videoUrl) texto += `\n🔗 ${videoUrl}\n`;
+    texto += `\n━━━ [ 📱 *MAIS OPÇÕES* 📱 ] ━━━\n`;
+    texto += `🎬 *${P}playmp4* - _Baixa como vídeo_\n`;
+    texto += `📄 *${P}playdoc* - _Baixa como documento_`;
+
+    // ── Envia card + áudio ──
+    if (cardBuffer) {
+      await sock.sendMessage(jid, { image: cardBuffer, caption: texto }, { quoted: msg });
+    } else {
+      await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    }
+
+    await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    log.info(`✅ Música "${titulo}" enviada!`);
+
+  } catch (err) {
+    log.error(`❌ Erro em handleSom: ${err.message}`);
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    await sock.sendMessage(jid, { text: `❌ Erro ao processar *"${nome}"*. Tente novamente.` }, { quoted: msg }).catch(() => {});
   }
-  const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
-  const cookieArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
-
-  // Metadados em background
-  const metaPromise = fetchMeta(ytdlp, query, ['--match-filter', '!is_live', ...cookieArgs]);
-
-  const dlArgs = [
-    ...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'mp3',
-    '--audio-quality', '0', '--match-filter', '!is_live',
-    '--max-filesize', '50m', ...cookieArgs, '-o', outTemplate, query
-  ];
-  const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
-  if (!ok) {
-    cleanupCookie();
-    return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
-  }
-
-  const base = outTemplate.replace('.%(ext)s', '');
-  const finalPath = ['.mp3','.m4a','.opus','.ogg','.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
-  if (!finalPath) {
-    cleanupCookie();
-    return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
-  }
-
-  const audioBuffer = fs.readFileSync(finalPath);
-  safeDel(finalPath);
-  cleanupCookie();
-  if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Arquivo muito grande (máx 64MB).' }, { quoted: msg });
-
-  const meta = await metaPromise;
-
-  // Thumbnail como card
-  let cardBuffer = null;
-  const thumbUrl = meta?.thumbnail || (meta?.thumbnails?.length ? meta.thumbnails[meta.thumbnails.length - 1]?.url : null);
-  if (thumbUrl) {
-    try {
-      const thumbBuffer = await fetchBuffer(thumbUrl);
-      const base64 = (await sharp(thumbBuffer).resize(800, 450, { fit: 'cover', position: 'centre' }).jpeg({ quality: 85 }).toBuffer()).toString('base64');
-      const baseImage = Buffer.from(base64, 'base64');
-      const overlay = Buffer.from(`<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="50%" stop-color="black" stop-opacity="0"/><stop offset="100%" stop-color="black" stop-opacity="0.82"/></linearGradient></defs><rect width="800" height="450" fill="url(#g)"/></svg>`);
-      cardBuffer = await sharp(baseImage).composite([{ input: overlay, blend: 'over' }]).jpeg({ quality: 88 }).toBuffer();
-    } catch {}
-  }
-  if (!cardBuffer) {
-    try {
-      const svg = Buffer.from(`<svg width="800" height="450" xmlns="http://www.w3.org/2000/svg"><rect width="800" height="450" fill="#0f3460"/></svg>`);
-      cardBuffer = await sharp(svg).jpeg({ quality: 90 }).toBuffer();
-    } catch {}
-  }
-
-  const titulo      = meta?.title || nome;
-  const autor       = meta?.uploader || meta?.channel || meta?.artist || null;
-  const album       = meta?.album || null;
-  const durSec      = meta?.duration || 0;
-  const durStr      = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
-  const views       = meta?.view_count  ? Number(meta.view_count).toLocaleString('pt-BR')  : null;
-  const likes       = meta?.like_count  ? Number(meta.like_count).toLocaleString('pt-BR')  : null;
-  const comments    = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
-  const fileSize    = `${(audioBuffer.length / 1024 / 1024).toFixed(1)} MB`;
-  const tags        = meta?.tags?.length ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
-  const uploadDate  = meta?.upload_date
-    ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
-    : null;
-  const videoUrl    = meta?.webpage_url || meta?.url || null;
-
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  pendingMusic.set(senderJid, { audioBuffer, titulo, meta, nome });
-  setTimeout(() => pendingMusic.delete(senderJid), 10 * 60 * 1000);
-
-  let texto = `━━━ [ 🎧 *Piroquinhas* 🎧 ] ━━━\n\n`;
-  texto += `🔎 *Pesquisa:* _${nome}_\n\n`;
-  texto += `🎵 *Título:* _${titulo}_\n`;
-  if (autor)      texto += `👤 *Artista/Canal:* _${autor}_\n`;
-  if (album)      texto += `💿 *Álbum:* _${album}_\n`;
-  texto += `⏱️ *Duração:* ${durStr}\n`;
-  if (uploadDate) texto += `📅 *Postado em:* ${uploadDate}\n`;
-  texto += `🎚️ *Qualidade:* MP3 192kbps\n`;
-  texto += `💾 *Tamanho:* ${fileSize}\n`;
-  if (views || likes || comments) texto += `\n`;
-  if (views)    texto += `👁️ *Views:* ${views}\n`;
-  if (likes)    texto += `❤️ *Curtidas:* ${likes}\n`;
-  if (comments) texto += `💬 *Comentários:* ${comments}\n`;
-  if (tags)     texto += `\n🏷️ *Tags:* ${tags}\n`;
-  if (videoUrl) texto += `\n🔗 ${videoUrl}\n`;
-  texto += `\n━━━ [ 📱 *MAIS OPÇÕES* 📱 ] ━━━\n`;
-  texto += `🎬 *${P}playmp4* - _Baixa como vídeo_\n`;
-  texto += `📄 *${P}playdoc* - _Baixa como documento_`;
-
-  if (cardBuffer) {
-    await sock.sendMessage(jid, { image: cardBuffer, caption: texto }, { quoted: msg });
-  } else {
-    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-  }
-
-  await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  log.info(`✅ Música "${titulo}" enviada!`);
 }
 
 // !playmp4
 async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const pending = pendingMusic.get(senderJid);
-  const P = getPrefix(jid);
-  if (!pending) return sock.sendMessage(jid, { text: `⚠️ Nenhuma música recente. Use *${P}som <música>* primeiro.` }, { quoted: msg });
+  const pending   = pendingMusic.get(senderJid);
+  const P         = getPrefix(jid);
+
+  if (!pending) {
+    return sock.sendMessage(jid, { text: `⚠️ Nenhuma música recente. Use *${P}som <música>* primeiro.` }, { quoted: msg });
+  }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  const ytdlp = await getYtDlpPath();
-  const ffmpegBin = getFfmpegPath();
-  const { randomUUID } = require('crypto');
-  const id = randomUUID();
-  const rawPath = tmpPath(id, '_raw.mp4');
-  const outPath = tmpPath(id, '_out.mp4');
-  const target = pending.meta?.webpage_url || `ytsearch1:${pending.nome} official video`;
+  try {
+    const ytdlp     = await getYtDlpPath();
+    const ffmpegBin = getFfmpegPath();
+    const id        = require('crypto').randomUUID();
+    const rawPath   = tmpPath(id, '_raw.mp4');
+    const outPath   = tmpPath(id, '_out.mp4');
+    const target    = pending.meta?.webpage_url || `ytsearch1:${pending.nome} official video`;
 
-  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '--max-filesize', '120m', '-o', rawPath, target];
-  const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 180000);
+    // ── Cookies do YouTube ──
+    const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES?.trim();
+    let cookieFilePath = null;
+    let cookieTempFile = null;
 
-  if (!dlOk || !fs.existsSync(rawPath)) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+    if (youtubeCookiesEnv) {
+      cookieTempFile = tmpPath(id, '_youtube_cookies.txt');
+      try {
+        fs.writeFileSync(cookieTempFile, youtubeCookiesEnv, 'utf8');
+        cookieFilePath = cookieTempFile;
+      } catch (e) {
+        log.warn('Erro ao gravar cookie do YouTube:', e.message);
+      }
+    } else {
+      const local = path.join(__dirname, '../youtube_cookies.txt');
+      if (fs.existsSync(local)) cookieFilePath = local;
+    }
 
-  const encOk = await ffmpeg(ffmpegBin, [
-    '-y', '-i', rawPath,
-    '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
-    '-preset', 'fast', '-crf', '28',
-    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-    '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '128k',
-    '-movflags', '+faststart', '-max_muxing_queue_size', '1024', outPath
-  ]);
+    const cookieArgs    = cookieFilePath ? ['--cookies', cookieFilePath] : [];
+    const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
 
-  safeDel(rawPath);
-  if (!encOk || !fs.existsSync(outPath)) return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+    // ── Download ──
+    const dlArgs = [
+      ...getYtDlpArgs(),
+      '--no-playlist',
+      '-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]/best',
+      '--merge-output-format', 'mp4',
+      '--max-filesize', '120m',
+      ...cookieArgs,
+      '-o', rawPath,
+      target,
+    ];
+    const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 180000);
 
-  const videoBuffer = fs.readFileSync(outPath);
-  safeDel(outPath);
+    if (!dlOk || !fs.existsSync(rawPath)) {
+      cleanupCookie();
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+    }
 
-  if (videoBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
+    cleanupCookie();
 
-  const meta = pending.meta;
+    const rawSize = fs.statSync(rawPath).size;
 
-  const titulo      = meta?.title || pending.titulo || pending.nome;
-  const autor       = meta?.uploader || meta?.channel || meta?.artist || null;
-  const album       = meta?.album || null;
-  const durSec      = meta?.duration || 0;
-  const durStr      = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
-  const views       = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
-  const likes       = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
-  const comments    = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
-  const width       = meta?.width && meta?.height ? `${meta.width}x${meta.height}` : null;
-  const fps         = meta?.fps           ? `${meta.fps} fps`                                  : null;
-  const fileSize    = `${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB`;
-  const tags        = meta?.tags?.length  ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
-  const uploadDate  = meta?.upload_date
+    // Envia direto se já estiver dentro do limite — sem ffmpeg, economiza RAM
+    if (rawSize <= SIZE_LIMIT) {
+      const videoBuffer  = fs.readFileSync(rawPath);
+      safeDel(rawPath);
+      const meta         = pending.meta;
+      const finalCaption = buildMp4Caption(meta, pending, videoBuffer.length);
+      await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+      return;
+    }
+
+    // Arquivo grande — reencoda em 480p
+    const encOk = await ffmpeg(ffmpegBin, [
+      '-y', '-i', rawPath,
+      '-vf', 'scale=480:-2:flags=lanczos',
+      '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
+      '-preset', 'fast', '-crf', '28',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      '-max_muxing_queue_size', '1024',
+      outPath,
+    ]);
+
+    safeDel(rawPath);
+
+    if (!encOk || !fs.existsSync(outPath)) {
+      safeDel(outPath);
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Falha ao processar o vídeo.' }, { quoted: msg });
+    }
+
+    const videoBuffer = fs.readFileSync(outPath);
+    safeDel(outPath);
+
+    if (videoBuffer.length > SIZE_LIMIT) {
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return sock.sendMessage(jid, { text: '❌ Vídeo muito grande mesmo após compressão (máx 64MB).' }, { quoted: msg });
+    }
+
+    const finalCaption = buildMp4Caption(pending.meta, pending, videoBuffer.length);
+    await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+
+  } catch (err) {
+    log.error(`❌ Erro em handlePlayMp4: ${err.message}`);
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+    await sock.sendMessage(jid, { text: '❌ Erro ao processar o vídeo. Tente novamente.' }, { quoted: msg }).catch(() => {});
+  }
+}
+
+function buildMp4Caption(meta, pending, fileSizeBytes) {
+  const titulo     = meta?.title      || pending?.titulo || pending?.nome || '—';
+  const autor      = meta?.uploader   || meta?.channel   || meta?.artist  || null;
+  const album      = meta?.album      || null;
+  const durSec     = meta?.duration   || 0;
+  const durStr     = durSec ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : null;
+  const views      = meta?.view_count    ? Number(meta.view_count).toLocaleString('pt-BR')    : null;
+  const likes      = meta?.like_count    ? Number(meta.like_count).toLocaleString('pt-BR')    : null;
+  const comments   = meta?.comment_count ? Number(meta.comment_count).toLocaleString('pt-BR') : null;
+  const width      = meta?.width && meta?.height ? `${meta.width}x${meta.height}` : null;
+  const fps        = meta?.fps    ? `${meta.fps} fps` : null;
+  const fileSize   = `${(fileSizeBytes / 1024 / 1024).toFixed(1)} MB`;
+  const tags       = meta?.tags?.length ? meta.tags.slice(0, 5).map(t => `#${t}`).join(' ') : null;
+  const uploadDate = meta?.upload_date
     ? `${meta.upload_date.slice(6,8)}/${meta.upload_date.slice(4,6)}/${meta.upload_date.slice(0,4)}`
     : null;
-  const videoUrl    = meta?.webpage_url || null;
+  const videoUrl   = meta?.webpage_url || null;
 
-  let finalCaption = `━━━ [ ▶️ *YouTube* ] ━━━\n\n`;
-  finalCaption += `🎵 *Título:* ${titulo}\n`;
-  if (autor)      finalCaption += `👤 *Artista/Canal:* ${autor}\n`;
-  if (album)      finalCaption += `💿 *Álbum:* ${album}\n`;
-  if (durStr)     finalCaption += `⏱️ *Duração:* ${durStr}\n`;
-  if (uploadDate) finalCaption += `📅 *Postado em:* ${uploadDate}\n`;
-  if (width)      finalCaption += `🎞️ *Resolução:* ${width}\n`;
-  if (fps)        finalCaption += `⚡ *FPS:* ${fps}\n`;
-  finalCaption += `💾 *Tamanho:* ${fileSize}\n`;
-  if (views || likes || comments) finalCaption += `\n`;
-  if (views)    finalCaption += `👁️ *Views:* ${views}\n`;
-  if (likes)    finalCaption += `❤️ *Curtidas:* ${likes}\n`;
-  if (comments) finalCaption += `💬 *Comentários:* ${comments}\n`;
-  if (tags)     finalCaption += `\n🏷️ *Tags:* ${tags}\n`;
-  if (videoUrl) finalCaption += `\n🔗 ${videoUrl}`;
-
-  await sock.sendMessage(jid, { video: videoBuffer, mimetype: 'video/mp4', caption: finalCaption }, { quoted: msg });
-  await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  let txt = `━━━ [ ▶️ *YouTube* ] ━━━\n\n`;
+  txt += `🎵 *Título:* ${titulo}\n`;
+  if (autor)      txt += `👤 *Artista/Canal:* ${autor}\n`;
+  if (album)      txt += `💿 *Álbum:* ${album}\n`;
+  if (durStr)     txt += `⏱️ *Duração:* ${durStr}\n`;
+  if (uploadDate) txt += `📅 *Postado em:* ${uploadDate}\n`;
+  if (width)      txt += `🎞️ *Resolução:* ${width}\n`;
+  if (fps)        txt += `⚡ *FPS:* ${fps}\n`;
+  txt += `💾 *Tamanho:* ${fileSize}\n`;
+  if (views || likes || comments) txt += `\n`;
+  if (views)    txt += `👁️ *Views:* ${views}\n`;
+  if (likes)    txt += `❤️ *Curtidas:* ${likes}\n`;
+  if (comments) txt += `💬 *Comentários:* ${comments}\n`;
+  if (tags)     txt += `\n🏷️ *Tags:* ${tags}\n`;
+  if (videoUrl) txt += `\n🔗 ${videoUrl}`;
+  return txt;
 }
 
 // !playdoc

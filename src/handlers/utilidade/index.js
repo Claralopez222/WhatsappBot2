@@ -350,7 +350,7 @@ async function handleLetra(sock, msg, jid, caption) {
 
 // ─── !perfil ─────────────────────────────────────────────────────────────────
 
-const { ACESSORIOS_CASAL } = require('./acessoriosCasal');
+const { ACESSORIOS_CASAL } = require('../diversao/acessoriosCasal');
 
 const PET_EMOJIS = {
   tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',

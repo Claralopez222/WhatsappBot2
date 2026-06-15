@@ -757,6 +757,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const query = `ytsearch1:${nome} official audio`;
 
   // ── Cookies do YouTube (evita "Sign in to confirm you're not a bot") ──
+  console.log('YOUTUBE_COOKIES:', process.env.YOUTUBE_COOKIES ? `OK (${process.env.YOUTUBE_COOKIES.length} bytes)` : 'VAZIO');
   const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES?.trim();
   let cookieFilePath = null;
   let cookieTempFile = null;

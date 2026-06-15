@@ -756,23 +756,55 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const outTemplate = tmpPath(id, '.%(ext)s');
   const query = `ytsearch1:${nome} official audio`;
 
+  // ── Cookies do YouTube (evita "Sign in to confirm you're not a bot") ──
+  const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES?.trim();
+  let cookieFilePath = null;
+  let cookieTempFile = null;
+  if (youtubeCookiesEnv) {
+    log.info(`✅ YOUTUBE_COOKIES encontrado (${youtubeCookiesEnv.length} bytes)`);
+    cookieTempFile = tmpPath(id, '_youtube_cookies.txt');
+    try {
+      fs.writeFileSync(cookieTempFile, youtubeCookiesEnv, 'utf8');
+      cookieFilePath = cookieTempFile;
+    } catch (e) {
+      log.warn('Erro ao gravar cookie do YouTube:', e.message);
+    }
+  } else {
+    const local = path.join(__dirname, '../../youtube_cookies.txt');
+    if (fs.existsSync(local)) {
+      cookieFilePath = local;
+      log.info('✅ Usando cookies locais do YouTube');
+    } else {
+      log.warn('⚠️ Sem cookies do YouTube — pode falhar com "Sign in to confirm"');
+    }
+  }
+  const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
+  const cookieArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
+
   // Metadados em background
-  const metaPromise = fetchMeta(ytdlp, query, ['--match-filter', '!is_live']);
+  const metaPromise = fetchMeta(ytdlp, query, ['--match-filter', '!is_live', ...cookieArgs]);
 
   const dlArgs = [
     ...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'mp3',
     '--audio-quality', '0', '--match-filter', '!is_live',
-    '--max-filesize', '50m', '-o', outTemplate, query
+    '--max-filesize', '50m', ...cookieArgs, '-o', outTemplate, query
   ];
   const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
-  if (!ok) return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+  if (!ok) {
+    cleanupCookie();
+    return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+  }
 
   const base = outTemplate.replace('.%(ext)s', '');
   const finalPath = ['.mp3','.m4a','.opus','.ogg','.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
-  if (!finalPath) return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+  if (!finalPath) {
+    cleanupCookie();
+    return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+  }
 
   const audioBuffer = fs.readFileSync(finalPath);
   safeDel(finalPath);
+  cleanupCookie();
   if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Arquivo muito grande (máx 64MB).' }, { quoted: msg });
 
   const meta = await metaPromise;
@@ -844,7 +876,6 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   log.info(`✅ Música "${titulo}" enviada!`);
 }
-
 // ──────────────────────────────────────────────────────────────────────────────
 
 // !playmp4

@@ -1,6 +1,8 @@
 'use strict';
 
 const Usuario = require('../../models/Usuario');
+const path = require('path');
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 
 /**
  * !level — Mostra o nível e XP atual do próprio usuário NESTE grupo

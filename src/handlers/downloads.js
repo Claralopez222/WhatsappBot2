@@ -151,13 +151,14 @@ async function getYtDlpPath() {
   // 2. Caminhos comuns Linux
   if (process.platform !== 'win32') {
     const linuxCandidates = [
-      '/usr/local/bin/yt-dlp',
-      '/usr/bin/yt-dlp',
-      path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp'),
-      '/opt/render/project/.venv/bin/yt-dlp',
-      '/opt/render/project/python/bin/yt-dlp',
-      path.resolve(__dirname, '../yt-dlp'),
-    ];
+  '/opt/render/project/src/yt-dlp',
+  '/usr/local/bin/yt-dlp',
+  '/usr/bin/yt-dlp',
+  path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp'),
+  '/opt/render/project/.venv/bin/yt-dlp',
+  '/opt/render/project/python/bin/yt-dlp',
+  path.resolve(__dirname, '../yt-dlp'),
+];
     for (const c of linuxCandidates) {
       try { if (fs.existsSync(c)) { _cachedYtDlpPath = c; return c; } } catch {}
     }
@@ -750,7 +751,7 @@ async function handleAudioDownload(sock, msg, jid, caption) {
 // !som
 async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const P    = getPrefix(jid);
-  const nome = caption.replace(/^[!.,\/]*som\s*/i, '').trim();
+  const nome = caption.replace(/^[!.,\/]*(som|play)\s*/i, '').trim();
   if (!nome) {
     return sock.sendMessage(jid, { text: `⚠️ Digite o nome da música.\nExemplo: *${P}som Ela Deixou um Bilhete*` }, { quoted: msg });
   }
@@ -759,8 +760,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
 
   try {
     const ytdlp       = await getYtDlpPath();
-    const { randomUUID } = require('crypto');
-    const id          = randomUUID();
+    const id          = require('crypto').randomUUID();
     const outTemplate = tmpPath(id, '.%(ext)s');
     const query       = `ytsearch1:${nome} official audio`;
 
@@ -770,28 +770,24 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
     let cookieTempFile = null;
 
     if (youtubeCookiesEnv) {
-      log.info(`✅ YOUTUBE_COOKIES encontrado (${youtubeCookiesEnv.length} bytes)`);
-      cookieTempFile = tmpPath(id, '_youtube_cookies.txt');
+      cookieTempFile = tmpPath(id, '_yt_cookies.txt');
       try {
         fs.writeFileSync(cookieTempFile, youtubeCookiesEnv, 'utf8');
         cookieFilePath = cookieTempFile;
+        log.info(`✅ YOUTUBE_COOKIES carregado (${youtubeCookiesEnv.length} bytes)`);
       } catch (e) {
-        log.warn('Erro ao gravar cookie do YouTube:', e.message);
+        log.warn('Erro ao gravar cookie:', e.message);
       }
     } else {
       const local = path.join(__dirname, '../youtube_cookies.txt');
-      if (fs.existsSync(local)) {
-        cookieFilePath = local;
-        log.info('✅ Usando cookies locais do YouTube');
-      } else {
-        log.warn('⚠️ Sem cookies do YouTube — pode falhar com "Sign in to confirm"');
-      }
+      if (fs.existsSync(local)) { cookieFilePath = local; log.info('✅ Usando cookies locais'); }
+      else log.warn('⚠️ Sem cookies do YouTube');
     }
 
-    const cookieArgs   = cookieFilePath ? ['--cookies', cookieFilePath] : [];
+    const cookieArgs    = cookieFilePath ? ['--cookies', cookieFilePath] : [];
     const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
 
-    // ── Download do áudio ──
+    // ── Download + metadados em uma só chamada ──
     const dlArgs = [
       ...getYtDlpArgs(),
       '--no-playlist', '-x',
@@ -799,21 +795,24 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
       '--audio-quality', '0',
       '--match-filter', '!is_live',
       '--max-filesize', '50m',
+      '--write-info-json',   // salva metadados em arquivo .info.json
       ...cookieArgs,
       '-o', outTemplate,
       query,
     ];
-    const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
+
+    const { ok, stderr } = await ytDlp(ytdlp, dlArgs, 120000);
+    cleanupCookie();
+
     if (!ok) {
-      cleanupCookie();
       await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
       return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
     }
 
+    // ── Localiza arquivo de áudio ──
     const base      = outTemplate.replace('.%(ext)s', '');
     const finalPath = ['.mp3', '.m4a', '.opus', '.ogg', '.webm'].map(e => base + e).find(p => fs.existsSync(p)) || null;
     if (!finalPath) {
-      cleanupCookie();
       await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
       return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
     }
@@ -822,14 +821,21 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
     safeDel(finalPath);
 
     if (audioBuffer.length > SIZE_LIMIT) {
-      cleanupCookie();
       await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
       return sock.sendMessage(jid, { text: '❌ Arquivo muito grande (máx 64MB).' }, { quoted: msg });
     }
 
-    // ── Metadados (após download, cookie ainda existe) ──
-    const meta = await fetchMeta(ytdlp, query, ['--match-filter', '!is_live', ...cookieArgs]);
-    cleanupCookie(); // só limpa APÓS fetchMeta terminar
+    // ── Lê metadados do .info.json gerado pelo download ──
+    let meta = null;
+    const infoPath = base + '.info.json';
+    if (fs.existsSync(infoPath)) {
+      try { meta = JSON.parse(fs.readFileSync(infoPath, 'utf8')); } catch {}
+      safeDel(infoPath);
+    }
+    // limpa qualquer outro arquivo gerado (thumbnail, etc)
+    for (const ext of ['.jpg', '.png', '.webp', '.part']) {
+      safeDel(base + ext);
+    }
 
     // ── Thumbnail ──
     let cardBuffer = null;
@@ -861,7 +867,6 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
       }
     }
 
-    // Fallback: card azul escuro
     if (!cardBuffer) {
       try {
         cardBuffer = await sharp({
@@ -911,7 +916,6 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
     texto += `🎬 *${P}playmp4* - _Baixa como vídeo_\n`;
     texto += `📄 *${P}playdoc* - _Baixa como documento_`;
 
-    // ── Envia card + áudio ──
     if (cardBuffer) {
       await sock.sendMessage(jid, { image: cardBuffer, caption: texto }, { quoted: msg });
     } else {
@@ -920,7 +924,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
 
     await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-    log.info(`✅ Música "${titulo}" enviada!`);
+    log.info(`✅ Música "${titulo}" enviada (${fileSize})`);
 
   } catch (err) {
     log.error(`❌ Erro em handleSom: ${err.message}`);

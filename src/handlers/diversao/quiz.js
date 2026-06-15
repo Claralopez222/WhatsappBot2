@@ -15,13 +15,16 @@ const { prepareDailyMissionState } = require('./missoes');
 
 const quizState      = new Map(); // senderJid → { r, resolvedJid, timeout }
 const pontosMap      = new Map(); // senderJid → pts (cache)
-const quizDailyCount = new Map(); // "senderJid_YYYY-MM-DD" → número de quizzes jogados hoje
+const quizDailyCount = new Map(); // "senderJid_YYYY-MM-DD" → número de quizzes jogados hoje (cache)
 
 // ✅ recentQuizMap substitui global.recentQuiz: escopo de módulo, sem vazamento
 // entre workers, sem crescimento ilimitado de global
 const recentQuizMap  = new Map(); // senderJid → string[] (últimas perguntas sorteadas)
 
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+// ✅ Limite diário de quizzes — alterar aqui caso queira mudar futuramente
+const DAILY_QUIZ_LIMIT = 15;
 
 // ✅ Limpeza periódica de quizDailyCount — remove entradas de dias anteriores
 // para evitar crescimento ilimitado da Map em processos de longa duração
@@ -137,6 +140,51 @@ async function changeGold(userId, amount, groupJid) {
   } catch (e) {
     console.error('⚠️ Erro ao alterar gold:', e.message);
     return 0;
+  }
+}
+
+// ─── CONTAGEM DIÁRIA DE QUIZ (persistente) ──────────────────────────────────
+
+// ✅ Lê a contagem diária. Usa o cache em memória se disponível; caso
+// contrário (ex: logo após reiniciar o bot), consulta o MongoDB e
+// repopula o cache — evitando que o limite "resete" sozinho ao reiniciar.
+async function getQuizCountToday(userId) {
+  const todayKey = getTodayKey(userId);
+
+  if (quizDailyCount.has(todayKey)) {
+    return quizDailyCount.get(todayKey);
+  }
+
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const user = await Usuario.findOne(
+      { idWhatsApp: userId },
+      { quizDaily: 1 }
+    ).lean();
+
+    const count = (user?.quizDaily?.date === today) ? (user.quizDaily.count || 0) : 0;
+    quizDailyCount.set(todayKey, count);
+    return count;
+  } catch (e) {
+    console.error('⚠️ Erro ao sincronizar contagem diária de quiz:', e.message);
+    return 0;
+  }
+}
+
+// ✅ Atualiza o cache em memória e persiste no MongoDB (quizDaily.date / quizDaily.count)
+async function incrementQuizCountToday(userId, newCount) {
+  const todayKey = getTodayKey(userId);
+  quizDailyCount.set(todayKey, newCount);
+
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId },
+      { $set: { 'quizDaily.date': today, 'quizDaily.count': newCount } },
+      { upsert: true }
+    );
+  } catch (e) {
+    console.error('⚠️ Erro ao salvar contagem diária de quiz no MongoDB:', e.message);
   }
 }
 
@@ -553,13 +601,12 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // ── Verificar limite diário de 10 quiz ──
-  const todayKey  = getTodayKey(resolvedJid);
-  const quizCount = quizDailyCount.get(todayKey) || 0;
+  // ── Verificar limite diário de quizzes (persistente no MongoDB) ──
+  const quizCount = await getQuizCountToday(resolvedJid);
 
-  if (quizCount >= 10) {
+  if (quizCount >= DAILY_QUIZ_LIMIT) {
     await sock.sendMessage(jid, {
-      text: `⚠️ *${author}*, você atingiu o limite de *10 quiz por dia*! Volte amanhã! 😴`,
+      text: `⚠️ *${author}*, você atingiu o limite de *${DAILY_QUIZ_LIMIT} quiz por dia*! Volte amanhã! 😴`,
     }, { quoted: msg });
     return;
   }
@@ -589,8 +636,8 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // ── Incrementar contador diário ──
-  quizDailyCount.set(todayKey, quizCount + 1);
+  // ── Incrementar contador diário (cache + MongoDB) ──
+  await incrementQuizCountToday(resolvedJid, quizCount + 1);
 
   // ── Sortear pergunta sem repetir recentemente ──
   // recentQuizMap usa resolvedJid — evita que usuário @lid tenha histórico
@@ -629,14 +676,14 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   // de pontos quando senderJid é @lid
   quizState.set(senderJid, { r: q.r, resolvedJid, timeout });
 
-  const restantes = 10 - quizCount - 1;
+  const restantes = DAILY_QUIZ_LIMIT - quizCount - 1;
 
   await sock.sendMessage(jid, {
     text:
       `🧠 *QUIZ — ${q.d.toUpperCase()}*\n\n` +
       `❓ *${q.p}*\n\n` +
       `⏱️ _Você tem 30 segundos!_\n` +
-      `📊 _Quiz ${quizCount + 1}/10 hoje · ${restantes} restante(s)_`,
+      `📊 _Quiz ${quizCount + 1}/${DAILY_QUIZ_LIMIT} hoje · ${restantes} restante(s)_`,
   }, { quoted: msg });
 }
 

@@ -65,8 +65,8 @@ const bancoSchema = new mongoose.Schema(
 const carteiraGrupoSchema = new mongoose.Schema(
   {
     // ── Identificação ────────────────────────────────────────────
-    idWhatsApp: { type: String, required: true, trim: true },
-    idGrupo:    { type: String, required: true, trim: true },
+    idWhatsApp: { type: String, required: true, trim: true, lowercase: true },
+    idGrupo:    { type: String, required: true, trim: true, lowercase: true },
     nome:       { type: String, default: null,  trim: true },
 
     // ── Economia local do grupo ──────────────────────────────────
@@ -74,6 +74,10 @@ const carteiraGrupoSchema = new mongoose.Schema(
     quizPoints: { type: Number, default: 0, min: 0 },
     mensagens:  { type: Number, default: 0, min: 0 },
     xp:         { type: Number, default: 0, min: 0 },
+
+    // ✅ "level" é DERIVADO de "xp" — via hook pre-save (.save()) OU via
+    // CarteiraGrupo.incrementXp() (atualizações atômicas com $inc).
+    // Nunca escrever "level" manualmente fora desses dois caminhos.
     level:      { type: Number, default: 1, min: 1 },
 
     // ── Bônus diário de mensagem ──────────────────────────────────
@@ -130,6 +134,82 @@ carteiraGrupoSchema.index({ idGrupo: 1, xp: -1 });
 carteiraGrupoSchema.index({ idGrupo: 1, mensagens: -1 });
 carteiraGrupoSchema.index({ idGrupo: 1, quizPoints: -1 });
 
+// ─── Fórmulas de XP / Nível (fonte única de verdade) ──────────────────────────
+// XP total necessário para ALCANÇAR um determinado nível.
+// Ex: xpParaLevel(1) = 0, xpParaLevel(2) = 100, xpParaLevel(3) ≈ 282...
+function xpParaLevel(level) {
+  const lvl = Math.max(1, Math.floor(level));
+  return Math.floor(100 * Math.pow(lvl - 1, 1.5));
+}
+
+// Nível correspondente a uma quantidade de XP (sempre >= 1)
+function levelFromXp(xp) {
+  const xpSeguro = Math.max(0, xp || 0);
+  return Math.max(1, Math.floor(Math.pow(xpSeguro / 100, 1 / 1.5)) + 1);
+}
+
+// Expor as fórmulas como statics — qualquer comando (!level, !ranklevel etc.)
+// deve usar ESTAS funções, nunca reimplementar a conta localmente.
+carteiraGrupoSchema.statics.xpParaLevel = xpParaLevel;
+carteiraGrupoSchema.statics.levelFromXp = levelFromXp;
+
+// ─── incrementXp: forma RECOMENDADA de conceder XP ────────────────────────────
+// Incrementa o XP atomicamente (via $inc) e recalcula o "level" na mesma
+// operação — usando findOneAndUpdate em duas etapas:
+//   1) $inc no xp (atômico, seguro para concorrência)
+//   2) $set no level com base no NOVO xp retornado
+//
+// Retorna o documento já atualizado (com xp e level coerentes), ou null
+// se idWhatsApp/idGrupo/amount forem inválidos.
+//
+// Uso típico no handler de mensagens:
+//   const carteira = await CarteiraGrupo.incrementXp(userId, groupJid, 5);
+//   if (carteira?.levelUp) { ... avisar o usuário que subiu de nível ... }
+carteiraGrupoSchema.statics.incrementXp = async function (idWhatsApp, idGrupo, amount) {
+  if (!idWhatsApp || !idGrupo) return null;
+  if (!Number.isFinite(amount) || amount === 0) return null;
+
+  // 1) Incrementa o xp atomicamente (cria o documento se não existir)
+  const atualizado = await this.findOneAndUpdate(
+    { idWhatsApp, idGrupo },
+    { $inc: { xp: amount } },
+    { upsert: true, new: true }
+  );
+
+  // Garante que xp nunca fique negativo mesmo com $inc de valores negativos
+  const xpSeguro = Math.max(0, atualizado.xp ?? 0);
+  if (xpSeguro !== atualizado.xp) {
+    atualizado.xp = xpSeguro;
+    await this.updateOne({ _id: atualizado._id }, { $set: { xp: xpSeguro } });
+  }
+
+  // 2) Recalcula o level com base no xp já persistido
+  const levelAntigo = atualizado.level ?? 1;
+  const levelNovo   = levelFromXp(xpSeguro);
+
+  if (levelNovo !== levelAntigo) {
+    await this.updateOne({ _id: atualizado._id }, { $set: { level: levelNovo } });
+    atualizado.level = levelNovo;
+  }
+
+  return {
+    ...atualizado.toObject(),
+    levelUp: levelNovo > levelAntigo,
+    levelAnterior: levelAntigo,
+  };
+};
+
+// ─── Hook: mantém "level" sincronizado com "xp" ao usar .save() ───────────────
+// Cobre os casos em que alguém faz `doc.xp = X; await doc.save()` em vez de
+// usar incrementXp. Atualizações via updateOne/findOneAndUpdate diretas
+// (sem passar por incrementXp) continuam fora do alcance deste hook.
+carteiraGrupoSchema.pre('save', function (next) {
+  if (this.isModified('xp')) {
+    this.level = levelFromXp(this.xp);
+  }
+  next();
+});
+
 // ─── Métodos de instância ─────────────────────────────────────────────────────
 
 carteiraGrupoSchema.methods.registrarGold = function (tipo, item, amount, limite = 50) {
@@ -137,6 +217,20 @@ carteiraGrupoSchema.methods.registrarGold = function (tipo, item, amount, limite
   if (this.goldHistory.length > limite) {
     this.goldHistory = this.goldHistory.slice(-limite);
   }
+};
+
+// Retorna nível + progresso atual com base no xp, pronto para exibir
+// (usado por !level, !ranklevel etc.)
+carteiraGrupoSchema.methods.getProgressoXp = function () {
+  const xpRaw      = Math.max(0, this.xp ?? 0);
+  const level      = levelFromXp(xpRaw);
+  const xpAnterior = xpParaLevel(level);
+  const xpProximo  = xpParaLevel(level + 1);
+  const xpNoLevel  = Math.max(0, xpRaw - xpAnterior);
+  const necessario = Math.max(1, xpProximo - xpAnterior);
+  const progresso  = Math.min(100, Math.floor((xpNoLevel / necessario) * 100));
+
+  return { xp: xpRaw, level, xpNoLevel, xpNecessario: necessario, progresso };
 };
 
 carteiraGrupoSchema.methods.toSafeObject = function () {

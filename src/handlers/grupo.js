@@ -1430,22 +1430,28 @@ async function verificarAntiFlood(sock, jid, userJid, botJid) {
 
 async function handleAvisar(sock, msg, jid, caption) {
   if (!somenteGrupo(jid)) {
-    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
+    return;
   }
   if (!await checkAdmin(sock, msg, jid, 'avisar')) return;
 
-  const aviso = caption.replace(/^[!.,\/]avisar\s*/i, '').trim();
+  const aviso = caption.replace(/^[!.,\/]*avisar\s*/i, '').trim();
   if (!aviso) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Digite o aviso!\nExemplo: *!avisar Reunião hoje às 20h!*',
-    }, { quoted: msg }); return;
+      text:
+        `⚠️ *Digite o aviso!*\n\n` +
+        `Exemplo: *!avisar Reunião hoje às 20h!*`,
+    }, { quoted: msg });
+    return;
   }
 
+  // ── Salva no histórico de avisos do grupo ──
   if (!grupoAvisosMap.has(jid)) grupoAvisosMap.set(jid, []);
   const lista = grupoAvisosMap.get(jid);
   lista.push({ texto: aviso, data: Date.now() });
   if (lista.length > 10) lista.shift();
 
+  // ── Busca membros do grupo ──
   let members = [];
   try {
     const meta = await sock.groupMetadata(jid);
@@ -1454,12 +1460,21 @@ async function handleAvisar(sock, msg, jid, caption) {
     console.error('[handleAvisar] Erro ao buscar membros:', err.message);
   }
 
-  const mencoes = members.map(m => `@${m.split('@')[0]}`).join(' ');
+  const agora     = new Date();
+  const dataStr   = agora.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const horaStr   = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const mencoes   = members.map(m => `@${m.split('@')[0].split(':')[0]}`).join(' ');
+  const numAviso  = lista.length;
 
   await sock.sendMessage(jid, {
-    text: `📢 *AVISO DO GRUPO* 📢\n\n${aviso}\n\n${mencoes}`,
-    mentions: members,
-  }, { quoted: msg });
+  text:
+    `📢 ═══ *AVISO DO GRUPO* ═══ 📢\n\n` +
+    `${aviso}\n\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    `📅 ${dataStr} às ${horaStr}\n` +
+    `📋 Aviso nº ${numAviso}`,
+  mentions: members,
+}, { quoted: msg });
 }
 
 // ═══════════════════════════════════════════════════════════════

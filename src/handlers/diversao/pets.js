@@ -1176,24 +1176,24 @@ async function tentarSpawnComRetry(sock, jid, tentativas = 3, delayMs = 15_000) 
 
 // ─── SCHEDULER PRINCIPAL ──────────────────────────────────────────────────────
 
+const PetSpawn = require('../../models/PetSpawn');
+
+const INTERVALO_MS = 20 * 60 * 1000; // 20 minutos
+
 /**
- * Inicia o scheduler de spawn de pets.
- * Deve ser chamado UMA vez no boot; use updateSock em reconexões.
- *
- * @param {object} sock — socket Baileys inicial
+ * Inicia o scheduler de spawn de pets com persistência no MongoDB.
+ * O timestamp do último spawn é salvo por grupo, então reinicializações
+ * do servidor não resetam o cooldown.
  */
 function initPetScheduler(sock) {
   let currentSock = sock;
 
-  // Expõe método para atualizar o socket sem reiniciar o intervalo
   initPetScheduler.updateSock = (newSock) => {
     currentSock = newSock;
     console.log('[PetScheduler] Socket atualizado após reconexão.');
   };
 
-  const INTERVALO_MS = 60 * 60 * 1000; // 1 hora
-
-  setInterval(async () => {
+  async function cicloSpawn() {
     const total = activeGroups.size;
 
     if (total === 0) {
@@ -1202,36 +1202,64 @@ function initPetScheduler(sock) {
     }
 
     if (!isSockReady(currentSock)) {
-      console.warn('[PetScheduler] Socket não pronto, ciclo de spawn ignorado.');
+      console.warn('[PetScheduler] Socket não pronto, ciclo ignorado.');
       return;
     }
 
     console.log(`[PetScheduler] Ciclo iniciado — ${total} grupo(s) ativo(s).`);
 
-    let sucessos  = 0;
-    let falhas    = 0;
+    const agora = Date.now();
+    let sucessos = 0;
+    let ignorados = 0;
 
     for (const jid of activeGroups) {
-      await tentarSpawnComRetry(currentSock, jid);
+      try {
+        // Busca o timestamp do último spawn deste grupo no banco
+        const registro = await PetSpawn.findOne({ idGrupo: jid }).lean();
+        const ultimoSpawn = registro?.ultimoSpawn ? new Date(registro.ultimoSpawn).getTime() : 0;
+        const tempoPassado = agora - ultimoSpawn;
 
-      // Verifica se o spawn foi registrado (indicador de sucesso)
-      if (spawnedPets.has(jid)) {
+        // Se ainda não passou 1 hora desde o último spawn, pula
+        if (tempoPassado < INTERVALO_MS) {
+          const falta = INTERVALO_MS - tempoPassado;
+          const min   = Math.ceil(falta / 60000);
+          console.log(`[PetScheduler] ${jid} — próximo spawn em ${min}min, pulando.`);
+          ignorados++;
+          continue;
+        }
+
+        // Salva o novo timestamp ANTES de enviar (evita spawn duplo em caso de crash)
+        await PetSpawn.findOneAndUpdate(
+          { idGrupo: jid },
+          { $set: { ultimoSpawn: new Date(agora) } },
+          { upsert: true }
+        );
+
+        await tentarSpawnComRetry(currentSock, jid);
         sucessos++;
-      } else {
-        falhas++;
-      }
 
-      // Pequena pausa entre grupos para não sobrecarregar o socket
-      if (total > 1) await sleep(500);
+        if (total > 1) await sleep(500);
+      } catch (err) {
+        console.error(`[PetScheduler] Erro ao processar spawn para ${jid}:`, err.message);
+      }
     }
 
     console.log(
-      `[PetScheduler] Ciclo concluído — ✅ ${sucessos} sucesso(s) | ❌ ${falhas} falha(s).`
+      `[PetScheduler] Ciclo concluído — ✅ ${sucessos} spawn(s) | ⏭️ ${ignorados} ignorado(s).`
     );
+  }
 
-  }, INTERVALO_MS);
+  // Roda a cada 5 minutos para verificar quais grupos precisam de spawn
+  // (em vez de exatamente 1 hora, pois o bot pode reiniciar no meio do intervalo)
+  const CHECK_INTERVAL = 5 * 60 * 1000; // verifica a cada 5min
 
-  console.log('[PetScheduler] Iniciado. Primeiro spawn em 1 hora.');
+  // Primeira verificação após 1 minuto do boot
+  setTimeout(() => {
+    cicloSpawn();
+    setInterval(cicloSpawn, CHECK_INTERVAL);
+  }, 60 * 1000);
+
+  console.log('[PetScheduler] Iniciado. Primeiro spawn em 20 minutos.');
 }
 
 // !statuspet

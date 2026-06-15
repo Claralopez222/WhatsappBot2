@@ -507,6 +507,15 @@ async function handleToGif(sock, msg, content, jid) {
 
 // (comando !roubar removido)
 
+// ═══════════════════════════════════════════════════════════════
+// ─── !estourar ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+// ✅ Limite de duração — mesmo padrão do !audio (290s ≈ 4:50min).
+// Checado ANTES do download, usando o campo "seconds" que o próprio
+// WhatsApp já envia nos metadados do áudio — sem custo extra.
+const MAX_DURATION_ESTOURAR = 290; // segundos
+
 async function handleEstourar(sock, msg, content, jid) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const quoted      = contextInfo?.quotedMessage;
@@ -516,6 +525,20 @@ async function handleEstourar(sock, msg, content, jid) {
   if (!audioMsg) {
     await sock.sendMessage(jid, {
       text: '⚠️ Responda a um *áudio* com *!estourar*.\nEx: *!estourar 80* _(padrão: 20x | máx: 100)_',
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Checar duração antes de baixar/processar ──────────────────
+  const duracao = Number(audioMsg.seconds) || 0;
+  if (duracao > MAX_DURATION_ESTOURAR) {
+    const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    await sock.sendMessage(jid, {
+      text:
+        `❌ *Áudio muito longo!*\n\n` +
+        `⏱️ Duração do áudio: *${fmt(duracao)}*\n` +
+        `📏 Limite máximo: *${fmt(MAX_DURATION_ESTOURAR)}*\n\n` +
+        `_Responda a um áudio mais curto._`,
     }, { quoted: msg });
     return;
   }

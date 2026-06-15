@@ -676,8 +676,24 @@ async function handleAudioDownload(sock, msg, jid, caption) {
   const rawTemplate = tmpPath(id, '_raw.%(ext)s');
   const outPath = tmpPath(id, '_out.mp3');
 
-  // Metadados em background
-  const metaPromise = fetchMeta(ytdlp, link);
+  // ✅ Limite de duração — evita baixar/converter vídeos muito longos
+  // (290s ≈ 4:50min). Checado ANTES do download para não gastar
+  // tempo/banda com algo que será rejeitado de qualquer forma.
+  const MAX_DURATION = 290; // segundos
+
+  // Busca metadados primeiro (não em background) para validar a duração
+  const meta = await fetchMeta(ytdlp, link);
+
+  if (meta?.duration && meta.duration > MAX_DURATION) {
+    const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    return sock.sendMessage(jid, {
+      text:
+        `❌ *Áudio muito longo!*\n\n` +
+        `⏱️ Duração do vídeo: *${fmt(meta.duration)}*\n` +
+        `📏 Limite máximo: *${fmt(MAX_DURATION)}*\n\n` +
+        `_Envie um link mais curto._`,
+    }, { quoted: msg });
+  }
 
   const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'best', '--audio-quality', '0', '--max-filesize', '100m', '-o', rawTemplate, link];
   const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 90000);
@@ -699,8 +715,6 @@ async function handleAudioDownload(sock, msg, jid, caption) {
   safeDel(outPath);
 
   if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Áudio muito grande (máx 64MB).' }, { quoted: msg });
-
-  const meta = await metaPromise;
 
   const buildAudioCaption = (meta, fileSizeBytes, sourceLink) => {
     const titulo     = meta?.title || null;

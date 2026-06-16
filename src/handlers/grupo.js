@@ -375,8 +375,6 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   }
 }
 
-module.exports = { handleBan };
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !mute ────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -1038,6 +1036,103 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
 
 module.exports = { handleReportar };
 
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !removerreporte ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//
+// Remove UMA advertência do usuário mencionado ou respondido.
+// Uso:
+//   - Respondendo a uma mensagem:  !removerreporte
+//   - Por menção:                  !removerreporte @pessoa
+//
+// Requer: admin do grupo.
+// ═══════════════════════════════════════════════════════════════
+
+async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJid) {
+  if (!somenteGrupo(jid)) {
+    return sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
+  }
+
+  if (!await checkAdmin(sock, msg, jid, 'removerreporte')) return;
+
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+
+  // ── Resolve o alvo: reply tem prioridade sobre menção ──
+  const targetJid =
+    content.extendedTextMessage?.contextInfo?.participant ??
+    content.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ??
+    null;
+
+  if (!targetJid) {
+    return sock.sendMessage(jid, {
+      text:
+        '⚠️ Informe quem terá a advertência removida.\n' +
+        '_Responda a uma mensagem ou mencione o usuário: *!removerreporte @pessoa*_',
+    }, { quoted: msg });
+  }
+
+  if (targetJid === senderJid) {
+    return sock.sendMessage(jid, {
+      text: '🤡 Você não pode remover sua própria advertência.',
+    }, { quoted: msg });
+  }
+
+  if (isBotJid(targetJid, botJid)) {
+    return sock.sendMessage(jid, {
+      text: '🤖 O bot não possui advertências.',
+    }, { quoted: msg });
+  }
+
+  // ── groupKey idêntico ao usado em handleReportar ──
+  const groupKey = jid.replace(/\./g, '_');
+  const nome     = contactNames[targetJid] || targetJid.split('@')[0];
+
+  // ── Lê advertências atuais ──
+  // .lean() retorna objeto puro — warnings é um objeto JS, não um Map.
+  // Nunca usar .get() após lean(); acessar como propriedade direta.
+  const usuario = await Usuario.findOne({ idWhatsApp: targetJid }).lean();
+  const atual   = Number(usuario?.warnings?.[groupKey] ?? 0);
+
+  if (!usuario || atual <= 0) {
+    return sock.sendMessage(jid, {
+      text: `✅ *${nome}* não possui advertências neste grupo.`,
+      mentions: [targetJid],
+    }, { quoted: msg });
+  }
+
+  // ── Decrementa atomicamente no banco ──
+  const novoValor = atual - 1;
+
+  if (novoValor === 0) {
+    // Limpa a chave para não deixar warnings.groupKey = 0 sobrando
+    await Usuario.updateOne(
+      { idWhatsApp: targetJid },
+      { $unset: { [`warnings.${groupKey}`]: '' } },
+    );
+  } else {
+    await Usuario.updateOne(
+      { idWhatsApp: targetJid },
+      { $set: { [`warnings.${groupKey}`]: novoValor } },
+    );
+  }
+
+  const nivelEmoji  = novoValor === 0 ? '🟢' : novoValor === 1 ? '🟡' : '🟠';
+  const textoStatus = novoValor === 0
+    ? `🎉 *${nome}* está limpo(a)! Sem advertências neste grupo.`
+    : `${nivelEmoji} *${nome}* agora tem *${novoValor}/3* advertência(s).`;
+
+  await sock.sendMessage(jid, {
+    text:
+      `✅ *ADVERTÊNCIA REMOVIDA*\n\n` +
+      `👤 Usuário: *@${targetJid.split('@')[0]}*\n` +
+      `📉 Era: *${atual}/3* → Agora: *${novoValor}/3*\n\n` +
+      textoStatus,
+    mentions: [targetJid],
+  }, { quoted: msg });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !grupinfo ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -1675,7 +1770,8 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     `▸ ${P}fixargrupo — Fixar mensagem (reply)\n` +
     `▸ ${P}fixargrupo ver — Ver último aviso fixado\n` +
     `▸ ${P}apagarmsg — Apagar mensagem (reply)\n` +
-    `▸ ${P}reportar — Advertir usuário (reply)\n\n` +
+    `▸ ${P}reportar — Advertir usuário (reply)\n` +
+    `▸ ${P}removerreporte — Remover 1 advertência (reply/@)\n\n` +
 
     `📊 *JOGO / ECONOMIA*\n` +
     `▸ ${P}rankgold — Ranking de Gold deste grupo`;
@@ -1728,4 +1824,5 @@ module.exports = {
   verificarAntiFlood,
   isMuted,       // exportado para bot.js verificar antes de processar msg
   isAdmin,
+  handleRemoverReporte,
 };

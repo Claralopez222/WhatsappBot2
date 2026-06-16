@@ -10,7 +10,7 @@ const CHANCE_FILHO       = 0.40;  // 40% de chance
 const MAX_FILHOS         = 3;
 const DIAS_POR_ANO       = 7;     // 7 dias reais = 1 ano
 const COOLDOWN_CUIDAR    = 20 * 60 * 60 * 1000; // 20h
-const COOLDOWN_TENTAR    = 25 * 60 * 1000;      // 25 minutos
+const COOLDOWN_TENTAR = 20 * 60 * 1000; // 20 minutos
 const CUSTO_REMEDIO      = 300;   // gold
 
 const PERSONALIDADES = [
@@ -139,6 +139,7 @@ async function atualizarGuarda(filho) {
 
 // ─── !tentarfilho ─────────────────────────────────────────────────────────────
 // Só faz sentido com relacionamento ativo — continua exigindo casadoCom.
+
 async function handleTentarFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
@@ -152,7 +153,7 @@ async function handleTentarFilho(sock, msg, jid) {
 
     const { usuario, parceiro } = info;
 
-    // Cooldown de tentativa
+    // ── Cooldown de 20 minutos ──
     if (usuario.ultimaTentativaFilho) {
       const restante = COOLDOWN_TENTAR - (Date.now() - new Date(usuario.ultimaTentativaFilho).getTime());
       if (restante > 0) {
@@ -162,39 +163,38 @@ async function handleTentarFilho(sock, msg, jid) {
       }
     }
 
-    // Verifica limite de filhos (apenas com o parceiro atual)
+    // ── Verifica limite de filhos (apenas com o parceiro atual) ──
     const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, userId, parceiro));
-
     if (totalFilhos >= MAX_FILHOS) {
       return sock.sendMessage(jid, {
         text: `❌ Vocês já têm *${totalFilhos} filhos*! O limite é ${MAX_FILHOS}.`,
       }, { quoted: msg });
     }
 
-    // Registra a tentativa (independente do resultado)
+    // ── Registra a tentativa (independente do resultado) ──
     await Usuario.updateOne(
       { idWhatsApp: userId },
       { $set: { ultimaTentativaFilho: new Date() } }
     );
 
-    // Sorteio
+    // ── Sorteio ──
     if (Math.random() > CHANCE_FILHO) {
       const tentativas = [
-        '😔 Dessa vez não rolou... Tentem novamente em 25 minutos!',
+        '😔 Dessa vez não rolou... Tentem novamente em 20 minutos!',
         '🍀 Quase! A sorte não sorriu dessa vez. Não desistam!',
-        '💔 Não foi dessa vez. Continuem tentando!',
+        '💔 Não foi dessa vez. Continuem tentando em 20 minutos!',
       ];
       return sock.sendMessage(jid, {
         text: tentativas[Math.floor(Math.random() * tentativas.length)],
       }, { quoted: msg });
     }
 
-    // Nasce o filho
-    const sexo = Math.random() < 0.5 ? 'menino' : 'menina';
-    const nomes = sexo === 'menino' ? NOMES_MENINO : NOMES_MENINA;
-    const nome  = nomes[Math.floor(Math.random() * nomes.length)];
+    // ── Nasce o filho ──
+    const sexo          = Math.random() < 0.5 ? 'menino' : 'menina';
+    const nomes         = sexo === 'menino' ? NOMES_MENINO : NOMES_MENINA;
+    const nome          = nomes[Math.floor(Math.random() * nomes.length)];
     const personalidade = PERSONALIDADES[Math.floor(Math.random() * PERSONALIDADES.length)];
-    const emoji = sexo === 'menino' ? '👦' : '👧';
+    const emoji         = sexo === 'menino' ? '👦' : '👧';
 
     await Filho.create({
       jidA: userId,
@@ -204,15 +204,13 @@ async function handleTentarFilho(sock, msg, jid) {
       sexo,
       personalidade,
       felicidade: 100,
-      fome: 100,
-      sono: 100,
-      alegria: 100,
-      doente: false,
-      // Enquanto o casal está junto, guarda livre (null) — qualquer um cuida.
-      // Só passa a alternar quando (e se) eles se separarem.
+      fome:       100,
+      sono:       100,
+      alegria:    100,
+      doente:     false,
       guardaAtual: null,
       ultimaTroca: new Date(),
-      nascidoEm: new Date(),
+      nascidoEm:   new Date(),
     });
 
     return sock.sendMessage(jid, {
@@ -229,9 +227,12 @@ async function handleTentarFilho(sock, msg, jid) {
         `💡 Use *!cuidarfilho* para cuidar dele(a) diariamente!`,
       mentions: [userId, parceiro],
     }, { quoted: msg });
+
   } catch (e) {
     console.error('[handleTentarFilho] Erro:', e.message);
-    return sock.sendMessage(jid, { text: '⚠️ Erro ao tentar ter um filho. Tente novamente.' }, { quoted: msg }).catch(() => {});
+    return sock.sendMessage(jid, {
+      text: '⚠️ Erro ao tentar ter um filho. Tente novamente.',
+    }, { quoted: msg }).catch(() => {});
   }
 }
 

@@ -1115,34 +1115,34 @@ if (matchCmd(cmdWord, 'remediofil'))   { await diversaoHandler.handleRemedioFilh
 if (matchCmdStart(cmd, 'bucetudo'))      { await diversaoHandler.handleBucetudo(sock, msg, content, jid, author, contactNames); return; }
 if (matchCmd(cmdWord, 'worldcup'))       { await diversaoHandler.handleWorldCup(sock, msg, jid); return; }
 
-  // â”€â”€ GRUPO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (matchCmdStart(cmd, 'ban'))          { await grupoHandler.handleBan(sock, msg, content, jid, botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'mute'))         { await grupoHandler.handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
-  if (matchCmdStart(cmd, 'desmute'))      { await grupoHandler.handleDesmute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
-  if (matchCmdStart(cmd, 'ranking'))      { await grupoHandler.handleRanking(sock, msg, jid, msgCount); return; }
-  if (matchCmd(cmdWord, 'rankgold'))
-  { await handleRankGold(sock, msg, jid, contactNames); return; }
-  if (matchCmdStart(cmd, 'sorteio'))      { await grupoHandler.handleSorteio(sock, msg, content, jid, contactNames); return; }
-  if (matchCmdStart(cmd, 'enquete'))      { await grupoHandler.handleEnquete(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'todos'))        { await grupoHandler.handleTodos(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'fechar'))       { await grupoHandler.handleFecharAbrir(sock, msg, jid, true); return; }
-  if (matchCmdStart(cmd, 'abrir'))        { await grupoHandler.handleFecharAbrir(sock, msg, jid, false); return; }
-  if (matchCmdStart(cmd, 'promover'))     { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'promote', botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'rebaixar'))     { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'demote', botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'tempo'))        { await grupoHandler.handleTempo(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'antilink'))     { await grupoHandler.handleAntiLink(sock, msg, content, jid, antiLinkGroups, saveData); return; }
-  if (matchCmdStart(cmd, 'autosticker'))  { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
-  if (matchCmdStart(cmd, 'reportar'))     { await grupoHandler.handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid); return; }
-  if (matchCmd(cmdWord, 'grupinfo'))      { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'listaadm'))      { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }
-  if (matchCmd(cmdWord, 'listamembros'))  { await grupoHandler.handleListaMembros(sock, msg, jid, contactNames); return; }
-  if (matchCmdStart(cmd, 'bemvindo'))     { await grupoHandler.handleBemVindo(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'linkgrupo'))     { await grupoHandler.handleLinkGrupo(sock, msg, jid); return; }
-  if (matchCmdStart(cmd, 'apagarmsg'))    { await grupoHandler.handleApagarMsg(sock, msg, content, jid); return; }
-  if (matchCmdStart(cmd, 'slowmode'))     { await grupoHandler.handleSlowMode(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'antiflood'))    { await grupoHandler.handleAntiFlood(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'avisar'))       { await grupoHandler.handleAvisar(sock, msg, jid, caption, contactNames); return; }
-  if (matchCmdStart(cmd, 'fixargrupo'))   { await grupoHandler.handleFixarGrupo(sock, msg, content, jid, caption); return; }
+ // ── GRUPO ────────────────────────────────────────────────────────────────────
+  if (matchCmdStart(cmd, 'ban'))           { await grupoHandler.handleBan(sock, msg, content, jid, botJid, contactNames); return; }
+  if (matchCmdStart(cmd, 'mute'))          { await grupoHandler.handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
+  if (matchCmdStart(cmd, 'desmute'))       { await grupoHandler.handleDesmute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
+  if (matchCmdStart(cmd, 'ranking'))       { await grupoHandler.handleRanking(sock, msg, jid, msgCount); return; }
+  if (matchCmd(cmdWord, 'rankgold'))       { await handleRankGold(sock, msg, jid, contactNames); return; }
+  if (matchCmdStart(cmd, 'sorteio'))       { await grupoHandler.handleSorteio(sock, msg, content, jid, contactNames); return; }
+  if (matchCmdStart(cmd, 'enquete'))       { await grupoHandler.handleEnquete(sock, msg, jid, caption); return; }
+  if (matchCmdStart(cmd, 'todos'))         { await grupoHandler.handleTodos(sock, msg, jid, caption); return; }
+  if (matchCmdStart(cmd, 'fechar'))        { await grupoHandler.handleFecharAbrir(sock, msg, jid, true); return; }
+  if (matchCmdStart(cmd, 'abrir'))         { await grupoHandler.handleFecharAbrir(sock, msg, jid, false); return; }
+  if (matchCmdStart(cmd, 'promover'))      { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'promote', botJid, contactNames); return; }
+  if (matchCmdStart(cmd, 'rebaixar'))      { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'demote', botJid, contactNames); return; }
+  if (matchCmdStart(cmd, 'tempo'))         { await grupoHandler.handleTempo(sock, msg, content, jid, author, contactNames); return; }
+  if (matchCmdStart(cmd, 'antilink'))      { await grupoHandler.handleAntiLink(sock, msg, content, jid, antiLinkGroups, saveData); return; }
+  if (matchCmdStart(cmd, 'autosticker'))   { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
+  if (matchCmdStart(cmd, 'reportar'))      { await grupoHandler.handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid); return; }
+  if (matchCmdStart(cmd, 'removerreporte')){ await grupoHandler.handleRemoverReporte(sock, msg, content, jid, contactNames, botJid); return; }
+  if (matchCmd(cmdWord, 'grupinfo'))       { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'listaadm'))       { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }
+  if (matchCmd(cmdWord, 'listamembros'))   { await grupoHandler.handleListaMembros(sock, msg, jid, contactNames); return; }
+  if (matchCmdStart(cmd, 'bemvindo'))      { await grupoHandler.handleBemVindo(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'linkgrupo'))      { await grupoHandler.handleLinkGrupo(sock, msg, jid); return; }
+  if (matchCmdStart(cmd, 'apagarmsg'))     { await grupoHandler.handleApagarMsg(sock, msg, content, jid); return; }
+  if (matchCmdStart(cmd, 'slowmode'))      { await grupoHandler.handleSlowMode(sock, msg, jid, caption); return; }
+  if (matchCmdStart(cmd, 'antiflood'))     { await grupoHandler.handleAntiFlood(sock, msg, jid, caption); return; }
+  if (matchCmdStart(cmd, 'avisar'))        { await grupoHandler.handleAvisar(sock, msg, jid, caption, contactNames); return; }
+  if (matchCmdStart(cmd, 'fixargrupo'))    { await grupoHandler.handleFixarGrupo(sock, msg, content, jid, caption); return; }
 
   // â”€â”€ FILTROS DE IMAGEM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmdStart(cmd, 'pbiphone'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'pbiphone',  getPrefix(jid)); return; }

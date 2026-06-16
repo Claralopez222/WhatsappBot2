@@ -98,30 +98,31 @@ function _makeCarinhHandler(comando) {
 
 // ─── !presente ────────────────────────────────────────────────
 async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption = '') {
-  const temCaption = caption.toLowerCase().trim();
-  // Remove o próprio comando "!presente" da frente, ficando só com os argumentos
-  const parts = temCaption.replace(/^!?presente\s*/i, '').split(/\s+/).filter(Boolean);
+  const parts = caption
+    .toLowerCase()
+    .trim()
+    .replace(/^!?presente\s*/i, '')
+    .split(/\s+/)
+    .filter(Boolean);
 
   // ── Sem argumentos: presente surpresa aleatório (sem consumir item) ──
   if (parts.length === 0) {
     const found = findRelByJid(jid, senderJid, relacionamentos);
     if (!found) {
-      await sock.sendMessage(jid, {
+      return sock.sendMessage(jid, {
         text: '💔 Você não está em um relacionamento! Não pode presentear ninguém agora! 😒',
       }, { quoted: msg });
-      return;
     }
 
-    const presentes = [
+    const PRESENTES_SURPRESA = [
       'um anel de ouro 💍',
       'um perfume importado 🌸',
       'um ursinho de pelúcia 🧸',
       'chocolates Ferrero 🍫',
       'um colar lindo 📿',
     ];
-    const p = presentes[Math.floor(Math.random() * presentes.length)];
-    await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'presente', '🎀', `presenteou com ${p}`);
-    return;
+    const presenteSorteado = PRESENTES_SURPRESA[Math.floor(Math.random() * PRESENTES_SURPRESA.length)];
+    return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'presente', '🎀', `presenteou com ${presenteSorteado}`);
   }
 
   // ── Com argumentos: presente específico com item do inventário ──
@@ -129,48 +130,33 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
   // ── Verifica relacionamento ──
   const found = findRelByJid(jid, senderJid, relacionamentos);
   if (!found) {
-    await sock.sendMessage(jid, {
+    return sock.sendMessage(jid, {
       text: '💔 Você não está em um relacionamento! Não pode presentear ninguém agora! 😒',
     }, { quoted: msg });
-    return;
   }
 
   const { key, rel: relData } = found;
-  const itemNome = parts[0]; // primeiro argumento após o comando é o item
-
-  if (!itemNome) {
-    await sock.sendMessage(jid, {
-      text:
-        '⚠️ Informe o item que deseja presentear!\n' +
-        'Use: *!presente <item> @pessoa*\n' +
-        'Exemplo: *!presente flores @esposa*',
-    }, { quoted: msg });
-    return;
-  }
+  const itemNome = parts[0];
 
   // ── Valida se o item existe no catálogo da loja ──
-  // Evita usar texto arbitrário digitado pelo usuário como chave
-  // dentro de inventory.* no MongoDB.
   if (!ITENS_LOJA[itemNome]) {
-    await sock.sendMessage(jid, {
+    return sock.sendMessage(jid, {
       text:
         `❌ *${itemNome}* não é um item válido!\n\n` +
-        `Veja os itens disponíveis: *!lojacasal*\n` +
-        `Ou use *!inventario* para ver o que você já tem.`,
+        `🛍️ Veja os itens disponíveis: *!lojacasal*\n` +
+        `🎒 Ou use *!inventario* para ver o que você já tem.`,
     }, { quoted: msg });
-    return;
   }
 
   // ── Verifica menção ──
-  const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
   if (mentions.length === 0) {
-    await sock.sendMessage(jid, {
+    return sock.sendMessage(jid, {
       text:
         '⚠️ Você precisa mencionar a pessoa!\n' +
         'Use: *!presente <item> @pessoa*\n' +
         'Exemplo: *!presente flores @esposa*',
     }, { quoted: msg });
-    return;
   }
 
   const pessoaJid   = mentions[0];
@@ -179,55 +165,48 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
 
   // ── Só pode presentear o próprio parceiro ──
   if (pessoaJid !== parceiroJid) {
-    await sock.sendMessage(jid, {
+    return sock.sendMessage(jid, {
       text: '😂 Ué! Você tá tentando presentear outra pessoa? Que história é essa?!',
     }, { quoted: msg });
-    return;
   }
 
   // ── Verifica e consome o item do inventário (atômico via MongoDB) ──
   try {
-    const result = await Usuario.findOneAndUpdate(
+    const usuarioAtualizado = await Usuario.findOneAndUpdate(
       { idWhatsApp: senderJid, [`inventory.${itemNome}`]: { $gte: 1 } },
       { $inc: { [`inventory.${itemNome}`]: -1 } },
       { new: true }
     );
 
-    if (!result) {
-      await sock.sendMessage(jid, {
+    if (!usuarioAtualizado) {
+      return sock.sendMessage(jid, {
         text:
           `❌ Você não tem *${itemNome}* no inventário!\n\n` +
-          `Compre na loja do casal: *!lojacasal*\n` +
-          `Ou use *!inventario* para ver seus itens.`,
+          `🛍️ Compre na loja do casal: *!lojacasal*\n` +
+          `🎒 Ou use *!inventario* para ver seus itens.`,
       }, { quoted: msg });
-      return;
     }
 
     const nomeAmigavel = ITENS_LOJA[itemNome].nome;
-    const ganhoTotal = 5;
-    let xpAtual;
+    const GANHO_XP = 5;
 
-    // ── Lê o XP real do casal no banco e aplica o ganho dividido entre os dois ──
+    // ── Atualiza XP de ambos no banco e calcula o total real ──
+    let xpAtual = 0;
+
     try {
-      const [userA, userB] = await Promise.all([
-        relData.jidA ? Usuario.findOne({ idWhatsApp: relData.jidA }).select('xpCasal').lean() : null,
-        relData.jidB ? Usuario.findOne({ idWhatsApp: relData.jidB }).select('xpCasal').lean() : null
-      ]);
-      const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
-      xpAtual = xpAntigo + ganhoTotal;
-
-      // Divide o ganho entre A e B para que o total real some exatamente ganhoTotal
-      const metadeA = Math.ceil(ganhoTotal / 2);
-      const metadeB = Math.floor(ganhoTotal / 2);
+      const metadeA = Math.ceil(GANHO_XP / 2);
+      const metadeB = Math.floor(GANHO_XP / 2);
 
       const updates = [];
-      if (relData.jidA) updates.push(Usuario.updateOne({ idWhatsApp: relData.jidA }, { $inc: { xpCasal: metadeA } }));
-      if (relData.jidB) updates.push(Usuario.updateOne({ idWhatsApp: relData.jidB }, { $inc: { xpCasal: metadeB } }));
-      await Promise.all(updates);
+      if (relData.jidA) updates.push(Usuario.findOneAndUpdate({ idWhatsApp: relData.jidA }, { $inc: { xpCasal: metadeA } }, { new: true, upsert: false }));
+      if (relData.jidB) updates.push(Usuario.findOneAndUpdate({ idWhatsApp: relData.jidB }, { $inc: { xpCasal: metadeB } }, { new: true, upsert: false }));
 
-    } catch (err) {
-      console.error('[handlePresente] Erro ao sincronizar XP com o banco:', err.message);
-      xpAtual = (getXpCasais().get(key) || 0) + ganhoTotal;
+      const [resA, resB] = await Promise.all(updates);
+      xpAtual = (resA?.xpCasal ?? 0) + (resB?.xpCasal ?? 0);
+
+    } catch (xpErr) {
+      console.error('[handlePresente] Erro ao sincronizar XP com o banco:', xpErr.message);
+      xpAtual = (getXpCasais().get(key) ?? 0) + GANHO_XP;
     }
 
     getXpCasais().set(key, xpAtual);
@@ -237,68 +216,78 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
       text:
         `🎁 *${author}* presenteou *${parceiro}* com *${nomeAmigavel}*! 💕\n\n` +
         `_"É pra você, meu amor!"_ 🥰\n\n` +
-        `💰 *+${ganhoTotal} XP de amor!* Total: *${xpAtual} XP* 💑`,
+        `💰 *+${GANHO_XP} XP de amor!* Total: *${xpAtual} XP* 💑`,
       mentions: [pessoaJid],
     }, { quoted: msg });
 
-  } catch (e) {
-    console.error('[handlePresente] Erro ao presentear:', e.message);
+  } catch (err) {
+    console.error('[handlePresente] Erro ao presentear:', err.message);
     await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao processar o presente. Tente novamente.',
+      text: '⚠️ Ocorreu um erro ao processar o presente. Tente novamente mais tarde.',
     }, { quoted: msg });
   }
 }
 
 // ─── Handlers de programa (com verificação de item e divisão por grupo) ───────────
 
-// handleJantar
-async function handleJantar(sock, msg, jid, author, senderJid, relacionamentos) {
-  const restaurantes = [
+const OPCOES_ROMANCE = {
+  jantar: [
     'num restaurante chique 🍷',
     'num jantar a luz de vela 🕯️',
     'num rodízio japonês 🍣',
     'numa churrascaria premium 🥩',
     'numa pizzaria italiana 🍕',
-  ];
-  const r = restaurantes[Math.floor(Math.random() * restaurantes.length)];
-
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'jantar', '🍽️', `levou para jantar ${r}`, 5);
-}
-
-// handleCinema
-async function handleCinemaRel(sock, msg, jid, author, senderJid, relacionamentos) {
-  const filmes = [
+  ],
+  cinema: [
     'um romance 💕',
     'um filme de terror e ficou com medo 😱',
     'uma comédia e não parou de rir 😂',
     'um filme de ação e roubou a pipoca 🍿',
     'um drama e os dois choraram 😭',
-  ];
-  const f = filmes[Math.floor(Math.random() * filmes.length)];
-
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'cinema', '🎬', `levou ao cinema para assistir ${f}`, 5);
-}
-
-// handleViajar
-async function handleViajar(sock, msg, jid, author, senderJid, relacionamentos) {
-  const destinos = ['Paris 🗼', 'Maldivas 🏝️', 'Roma 🏛️', 'Tokyo 🗾', 'Cancún 🌊', 'Gramado ❄️'];
-  const d = destinos[Math.floor(Math.random() * destinos.length)];
-
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'viajar', '✈️', `planejou uma viagem para ${d}`, 10);
-}
-
-// handleSerenata
-async function handleSerenata(sock, msg, jid, author, senderJid, relacionamentos) {
-  const musicas = [
+  ],
+  viajar: [
+    'Paris 🗼',
+    'Maldivas 🏝️',
+    'Roma 🏛️',
+    'Tokyo 🗾',
+    'Cancún 🌊',
+    'Gramado ❄️',
+  ],
+  serenata: [
     'a música favorita deles 🎵',
     '"Evidências" do Chitãozinho 🎸',
     'uma balada romântica 🎶',
     '"Pra Você" toda desafinada 😂',
     '"Can\'t Help Falling in Love" ❤️',
-  ];
-  const m = musicas[Math.floor(Math.random() * musicas.length)];
+  ],
+};
 
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'serenata', '🎤', `fez uma serenata cantando ${m}`, 8);
+function sortear(lista) {
+  return lista[Math.floor(Math.random() * lista.length)];
+}
+
+// handleJantar
+async function handleJantar(sock, msg, jid, author, senderJid, relacionamentos) {
+  const opcao = sortear(OPCOES_ROMANCE.jantar);
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'jantar', '🍽️', `levou para jantar ${opcao}`, 5);
+}
+
+// handleCinemaRel
+async function handleCinemaRel(sock, msg, jid, author, senderJid, relacionamentos) {
+  const opcao = sortear(OPCOES_ROMANCE.cinema);
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'cinema', '🎬', `levou ao cinema para assistir ${opcao}`, 5);
+}
+
+// handleViajar
+async function handleViajar(sock, msg, jid, author, senderJid, relacionamentos) {
+  const opcao = sortear(OPCOES_ROMANCE.viajar);
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'viajar', '✈️', `planejou uma viagem para ${opcao}`, 10);
+}
+
+// handleSerenata
+async function handleSerenata(sock, msg, jid, author, senderJid, relacionamentos) {
+  const opcao = sortear(OPCOES_ROMANCE.serenata);
+  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'serenata', '🎤', `fez uma serenata cantando ${opcao}`, 8);
 }
 
 // !declarar
@@ -383,58 +372,57 @@ async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos
 }
 
 
-// !ciumento
+// ─── !ciumento ────────────────────────────────────────────────
 async function handleCiumento(sock, msg, content, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
+  const senderJidNorm = jidNormalizedUser(senderJid);
 
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+  // ── Verifica relacionamento ──
+  const found = findRelByJid(jid, senderJidNorm, relacionamentos);
   if (!found) {
-    await sock.sendMessage(jid, {
+    return sock.sendMessage(jid, {
       text: '💔 Só quem tá em relacionamento pode ficar com ciúme, seu(ua) solteiro(a)! 😒',
     }, { quoted: msg });
-    return;
   }
 
   const { key, rel } = found;
 
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
+  const jidANorm = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
+  const jidBNorm = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
+  const parcJid  = jidANorm === senderJidNorm ? jidBNorm : jidANorm;
 
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+  // ── Cooldown por grupo + usuário ──
+  const agora       = Date.now();
+  const cooldownKey = `${jid}:${senderJidNorm}`;
+  const expiracao   = getCiumentosMap().get(cooldownKey);
 
-  // ── COOLDOWN DIVIDIDO POR GRUPO + USUÁRIO ──
-  const agora = Date.now();
-  const cooldownKey = `${jid}:${senderJidNormalizado}`;
-  const cooldown = getCiumentosMap().get(cooldownKey);
-
-  if (cooldown && cooldown > agora) {
-    await sock.sendMessage(jid, {
-      text: `⏰ CALMA LÁ! Você acabou de usar ciúme neste grupo! Próxima vez em *${formatarTempo(cooldown - agora)}*! 😤`,
+  if (expiracao && expiracao > agora) {
+    return sock.sendMessage(jid, {
+      text: `⏰ CALMA LÁ! Você acabou de usar ciúme neste grupo! Próxima vez em *${formatarTempo(expiracao - agora)}*! 😤`,
     }, { quoted: msg });
-    return;
   }
 
+  // ── Menção ──
   const rawMentioned =
-    msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
+    msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ??
     content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
 
   const mentionedJid = rawMentioned ? jidNormalizedUser(rawMentioned) : null;
 
   if (mentionedJid && mentionedJid === parcJid) {
-    await sock.sendMessage(jid, {
+    return sock.sendMessage(jid, {
       text: '😂 Ciúme do seu próprio par? Isso é amor demais! Mas não conta como ciúme não! 💕',
     }, { quoted: msg });
-    return;
   }
 
+  // ── Registra cooldown após todas as validações ──
   getCiumentosMap().set(cooldownKey, agora + 30 * 60 * 1000);
 
-  // ── Tags — sempre por @ para marcar de verdade ──
-  const tagAuthor   = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro = parcJid ? `@${parcJid.split('@')[0]}` : `@${senderJidNormalizado.split('@')[0]}`;
+  // ── Tags ──
+  const tagAuthor   = `@${senderJidNorm.split('@')[0]}`;
+  const tagParceiro = parcJid ? `@${parcJid.split('@')[0]}` : tagAuthor;
   const tagSuspeito = mentionedJid ? `@${mentionedJid.split('@')[0]}` : 'alguém do grupo';
 
-  const cenas = [
+  const CENAS = [
     `😤 ${tagAuthor} EXPLODIU DE CIÚME VENDO ${tagParceiro} rindo com ${tagSuspeito}!\n\n_${tagParceiro}: "Você tá me controlando?" 💀_`,
     `🔥 ${tagAuthor} ficou VERDE DE INVEJA com ${tagParceiro} conversando com ${tagSuspeito}!\n\n_${tagParceiro}: "Sério? SÉRIO MESMO?" 😒_`,
     `😡 ${tagAuthor} FOÇOU O CELULAR DE ${tagParceiro} procurando coisas suspeitas com ${tagSuspeito}!\n\n_Resultado: Nada encontrado. ENVERGONHADO(A)! 💀_`,
@@ -442,43 +430,34 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
     `💢 ${tagAuthor} IGNOROU ${tagParceiro} O DIA TODO por causa de ${tagSuspeito}!\n\n_Depois voltaram a namorar com um abraço apertado. 😔💕_`,
   ];
 
-  const perdaTotal = 2;
-  // ── Divide a perda entre os dois parceiros, mesma lógica do ganho ──
-  const metadeA = Math.ceil(perdaTotal / 2);
-  const metadeB = Math.floor(perdaTotal / 2);
+  const PERDA_XP = 2;
+  const metadeA  = Math.ceil(PERDA_XP / 2);
+  const metadeB  = Math.floor(PERDA_XP / 2);
 
+  // ── Atualiza XP no banco e calcula total real ──
   let xpAtual = 0;
   try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
+    const updates = [];
+    if (jidANorm) updates.push(Usuario.findOneAndUpdate({ idWhatsApp: jidANorm }, { $inc: { xpCasal: -metadeA } }, { new: true }));
+    if (jidBNorm) updates.push(Usuario.findOneAndUpdate({ idWhatsApp: jidBNorm }, { $inc: { xpCasal: -metadeB } }, { new: true }));
 
-    const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
-    xpAtual = Math.max(0, xpAntigo - perdaTotal);
+    const [resA, resB] = await Promise.all(updates);
+    xpAtual = Math.max(0, (resA?.xpCasal ?? 0) + (resB?.xpCasal ?? 0));
+
   } catch (err) {
-    console.error('[handleCiumento] Erro ao calcular XP do banco:', err.message);
-    xpAtual = Math.max(0, (getXpCasais().get(key) || 0) - perdaTotal);
+    console.error('[handleCiumento] Erro ao deduzir XP no banco:', err.message);
+    xpAtual = Math.max(0, (getXpCasais().get(key) ?? 0) - PERDA_XP);
   }
 
   getXpCasais().set(key, xpAtual);
 
-  try {
-    const updates = [];
-    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: -metadeA } }));
-    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: -metadeB } }));
-    await Promise.all(updates);
-  } catch (e) {
-    console.error('[handleCiumento] Erro ao deduzir XP no banco:', e.message);
-  }
-
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
-  if (mentionedJid) listaMentions.push(mentionedJid);
+  // ── Monta lista de menções sem duplicatas ──
+  const mentions = [...new Set([senderJidNorm, parcJid, mentionedJid].filter(Boolean))];
+  const cena     = CENAS[Math.floor(Math.random() * CENAS.length)];
 
   await sock.sendMessage(jid, {
-    text: cenas[Math.floor(Math.random() * cenas.length)] + `\n\n⚠️ *-${perdaTotal} XP* por CIÚME CEGO! Total: *${xpAtual} XP* 😤`,
-    mentions: listaMentions,
+    text: `${cena}\n\n⚠️ *-${PERDA_XP} XP* por CIÚME CEGO! Total: *${xpAtual} XP* 😤`,
+    mentions,
   }, { quoted: msg });
 }
 

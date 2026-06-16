@@ -15,74 +15,43 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const { VARAS_PESCA, ISCAS } = require('./pesca');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
-// ─── RE-EXPORTA ITENS_LOJA (sem mudança) ─────────────────────────────────
+// ─── RE-EXPORTA ITENS_LOJA (reduzido) ─────────────────────────────────
 const ITENS_LOJA = {
   // COMIDAS
-  pizza:            { nome: 'Pizza Margherita',      preco: 50,    categoria: 'comida' },
-  pizzapeperoni:    { nome: 'Pizza Pepperoni',        preco: 60,    categoria: 'comida' },
-  pizza4queijos:    { nome: 'Pizza 4 Queijos',        preco: 70,    categoria: 'comida' },
-  pizzavegetariana: { nome: 'Pizza Vegetariana',      preco: 45,    categoria: 'comida' },
-  pizzafrango:      { nome: 'Pizza Frango com Milho', preco: 65,    categoria: 'comida' },
-  hamburger:        { nome: 'Hamburger Simples',      preco: 40,    categoria: 'comida' },
-  hamburgerduplo:   { nome: 'Hamburger Duplo',        preco: 70,    categoria: 'comida' },
-  xtudo:            { nome: 'X-Tudo',                 preco: 85,    categoria: 'comida' },
-  hotdog:           { nome: 'Hot Dog',                preco: 35,    categoria: 'comida' },
-  taco:             { nome: 'Taco',                   preco: 42,    categoria: 'comida' },
-  sanduiche:        { nome: 'Sanduíche',              preco: 45,    categoria: 'comida' },
-  frango:           { nome: 'Frango Frito',           preco: 35,    categoria: 'comida' },
-  costela:          { nome: 'Costela',                preco: 80,    categoria: 'comida' },
-  picanha:          { nome: 'Picanha',                preco: 120,   categoria: 'comida' },
-  linguica:         { nome: 'Linguiça',               preco: 55,    categoria: 'comida' },
-  carne:            { nome: 'Carne Moída',            preco: 60,    categoria: 'comida' },
-  chocolate:        { nome: 'Chocolate',              preco: 25,    categoria: 'comida' },
-  bolobocolate:     { nome: 'Bolo de Chocolate',      preco: 65,    categoria: 'comida' },
-  sorvete:          { nome: 'Sorvete',                preco: 30,    categoria: 'comida' },
-  pudim:            { nome: 'Pudim',                  preco: 35,    categoria: 'comida' },
-  biscoito:         { nome: 'Biscoito',               preco: 15,    categoria: 'comida' },
-  donut:            { nome: 'Donut',                  preco: 20,    categoria: 'comida' },
-  bolo:             { nome: 'Bolo de Aniversário',    preco: 150,   categoria: 'comida' },
-  refrigerante:     { nome: 'Refrigerante',           preco: 10,    categoria: 'comida' },
-  cafe:             { nome: 'Café',                   preco: 8,     categoria: 'comida' },
-  suco:             { nome: 'Suco Natural',           preco: 12,    categoria: 'comida' },
-  vinho:            { nome: 'Vinho',                  preco: 100,   categoria: 'comida' },
-  cerveja:          { nome: 'Cerveja',                preco: 80,    categoria: 'comida' },
+  pizza:        { nome: 'Pizza Margherita', preco: 50,  categoria: 'comida' },
+  hamburger:    { nome: 'Hamburger Simples', preco: 40,  categoria: 'comida' },
+  frango:       { nome: 'Frango Frito',     preco: 35,  categoria: 'comida' },
+  picanha:      { nome: 'Picanha',          preco: 120, categoria: 'comida' },
+  chocolate:    { nome: 'Chocolate',        preco: 25,  categoria: 'comida' },
+  bolo:         { nome: 'Bolo de Aniversário', preco: 150, categoria: 'comida' },
+  refrigerante: { nome: 'Refrigerante',     preco: 10,  categoria: 'comida' },
+  cerveja:      { nome: 'Cerveja',          preco: 80,  categoria: 'comida' },
 
   // COMIDA PARA PETS
-  racao:        { nome: 'Ração Normal',    preco: 20, categoria: 'petcomida' },
-  racaopremium: { nome: 'Ração Premium',   preco: 45, categoria: 'petcomida' },
-  racaogourmet: { nome: 'Ração Gourmet',   preco: 75, categoria: 'petcomida' },
-  carnefresh:   { nome: 'Carne Fresca',    preco: 55, categoria: 'petcomida' },
-  osso:         { nome: 'Osso Saboroso',   preco: 40, categoria: 'petcomida' },
-  arrozfeijao:  { nome: 'Arroz com Feijão',preco: 30, categoria: 'petcomida' },
-  peixe:        { nome: 'Peixe Fresco',    preco: 60, categoria: 'petcomida' },
-  leite:        { nome: 'Leite',           preco: 15, categoria: 'petcomida' },
-  cenoura:      { nome: 'Cenoura',         preco: 12, categoria: 'petcomida' },
-  maca:         { nome: 'Maçã',            preco: 18, categoria: 'petcomida' },
+  racao:        { nome: 'Ração Normal',  preco: 20, categoria: 'petcomida' },
+  racaopremium: { nome: 'Ração Premium', preco: 45, categoria: 'petcomida' },
+  carnefresh:   { nome: 'Carne Fresca',  preco: 55, categoria: 'petcomida' },
+  peixe:        { nome: 'Peixe Fresco',  preco: 60, categoria: 'petcomida' },
+  leite:        { nome: 'Leite',         preco: 15, categoria: 'petcomida' },
 
   // BRINQUEDOS
-  bolinha:      { nome: 'Bolinha de Tênis', preco: 35,  categoria: 'petbrinquedo' },
-  pelucia:      { nome: 'Pelúcia',          preco: 50,  categoria: 'petbrinquedo' },
-  corda:        { nome: 'Corda de Puxar',   preco: 40,  categoria: 'petbrinquedo' },
-  disco:        { nome: 'Disco Voador',     preco: 60,  categoria: 'petbrinquedo' },
-  bolacrocante: { nome: 'Bola Crocante',    preco: 45,  categoria: 'petbrinquedo' },
-  pena:         { nome: 'Pena Interativa',  preco: 30,  categoria: 'petbrinquedo' },
-  casabrinquedo:{ nome: 'Casa de Brinquedo',preco: 150, categoria: 'petbrinquedo' },
+  bolinha: { nome: 'Bolinha de Tênis', preco: 35,  categoria: 'petbrinquedo' },
+  pelucia: { nome: 'Pelúcia',          preco: 50,  categoria: 'petbrinquedo' },
+  corda:   { nome: 'Corda de Puxar',   preco: 40,  categoria: 'petbrinquedo' },
+  disco:   { nome: 'Disco Voador',     preco: 60,  categoria: 'petbrinquedo' },
+  casabrinquedo: { nome: 'Casa de Brinquedo', preco: 150, categoria: 'petbrinquedo' },
 
   // CUIDADOS PET
   remedio:  { nome: 'Remédio Geral',    preco: 80,  categoria: 'petcuidado' },
-  bandagem: { nome: 'Bandagem',         preco: 50,  categoria: 'petcuidado' },
   vacina:   { nome: 'Vacina',           preco: 120, categoria: 'petcuidado' },
   shampoo:  { nome: 'Shampoo Especial', preco: 70,  categoria: 'petcuidado' },
   sabonete: { nome: 'Sabonete Pet',     preco: 40,  categoria: 'petcuidado' },
-  escova:   { nome: 'Escova de Dentes', preco: 35,  categoria: 'petcuidado' },
 
   // ACESSÓRIOS PET
-  coleira:    { nome: 'Coleira Colorida', preco: 55,  categoria: 'petacessorio' },
-  coleiraouro:{ nome: 'Coleira de Ouro',  preco: 200, categoria: 'petacessorio' },
-  peitoral:   { nome: 'Peitoral',         preco: 65,  categoria: 'petacessorio' },
-  bandana:    { nome: 'Bandana',          preco: 45,  categoria: 'petacessorio' },
-  coroa:      { nome: 'Coroa Pet',        preco: 100, categoria: 'petacessorio' },
-  placaid:    { nome: 'Placa de ID',      preco: 75,  categoria: 'petacessorio' },
+  coleira:     { nome: 'Coleira Colorida', preco: 55,  categoria: 'petacessorio' },
+  coleiraouro: { nome: 'Coleira de Ouro',  preco: 200, categoria: 'petacessorio' },
+  bandana:     { nome: 'Bandana',          preco: 45,  categoria: 'petacessorio' },
+  coroa:       { nome: 'Coroa Pet',        preco: 100, categoria: 'petacessorio' },
 
   // ESPECIAIS
   trofeu:       { nome: 'Troféu Miniatura', preco: 250, categoria: 'especial' },
@@ -96,26 +65,14 @@ const ITENS_LOJA = {
   coelho:   { nome: 'Coelho',   preco: 80,  categoria: 'pet' },
 
   // CASAL
-  flores:       { nome: 'Flores',               preco: 60,  categoria: 'casal' },
-  carta:        { nome: 'Carta de Amor',         preco: 80,  categoria: 'casal' },
-  anel:         { nome: 'Anel',                  preco: 500, categoria: 'casal' },
-  morango:      { nome: 'Morango com Chocolate', preco: 55,  categoria: 'casal' },
-  vela:         { nome: 'Vela Aromática',        preco: 90,  categoria: 'casal' },
-  perfume:      { nome: 'Perfume Premium',       preco: 150, categoria: 'casal' },
-  colar:        { nome: 'Colar Casal',           preco: 200, categoria: 'casal' },
-  pulseira:     { nome: 'Pulseira Casal',        preco: 120, categoria: 'casal' },
-  camisetacasal:{ nome: 'Camiseta Casal',        preco: 110, categoria: 'casal' },
-  gorro:        { nome: 'Gorro Casal',           preco: 85,  categoria: 'casal' },
-  chinelo:      { nome: 'Chinelo de Casal',      preco: 95,  categoria: 'casal' },
-  urso:         { nome: 'Ursinho de Pelúcia',    preco: 130, categoria: 'casal' },
-  caixa:        { nome: 'Caixa Presente Luxo',   preco: 50,  categoria: 'casal' },
-  foto:         { nome: 'Moldura Foto Casal',    preco: 110, categoria: 'casal' },
-  espelho:      { nome: 'Espelho com LED',       preco: 180, categoria: 'casal' },
-  almofada:     { nome: 'Almofada Casal',        preco: 100, categoria: 'casal' },
-  cortina:      { nome: 'Cortina Elegante',      preco: 220, categoria: 'casal' },
-  luminaria:    { nome: 'Luminária Romântica',   preco: 140, categoria: 'casal' },
-  taça:         { nome: 'Taça para Vinho',       preco: 160, categoria: 'casal' },
-  garrafa:      { nome: 'Garrafa Vinho Tinto',   preco: 250, categoria: 'casal' },
+  flores:   { nome: 'Flores',               preco: 60,  categoria: 'casal' },
+  carta:    { nome: 'Carta de Amor',         preco: 80,  categoria: 'casal' },
+  anel:     { nome: 'Anel',                  preco: 500, categoria: 'casal' },
+  morango:  { nome: 'Morango com Chocolate', preco: 55,  categoria: 'casal' },
+  perfume:  { nome: 'Perfume Premium',       preco: 150, categoria: 'casal' },
+  urso:     { nome: 'Ursinho de Pelúcia',    preco: 130, categoria: 'casal' },
+  caixa:    { nome: 'Caixa Presente Luxo',   preco: 50,  categoria: 'casal' },
+  garrafa:  { nome: 'Garrafa Vinho Tinto',   preco: 250, categoria: 'casal' },
 
   // ESTILO
   camiseta: { nome: 'Camiseta', preco: 50, categoria: 'estilo' },
@@ -123,58 +80,55 @@ const ITENS_LOJA = {
   sapato:   { nome: 'Sapato',   preco: 70, categoria: 'estilo' },
 
   // TECNOLOGIA
-  celular:          { nome: 'Celular',              preco: 200,   categoria: 'tec' },
-  usb:              { nome: 'Memória USB',           preco: 150,   categoria: 'tec' },
-  computador:       { nome: 'Computador',            preco: 500,   categoria: 'tec' },
-  notebook:         { nome: 'Notebook Gamer',        preco: 5000,  categoria: 'tec' },
-  notebooki5:       { nome: 'Notebook i5',           preco: 3500,  categoria: 'tec' },
-  desktop:          { nome: 'Desktop Gaming',        preco: 6000,  categoria: 'tec' },
-  pccustom:         { nome: 'PC Gamer Custom',       preco: 8000,  categoria: 'tec' },
-  laptopfino:       { nome: 'Laptop Ultrafino',      preco: 4500,  categoria: 'tec' },
-  workstation:      { nome: 'Workstation Pro',       preco: 9999,  categoria: 'tec' },
-  smartphonepremium:{ nome: 'Smartphone Premium',    preco: 2500,  categoria: 'tec' },
-  smartphonegamer:  { nome: 'Smartphone Gamer',      preco: 3500,  categoria: 'tec' },
-  smartphonebasico: { nome: 'Smartphone Básico',     preco: 1500,  categoria: 'tec' },
-  tablet10:         { nome: 'Tablet 10"',            preco: 2000,  categoria: 'tec' },
-  tabletpro:        { nome: 'Tablet Pro',            preco: 3500,  categoria: 'tec' },
-  ereader:          { nome: 'E-reader',              preco: 1800,  categoria: 'tec' },
-  mousegamer:       { nome: 'Mouse Gamer',           preco: 350,   categoria: 'tec' },
-  tecladomecanico:  { nome: 'Teclado Mecânico',      preco: 450,   categoria: 'tec' },
-  tecladorgb:       { nome: 'Teclado RGB',           preco: 600,   categoria: 'tec' },
-  monitor24:        { nome: 'Monitor 24"',           preco: 1200,  categoria: 'tec' },
-  monitor4k:        { nome: 'Monitor 4K',            preco: 2500,  categoria: 'tec' },
-  mousepad:         { nome: 'Mousepad Grande',       preco: 150,   categoria: 'tec' },
-  webcam:           { nome: 'Webcam 1080p',          preco: 500,   categoria: 'tec' },
-  headsetgamer:     { nome: 'Headset Gamer',         preco: 800,   categoria: 'tec' },
-  fonesemfio:       { nome: 'Fone Sem Fio',          preco: 600,   categoria: 'tec' },
-  fonecancelamento: { nome: 'Fone com Cancelamento', preco: 1200,  categoria: 'tec' },
-  microusbfone:     { nome: 'Microfone USB',         preco: 400,   categoria: 'tec' },
-  microprofissional:{ nome: 'Microfone Profissional',preco: 1500,  categoria: 'tec' },
-  caixabluetooth:   { nome: 'Caixa Bluetooth',       preco: 350,   categoria: 'tec' },
-  altofalante:      { nome: 'Alto-falante Smart',    preco: 800,   categoria: 'tec' },
-  cabousbc:         { nome: 'Cabo USB-C',            preco: 50,    categoria: 'tec' },
-  cabohdmi:         { nome: 'Cabo HDMI',             preco: 40,    categoria: 'tec' },
-  carregadorrapido: { nome: 'Carregador Rápido',     preco: 200,   categoria: 'tec' },
-  adaptadorusb:     { nome: 'Adaptador USB',         preco: 80,    categoria: 'tec' },
-  hub7portas:       { nome: 'Hub USB 7 Portas',      preco: 300,   categoria: 'tec' },
-  ssd1tb:           { nome: 'SSD 1TB',               preco: 800,   categoria: 'tec' },
-  ssd2tb:           { nome: 'SSD 2TB',               preco: 1500,  categoria: 'tec' },
-  ram16gb:          { nome: 'Memória RAM 16GB',      preco: 600,   categoria: 'tec' },
-  powerbank20:      { nome: 'PowerBank 20000mAh',    preco: 400,   categoria: 'tec' },
-  powerbanksolar:   { nome: 'PowerBank Solar',       preco: 550,   categoria: 'tec' },
-  suportemagnetico: { nome: 'Suporte Magnético',     preco: 120,   categoria: 'tec' },
-  casecelular:      { nome: 'Case para Celular',     preco: 150,   categoria: 'tec' },
-  protetortela:     { nome: 'Protetor de Tela',      preco: 80,    categoria: 'tec' },
-  mochilatech:      { nome: 'Mochila Tech',          preco: 450,   categoria: 'tec' },
-  bolsalaptop:      { nome: 'Bolsa Laptop',          preco: 350,   categoria: 'tec' },
-  fonepremium:      { nome: 'Fone Premium',          preco: 2000,  categoria: 'tec' },
-  monitorcurvo:     { nome: 'Monitor Curvo 4K',      preco: 4000,  categoria: 'tec' },
-  pcgamerlegendario:{ nome: 'PC Gamer Lendário',     preco: 15000, categoria: 'tec' },
-  setupgamer:       { nome: 'Setup Completo Gamer',  preco: 12000, categoria: 'tec' },
-  gpu4090:          { nome: 'GPU RTX 4090',          preco: 8000,  categoria: 'tec' },
+  celular:          { nome: 'Celular',           preco: 200,   categoria: 'tec' },
+  notebook:         { nome: 'Notebook Gamer',    preco: 5000,  categoria: 'tec' },
+  smartphonebasico: { nome: 'Smartphone Básico', preco: 1500,  categoria: 'tec' },
+  mousegamer:       { nome: 'Mouse Gamer',       preco: 350,   categoria: 'tec' },
+  monitor24:        { nome: 'Monitor 24"',       preco: 1200,  categoria: 'tec' },
+  fonesemfio:       { nome: 'Fone Sem Fio',      preco: 600,   categoria: 'tec' },
+  ssd1tb:           { nome: 'SSD 1TB',           preco: 800,   categoria: 'tec' },
+  pcgamerlegendario:{ nome: 'PC Gamer Lendário', preco: 15000, categoria: 'tec' },
 };
 
 // ─── UTILITÁRIOS ─────────────────────────────────────────────────────────────
+
+// ─── Normalização para aceitar tanto a chave quanto o nome de exibição ────
+// Remove acentos, espaços e pontuação, deixando só letras/números minúsculos.
+// Usado por !give, !buy e !vender para aceitar tanto a chave técnica
+// (ex: "linguica") quanto o nome de exibição (ex: "Linguiça", "PC Gamer Lendário").
+function normalizarChaveItem(str = '') {
+  return String(str)
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/[^a-z0-9]/g, '');                         // remove espaços/pontuação
+}
+
+function buildLookup(catalogo = {}) {
+  const map = {};
+  for (const [key, info] of Object.entries(catalogo)) {
+    map[normalizarChaveItem(key)]       = key;
+    map[normalizarChaveItem(info.nome)] = key;
+  }
+  return map;
+}
+
+const LOOKUP_ITENS_LOJA  = buildLookup(ITENS_LOJA);
+const LOOKUP_VARAS_PESCA = buildLookup(VARAS_PESCA || {});
+const LOOKUP_ISCAS       = buildLookup(ISCAS || {});
+
+/**
+ * Resolve um texto digitado pelo usuário (chave técnica ou nome de exibição,
+ * com ou sem acento/espaço) para a chave real do catálogo correspondente.
+ * Procura primeiro em ITENS_LOJA, depois VARAS_PESCA, depois ISCAS.
+ * Retorna null se não encontrar em nenhum catálogo.
+ */
+function resolverItemKey(itemDigitado) {
+  const chaveNorm = normalizarChaveItem(itemDigitado);
+  return LOOKUP_ITENS_LOJA[chaveNorm]
+    || LOOKUP_VARAS_PESCA[chaveNorm]
+    || LOOKUP_ISCAS[chaveNorm]
+    || null;
+}
 
 /**
  * Retorna o gold local do usuário neste grupo.
@@ -271,23 +225,28 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
 
   const categorias = {
-    '🍕 PIZZAS':    ['pizza', 'pizzapeperoni', 'pizza4queijos', 'pizzavegetariana', 'pizzafrango'],
-    '🍔 LANCHES':   ['hamburger', 'hamburgerduplo', 'xtudo', 'hotdog', 'taco', 'sanduiche'],
-    '🍗 CARNES':    ['frango', 'costela', 'picanha', 'linguica', 'carne'],
-    '🍫 DOCES':     ['chocolate', 'bolobocolate', 'sorvete', 'pudim', 'biscoito', 'donut', 'bolo'],
-    '🥤 BEBIDAS':   ['refrigerante', 'cafe', 'suco', 'vinho', 'cerveja'],
+    '🍕 PRINCIPAIS': ['pizza', 'hamburger', 'frango', 'picanha'],
+    '🍫 DOCES':      ['chocolate', 'bolo'],
+    '🥤 BEBIDAS':    ['refrigerante', 'cerveja'],
   };
 
-  let texto = `🍔 *LOJA DE COMIDA* 🍔\n\n`;
+  let texto = `🍔 ═══ LOJA DE COMIDA ═══ 🍔\n*ITENS DISPONÍVEIS:*\n`;
   for (const [cat, keys] of Object.entries(categorias)) {
-    texto += `${cat}\n`;
+    texto += `\n${cat}\n`;
     for (const k of keys) {
       const item = ITENS_LOJA[k];
-      if (item) texto += `  • ${item.nome} — ${item.preco} gold | chave: \`${k}\`\n`;
+      if (item) {
+        texto += `  🍽️ ${item.nome} — *${item.preco}* gold\n`;
+        texto += `    └ chave: \`${k}\`\n`;
+      }
     }
-    texto += '\n';
   }
-  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <chave_do_item>`;
+  texto +=
+    `━━━━━━━━━━━━━━━━\n` +
+    `*COMANDOS:*\n` +
+    `  ${P}buy <item>      — Comprar item\n` +
+    `  ${P}inventario      — Ver seus itens\n` +
+    `  ${P}vender <item>   — Vender item`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -297,22 +256,29 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
 
   const categorias = {
-    '🦴 COMIDAS':      ['racao', 'racaopremium', 'racaogourmet', 'carnefresh', 'osso', 'arrozfeijao', 'peixe', 'leite', 'cenoura', 'maca'],
-    '🎾 BRINQUEDOS':   ['bolinha', 'pelucia', 'corda', 'disco', 'bolacrocante', 'pena', 'casabrinquedo'],
-    '💊 MEDICAMENTOS': ['remedio', 'bandagem', 'vacina', 'shampoo', 'sabonete', 'escova'],
-    '🎀 ACESSÓRIOS':   ['coleira', 'coleiraouro', 'peitoral', 'bandana', 'coroa', 'placaid'],
+    '🦴 COMIDAS':      ['racao', 'racaopremium', 'carnefresh', 'peixe', 'leite'],
+    '🎾 BRINQUEDOS':   ['bolinha', 'pelucia', 'corda', 'disco', 'casabrinquedo'],
+    '💊 MEDICAMENTOS': ['remedio', 'vacina', 'shampoo', 'sabonete'],
+    '🎀 ACESSÓRIOS':   ['coleira', 'coleiraouro', 'bandana', 'coroa'],
   };
 
-  let texto = `🐾 *LOJA DE PETS* 🐾\n\n`;
+  let texto = `🐾 ═══ LOJA DE PETS ═══ 🐾\n*ITENS DISPONÍVEIS:*\n`;
   for (const [cat, keys] of Object.entries(categorias)) {
-    texto += `${cat}\n`;
+    texto += `\n${cat}\n`;
     for (const k of keys) {
       const item = ITENS_LOJA[k];
-      if (item) texto += `  • ${item.nome} — ${item.preco} gold | chave: \`${k}\`\n`;
+      if (item) {
+        texto += `  🐾 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `    └ chave: \`${k}\`\n`;
+      }
     }
-    texto += '\n';
   }
-  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <chave_do_item>`;
+  texto +=
+    `━━━━━━━━━━━━━━━━\n` +
+    `*COMANDOS:*\n` +
+    `  ${P}buy <item>      — Comprar item\n` +
+    `  ${P}inventario      — Ver seus itens\n` +
+    `  ${P}vender <item>   — Vender item`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -322,24 +288,30 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
 
   const categorias = {
-    '🖥️ COMPUTADORES':  ['notebook', 'notebooki5', 'desktop', 'pccustom', 'laptopfino', 'workstation', 'pcgamerlegendario', 'setupgamer'],
-    '📱 SMARTPHONES':   ['smartphonepremium', 'smartphonegamer', 'smartphonebasico', 'tablet10', 'tabletpro', 'ereader', 'celular'],
-    '🎮 PERIFÉRICOS':   ['mousegamer', 'tecladomecanico', 'tecladorgb', 'monitor24', 'monitor4k', 'monitorcurvo', 'mousepad', 'webcam', 'headsetgamer'],
-    '🎧 ÁUDIO':         ['fonesemfio', 'fonecancelamento', 'fonepremium', 'microusbfone', 'microprofissional', 'caixabluetooth', 'altofalante'],
-    '🔌 ACESSÓRIOS':    ['cabousbc', 'cabohdmi', 'carregadorrapido', 'adaptadorusb', 'hub7portas', 'powerbank20', 'powerbanksolar', 'suportemagnetico', 'casecelular', 'protetortela', 'mochilatech', 'bolsalaptop'],
-    '💾 ARMAZENAMENTO': ['ssd1tb', 'ssd2tb', 'ram16gb', 'usb', 'gpu4090'],
+    '🖥️ COMPUTADORES': ['notebook', 'pcgamerlegendario'],
+    '📱 SMARTPHONES':  ['celular', 'smartphonebasico'],
+    '🎮 PERIFÉRICOS':  ['mousegamer', 'monitor24'],
+    '🎧 ÁUDIO':        ['fonesemfio'],
+    '💾 ARMAZENAMENTO':['ssd1tb'],
   };
 
-  let texto = `💻 *LOJA DE TECNOLOGIA* 💻\n\n`;
+  let texto = `💻 ═══ LOJA DE TECNOLOGIA ═══ 💻\n*ITENS DISPONÍVEIS:*\n`;
   for (const [cat, keys] of Object.entries(categorias)) {
-    texto += `${cat}\n`;
+    texto += `\n${cat}\n`;
     for (const k of keys) {
       const item = ITENS_LOJA[k];
-      if (item) texto += `  • ${item.nome} — ${item.preco} gold | chave: \`${k}\`\n`;
+      if (item) {
+        texto += `  💻 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `    └ chave: \`${k}\`\n`;
+      }
     }
-    texto += '\n';
   }
-  texto += `━━━━━━━━━━━━━━━━\n*COMO COMPRAR?*\n  ${P}buy <chave_do_item>`;
+  texto +=
+    `━━━━━━━━━━━━━━━━\n` +
+    `*COMANDOS:*\n` +
+    `  ${P}buy <item>      — Comprar item\n` +
+    `  ${P}inventario      — Ver seus itens\n` +
+    `  ${P}vender <item>   — Vender item`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -350,24 +322,27 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
 
   const categorias = {
     '🎁 PRESENTES ROMÂNTICOS': ['flores', 'carta', 'morango', 'urso', 'caixa'],
-    '💎 JOIAS E ACESSÓRIOS':   ['anel', 'colar', 'pulseira'],
-    '🎽 VESTUÁRIO':            ['camisetacasal', 'gorro', 'chinelo'],
-    '🏠 DECORAÇÃO':            ['luminaria', 'vela', 'espelho', 'almofada', 'cortina', 'foto'],
-    '🍷 BEBIDAS E GOURMET':    ['taça', 'garrafa', 'perfume'],
+    '💎 JOIAS':                ['anel'],
+    '🍷 BEBIDAS E GOURMET':    ['garrafa', 'perfume'],
   };
 
-  let texto = `💕 *LOJA DE CASAL* 💕\n\n`;
+  let texto = `💕 ═══ LOJA DE CASAL ═══ 💕\n*ITENS DISPONÍVEIS:*\n`;
   for (const [cat, keys] of Object.entries(categorias)) {
-    texto += `${cat}\n`;
+    texto += `\n${cat}\n`;
     for (const k of keys) {
       const item = ITENS_LOJA[k];
-      if (item) texto += `  • ${item.nome} — ${item.preco} gold | chave: \`${k}\`\n`;
+      if (item) {
+        texto += `  💕 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `    └ chave: \`${k}\`\n`;
+      }
     }
-    texto += '\n';
   }
   texto +=
     `━━━━━━━━━━━━━━━━\n` +
-    `*COMO COMPRAR?*\n  ${P}buy <chave_do_item>\n\n` +
+    `*COMANDOS:*\n` +
+    `  ${P}buy <item>      — Comprar item\n` +
+    `  ${P}inventario      — Ver seus itens\n` +
+    `  ${P}vender <item>   — Vender item\n\n` +
     `💑 _Mostre seu amor com presentes incríveis!_`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
@@ -386,8 +361,16 @@ async function handleComprar(sock, msg, jid, caption) {
     return;
   }
 
-  const itemNome = match[1].toLowerCase().trim();
-  const itemInfo = ITENS_LOJA[itemNome] || VARAS_PESCA?.[itemNome] || ISCAS?.[itemNome];
+  const itemDigitado = match[1].trim();
+  const chaveNorm     = normalizarChaveItem(itemDigitado);
+
+  // Aceita tanto a chave técnica quanto o nome de exibição (com ou sem
+  // acento/espaço), tanto para itens da loja quanto de pesca.
+  const itemNome = resolverItemKey(itemDigitado);
+
+  const itemInfo = itemNome
+    ? (ITENS_LOJA[itemNome] || VARAS_PESCA?.[itemNome] || ISCAS?.[itemNome])
+    : null;
 
   if (!itemInfo) {
     const lista = Object.entries(ITENS_LOJA)
@@ -396,7 +379,7 @@ async function handleComprar(sock, msg, jid, caption) {
       .join('\n');
     await sock.sendMessage(jid, {
       text:
-        `⚠️ *ITEM NÃO ENCONTRADO*\n\nO item *${itemNome}* não existe!\n\n` +
+        `⚠️ *ITEM NÃO ENCONTRADO*\n\nO item *${itemDigitado}* não existe!\n\n` +
         `━━━━━━━━━━━━━━━━\n*ITENS DISPONÍVEIS:*\n${lista}\n\n` +
         `*USE:*\n  !buy <item>\n  Exemplo: !buy pizza`,
     }, { quoted: msg });
@@ -1458,8 +1441,9 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  // Extrai o item ignorando a menção (@xxx)
-  const match = caption.match(/give\s+@\S+\s+(\S+)/i) || caption.match(/give\s+(\S+)/i);
+  // Captura o RESTO da string (não só uma palavra), pois o nome de exibição
+  // pode ter espaços (ex: "PC Gamer Lendário", "Garrafa Vinho Tinto").
+  const match = caption.match(/give\s+@\S+\s+(.+)/i) || caption.match(/give\s+(.+)/i);
   if (!match) {
     await sock.sendMessage(jid, {
       text: '⚠️ Use: *!give @fulano <item>*\nExemplo: *!give @João pizza*',
@@ -1467,19 +1451,23 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  const itemKey  = match[1].toLowerCase().trim();
-  const itemInfo = ITENS_LOJA[itemKey];
+  const itemDigitado = match[1].trim();
+
+  // Aceita tanto a chave técnica (ex: "linguica") quanto o nome de exibição
+  // (ex: "Linguiça", "PC Gamer Lendário"), ignorando acentos e espaços.
+  const itemKey  = LOOKUP_ITENS_LOJA[normalizarChaveItem(itemDigitado)] || null;
+  const itemInfo = itemKey ? ITENS_LOJA[itemKey] : null;
 
   if (!itemInfo) {
     await sock.sendMessage(jid, {
       text:
-        `⚠️ Item *${itemKey}* não existe!\n\n` +
+        `⚠️ Item *${itemDigitado}* não existe!\n\n` +
         `Use *!loja* pra ver os itens disponíveis.`,
     }, { quoted: msg });
     return;
   }
 
-  // ── Checar se o remetente tem o item
+  // ── Checar se o remetente tem o item ──
   const remetente = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
   const qtd       = remetente?.inventory?.[itemKey] ?? 0;
 
@@ -1492,13 +1480,13 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Remover do remetente
+  // ── Remover do remetente ──
   await Usuario.findOneAndUpdate(
     { idWhatsApp: userId },
     { $inc: { [`inventory.${itemKey}`]: -1 } }
   );
 
-  // ── Adicionar ao destinatário
+  // ── Adicionar ao destinatário ──
   await Usuario.findOneAndUpdate(
     { idWhatsApp: mentionedJid },
     { $inc: { [`inventory.${itemKey}`]: 1 } },

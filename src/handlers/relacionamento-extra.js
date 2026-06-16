@@ -148,6 +148,19 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
     return;
   }
 
+  // ── Valida se o item existe no catálogo da loja ──
+  // Evita usar texto arbitrário digitado pelo usuário como chave
+  // dentro de inventory.* no MongoDB.
+  if (!ITENS_LOJA[itemNome]) {
+    await sock.sendMessage(jid, {
+      text:
+        `❌ *${itemNome}* não é um item válido!\n\n` +
+        `Veja os itens disponíveis: *!lojacasal*\n` +
+        `Ou use *!inventario* para ver o que você já tem.`,
+    }, { quoted: msg });
+    return;
+  }
+
   // ── Verifica menção ──
   const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
   if (mentions.length === 0) {
@@ -172,7 +185,7 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
     return;
   }
 
-  // ── Verifica e consome o item do inventário + persiste XP (atômico via MongoDB) ──
+  // ── Verifica e consome o item do inventário (atômico via MongoDB) ──
   try {
     const result = await Usuario.findOneAndUpdate(
       { idWhatsApp: senderJid, [`inventory.${itemNome}`]: { $gte: 1 } },
@@ -190,24 +203,41 @@ async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos
       return;
     }
 
-    // ── Nome amigável do item ──
-    const nomeAmigavel = ITENS_LOJA[itemNome]?.nome || itemNome;
+    const nomeAmigavel = ITENS_LOJA[itemNome].nome;
+    const ganhoTotal = 5;
+    let xpAtual;
 
-    // ── Atualiza XP do casal em memória e persiste no banco ──
-    const xpAtual = (getXpCasais().get(key) || 0) + 5;
+    // ── Lê o XP real do casal no banco e aplica o ganho dividido entre os dois ──
+    try {
+      const [userA, userB] = await Promise.all([
+        relData.jidA ? Usuario.findOne({ idWhatsApp: relData.jidA }).select('xpCasal').lean() : null,
+        relData.jidB ? Usuario.findOne({ idWhatsApp: relData.jidB }).select('xpCasal').lean() : null
+      ]);
+      const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
+      xpAtual = xpAntigo + ganhoTotal;
+
+      // Divide o ganho entre A e B para que o total real some exatamente ganhoTotal
+      const metadeA = Math.ceil(ganhoTotal / 2);
+      const metadeB = Math.floor(ganhoTotal / 2);
+
+      const updates = [];
+      if (relData.jidA) updates.push(Usuario.updateOne({ idWhatsApp: relData.jidA }, { $inc: { xpCasal: metadeA } }));
+      if (relData.jidB) updates.push(Usuario.updateOne({ idWhatsApp: relData.jidB }, { $inc: { xpCasal: metadeB } }));
+      await Promise.all(updates);
+
+    } catch (err) {
+      console.error('[handlePresente] Erro ao sincronizar XP com o banco:', err.message);
+      xpAtual = (getXpCasais().get(key) || 0) + ganhoTotal;
+    }
+
     getXpCasais().set(key, xpAtual);
-
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: [relData.jidA, relData.jidB].filter(Boolean) } },
-      { $inc: { xpCasal: 5 } }
-    );
 
     // ── Mensagem final ──
     await sock.sendMessage(jid, {
       text:
         `🎁 *${author}* presenteou *${parceiro}* com *${nomeAmigavel}*! 💕\n\n` +
         `_"É pra você, meu amor!"_ 🥰\n\n` +
-        `💰 *+5 XP de amor!* Total: *${xpAtual} XP* 💑`,
+        `💰 *+${ganhoTotal} XP de amor!* Total: *${xpAtual} XP* 💑`,
       mentions: [pessoaJid],
     }, { quoted: msg });
 
@@ -312,6 +342,10 @@ async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos
   `📜 ${tagAuthor} escreve uma carta para ${tagParceiro}:\n\n_"Se eu pudesse resumir minha felicidade em uma palavra, essa palavra seria seu nome." ✍️💗_`,
 ];
 
+  const ganhoTotal = 5;
+  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente ganhoTotal ──
+  const metadeA = Math.ceil(ganhoTotal / 2);
+  const metadeB = Math.floor(ganhoTotal / 2);
 
   // ── Busca e atualiza o XP direto do banco de dados ──
   let xpAtual = 0;
@@ -322,19 +356,19 @@ async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos
     ]);
 
     const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
-    xpAtual = xpAntigo + 5;
+    xpAtual = xpAntigo + ganhoTotal;
   } catch (err) {
     console.error('⚠️ [handleDeclarar] Erro ao calcular XP do banco:', err.message);
-    xpAtual = (getXpCasais().get(key) || 0) + 5;
+    xpAtual = (getXpCasais().get(key) || 0) + ganhoTotal;
   }
 
   getXpCasais().set(key, xpAtual);
 
   try {
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
-      { $inc: { xpCasal: 5 } }
-    );
+    const updates = [];
+    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
+    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
+    await Promise.all(updates);
   } catch (e) {
     console.error('⚠️ [handleDeclarar] Erro ao persistir XP no banco:', e.message);
   }
@@ -343,7 +377,7 @@ async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos
   if (parcJid) listaMentions.push(parcJid);
 
   await sock.sendMessage(jid, {
-    text: declaracoes[Math.floor(Math.random() * declaracoes.length)] + `\n\n💰 *+5 XP DE AMOR!* Total: *${xpAtual} XP* 🚀`,
+    text: declaracoes[Math.floor(Math.random() * declaracoes.length)] + `\n\n💰 *+${ganhoTotal} XP DE AMOR!* Total: *${xpAtual} XP* 🚀`,
     mentions: listaMentions,
   }, { quoted: msg });
 }
@@ -408,6 +442,11 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
     `💢 ${tagAuthor} IGNOROU ${tagParceiro} O DIA TODO por causa de ${tagSuspeito}!\n\n_Depois voltaram a namorar com um abraço apertado. 😔💕_`,
   ];
 
+  const perdaTotal = 2;
+  // ── Divide a perda entre os dois parceiros, mesma lógica do ganho ──
+  const metadeA = Math.ceil(perdaTotal / 2);
+  const metadeB = Math.floor(perdaTotal / 2);
+
   let xpAtual = 0;
   try {
     const [userA, userB] = await Promise.all([
@@ -416,19 +455,19 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
     ]);
 
     const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
-    xpAtual = Math.max(0, xpAntigo - 2);
+    xpAtual = Math.max(0, xpAntigo - perdaTotal);
   } catch (err) {
     console.error('[handleCiumento] Erro ao calcular XP do banco:', err.message);
-    xpAtual = Math.max(0, (getXpCasais().get(key) || 0) - 2);
+    xpAtual = Math.max(0, (getXpCasais().get(key) || 0) - perdaTotal);
   }
 
   getXpCasais().set(key, xpAtual);
 
   try {
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
-      { $inc: { xpCasal: -2 } }
-    );
+    const updates = [];
+    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: -metadeA } }));
+    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: -metadeB } }));
+    await Promise.all(updates);
   } catch (e) {
     console.error('[handleCiumento] Erro ao deduzir XP no banco:', e.message);
   }
@@ -438,7 +477,7 @@ async function handleCiumento(sock, msg, content, jid, author, senderJid, relaci
   if (mentionedJid) listaMentions.push(mentionedJid);
 
   await sock.sendMessage(jid, {
-    text: cenas[Math.floor(Math.random() * cenas.length)] + `\n\n⚠️ *-2 XP* por CIÚME CEGO! Total: *${xpAtual} XP* 😤`,
+    text: cenas[Math.floor(Math.random() * cenas.length)] + `\n\n⚠️ *-${perdaTotal} XP* por CIÚME CEGO! Total: *${xpAtual} XP* 😤`,
     mentions: listaMentions,
   }, { quoted: msg });
 }
@@ -660,21 +699,26 @@ async function handleAniversarioCasal(sock, msg, jid, author, senderJid, relacio
   if (meses >= 1)   marcos.push(`📅 *${meses} mês(es) juntos!*`);
   if (semanas >= 1) marcos.push(`🗓️ *${semanas} semana(s) juntos!*`);
 
+  const ganhoTotal = 20;
+  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente ganhoTotal ──
+  const metadeA = Math.ceil(ganhoTotal / 2);
+  const metadeB = Math.floor(ganhoTotal / 2);
+
   let xpAtual = 0;
   try {
     const [userA, userB] = await Promise.all([
       jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
       jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
     ]);
-    xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + 20;
+    xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + ganhoTotal;
 
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
-      { $inc: { xpCasal: 20 } }
-    );
+    const updates = [];
+    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
+    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
+    await Promise.all(updates);
   } catch (err) {
     console.error('⚠️ Erro ao persistir XP de aniversário:', err.message);
-    xpAtual = (getXpCasais().get(key) || 0) + 20;
+    xpAtual = (getXpCasais().get(key) || 0) + ganhoTotal;
   }
 
   getXpCasais().set(key, xpAtual);
@@ -688,7 +732,7 @@ async function handleAniversarioCasal(sock, msg, jid, author, senderJid, relacio
     `📅 *${dias} dia(s)* juntos!\n`;
   if (marcos.length > 0) texto += marcos.join('\n') + '\n';
   texto +=
-    `\n💰 *+20 XP* de celebração! Total: *${xpAtual} XP*\n\n` +
+    `\n💰 *+${ganhoTotal} XP* de celebração! Total: *${xpAtual} XP*\n\n` +
     `_Parabéns pelo tempo juntos! 🥂_`;
 
   const listaMentions = [senderJidNormalizado];
@@ -802,12 +846,19 @@ async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, r
       `💔 *-${ganho} XP* para *${casal1Mencoes}*!\n\n` +
       `_Que reviravolta! 😱_`;
   } else {
-    mudancasBanco.push(
-      Usuario.updateMany({ idWhatsApp: { $in: [jidA1, jidA2, jidB1, jidB2].filter(Boolean) } }, { $inc: { xpCasal: 3 } })
-    );
-    getXpCasais().set(foundA.key, xpA + 3);
-    getXpCasais().set(foundB.key, xpB + 3);
-    resultado = `🤝 *EMPATE!* Ambos os casais são igualmente incríveis!\n\n💰 *+3 XP* para ambos!`;
+    // ── Empate: cada casal ganha +3 no total, dividido entre os dois membros ──
+    const ganhoEmpate = 3;
+    const metadeA1 = Math.ceil(ganhoEmpate / 2);
+    const metadeA2 = Math.floor(ganhoEmpate / 2);
+
+    if (jidA1) mudancasBanco.push(Usuario.updateOne({ idWhatsApp: jidA1 }, { $inc: { xpCasal: metadeA1 } }));
+    if (jidA2) mudancasBanco.push(Usuario.updateOne({ idWhatsApp: jidA2 }, { $inc: { xpCasal: metadeA2 } }));
+    if (jidB1) mudancasBanco.push(Usuario.updateOne({ idWhatsApp: jidB1 }, { $inc: { xpCasal: metadeA1 } }));
+    if (jidB2) mudancasBanco.push(Usuario.updateOne({ idWhatsApp: jidB2 }, { $inc: { xpCasal: metadeA2 } }));
+
+    getXpCasais().set(foundA.key, xpA + ganhoEmpate);
+    getXpCasais().set(foundB.key, xpB + ganhoEmpate);
+    resultado = `🤝 *EMPATE!* Ambos os casais são igualmente incríveis!\n\n💰 *+${ganhoEmpate} XP* para ambos!`;
   }
 
   if (mudancasBanco.length > 0) {
@@ -949,6 +1000,10 @@ async function handleDesafioCasal(sock, msg, jid, author, senderJid, relacioname
   const temBonus = temXpBonus(key);
   const xpFinal  = temBonus ? xpGanho * 2 : xpGanho;
 
+  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente xpFinal ──
+  const metadeA = Math.ceil(xpFinal / 2);
+  const metadeB = Math.floor(xpFinal / 2);
+
   let xpAtual = 0;
   try {
     const [userA, userB] = await Promise.all([
@@ -957,10 +1012,10 @@ async function handleDesafioCasal(sock, msg, jid, author, senderJid, relacioname
     ]);
     xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + xpFinal;
 
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
-      { $inc: { xpCasal: xpFinal } }
-    );
+    const updates = [];
+    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
+    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
+    await Promise.all(updates);
   } catch (err) {
     console.error('⚠️ [DesafioCasal] Erro ao sincronizar XP com o Banco:', err.message);
     xpAtual = (getXpCasais().get(key) || 0) + xpFinal;
@@ -1079,6 +1134,10 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
   const surp    = surpresas[Math.floor(Math.random() * surpresas.length)];
   const xpGanho = parseInt(surp.match(/\+(\d+)\s*XP/)?.[1] || '20');
 
+  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente xpGanho ──
+  const metadeA = Math.ceil(xpGanho / 2);
+  const metadeB = Math.floor(xpGanho / 2);
+
   let xpAtual = 0;
   try {
     const [userA, userB] = await Promise.all([
@@ -1087,10 +1146,10 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
     ]);
     xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + xpGanho;
 
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
-      { $inc: { xpCasal: xpGanho } }
-    );
+    const updates = [];
+    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
+    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
+    await Promise.all(updates);
   } catch (err) {
     console.error('⚠️ [Surpresa] Erro ao salvar XP no banco:', err.message);
     xpAtual = (getXpCasais().get(key) || 0) + xpGanho;
@@ -1141,6 +1200,10 @@ async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos)
   const domingo = domingos[Math.floor(Math.random() * domingos.length)];
   const xpGanho = parseInt(domingo.match(/\+(\d+)\s*XP/)?.[1] || '20');
 
+  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente xpGanho ──
+  const metadeA = Math.ceil(xpGanho / 2);
+  const metadeB = Math.floor(xpGanho / 2);
+
   let xpAtual = 0;
   try {
     const [userA, userB] = await Promise.all([
@@ -1149,10 +1212,10 @@ async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos)
     ]);
     xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + xpGanho;
 
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
-      { $inc: { xpCasal: xpGanho } }
-    );
+    const updates = [];
+    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
+    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
+    await Promise.all(updates);
   } catch (err) {
     console.error('⚠️ [Domingo] Erro ao salvar XP no banco:', err.message);
     xpAtual = (getXpCasais().get(key) || 0) + xpGanho;

@@ -109,13 +109,13 @@ const { getNivelInfo } = require(path.join(__dirname, '..', 'utils', 'levelUtils
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // ─── Mapa: comando → item obrigatório no inventário ────────────
+// ─── Mapa: comando → item obrigatório no inventário ────────────
 const ITEM_NECESSARIO = {
   flores:   { key: 'flores',   nome: 'Flores 🌹'                },
   doces:    { key: 'morango',  nome: 'Morango com Chocolate 🍓'  },
   carta:    { key: 'carta',    nome: 'Carta de Amor 💌'          },
   mimo:     { key: 'caixa',    nome: 'Caixa Presente Luxo 🎁'    },
-  beijo:    { key: 'perfume',  nome: 'Perfume Premium 🌸'        },
-  // abraco removido — não requer item
+  // beijo removido — não requer item
   jantar:   { key: 'taça',     nome: 'Taça para Vinho 🍷'        },
   cinema:   { key: 'almofada', nome: 'Almofada Casal 🛋️'         },
   viajar:   { key: 'garrafa',  nome: 'Garrafa Vinho Tinto 🍾'    },
@@ -123,10 +123,7 @@ const ITEM_NECESSARIO = {
 };
 
 // Comandos que NÃO exigem item do inventário (carinhos "gratuitos")
-const CARINHOS_SEM_ITEM = new Set(['abraco']);
-
-// Comandos que podem ser usados mesmo sem relacionamento (precisam de @menção)
-const CARINHOS_SEM_RELACIONAMENTO = new Set(['abraco']);
+const CARINHOS_SEM_ITEM = new Set(['abraco', 'beijo']);
 
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
   // ── Normaliza o JID de quem enviou o comando ──

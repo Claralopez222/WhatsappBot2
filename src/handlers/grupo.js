@@ -1047,7 +1047,8 @@ module.exports = { handleReportar };
 //   - Respondendo a uma mensagem:  !removerreporte
 //   - Por menção:                  !removerreporte @pessoa
 //
-// Requer: admin do grupo.
+// Requer: admin do grupo. Um admin NÃO pode remover a própria
+// advertência — somente outro admin pode fazê-lo.
 // ═══════════════════════════════════════════════════════════════
 
 async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJid) {
@@ -1057,7 +1058,8 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
 
   if (!await checkAdmin(sock, msg, jid, 'removerreporte')) return;
 
-  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderJid  = msg.key.participant || msg.key.remoteJid;
+  const senderBase = normalizeJidBase(senderJid);
 
   // ── Resolve o alvo: reply tem prioridade sobre menção ──
   const targetJid =
@@ -1073,9 +1075,11 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
     }, { quoted: msg });
   }
 
-  if (targetJid === senderJid) {
+  // ── Compara pelo número base para evitar falhas com sufixos de dispositivo ──
+  // ex: "5511999@s.whatsapp.net" vs "5511999:3@s.whatsapp.net"
+  if (normalizeJidBase(targetJid) === senderBase) {
     return sock.sendMessage(jid, {
-      text: '🤡 Você não pode remover sua própria advertência.',
+      text: '🤡 Você não pode remover sua própria advertência. Peça a outro admin.',
     }, { quoted: msg });
   }
 

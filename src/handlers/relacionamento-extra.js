@@ -28,14 +28,12 @@ function getXpBonus()      { return rel().xpBonus; }
 function getCiumentosMap() { return rel().ciumentosMap; }
 function getBloqueados()   { return rel().bloqueados; }
 
-// ─── Mapa: comando → item obrigatório no inventário ────────────
 const ITEM_NECESSARIO = {
   flores:   { key: 'flores',   nome: 'Flores 🌹'                },
   doces:    { key: 'morango',  nome: 'Morango com Chocolate 🍓'  },
   carta:    { key: 'carta',    nome: 'Carta de Amor 💌'          },
   mimo:     { key: 'caixa',    nome: 'Caixa Presente Luxo 🎁'    },
-  beijo:    { key: 'perfume',  nome: 'Perfume Premium 🌸'        },
-  // abraco removido — não requer item
+  // beijo removido — não requer item
   jantar:   { key: 'taça',     nome: 'Taça para Vinho 🍷'        },
   cinema:   { key: 'almofada', nome: 'Almofada Casal 🛋️'         },
   viajar:   { key: 'garrafa',  nome: 'Garrafa Vinho Tinto 🍾'    },

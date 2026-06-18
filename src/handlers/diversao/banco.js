@@ -74,7 +74,7 @@ async function handleBanco(sock, msg, jid, caption) {
   const userId  = await resolverUserId(sock, msg);
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
   const match   = caption.match(/banco\s+(\d+)/i);
-
+  console.log('[banco] userId:', userId, '| idGrupo:', idGrupo);
   // ── Banco obrigatoriamente por grupo ────────────────────────────────────────
   if (!idGrupo) {
     await sock.sendMessage(jid, {
@@ -304,10 +304,12 @@ async function handleBanco(sock, msg, jid, caption) {
 
 // ─── handleResgatar ───────────────────────────────────────────────────────────
 
+// !resgatar
 async function handleResgatar(sock, msg, jid) {
   const userId  = await resolverUserId(sock, msg);
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
-
+  console.log('[resgatar] userId:', userId, '| idGrupo:', idGrupo);
+  
   if (!idGrupo) {
     await sock.sendMessage(jid, {
       text: '⚠️ O banco só funciona dentro de grupos!',

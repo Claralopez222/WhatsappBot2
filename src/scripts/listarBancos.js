@@ -23,6 +23,16 @@ async function listar() {
     console.log(`- ${db.name}  (${(db.sizeOnDisk / 1024 / 1024).toFixed(2)} MB)`);
   }
 
+  // ── Lista as collections do banco "piroquinhas" especificamente ──
+  console.log('\n📁 Collections em "piroquinhas":\n');
+  const piroquinhasDb = mongoose.connection.useDb('piroquinhas');
+  const collections = await piroquinhasDb.db.listCollections().toArray();
+
+  for (const col of collections) {
+    const count = await piroquinhasDb.collection(col.name).countDocuments();
+    console.log(`- ${col.name}  (${count} documento(s))`);
+  }
+
   await mongoose.disconnect();
 }
 

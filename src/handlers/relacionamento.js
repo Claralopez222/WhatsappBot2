@@ -23,6 +23,7 @@ const bloqueados    = new Map(); // jid → timestamp_expiry
 const diariosUsados = new Map(); // `${relKey}:${cmd}:YYYY-MM-DD` → true
 const ciumentosMap  = new Map(); // jid → timestamp (cooldown de 1h)
 const xpBonus       = new Map(); // relKey → { ativo: bool, expiry: number }
+
 // ═══════════════════════════════════════════════════════════════
 // ─── HELPERS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -31,6 +32,62 @@ function hoje() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+
+// ─── Limpeza periódica de memória (evita crescimento ilimitado) ───────────
+// diariosUsados: chave termina em "...:YYYY-MM-DD" — remove entradas de
+// dias anteriores ao atual (não precisamos do histórico, só do dia corrente)
+function limparDiariosAntigos() {
+  const hojeStr = hoje();
+  let removidos = 0;
+  for (const chave of diariosUsados.keys()) {
+    const dataNaChave = chave.slice(-10); // últimos 10 caracteres = "YYYY-MM-DD"
+    if (dataNaChave !== hojeStr) {
+      diariosUsados.delete(chave);
+      removidos++;
+    }
+  }
+  if (removidos > 0) {
+    console.log(`🧹 [relacionamento] ${removidos} entrada(s) antiga(s) removida(s) de diariosUsados.`);
+  }
+}
+
+// xpBonus e ciumentosMap já fazem limpeza "passiva" (no momento do check),
+// mas isso só funciona se alguém checar aquela chave de novo. Esta limpeza
+// periódica cobre o caso de usuários que nunca mais interagiram.
+function limparExpirados() {
+  let removidos = 0;
+
+  for (const [key, bonus] of xpBonus.entries()) {
+    if (!bonus.ativo || Date.now() > bonus.expiry) {
+      xpBonus.delete(key);
+      removidos++;
+    }
+  }
+
+  for (const [jid, expiry] of ciumentosMap.entries()) {
+    if (Date.now() > expiry) {
+      ciumentosMap.delete(jid);
+      removidos++;
+    }
+  }
+
+  for (const [jid, expiry] of bloqueados.entries()) {
+    if (Date.now() > expiry) {
+      bloqueados.delete(jid);
+      removidos++;
+    }
+  }
+
+  if (removidos > 0) {
+    console.log(`🧹 [relacionamento] ${removidos} entrada(s) expirada(s) removida(s) (xpBonus/ciumentosMap/bloqueados).`);
+  }
+}
+
+// diariosUsados: 1x por hora (limpeza de dias passados)
+setInterval(limparDiariosAntigos, 60 * 60 * 1000);
+
+// xpBonus/ciumentosMap/bloqueados: cooldowns curtos (1h) — checa a cada 15min
+setInterval(limparExpirados, 15 * 60 * 1000);
 
 function isBloqueado(jid) {
   if (!bloqueados.has(jid)) return false;

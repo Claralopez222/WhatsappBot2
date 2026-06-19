@@ -458,10 +458,6 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   }, { quoted: msg });
 }
 
-module.exports = { handleMute };
-
-module.exports = { handleMute };
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !desmute ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -1729,6 +1725,73 @@ async function handleFixarGrupo(sock, msg, content, jid, caption) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ─── !adv / !advertencia ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//
+// Mostra quantas advertências o PRÓPRIO usuário que executou o
+// comando tem no grupo atual (não funciona em PV).
+// ═══════════════════════════════════════════════════════════════
+
+async function handleAdvertencia(sock, msg, jid) {
+  if (!somenteGrupo(jid)) {
+    return sock.sendMessage(
+      jid,
+      { text: '⚠️ Esse comando só funciona em grupos.' },
+      { quoted: msg }
+    );
+  }
+
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if (!senderJid) return;
+
+  const groupKey = jid.replace(/\./g, '_');
+
+  let usuario;
+  try {
+    usuario = await Usuario.findOne(
+      { idWhatsApp: senderJid },
+      { warnings: 1 } // projection — evita trazer o documento inteiro
+    ).lean();
+  } catch (err) {
+    console.error('[handleAdvertencia] Erro ao buscar usuário:', err.message);
+    return sock.sendMessage(
+      jid,
+      { text: '❌ Erro ao consultar suas advertências. Tente novamente.' },
+      { quoted: msg }
+    );
+  }
+
+  // .lean() retorna objeto puro — warnings vem como objeto, não Map
+  const atual = Math.max(0, Number(usuario?.warnings?.[groupKey] ?? 0));
+
+  if (atual === 0) {
+    return sock.sendMessage(
+      jid,
+      { text: '✅ Você está limpo(a)! Sem advertências neste grupo.' },
+      { quoted: msg }
+    );
+  }
+
+  const nivelEmoji = atual >= 3 ? '🔴' : atual === 2 ? '🟠' : '🟡';
+  const restantes  = Math.max(0, 3 - atual);
+  const statusMsg  = restantes === 0
+    ? '🚨 *Você está no limite!* Qualquer nova advertência pode resultar em remoção.'
+    : `⏳ Mais *${restantes}* e você será removido(a)!`;
+
+  return sock.sendMessage(
+    jid,
+    {
+      text:
+        `${nivelEmoji} *SUAS ADVERTÊNCIAS NESTE GRUPO*\n\n` +
+        `⚠️ Você tem *${atual}/3* advertência(s).\n` +
+        `${statusMsg}\n\n` +
+        `_Respeite as regras do grupo!_ 📜`,
+    },
+    { quoted: msg }
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ─── !menuadm ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
@@ -1829,4 +1892,5 @@ module.exports = {
   isMuted,       // exportado para bot.js verificar antes de processar msg
   isAdmin,
   handleRemoverReporte,
+  handleAdvertencia,
 };

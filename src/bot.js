@@ -1132,6 +1132,8 @@ if (matchCmd(cmdWord, 'worldcup'))       { await diversaoHandler.handleWorldCup(
   if (matchCmdStart(cmd, 'autosticker'))   { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
   if (matchCmdStart(cmd, 'reportar'))      { await grupoHandler.handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid); return; }
   if (matchCmdStart(cmd, 'removerreporte')){ await grupoHandler.handleRemoverReporte(sock, msg, content, jid, contactNames, botJid); return; }
+  if (matchCmd(cmdWord, 'adv') || matchCmd(cmdWord, 'advertencia'))
+  { await grupoHandler.handleAdvertencia(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'grupinfo'))       { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'listaadm'))       { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'listamembros'))   { await grupoHandler.handleListaMembros(sock, msg, jid, contactNames); return; }

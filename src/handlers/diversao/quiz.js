@@ -511,10 +511,7 @@ const perguntasQuiz = [
 
 async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
-  // ── Resolver @lid para jid real ANTES de qualquer operação de estado ──
-  // Se a resolução falhar (ou onWhatsApp não retornar nada), mantemos o
-  // próprio @lid: para muitos usuários ele já É o identificador estável,
-  // e changeGold/CarteiraGrupo agora aceitam @lid normalmente.
+  // ── Resolver @lid para jid real e normalizar ──────────────────────────────
   let resolvedJid = senderJid;
   if (senderJid?.endsWith('@lid')) {
     try {
@@ -528,9 +525,12 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     }
   }
 
-  await syncQuizPointsFromDB(resolvedJid);
+  // Normaliza para garantir consistência com CarteiraGrupo e !gold
+  const resolvedJidNorm = resolvedJid.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
 
-  // ── Verificar se está respondendo uma pergunta ativa ──
+  await syncQuizPointsFromDB(resolvedJidNorm);
+
+  // ── Verificar se está respondendo uma pergunta ativa ──────────────────────
   if (quizState.has(senderJid)) {
     const state = quizState.get(senderJid);
 
@@ -555,9 +555,11 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     clearTimeout(state.timeout);
     quizState.delete(senderJid);
 
-    const effectiveJid = state.resolvedJid ?? resolvedJid;
-    const correta = normalize(state.r);
+    // Usa sempre o JID normalizado para consistência com CarteiraGrupo
+    const effectiveJid = (state.resolvedJid ?? resolvedJidNorm)
+      .split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
 
+    const correta = normalize(state.r);
     const respostasValidas = correta
       .split(/[\/|]/)
       .map(r => r.trim())
@@ -570,7 +572,6 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     );
 
     if (acertou) {
-      // pontosMap só pra exibição — DB usa $inc direto (sem depender do cache global)
       const pts = (pontosMap.get(effectiveJid) || 0) + 10;
       pontosMap.set(effectiveJid, pts);
 
@@ -601,8 +602,8 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // ── Verificar limite diário de quizzes (persistente no MongoDB) ──
-  const quizCount = await getQuizCountToday(resolvedJid);
+  // ── Verificar limite diário ───────────────────────────────────────────────
+  const quizCount = await getQuizCountToday(resolvedJidNorm);
 
   if (quizCount >= DAILY_QUIZ_LIMIT) {
     await sock.sendMessage(jid, {
@@ -611,8 +612,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // ── Filtrar por categoria ──
-  // Prefixos múltiplos removidos com replace global — cobre "!!", "!.", etc.
+  // ── Filtrar por categoria ─────────────────────────────────────────────────
   const cmdRaw   = caption.trim().toLowerCase().split(' ')[0];
   const cmdClean = cmdRaw.replace(/^[!.,\/@]+/, '');
 
@@ -636,31 +636,22 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // ── Incrementar contador diário (cache + MongoDB) ──
-  await incrementQuizCountToday(resolvedJid, quizCount + 1);
+  // ── Incrementar contador diário ───────────────────────────────────────────
+  await incrementQuizCountToday(resolvedJidNorm, quizCount + 1);
 
-  // ── Sortear pergunta sem repetir recentemente ──
-  // recentQuizMap usa resolvedJid — evita que usuário @lid tenha histórico
-  // duplicado e burle a proteção de repetição
-  const recentes = recentQuizMap.get(resolvedJid) ?? [];
-
-  // Pool sem recentes calculado uma vez, evitando loop cego com tentativas —
-  // mais eficiente e sem risco de repetir quando todas as perguntas já foram vistas
+  // ── Sortear pergunta sem repetir recentemente ─────────────────────────────
+  const recentes    = recentQuizMap.get(resolvedJidNorm) ?? [];
   const naoRecentes = perguntasFiltradas.filter(p => !recentes.includes(p.p));
   const pool        = naoRecentes.length > 0 ? naoRecentes : perguntasFiltradas;
   const q           = pool[Math.floor(Math.random() * pool.length)];
 
   recentes.push(q.p);
-  // Janela de recentes proporcional ao tamanho do pool da categoria —
-  // evita bloquear quase todas as perguntas em categorias pequenas
   const janelaRecentes = Math.min(5, Math.floor(perguntasFiltradas.length / 2));
   while (recentes.length > janelaRecentes) recentes.shift();
-  recentQuizMap.set(resolvedJid, recentes);
+  recentQuizMap.set(resolvedJidNorm, recentes);
 
-  // ── Timeout de 30s ──
-  // author e q capturados no closure no momento do sorteio — sem risco
-  // de stale caso a variável externa mude antes dos 30s expirarem
-  const authorSnapshot = author;
+  // ── Timeout de 30s ────────────────────────────────────────────────────────
+  const authorSnapshot  = author;
   const respostaCorreta = q.r;
 
   const timeout = setTimeout(() => {
@@ -672,9 +663,8 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     }
   }, 30_000);
 
-  // quizState salva resolvedJid junto para evitar dessincronização
-  // de pontos quando senderJid é @lid
-  quizState.set(senderJid, { r: q.r, resolvedJid, timeout });
+  // Salva resolvedJidNorm para usar na correção
+  quizState.set(senderJid, { r: q.r, resolvedJid: resolvedJidNorm, timeout });
 
   const restantes = DAILY_QUIZ_LIMIT - quizCount - 1;
 

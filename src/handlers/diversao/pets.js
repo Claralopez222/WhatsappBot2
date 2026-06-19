@@ -846,6 +846,7 @@ async function handlePets(sock, msg, jid, caption = '') {
   return reply(sock, jid, msg, texto);
 }
 
+// handleAbrigo — !abrigo deixar / !abrigo <nome> pegar
 async function handleAbrigo(sock, msg, jid, caption = '') {
   const userId = getUserId(msg);
   if (!userId) return;
@@ -876,7 +877,26 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       );
     }
 
-    // Limpa cache antes de qualquer operação no banco
+    // Verifica se já tem um pet no abrigo
+    try {
+      const jaNoAbrigo = await Usuario.findOne({
+        idWhatsApp: userId,
+        'petShelter.isSheltered': true,
+        'petShelter.shelteredPet.name': { $exists: true },
+      }).lean();
+
+      if (jaNoAbrigo?.petShelter?.shelteredPet?.name) {
+        const nomePetAbrigo = jaNoAbrigo.petShelter.shelteredPet.name;
+        const nomeCmdResgatar = nomePetAbrigo.includes(' ') ? `"${nomePetAbrigo}"` : nomePetAbrigo;
+        return reply(sock, jid, msg,
+          `⚠️ Você já tem *${nomePetAbrigo}* no abrigo!\n\n` +
+          `_Resgate-o primeiro com: *${prefix}abrigo ${nomeCmdResgatar} pegar*_`
+        );
+      }
+    } catch (err) {
+      console.error('[abrigo:deixar] Erro ao verificar abrigo:', err);
+    }
+
     petCache.delete(userId);
 
     try {
@@ -888,19 +908,17 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
             'petShelter.isSheltered':  true,
             'petShelter.shelteredPet': pet,
             'petShelter.leftAt':       new Date().toISOString(),
-            'petShelter.ownerId':      userId, // guarda dono original
+            'petShelter.ownerId':      userId,
           },
         },
-        { new: true } // sem upsert — usuário deve existir
+        { new: true }
       );
 
       if (!resultado) {
-        // Restaura cache se o update falhou (usuário não existia)
         petCache.set(userId, pet);
         return reply(sock, jid, msg, '⚠️ Usuário não encontrado no banco de dados.');
       }
     } catch (err) {
-      // Restaura cache em caso de erro de banco
       petCache.set(userId, pet);
       console.error('[abrigo:deixar] Erro ao salvar no banco:', err);
       return reply(sock, jid, msg, '❌ Erro interno ao enviar pet ao abrigo. Tente novamente!');
@@ -908,24 +926,27 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
 
     const def = PET_SYSTEM[pet.type] ?? { emoji: '🐾' };
     const re  = RARITY_EMOJI[pet.rarity] ?? '⭐';
-
-    // Nome para o comando !abrigo <nome> pegar — usa primeira palavra se tiver espaço
-    const nomeCmdPegar = pet.name.includes(' ')
-      ? `"${pet.name}"`
-      : pet.name;
+    const nomeCmdPegar = pet.name.includes(' ') ? `"${pet.name}"` : pet.name;
 
     return reply(sock, jid, msg,
       `🏥 *PET ENVIADO AO ABRIGO!*\n\n` +
       `${def.emoji} *${pet.name}* ${re} (${pet.rarity ?? '?'})\n` +
-      `🏆 Nível *${pet.level ?? 1}* | ✨ XP *${pet.xp ?? 0}*\n\n` +
+      `🏆 Nível *${pet.level ?? 1}* | ✨ XP *${pet.xp ?? 0}*\n` +
+      `😊 Felicidade *${pet.happiness ?? 0}%* | ⚡ Energia *${pet.energy ?? 0}%* | 🍽️ Fome *${pet.fullness ?? 0}%*\n\n` +
       `📋 Para ver o abrigo: *${prefix}abrigo*\n` +
-      `🔄 Para resgatar: *${prefix}abrigo ${nomeCmdPegar} pegar*`
+      `🔄 Para resgatar: *${prefix}abrigo ${nomeCmdPegar} pegar*\n\n` +
+      `💡 _Qualquer pessoa pode adotar seu pet enquanto ele estiver no abrigo!_`
     );
   }
 
   // ── !abrigo <nome> pegar ─────────────────────────────────────────────────────
   if (args.length >= 2 && args[args.length - 1] === 'pegar') {
-    const nomeBusca = args.slice(0, -1).join(' ');
+    // Reconstrói o nome preservando capitalização original (antes do .toLowerCase())
+    const nomeBusca = caption
+      .replace(/^[!.,/]?abrigo\s*/i, '')
+      .trim()
+      .replace(/\s+pegar$/i, '')
+      .trim();
 
     let alvo;
     try {
@@ -939,9 +960,31 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     }
 
     if (!alvo?.petShelter?.shelteredPet) {
+      // Lista os pets disponíveis para ajudar o usuário
+      let sugestoes = '';
+      try {
+        const disponiveis = await Usuario.find({ 'petShelter.isSheltered': true })
+          .select('petShelter.shelteredPet.name petShelter.shelteredPet.type petShelter.shelteredPet.rarity')
+          .lean();
+        const nomes = disponiveis
+          .map(u => {
+            const p = u.petShelter?.shelteredPet;
+            if (!p?.name) return null;
+            const def = PET_SYSTEM[p.type] ?? { emoji: '🐾' };
+            const re  = RARITY_EMOJI[p.rarity] ?? '⭐';
+            return `${def.emoji} *${p.name}* ${re}`;
+          })
+          .filter(Boolean);
+        if (nomes.length) {
+          sugestoes = `\n\n🐾 *Pets disponíveis no abrigo:*\n${nomes.map(n => `• ${n}`).join('\n')}`;
+        }
+      } catch {}
+
       return reply(sock, jid, msg,
-        `❌ Nenhum pet com o nome "*${nomeBusca}*" encontrado no abrigo.\n\n` +
-        `Ver lista: *${prefix}abrigo*`
+        `❌ Nenhum pet com o nome "*${nomeBusca}*" encontrado no abrigo.\n` +
+        `_Verifique o nome exato — use o nome que aparece na lista._` +
+        sugestoes +
+        `\n\nVer lista completa: *${prefix}abrigo*`
       );
     }
 
@@ -961,39 +1004,67 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       );
     }
 
-    const petAdotado = alvo.petShelter.shelteredPet;
+    const petAdotado   = alvo.petShelter.shelteredPet;
+    const donoOriginal = alvo.idWhatsApp;
+    const ehSeuProprio = donoOriginal === userId;
 
+    // Trava otimista: marca como não-sheltered antes de salvar no adotante
+    // para evitar adoções duplas simultâneas
+    let liberou;
     try {
-      // Libera o pet do abrigo
-      await Usuario.findOneAndUpdate(
-        { idWhatsApp: alvo.idWhatsApp },
+      liberou = await Usuario.findOneAndUpdate(
+        { idWhatsApp: donoOriginal, 'petShelter.isSheltered': true },
         {
           $set: {
             'petShelter.isSheltered':  false,
             'petShelter.shelteredPet': null,
           },
-        }
+        },
+        { new: true }
       );
+    } catch (err) {
+      console.error('[abrigo:pegar] Erro ao liberar pet do abrigo:', err);
+      return reply(sock, jid, msg, '❌ Erro interno ao liberar o pet do abrigo. Tente novamente!');
+    }
 
-      // Salva na conta do adotante
+    if (!liberou) {
+      return reply(sock, jid, msg,
+        `⚠️ *${petAdotado.name}* já foi adotado por outra pessoa agora mesmo!\n\n` +
+        `Ver lista atualizada: *${prefix}abrigo*`
+      );
+    }
+
+    try {
       await savePet(userId, petAdotado);
     } catch (err) {
-      console.error('[abrigo:pegar] Erro ao adotar pet:', err);
+      console.error('[abrigo:pegar] Erro ao salvar pet no adotante:', err);
+      // Reverte a liberação para não perder o pet
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: donoOriginal },
+        {
+          $set: {
+            'petShelter.isSheltered':  true,
+            'petShelter.shelteredPet': petAdotado,
+          },
+        }
+      ).catch(() => {});
       return reply(sock, jid, msg, '❌ Erro interno ao adotar o pet. Tente novamente!');
     }
 
-    const def  = PET_SYSTEM[petAdotado.type] ?? { emoji: '🐾' };
-    const re   = RARITY_EMOJI[petAdotado.rarity] ?? '⭐';
-    const dono = alvo.idWhatsApp === userId ? '_era seu próprio pet_' : `_de @${alvo.idWhatsApp.split('@')[0]}_`;
+    const def    = PET_SYSTEM[petAdotado.type] ?? { emoji: '🐾' };
+    const re     = RARITY_EMOJI[petAdotado.rarity] ?? '⭐';
+    const numero = donoOriginal.split('@')[0].split(':')[0].replace(/\D/g, '');
+    const dono   = ehSeuProprio ? '_era seu próprio pet_' : `_de @${numero}_`;
 
     return sock.sendMessage(jid, {
       text:
         `🎉 *ADOÇÃO CONCLUÍDA!*\n\n` +
         `${def.emoji} *${petAdotado.name}* ${re} (${petAdotado.rarity ?? '?'})\n` +
         `🏆 Nível *${petAdotado.level ?? 1}* | ✨ XP *${petAdotado.xp ?? 0}*\n` +
+        `😊 Felicidade *${petAdotado.happiness ?? 0}%* | ⚡ Energia *${petAdotado.energy ?? 0}%*\n` +
         `${dono}\n\n` +
         `Use *${prefix}statuspet* para ver os atributos completos.`,
-      mentions: alvo.idWhatsApp !== userId ? [alvo.idWhatsApp] : [],
+      mentions: ehSeuProprio ? [] : [`${numero}@s.whatsapp.net`],
     }, { quoted: msg });
   }
 
@@ -1003,32 +1074,50 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       .select('idWhatsApp petShelter')
       .lean();
 
-    if (!lista.length) {
+    // Filtra entradas inválidas (sem pet ou sem nome)
+    const validos = lista.filter(u => u.petShelter?.shelteredPet?.name);
+
+    if (!validos.length) {
       return reply(sock, jid, msg,
         `🏥 *ABRIGO DE PETS*\n\n` +
-        `😔 O abrigo está vazio!\n\n` +
-        `Deixe seu pet: *${prefix}abrigo deixar*`
+        `😔 O abrigo está vazio no momento!\n\n` +
+        `💡 Deixe seu pet com: *${prefix}abrigo deixar*`
       );
     }
 
-    let texto = `🏥 *ABRIGO DE PETS* — ${lista.length} pet(s)\n━━━━━━━━━━━━━━━━━━\n\n`;
+    // Ordena: pet do próprio usuário aparece primeiro
+    validos.sort((a, b) => {
+      if (a.idWhatsApp === userId) return -1;
+      if (b.idWhatsApp === userId) return 1;
+      return 0;
+    });
 
-    lista.forEach((u, i) => {
-      const p = u.petShelter?.shelteredPet;
-      if (!p?.name) return;
+    let texto = `🏥 *ABRIGO DE PETS* — ${validos.length} pet(s)\n━━━━━━━━━━━━━━━━━━\n\n`;
 
-      const def   = PET_SYSTEM[p.type] ?? { emoji: '🐾' };
-      const re    = RARITY_EMOJI[p.rarity] ?? '⭐';
-      const humor = getHumor(p);
-      const dono  = u.idWhatsApp === userId ? ' _(seu)_' : '';
+    validos.forEach((u, i) => {
+      const p      = u.petShelter.shelteredPet;
+      const def    = PET_SYSTEM[p.type] ?? { emoji: '🐾' };
+      const re     = RARITY_EMOJI[p.rarity] ?? '⭐';
+      const humor  = getHumor(p);
+      const numero = u.idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '');
+      const ehSeu  = u.idWhatsApp === userId;
+      const dono   = ehSeu ? ' *(seu)*' : ` _@${numero}_`;
 
-      texto += `${i + 1}. ${def.emoji} *${p.name}* ${re}${dono}\n`;
+      // Tempo no abrigo
+      let tempoAbrigo = '';
+      if (u.petShelter?.leftAt) {
+        const diffMs = Date.now() - new Date(u.petShelter.leftAt).getTime();
+        tempoAbrigo = ` • ⏳ ${formatarTempo(diffMs)} no abrigo`;
+      }
+
+      texto += `${i + 1}. ${def.emoji} *${p.name}* ${re}${dono}${tempoAbrigo}\n`;
       texto += `   └ 🏆 Nível *${p.level ?? 1}* | 😊 *${p.happiness ?? 0}%* | ⚡ *${p.energy ?? 0}%* | 🍽️ *${p.fullness ?? 0}%*\n`;
-      texto += `   └ ${humor}\n\n`;
+      texto += `   └ ${humor}\n`;
+      texto += `   └ 📋 _${prefix}abrigo ${p.name.includes(' ') ? `"${p.name}"` : p.name} pegar_\n\n`;
     });
 
     texto += `━━━━━━━━━━━━━━━━━━\n`;
-    texto += `🔄 *Adotar:* _${prefix}abrigo <nome> pegar_\n`;
+    texto += `🔄 *Adotar:* _${prefix}abrigo <nome exato> pegar_\n`;
     texto += `📤 *Deixar seu pet:* _${prefix}abrigo deixar_`;
 
     return reply(sock, jid, msg, texto);

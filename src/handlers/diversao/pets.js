@@ -654,30 +654,26 @@ async function handleCurarPet(sock, msg, jid) {
   );
 }
 
-// !renomearpet <nome>
+// !renomearpet / !nomearpet <nome>
 async function handleRenomearPet(sock, msg, jid, caption) {
   const userId = getUserId(msg);
   if (!userId) return;
 
-  const novoNome = caption.replace(/^[!.,/]?renomearpet\s*/i, '').trim();
+  // Aceita tanto !renomearpet quanto !nomearpet (com qualquer prefixo)
+  const novoNome = caption
+    .replace(/^[!.,/]?(?:renomearpet|nomearpet)\s*/i, '')
+    .trim();
 
   // ── Validações de entrada ─────────────────────────────────
   if (!novoNome) {
     return reply(sock, jid, msg,
-      '⚠️ Informe o novo nome!\n\n*Exemplo:* !renomearpet Farofa'
+      '⚠️ Informe o novo nome!\n\n*Exemplo:* !nomearpet Farofa'
     );
   }
 
   if (novoNome.length < 2 || novoNome.length > 24) {
     return reply(sock, jid, msg,
       `⚠️ Nome deve ter entre *2 e 24 caracteres*.\n_Atual: ${novoNome.length} caractere(s)._`
-    );
-  }
-
-  // Permite letras (incluindo acentuadas), números, espaços e emojis básicos
-  if (!/^[\p{L}\p{N}\s\u{1F300}-\u{1FAFF}]{2,24}$/u.test(novoNome)) {
-    return reply(sock, jid, msg,
-      '⚠️ Nome inválido! Use apenas letras, números, espaços ou emojis.'
     );
   }
 
@@ -713,9 +709,9 @@ async function handleRenomearPet(sock, msg, jid, caption) {
       { $set: { pet: petAtualizado } },
       { upsert: true }
     );
+    petCache.set(userId, petAtualizado);
   } catch (err) {
     console.error('[renomear] Erro ao salvar pet:', err);
-    // Restaura cache em caso de falha
     petCache.set(userId, pet);
     return reply(sock, jid, msg, '❌ Erro interno ao renomear. Tente novamente!');
   }

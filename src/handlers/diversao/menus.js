@@ -131,8 +131,6 @@ async function handleMenuPet(sock, msg, jid, getPrefix) {
     ``,
     `🏆 *Ranking*`,
     `  🏆 *${P}rankpet* — Top 10 melhores pets`,
-    ``,
-    `ℹ️ Use *${P}sistemaPet* para saber mais!`,
   ].join('\n');
 
   await enviar(sock, msg, jid, texto);

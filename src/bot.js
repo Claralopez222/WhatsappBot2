@@ -823,25 +823,26 @@ if (matchCmd(cmdWord, 'divida'))
 if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes'))
   { await diversaoHandler.handleMissao(sock, msg, jid, caption, getPrefix); return; }
 
-  // ── PETS ──────────────────────────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'capturar'))
-    { await diversaoHandler.handleCapturarPet(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'alimentar') || matchCmd(cmdWord, 'alimentarpet'))
-    { await diversaoHandler.handleAlimentarPet(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'brincar'))
-    { await diversaoHandler.handleBrincarPet(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'curar') || matchCmd(cmdWord, 'curarpet'))
-    { await diversaoHandler.handleCurarPet(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'statuspet') || matchCmd(cmdWord, 'pet'))
-    { await diversaoHandler.handleStatusPet(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'petrank') || matchCmd(cmdWord, 'rankpet'))
-    { await diversaoHandler.handlePetRank(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'pets'))
-    { await diversaoHandler.handlePets(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'abrigo') || matchCmd(cmdWord, 'shelter'))
-    { await diversaoHandler.handleAbrigo(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'renomearpet') || matchCmdStart(cmd, 'renomearpet'))
-    { await diversaoHandler.handleRenomearPet(sock, msg, jid, caption); return; }
+  // ── PETS ──────────────────────────────────────────────────────────────────────
+if (matchCmd(cmdWord, 'capturar'))
+  { await diversaoHandler.handleCapturarPet(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'alimentar') || matchCmd(cmdWord, 'alimentarpet'))
+  { await diversaoHandler.handleAlimentarPet(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'brincar'))
+  { await diversaoHandler.handleBrincarPet(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'curar') || matchCmd(cmdWord, 'curarpet'))
+  { await diversaoHandler.handleCurarPet(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'statuspet') || matchCmd(cmdWord, 'pet'))
+  { await diversaoHandler.handleStatusPet(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'petrank') || matchCmd(cmdWord, 'rankpet'))
+  { await diversaoHandler.handlePetRank(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'pets'))
+  { await diversaoHandler.handlePets(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'abrigo') || matchCmd(cmdWord, 'shelter'))
+  { await diversaoHandler.handleAbrigo(sock, msg, jid, caption); return; }
+if (matchCmdStart(cmd, 'renomearpet ') || matchCmd(cmdWord, 'renomearpet') ||
+    matchCmdStart(cmd, 'nomearpet ')   || matchCmd(cmdWord, 'nomearpet'))
+  { await diversaoHandler.handleRenomearPet(sock, msg, jid, caption); return; }
 
   // ── MARKETPLACE ───────────────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'avenda') || matchCmdStart(cmd, 'avenda '))

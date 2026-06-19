@@ -779,7 +779,7 @@ if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
   if (matchCmd(cmdWord, 'menupet'))
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
 
- // ── ECONOMIA ──────────────────────────────────────────────────
+// ── ECONOMIA ──────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'gold'))
   { await diversaoHandler.handleGold(sock, msg, jid, getPrefix, contactNames); return; }
 if (matchCmd(cmdWord, 'loja'))
@@ -800,8 +800,6 @@ if (matchCmd(cmdWord, 'vender') || matchCmdStart(cmd, 'vender '))
   { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'inventario') || matchCmd(cmdWord, 'inv'))
   { await diversaoHandler.handleInventario(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'usar') || matchCmdStart(cmd, 'usar '))
-  { await diversaoHandler.handleUsarItem(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir') || matchCmdStart(cmd, 'pix ') || matchCmdStart(cmd, 'transferir '))
   { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'apostar') || matchCmdStart(cmd, 'apostar '))
@@ -811,9 +809,9 @@ if (matchCmd(cmdWord, 'slots') || matchCmdStart(cmd, 'slots '))
 if (matchCmd(cmdWord, 'corrida') || matchCmdStart(cmd, 'corrida '))
   { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
 if (matchCmd(cmdWord, 'extrato'))
-  { await diversaoHandler.handleExtrato(sock, msg, jid); return; }
+  { await diversaoHandler.handleExtrato(sock, msg, jid, contactNames); return; }
 if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
-  { await diversaoHandler.handleGarimpar(sock, msg, jid, getPrefix); return; }
+  { await diversaoHandler.handleGarimpar(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'emprestimo') || matchCmdStart(cmd, 'emprestimo '))
   { await handleEmprestimo(sock, msg, jid, caption); return; }
 if (matchCmdStart(cmd, 'pay emprestimo'))
@@ -821,8 +819,8 @@ if (matchCmdStart(cmd, 'pay emprestimo'))
 if (matchCmd(cmdWord, 'divida'))
   { await handleDivida(sock, msg, jid); return; }
 
-  // â”€â”€ MISSÃ•ES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes'))
+// ── MISSÕES ───────────────────────────────────────────────────────────────────
+if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes'))
   { await diversaoHandler.handleMissao(sock, msg, jid, caption, getPrefix); return; }
 
   // ── PETS ──────────────────────────────────────────────────────────────────
@@ -867,14 +865,14 @@ if (matchCmd(cmdWord, 'divida'))
   if (matchCmd(cmdWord, 'menumarket') || matchCmd(cmdWord, 'menumercado'))
     { await diversaoHandler.handleMenuMarket(sock, msg, jid, getPrefix); return; }
 
-  /// â”€â”€ PESCA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-if (matchCmd(cmdWord, 'pescar')         || matchCmd(cmdWord, 'pesca'))
+  // ── PESCA ─────────────────────────────────────────────────────────────────────
+if (matchCmd(cmdWord, 'pescar') || matchCmd(cmdWord, 'pesca'))
   { await pescaHandler.handlePescar(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'varas')          || matchCmd(cmdWord, 'lojavara')  || matchCmd(cmdWord, 'varapesca'))
+if (matchCmd(cmdWord, 'varas') || matchCmd(cmdWord, 'lojavara') || matchCmd(cmdWord, 'varapesca'))
   { await pescaHandler.handleVaras(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'iscas')          || matchCmd(cmdWord, 'lojaisca')  || matchCmd(cmdWord, 'isca'))
+if (matchCmd(cmdWord, 'iscas') || matchCmd(cmdWord, 'lojaisca') || matchCmd(cmdWord, 'isca'))
   { await pescaHandler.handleIscas(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'inventariopesca')|| matchCmd(cmdWord, 'invpesca')  || matchCmd(cmdWord, 'minhapesca'))
+if (matchCmd(cmdWord, 'inventariopesca') || matchCmd(cmdWord, 'invpesca') || matchCmd(cmdWord, 'minhapesca'))
   { await pescaHandler.handleInventarioPesca(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'sellpesca'))
   { await pescaHandler.handleVenderPesca(sock, msg, jid, caption); return; }
@@ -883,12 +881,12 @@ if (matchCmd(cmdWord, 'rankingpesca'))
 if (matchCmd(cmdWord, 'statspesca'))
   { await pescaHandler.handleStatsPesca(sock, msg, jid); return; }
 
- // â”€â”€ EMPREGO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── EMPREGO ───────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'procuraremprego') || matchCmd(cmdWord, 'buscaemprego'))
   { await diversaoHandler.handleProcurarEmprego(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'trabalhar') || matchCmd(cmdWord, 'work'))
   { await diversaoHandler.handleTrabalhar(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'promocao') || matchCmd(cmdWord, 'promoÃ§Ã£o'))
+if (matchCmd(cmdWord, 'promocao') || matchCmd(cmdWord, 'promcao'))
   { await diversaoHandler.handlePromocao(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'emprego') || matchCmd(cmdWord, 'meuemprego'))
   { await diversaoHandler.handleEmprego(sock, msg, jid); return; }

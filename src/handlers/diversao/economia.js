@@ -737,7 +737,6 @@ const EXTRATO_ICONES = {
   gasto:    '📉',
 };
 
-// Regex única para capturar "@numero" opcionalmente seguido de "@s.whatsapp.net" ou "@lid"
 const JID_MENTION_REGEX = /@(\d+)(@(?:s\.whatsapp\.net|lid))?/g;
 
 function formatarDataHora(date) {
@@ -749,11 +748,6 @@ function formatarDataHora(date) {
   };
 }
 
-/**
- * Extrai todos os JIDs mencionados no campo item.
- * Suporta: "@5511999999999", "@5511999999999@s.whatsapp.net", "@187085235466489@lid"
- * Retorna um array de JIDs completos (ex: "5511999999999@s.whatsapp.net").
- */
 function extrairJidsDoItem(item = '') {
   const jids = [];
   for (const match of item.matchAll(JID_MENTION_REGEX)) {
@@ -764,21 +758,45 @@ function extrairJidsDoItem(item = '') {
   return jids;
 }
 
-function buildLinhaTransacao(t, index) {
+/**
+ * Substitui "@numero@dominio" pelo nome do contato (se disponível),
+ * ou pelo "@numero" curto como fallback.
+ */
+function resolverNomesNoItem(item = '', contactNames = {}) {
+  return item.replace(JID_MENTION_REGEX, (match, numero, dominio) => {
+    // Tenta resolver pelo JID completo (com domínio original ou padrão)
+    const jidCompleto = `${numero}${dominio || '@s.whatsapp.net'}`;
+
+    // Tenta também o JID com @lid caso o contato esteja salvo assim
+    const jidLid = `${numero}@lid`;
+
+    const nome =
+      contactNames[jidCompleto] ||
+      contactNames[jidLid]      ||
+      null;
+
+    return nome ? `*${nome}*` : `@${numero}`;
+  });
+}
+
+function buildLinhaTransacao(t, index, contactNames = {}) {
   const { data, hora } = formatarDataHora(t.date);
   const icone = EXTRATO_ICONES[t.type] ?? '📉';
   const sinal = t.type === 'recebido' ? '+' : '-';
   const num   = String(index + 1).padStart(2, '0');
 
-  // Remove o domínio (@s.whatsapp.net ou @lid), deixando apenas "@numero" para exibição
-  const itemFormatado = t.item.replace(JID_MENTION_REGEX, '@$1');
+  // Substitui menções pelo nome do contato (ou @numero como fallback)
+  const itemFormatado = resolverNomesNoItem(t.item, contactNames);
 
   return `  ${num}. ${icone} *${sinal}${t.amount}g* — ${itemFormatado}\n      🕐 ${data} às ${hora}`;
 }
 
-async function handleExtrato(sock, msg, jid) {
-  const userId   = msg.key.participant || msg.key.remoteJid;
-  const carteira = await getCarteira(userId, jid);
+// ⚠️ Lembre de atualizar a chamada deste handler onde ele é invocado,
+// passando contactNames como quarto argumento:
+//   handleExtrato(sock, msg, jid, contactNames)
+async function handleExtrato(sock, msg, jid, contactNames = {}) {
+  const userId    = msg.key.participant || msg.key.remoteJid;
+  const carteira  = await getCarteira(userId, jid);
   const historico = carteira?.goldHistory ?? [];
 
   if (historico.length === 0) {
@@ -795,25 +813,18 @@ async function handleExtrato(sock, msg, jid) {
   let totalEntrada = 0;
   let totalSaida   = 0;
 
-  // Coleta JIDs mencionados para o campo mentions
-  const mentionsSet = new Set();
-
   const linhas = ultimas.map((t, i) => {
     if (t.type === 'recebido') totalEntrada += t.amount;
     else                       totalSaida   += t.amount;
 
-    for (const jidMencionado of extrairJidsDoItem(t.item)) {
-      mentionsSet.add(jidMencionado);
-    }
-
-    return buildLinhaTransacao(t, i);
+    // Passa contactNames para resolver nomes na linha
+    return buildLinhaTransacao(t, i, contactNames);
   });
 
   const saldo        = carteira.gold ?? 0;
   const balanco      = totalEntrada - totalSaida;
   const iconeBalanco = balanco >= 0 ? '📈' : '📉';
   const sinalBalanco = balanco >= 0 ? '+' : '';
-  const mentions     = [...mentionsSet];
 
   await sock.sendMessage(jid, {
     text:
@@ -828,7 +839,7 @@ async function handleExtrato(sock, msg, jid) {
       `  ${iconeBalanco} Balanço:   *${sinalBalanco}${balanco} gold*\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `  💰 Saldo atual: *${saldo} gold*`,
-    mentions,
+    // mentions removido — nomes aparecem em texto, sem marcação azul
   }, { quoted: msg });
 }
 

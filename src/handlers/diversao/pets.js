@@ -1115,7 +1115,7 @@ function registerActiveGroup(jid) {
  * Verifica se o socket está pronto para enviar mensagens.
  */
 function isSockReady(sock) {
-  return !!(sock?.user && sock.ws?.readyState === 1);
+  return !!(sock?.user);
 }
 
 /**

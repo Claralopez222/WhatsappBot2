@@ -832,8 +832,13 @@ if (matchCmd(cmdWord, 'brincar'))
   { await diversaoHandler.handleBrincarPet(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'curar') || matchCmd(cmdWord, 'curarpet'))
   { await diversaoHandler.handleCurarPet(sock, msg, jid); return; }
+
+// !pet on / !pet off / !pet status — precisa vir ANTES de !pet sozinho (statuspet)
+if (matchCmd(cmdWord, 'pet') && /\s+(on|off|status)\s*$/i.test(cmd))
+  { await diversaoHandler.handlePetToggle(sock, msg, jid, caption); return; }
+
 if (matchCmd(cmdWord, 'statuspet') || matchCmd(cmdWord, 'pet'))
-  { await diversaoHandler.handleStatusPet(sock, msg, jid); return; }
+  { await diversaoHandler.handleStatusPet(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'petrank') || matchCmd(cmdWord, 'rankpet'))
   { await diversaoHandler.handlePetRank(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'pets'))

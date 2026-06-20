@@ -19,6 +19,12 @@ const petSpawnSchema = new mongoose.Schema({
     default: 0,
     min:     0,
   },
+  // Controla se o spawn automático está ativo neste grupo.
+  // Alterado via !pet on / !pet off (somente admins).
+  spawnAtivo: {
+    type:    Boolean,
+    default: true,
+  },
 }, {
   timestamps: true,
 });

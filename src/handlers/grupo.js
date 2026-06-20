@@ -1830,7 +1830,9 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     `▸ ${P}antiflood [msgs]/[seg] — Anti-flood\n` +
     `▸ ${P}bemvindo on — Ativar boas-vindas\n` +
     `▸ ${P}bemvindo [msg] — Ativar com msg customizada\n` +
-    `▸ ${P}bemvindo off — Desativar boas-vindas\n\n` +
+    `▸ ${P}bemvindo off — Desativar boas-vindas\n` +
+    `▸ ${P}pet on/off — Spawn de pets selvagens\n` +
+    `▸ ${P}pet status — Ver status do spawn de pets\n\n` +
 
     `🔔 *COMUNICAÇÃO*\n` +
     `▸ ${P}avisar [texto] — Avisar e mencionar @todos\n` +
@@ -1838,7 +1840,8 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     `▸ ${P}fixargrupo ver — Ver último aviso fixado\n` +
     `▸ ${P}apagarmsg — Apagar mensagem (reply)\n` +
     `▸ ${P}reportar — Advertir usuário (reply)\n` +
-    `▸ ${P}removerreporte — Remover 1 advertência (reply/@)\n\n` +
+    `▸ ${P}removerreporte — Remover 1 advertência (reply/@)\n` +
+    `▸ ${P}adv / ${P}advertencia — Ver suas próprias advertências\n\n` +
 
     `📊 *JOGO / ECONOMIA*\n` +
     `▸ ${P}rankgold — Ranking de Gold deste grupo`;

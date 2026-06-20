@@ -1441,6 +1441,112 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
   );
 }
 
+// ─── !pet on / !pet off ───────────────────────────────────────────────────────
+//
+// Liga ou desliga o spawn automático de pets selvagens no grupo.
+// Apenas admins podem usar. Quando desativado, o cicloSpawn pula o grupo
+// mesmo que ele esteja em activeGroups.
+//
+// Persistido no MongoDB (model PetSpawn) para sobreviver a reinícios.
+// ────────────────────────────────────────────────────────────────────────────
+
+// !pet on / !pet off / !pet status
+async function handlePetToggle(sock, msg, jid, caption = '') {
+  if (!jid?.endsWith('@g.us')) {
+    return reply(sock, jid, msg, '⚠️ Este comando só pode ser usado em grupos.');
+  }
+
+  // ── Extrai o argumento (on/off/status) ─────────────────────
+  const arg = caption
+    .replace(/^[!.,/]?pet\s*/i, '')
+    .trim()
+    .toLowerCase();
+
+  if (!['on', 'off', 'status'].includes(arg)) {
+    return reply(sock, jid, msg,
+      `⚠️ Uso incorreto!\n\n` +
+      `*!pet on* — ativa o spawn de pets neste grupo\n` +
+      `*!pet off* — desativa o spawn de pets neste grupo\n` +
+      `*!pet status* — vê o status atual`
+    );
+  }
+
+  // ── Status: qualquer membro pode consultar ──────────────────
+  if (arg === 'status') {
+    let registro;
+    try {
+      registro = await PetSpawn.findOne({ idGrupo: jid }).select('spawnAtivo').lean();
+    } catch (err) {
+      console.error('[handlePetToggle] Erro ao buscar status:', err.message);
+      return reply(sock, jid, msg, '❌ Erro ao consultar status. Tente novamente!');
+    }
+
+    const ativo = registro?.spawnAtivo !== false; // default true se nunca configurado
+    return reply(sock, jid, msg,
+      `🐾 *SPAWN DE PETS — STATUS*\n\n` +
+      `${ativo ? '✅ *Ativado*' : '❌ *Desativado*'} neste grupo.\n\n` +
+      `_Use *!pet ${ativo ? 'off' : 'on'}* para ${ativo ? 'desativar' : 'ativar'}._`
+    );
+  }
+
+  // ── Ligar/Desligar exige admin ───────────────────────────────
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  let souAdmin = false;
+  try {
+    const meta = await sock.groupMetadata(jid);
+    const part = meta.participants?.find(
+      p => p.id === senderJid || p.lid === senderJid
+    );
+    souAdmin = part?.admin === 'admin' || part?.admin === 'superadmin';
+  } catch (err) {
+    console.error('[handlePetToggle] Erro ao checar admin:', err.message);
+    return reply(sock, jid, msg, '❌ Erro ao verificar permissões. Tente novamente!');
+  }
+
+  if (!souAdmin) {
+    return reply(sock, jid, msg, '❌ Apenas admins podem ativar/desativar o spawn de pets!');
+  }
+
+  const novoEstado = arg === 'on';
+
+  // ── Evita escrita desnecessária se já está no estado pedido ──
+  let registroAtual;
+  try {
+    registroAtual = await PetSpawn.findOne({ idGrupo: jid }).select('spawnAtivo').lean();
+  } catch (err) {
+    console.error('[handlePetToggle] Erro ao verificar estado atual:', err.message);
+    return reply(sock, jid, msg, '❌ Erro interno ao consultar configuração. Tente novamente!');
+  }
+
+  const estadoAtual = registroAtual?.spawnAtivo !== false;
+  if (estadoAtual === novoEstado) {
+    return reply(sock, jid, msg,
+      `ℹ️ O spawn de pets já está *${novoEstado ? 'ativado' : 'desativado'}* neste grupo!`
+    );
+  }
+
+  try {
+    await PetSpawn.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { spawnAtivo: novoEstado } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error('[handlePetToggle] Erro ao salvar:', err.message);
+    return reply(sock, jid, msg, '❌ Erro interno ao salvar configuração. Tente novamente!');
+  }
+
+  if (novoEstado) {
+    registerActiveGroup(jid); // garante que volta a ser monitorado pelo scheduler
+  }
+
+  return reply(sock, jid, msg,
+    novoEstado
+      ? `✅ *Spawn de pets ATIVADO* neste grupo! 🐾\n\n_Pets selvagens voltarão a aparecer periodicamente._`
+      : `❌ *Spawn de pets DESATIVADO* neste grupo.\n\n_Nenhum pet selvagem vai mais aparecer aqui até reativar com *!pet on*._`
+  );
+}
+
 // ─── EXPORTAR ─────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -1459,6 +1565,7 @@ module.exports = {
   handlePets,
   handleAbrigo,
   handleStatusPet,
+  handlePetToggle,
 
   // Utilitários externos
   triggerSpawn,

@@ -2,7 +2,6 @@
 
 const mongoose = require('mongoose');
 const { db }   = require('../../firebaseConfig.js');
-const { doc, setDoc } = require('firebase/firestore');
 require('dotenv').config();
 
 const pkg = require('../models/Usuario.js');
@@ -40,8 +39,7 @@ async function migrar() {
         continue;
       }
 
-      const docRef = doc(db, 'usuarios', numero);
-      await setDoc(docRef, {
+      await db.collection('usuarios').doc(numero).set({
         idWhatsApp: jidLimpo ?? null,
         xp:         usuario.xp ?? 0,
         level:      usuario.level ?? usuario.nivel ?? 1,

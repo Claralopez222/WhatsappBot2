@@ -871,17 +871,21 @@ if (matchCmdStart(cmd, 'renomearpet ') || matchCmd(cmdWord, 'renomearpet') ||
   if (matchCmd(cmdWord, 'menumarket') || matchCmd(cmdWord, 'menumercado'))
     { await diversaoHandler.handleMenuMarket(sock, msg, jid, getPrefix); return; }
 
-  // ── PESCA ─────────────────────────────────────────────────────────────────────
+ // ── PESCA ─────────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'pescar') || matchCmd(cmdWord, 'pesca'))
   { await pescaHandler.handlePescar(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'varas') || matchCmd(cmdWord, 'lojavara') || matchCmd(cmdWord, 'varapesca'))
   { await pescaHandler.handleVaras(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'iscas') || matchCmd(cmdWord, 'lojaisca') || matchCmd(cmdWord, 'isca'))
   { await pescaHandler.handleIscas(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'buypesca') || matchCmdStart(cmd, 'buypesca '))
+  { await pescaHandler.handleComprarPesca(sock, msg, jid, caption.replace(/^[!.,/]buypesca\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'inventariopesca') || matchCmd(cmdWord, 'invpesca') || matchCmd(cmdWord, 'minhapesca'))
   { await pescaHandler.handleInventarioPesca(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'sellpesca'))
+if (matchCmd(cmdWord, 'sellpesca') || matchCmdStart(cmd, 'sellpesca '))
   { await pescaHandler.handleVenderPesca(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'givepesca') || matchCmdStart(cmd, 'givepesca '))
+  { await pescaHandler.handleGivePesca(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'rankingpesca'))
   { await pescaHandler.handleRankingPesca(sock, msg, jid, contactNames); return; }
 if (matchCmd(cmdWord, 'statspesca'))

@@ -61,11 +61,11 @@ const {
 
 // Pesca
 const {
-  handlePescar, handleVaras, handleIscas, handleInventarioPesca,
+  handlePescar, handleVaras, handleIscas, handleComprarPesca,
+  handleInventarioPesca, handleVenderPesca, handleRankingPesca, handleStatsPesca,
   VARAS_PESCA, ISCAS, CATALOGO_PESCA, PEIXES_E_ITENS
 } = require('./pesca');
 
-// Registrar itens de pesca no catálogo do marketplace
 registerCatalog({ ...VARAS_PESCA, ...ISCAS, ...PEIXES_E_ITENS });
 
 // Quiz
@@ -198,11 +198,15 @@ module.exports = {
   CONFIG_MARKET,
   registerCatalog,
 
-  // ── Pesca (8 itens) ────────────────────────────────────────────────────────
+// ── Pesca (12 itens) ────────────────────────────────────────────────────────
   handlePescar,
   handleVaras,
   handleIscas,
+  handleComprarPesca,
   handleInventarioPesca,
+  handleVenderPesca,
+  handleRankingPesca,
+  handleStatsPesca,
   VARAS_PESCA,
   ISCAS,
   CATALOGO_PESCA,

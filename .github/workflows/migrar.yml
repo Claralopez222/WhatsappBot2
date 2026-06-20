@@ -1,0 +1,21 @@
+﻿name: Migrar MongoDB para Firestore
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - name: Rodar migração
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+        run: node --dns-result-order=ipv4first src/scripts/migrarParaFirestore.js

@@ -1261,7 +1261,8 @@ const INTERVALO_MS = 20 * 60 * 1000; // 20 minutos
 /**
  * Inicia o scheduler de spawn de pets com persistência no MongoDB.
  * O timestamp do último spawn é salvo por grupo, então reinicializações
- * do servidor não resetam o cooldown.
+ * do servidor não resetam o cooldown. Grupos com spawnAtivo=false
+ * (definido via !pet off) são pulados automaticamente.
  */
 function initPetScheduler(sock) {
   let currentSock = sock;
@@ -1287,17 +1288,25 @@ function initPetScheduler(sock) {
     console.log(`[PetScheduler] Ciclo iniciado — ${total} grupo(s) ativo(s).`);
 
     const agora = Date.now();
-    let sucessos = 0;
-    let ignorados = 0;
+    let sucessos   = 0;
+    let ignorados  = 0;
+    let desativados = 0;
 
     for (const jid of activeGroups) {
       try {
-        // Busca o timestamp do último spawn deste grupo no banco
+        // Busca o registro completo deste grupo no banco
         const registro = await PetSpawn.findOne({ idGrupo: jid }).lean();
-        const ultimoSpawn = registro?.ultimoSpawn ? new Date(registro.ultimoSpawn).getTime() : 0;
+
+        // ── Spawn desativado via !pet off — pula sem mexer no timestamp ──
+        if (registro?.spawnAtivo === false) {
+          desativados++;
+          continue;
+        }
+
+        const ultimoSpawn  = registro?.ultimoSpawn ? new Date(registro.ultimoSpawn).getTime() : 0;
         const tempoPassado = agora - ultimoSpawn;
 
-        // Se ainda não passou 1 hora desde o último spawn, pula
+        // Se ainda não passou o intervalo desde o último spawn, pula
         if (tempoPassado < INTERVALO_MS) {
           const falta = INTERVALO_MS - tempoPassado;
           const min   = Math.ceil(falta / 60000);
@@ -1323,12 +1332,12 @@ function initPetScheduler(sock) {
     }
 
     console.log(
-      `[PetScheduler] Ciclo concluído — ✅ ${sucessos} spawn(s) | ⏭️ ${ignorados} ignorado(s).`
+      `[PetScheduler] Ciclo concluído — ✅ ${sucessos} spawn(s) | ⏭️ ${ignorados} aguardando | 🔇 ${desativados} desativado(s).`
     );
   }
 
   // Roda a cada 5 minutos para verificar quais grupos precisam de spawn
-  // (em vez de exatamente 1 hora, pois o bot pode reiniciar no meio do intervalo)
+  // (em vez de exatamente o intervalo completo, pois o bot pode reiniciar no meio)
   const CHECK_INTERVAL = 5 * 60 * 1000; // verifica a cada 5min
 
   // Primeira verificação após 1 minuto do boot
@@ -1337,7 +1346,7 @@ function initPetScheduler(sock) {
     setInterval(cicloSpawn, CHECK_INTERVAL);
   }, 60 * 1000);
 
-  console.log('[PetScheduler] Iniciado. Primeiro spawn em 20 minutos.');
+  console.log(`[PetScheduler] Iniciado. Intervalo de spawn: ${INTERVALO_MS / 60000}min.`);
 }
 
 // !statuspet
@@ -1457,8 +1466,9 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
   }
 
   // ── Extrai o argumento (on/off/status) ─────────────────────
+  // Remove o prefixo (!, ., /, ,) + "pet" + espaços, deixando só o argumento
   const arg = caption
-    .replace(/^[!.,/]?pet\s*/i, '')
+    .replace(/^[!.,/]\s*pet\b/i, '')
     .trim()
     .toLowerCase();
 
@@ -1491,6 +1501,10 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
 
   // ── Ligar/Desligar exige admin ───────────────────────────────
   const senderJid = msg.key.participant || msg.key.remoteJid;
+  if (!senderJid) {
+    return reply(sock, jid, msg, '❌ Não foi possível identificar quem enviou o comando.');
+  }
+
   let souAdmin = false;
   try {
     const meta = await sock.groupMetadata(jid);
@@ -1509,31 +1523,26 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
 
   const novoEstado = arg === 'on';
 
-  // ── Evita escrita desnecessária se já está no estado pedido ──
-  let registroAtual;
+  // ── Upsert direto com findOneAndUpdate + retorno do doc anterior ──
+  // Evita race condition entre "ler estado atual" e "escrever novo estado"
+  // (dois admins clicando ao mesmo tempo não geram leituras desatualizadas).
+  let docAnterior;
   try {
-    registroAtual = await PetSpawn.findOne({ idGrupo: jid }).select('spawnAtivo').lean();
-  } catch (err) {
-    console.error('[handlePetToggle] Erro ao verificar estado atual:', err.message);
-    return reply(sock, jid, msg, '❌ Erro interno ao consultar configuração. Tente novamente!');
-  }
-
-  const estadoAtual = registroAtual?.spawnAtivo !== false;
-  if (estadoAtual === novoEstado) {
-    return reply(sock, jid, msg,
-      `ℹ️ O spawn de pets já está *${novoEstado ? 'ativado' : 'desativado'}* neste grupo!`
-    );
-  }
-
-  try {
-    await PetSpawn.findOneAndUpdate(
+    docAnterior = await PetSpawn.findOneAndUpdate(
       { idGrupo: jid },
       { $set: { spawnAtivo: novoEstado } },
-      { upsert: true }
-    );
+      { upsert: true, new: false } // new:false retorna o doc ANTES da atualização
+    ).select('spawnAtivo').lean();
   } catch (err) {
     console.error('[handlePetToggle] Erro ao salvar:', err.message);
     return reply(sock, jid, msg, '❌ Erro interno ao salvar configuração. Tente novamente!');
+  }
+
+  const estadoAnterior = docAnterior?.spawnAtivo !== false; // default true se documento não existia
+  if (estadoAnterior === novoEstado) {
+    return reply(sock, jid, msg,
+      `ℹ️ O spawn de pets já está *${novoEstado ? 'ativado' : 'desativado'}* neste grupo!`
+    );
   }
 
   if (novoEstado) {
@@ -1545,7 +1554,7 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
       ? `✅ *Spawn de pets ATIVADO* neste grupo! 🐾\n\n_Pets selvagens voltarão a aparecer periodicamente._`
       : `❌ *Spawn de pets DESATIVADO* neste grupo.\n\n_Nenhum pet selvagem vai mais aparecer aqui até reativar com *!pet on*._`
   );
-}
+}s
 
 // ─── EXPORTAR ─────────────────────────────────────────────────────────────────
 

@@ -400,88 +400,89 @@ async function startBot() {
 // ── Mensagens ─────────────────────────────────────────────────────────────────
 sock.ev.on('messages.upsert', async ({ messages, type }) => {
   if (type !== 'notify' && type !== 'append') return;
+for (const msg of messages) {
+  if (msg.key.fromMe) continue;
+  if (!msg.message)   continue;
 
-  for (const msg of messages) {
-    if (msg.key.fromMe) continue;
-    if (!msg.message)   continue;
+  const _jid       = msg.key.remoteJid || '';
+  const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
 
-    const _jid       = msg.key.remoteJid || '';
-    const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
-
-    if (_isPrivate) {
-      const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-      console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
-    }
-
-    (async () => {
-      try {
-        if (!_isPrivate) {
-          const remetente     = msg.key.participant || msg.key.remoteJid;
-          const remetenteNorm = normalizarJid(remetente);
-if (!remetenteNorm) return; // remetente inválido, ignora
-          const nomeDoCara    = msg.pushName || 'Usuário do Zap';
-
-          await prepareDailyMissionState(remetenteNorm);
-
-          // ── Bônus diário de 100 gold (primeira mensagem do dia no grupo) ──
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
-
-          const carteiraAtual = await CarteiraGrupo.findOne(
-            { idWhatsApp: remetenteNorm, idGrupo: _jid },
-            { ultimoBonusDiario: 1 }
-          ).lean();
-
-          const recebeuHoje = carteiraAtual?.ultimoBonusDiario
-            && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
-
-          const incCarteira = { mensagens: 1 };
-          const setCarteira = { nome: nomeDoCara };
-
-          if (!recebeuHoje) {
-            incCarteira.gold = 100;
-            setCarteira.ultimoBonusDiario = new Date();
-          }
-
-          await CarteiraGrupo.findOneAndUpdate(
-            { idWhatsApp: remetenteNorm, idGrupo: _jid },
-            { $inc: incCarteira, $set: setCarteira },
-            { upsert: true }
-          );
-
-          // ── XP e Level ────────────────────────────────────────────────────
-          const usuarioAtualizado = await Usuario.findOneAndUpdate(
-            { idWhatsApp: remetenteNorm },
-            {
-              $inc: { mensagens: 1, xp: 1, 'dailyMissions.progress.msg50': 1 },
-              $set: { nome: nomeDoCara },
-            },
-            { upsert: true, new: true }
-          );
-
-          const xpAtual   = usuarioAtualizado?.xp ?? 0;
-          const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
-
-          if ((usuarioAtualizado?.level ?? 1) !== levelNovo) {
-            await Usuario.findOneAndUpdate(
-              { idWhatsApp: remetenteNorm },
-              { $set: { level: levelNovo } }
-            );
-          }
-        }
-
-        await handleMessage(sock, msg);
-
-        if (_jid.endsWith('@g.us')) {
-          registerActiveGroup(_jid);
-          activeGroups.add(_jid);
-        }
-
-      } catch (err) {
-        console.error('❌ Erro no processamento da mensagem:', err.message);
-      }
-    })();
+  if (_isPrivate) {
+    const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+    console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
   }
+
+  (async () => {
+    try {
+      if (!_isPrivate) {
+        const remetente     = msg.key.participant || msg.key.remoteJid;
+        const remetenteNorm = normalizarJid(remetente);
+        if (!remetenteNorm) return;
+
+        const nomeDoCara = msg.pushName || 'Usuário do Zap';
+
+        await prepareDailyMissionState(remetenteNorm);
+
+        // ── Bônus diário de 100 gold (primeira mensagem do dia no grupo) ──
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+
+        const carteiraAtual = await CarteiraGrupo.findOne(
+          { idWhatsApp: remetenteNorm, idGrupo: _jid },
+          { ultimoBonusDiario: 1 }
+        ).lean();
+
+        const recebeuHoje = carteiraAtual?.ultimoBonusDiario
+          && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
+
+        const incCarteira = { mensagens: 1, xp: 1 }; // ← XP por grupo
+        const setCarteira = { nome: nomeDoCara };
+
+        if (!recebeuHoje) {
+          incCarteira.gold = 100;
+          setCarteira.ultimoBonusDiario = new Date();
+        }
+
+        // ── CarteiraGrupo: mensagens, gold diário e XP por grupo ──────────
+        await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp: remetenteNorm, idGrupo: _jid },
+          { $inc: incCarteira, $set: setCarteira },
+          { upsert: true }
+        );
+
+        // ── Usuario global: XP global, level e missões ────────────────────
+        const usuarioAtualizado = await Usuario.findOneAndUpdate(
+          { idWhatsApp: remetenteNorm },
+          {
+            $inc: { mensagens: 1, xp: 1, 'dailyMissions.progress.msg50': 1 },
+            $set: { nome: nomeDoCara },
+          },
+          { upsert: true, new: true }
+        );
+
+        const xpAtual   = usuarioAtualizado?.xp ?? 0;
+        const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
+
+        if ((usuarioAtualizado?.level ?? 1) !== levelNovo) {
+          await Usuario.findOneAndUpdate(
+            { idWhatsApp: remetenteNorm },
+            { $set: { level: levelNovo } }
+          );
+        }
+      }
+
+      await handleMessage(sock, msg);
+
+      if (_jid.endsWith('@g.us')) {
+        registerActiveGroup(_jid);
+        activeGroups.add(_jid);
+      }
+
+    } catch (err) {
+      console.error('❌ Erro no processamento da mensagem:', err.message);
+    }
+  })();
+}
 });
 
   // ── Eventos de grupo (entradas/saídas) ───────────────────────────────────────

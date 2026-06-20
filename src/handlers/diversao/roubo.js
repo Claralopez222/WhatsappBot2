@@ -110,12 +110,12 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 
   texto += `\n━━━━━━━━━━━━━━━━\n`;
   texto += `*COMANDOS:*\n`;
-  texto += `  ${P}buyroubo <item>   — Comprar item\n`;
+  texto += `  ${P}buyroubo <item>     — Comprar item\n`;
   texto += `  ${P}equiparroubo <item> — Equipar item\n`;
-  texto += `  ${P}invroubo          — Ver inventário de ataque\n`;
-  texto += `  ${P}roubar @pessoa    — Roubar alguém\n\n`;
+  texto += `  ${P}invroubo            — Ver inventário de ataque\n`;
+  texto += `  ${P}roubar @pessoa      — Roubar alguém\n\n`;
   texto += `⚠️ *Item equipado é obrigatório para roubar!*\n`;
-  texto += `⏱️ *Cooldown:* 30 minutos entre tentativas\n`;
+  texto += `⏱️ *Cooldown:* ${formatarTempo(COOLDOWN_ROUBO_MS)} entre tentativas\n`;
   texto += `🎲 *Taxa base de sucesso:* ${TAXA_SUCESSO_BASE}%`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
@@ -167,6 +167,8 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     return;
   }
 
+  // Checagem prévia apenas para dar feedback rápido — o débito real e
+  // atômico acontece em alterarGoldSeguro logo abaixo.
   const carteira = await getCarteira(userId, idGrupo);
   const saldo    = carteira.gold ?? 0;
   if (saldo < itemInfo.preco) {
@@ -181,9 +183,10 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     return;
   }
 
-  let carteiraAtualizada;
+  // Débito atômico: evita saldo negativo em caso de compras simultâneas.
+  let debitado;
   try {
-    carteiraAtualizada = await alterarGold(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`);
+    ({ debitado } = await alterarGoldSeguro(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`));
   } catch (e) {
     console.error('Erro ao debitar gold (buyroubo):', e.message);
     await sock.sendMessage(jid, {
@@ -192,16 +195,39 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     return;
   }
 
+  if (debitado < itemInfo.preco) {
+    // Saldo mudou entre a checagem e o débito (ex.: compra concorrente).
+    // Reembolsa o que foi debitado, se algo foi.
+    if (debitado > 0) {
+      await alterarGold(userId, idGrupo, debitado, `Reembolso: ${itemInfo.nome}`).catch((e) =>
+        console.error('Falha ao reembolsar débito parcial (buyroubo):', e.message)
+      );
+    }
+    await sock.sendMessage(jid, {
+      text: '❌ *SALDO INSUFICIENTE!*\n\nSeu saldo mudou antes da compra ser concluída. Tente novamente.',
+    }, { quoted: msg });
+    return;
+  }
+
   try {
     await incrementarItem(userId, idGrupo, 'itensRoubo', itemSlug);
   } catch (e) {
     console.error('Erro ao registrar item de roubo, reembolsando:', e.message);
-    await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
-    await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao registrar o item. Seu gold foi reembolsado.',
-    }, { quoted: msg });
+    try {
+      await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
+      await sock.sendMessage(jid, {
+        text: '⚠️ Erro ao registrar o item. Seu gold foi reembolsado.',
+      }, { quoted: msg });
+    } catch (refundErr) {
+      console.error('FALHA CRÍTICA: reembolso também falhou (buyroubo):', refundErr.message);
+      await sock.sendMessage(jid, {
+        text: '⚠️ Erro ao registrar o item e ao reembolsar o gold. Contate um administrador.',
+      }, { quoted: msg });
+    }
     return;
   }
+
+  const carteiraFinal = await getCarteira(userId, idGrupo);
 
   await sock.sendMessage(jid, {
     text:
@@ -209,7 +235,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
       `🎭 *Item:* ${itemInfo.nome}\n` +
       `💵 *Preço:* ${itemInfo.preco} gold\n` +
       `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
-      `💎 *Saldo restante:* ${carteiraAtualizada.gold} gold\n\n` +
+      `💎 *Saldo restante:* ${carteiraFinal.gold} gold\n\n` +
       `💡 Use *!equiparroubo ${itemSlug}* para equipar!`,
   }, { quoted: msg });
 }
@@ -237,6 +263,8 @@ async function handleComprarSec(sock, msg, jid, caption) {
     return;
   }
 
+  // Checagem prévia apenas para dar feedback rápido — o débito real e
+  // atômico acontece em alterarGoldSeguro logo abaixo.
   const carteira = await getCarteira(userId, idGrupo);
   const saldo    = carteira.gold ?? 0;
   if (saldo < itemInfo.preco) {
@@ -251,9 +279,10 @@ async function handleComprarSec(sock, msg, jid, caption) {
     return;
   }
 
-  let carteiraAtualizada;
+  // Débito atômico: evita saldo negativo em caso de compras simultâneas.
+  let debitado;
   try {
-    carteiraAtualizada = await alterarGold(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`);
+    ({ debitado } = await alterarGoldSeguro(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`));
   } catch (e) {
     console.error('Erro ao debitar gold (buysec):', e.message);
     await sock.sendMessage(jid, {
@@ -262,16 +291,38 @@ async function handleComprarSec(sock, msg, jid, caption) {
     return;
   }
 
+  if (debitado < itemInfo.preco) {
+    // Saldo mudou entre a checagem e o débito (ex.: compra concorrente).
+    if (debitado > 0) {
+      await alterarGold(userId, idGrupo, debitado, `Reembolso: ${itemInfo.nome}`).catch((e) =>
+        console.error('Falha ao reembolsar débito parcial (buysec):', e.message)
+      );
+    }
+    await sock.sendMessage(jid, {
+      text: '❌ *SALDO INSUFICIENTE!*\n\nSeu saldo mudou antes da compra ser concluída. Tente novamente.',
+    }, { quoted: msg });
+    return;
+  }
+
   try {
     await incrementarItem(userId, idGrupo, 'itensSec', itemSlug);
   } catch (e) {
     console.error('Erro ao registrar item de segurança, reembolsando:', e.message);
-    await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
-    await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao registrar o item. Seu gold foi reembolsado.',
-    }, { quoted: msg });
+    try {
+      await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
+      await sock.sendMessage(jid, {
+        text: '⚠️ Erro ao registrar o item. Seu gold foi reembolsado.',
+      }, { quoted: msg });
+    } catch (refundErr) {
+      console.error('FALHA CRÍTICA: reembolso também falhou (buysec):', refundErr.message);
+      await sock.sendMessage(jid, {
+        text: '⚠️ Erro ao registrar o item e ao reembolsar o gold. Contate um administrador.',
+      }, { quoted: msg });
+    }
     return;
   }
+
+  const carteiraFinal = await getCarteira(userId, idGrupo);
 
   await sock.sendMessage(jid, {
     text:
@@ -279,7 +330,7 @@ async function handleComprarSec(sock, msg, jid, caption) {
       `🔐 *Item:* ${itemInfo.nome}\n` +
       `💵 *Preço:* ${itemInfo.preco} gold\n` +
       `🛡️ *Proteção:* +${itemInfo.defesa}%\n` +
-      `💎 *Saldo restante:* ${carteiraAtualizada.gold} gold\n\n` +
+      `💎 *Saldo restante:* ${carteiraFinal.gold} gold\n\n` +
       `💡 Use *!equiparsec ${itemSlug}* para ativar!`,
   }, { quoted: msg });
 }
@@ -336,6 +387,7 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
       `🔫 Agora use *!roubar @pessoa* para atacar!`,
   }, { quoted: msg });
 }
+
 // ─── !equiparsec ──────────────────────────────────────────────────────────────
 
 async function handleEquiparSec(sock, msg, jid, caption) {
@@ -367,7 +419,7 @@ async function handleEquiparSec(sock, msg, jid, caption) {
     await sock.sendMessage(jid, {
       text:
         `❌ Você não possui *${itemInfo.nome}* neste grupo!\n\n` +
-        `🛒 Compre com *!comprarsec ${itemSlug}*`,
+        `🛒 Compre com *!buysec ${itemSlug}*`,
     }, { quoted: msg });
     return;
   }
@@ -623,7 +675,7 @@ async function handleRoubar(sock, msg, jid) {
       textoResposta +=
         `😅 *AZAR!*\n\n` +
         `A vítima ficou sem gold no último segundo!\n` +
-        `⏱️ *Próxima tentativa em:* 30 minutos`;
+        `⏱️ *Próxima tentativa em:* ${formatarTempo(COOLDOWN_ROUBO_MS)}`;
       await sock.sendMessage(jid, { text: textoResposta }, { quoted: msg });
       return;
     }
@@ -647,7 +699,7 @@ async function handleRoubar(sock, msg, jid) {
       `❌ *ROUBO FRACASSADO!*\n\n` +
       `🚔 A polícia chegou! Você não conseguiu nada.\n` +
       `😌 *Saldo da vítima:* ${saldoVitima} gold (intacto)\n` +
-      `⏱️ *Próxima tentativa em:* 30 minutos`;
+      `⏱️ *Próxima tentativa em:* ${formatarTempo(COOLDOWN_ROUBO_MS)}`;
   }
 
   await sock.sendMessage(jid, { text: textoResposta }, { quoted: msg });

@@ -1554,7 +1554,7 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
       ? `✅ *Spawn de pets ATIVADO* neste grupo! 🐾\n\n_Pets selvagens voltarão a aparecer periodicamente._`
       : `❌ *Spawn de pets DESATIVADO* neste grupo.\n\n_Nenhum pet selvagem vai mais aparecer aqui até reativar com *!pet on*._`
   );
-}s
+}
 
 // ─── EXPORTAR ─────────────────────────────────────────────────────────────────
 

@@ -368,6 +368,7 @@ function isLidJid(jidStr) {
   return jidStr?.endsWith('@lid');
 }
 
+// handlePerfil────────────────────────────────────────────────────────────────────────────
 async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
   const contextInfo = content?.extendedTextMessage?.contextInfo
                     || msg?.message?.extendedTextMessage?.contextInfo;
@@ -418,29 +419,48 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  // ── Atividade e nível ─────────────────────────────────────────
-  const msgsRec = userData?.mensagens ?? (msgCount?.get?.(alvoJid)?.count ?? 0);
-  const xp      = userData?.xp ?? msgsRec;
-  const level   = userData?.level ?? (Math.floor(xp / 50) + 1);
-  const xpNext  = level * 50;
-  const xpPct   = Math.min(100, Math.floor((xp / xpNext) * 100));
-  const barsOn  = Math.floor(xpPct / 10);
-  const xpBar   = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
+ // ── Atividade e nível ─────────────────────────────────────────
+const msgsRec = userData?.mensagens ?? (msgCount?.get?.(alvoJid)?.count ?? 0);
+const cmdsRec = cmdCount?.get?.(alvoJid) ?? 0;
+const sticks  = stickerCount?.get?.(alvoJid) ?? 0;
+const total   = msgsRec + cmdsRec + sticks;
+const activity =
+  total > 1000 ? '🔥 Hiperativo' :
+  total > 500  ? '⚡ Ativo'      :
+  total > 100  ? '😊 Participativo' : '📉 Calmo';
 
-  const cmdsRec = cmdCount?.get?.(alvoJid) ?? 0;
-  const sticks  = stickerCount?.get?.(alvoJid) ?? 0;
-  const total   = msgsRec + cmdsRec + sticks;
-  const activity =
-    total > 1000 ? '🔥 Hiperativo' :
-    total > 500  ? '⚡ Ativo'      :
-    total > 100  ? '😊 Participativo' : '📉 Calmo';
+let rankText = '';
+try {
+  const ranks = [...(msgCount?.entries?.() ?? [])].sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0));
+  const idx   = ranks.findIndex(([k]) => k === alvoJid);
+  if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
+} catch {}
 
-  let rankText = '';
-  try {
-    const ranks = [...(msgCount?.entries?.() ?? [])].sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0));
-    const idx   = ranks.findIndex(([k]) => k === alvoJid);
-    if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
-  } catch {}
+// XP e level — fonte única: CarteiraGrupo (por grupo), igual ao !level
+let xp       = 0;
+let level    = 1;
+let xpNext   = 100;
+let xpPct    = 0;
+let xpBar    = '░'.repeat(10);
+
+try {
+  const CarteiraGrupoPerfil = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+
+  // Tenta pelo JID resolvido primeiro, depois pelo JID original
+  const carteiraXp =
+    await CarteiraGrupoPerfil.findOne({ idWhatsApp: resolvedJid, idGrupo: jid }) ||
+    await CarteiraGrupoPerfil.findOne({ idWhatsApp: alvoJid,     idGrupo: jid });
+
+  if (carteiraXp) {
+    const prog = carteiraXp.getProgressoXp();
+    xp      = prog.xp;
+    level   = prog.level;
+    xpNext  = prog.xpNecessario;
+    xpPct   = prog.progresso;
+    const barsOn = Math.floor(xpPct / 10);
+    xpBar   = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
+  }
+} catch {}
 
   // ── Admin e nome do grupo ─────────────────────────────────────
   let isAdmin   = false;

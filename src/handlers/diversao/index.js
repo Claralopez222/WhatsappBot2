@@ -87,7 +87,7 @@ const {
   handleCapturarPet, handleAlimentarPet, handleBrincarPet,
   handleStatusPet, handlePetRank, handlePets, handleAbrigo,
   handleAdoptarPet, handleRenomearPet, initPetScheduler, registerActiveGroup,
-  handleCurarPet,
+  handleCurarPet,handlePetToggle,
 } = require('./pets');
 
 // Roubo
@@ -243,6 +243,7 @@ initFilhosScheduler,
   registerActiveGroup,
   handleRenomearPet,
   handleCurarPet,
+  handlePetToggle,
 
 // ── Roubo (10 itens) ──────────────────────────────────────────────────────
   handleMenuRoubo,

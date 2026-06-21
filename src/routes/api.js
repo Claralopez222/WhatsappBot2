@@ -8,9 +8,7 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 
-// ─── Variáveis obrigatórias (Validação Lazy/Segura) ───────────────────────────
-// Removemos o 'throw new Error' do escopo global. Agora a validação ocorre 
-// dentro do middleware e das rotas que realmente utilizam a chave.
+// ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
@@ -46,21 +44,26 @@ function somarMap(m) {
   return Object.values(obj).reduce((acc, v) => acc + (Number(v) || 0), 0);
 }
 
-// Formata JID de grupo em nome legível como fallback
 function nomeGrupoFallback(jid) {
   if (!jid) return 'Grupo sem nome';
   const numero = jid.replace('@g.us', '').replace('@s.whatsapp.net', '');
   return `Grupo ${numero.slice(0, 10)}…`;
 }
 
-// ✅ MELHORADO: Agora prioriza o nomeCustom (Painel), depois o nome (Sincronizado via Script do WhatsApp) 
-// e só por último cai no Fallback feio baseado no JID.
 function nomeGrupo(doc, jid) {
   const custom = doc && typeof doc.nomeCustom === 'string' ? doc.nomeCustom.trim() : '';
   if (custom) return custom;
-
   const realDoWhatsApp = doc && typeof doc.nomeReal === 'string' ? doc.nomeReal.trim() : '';
   return realDoWhatsApp || nomeGrupoFallback(jid);
+}
+
+// Normaliza número/JID para JID completo
+function normalizarJid(termo) {
+  const t = String(termo || '').trim().toLowerCase();
+  if (t.includes('@')) return t;
+  // Remove tudo que não é dígito
+  const digitos = t.replace(/\D/g, '');
+  return `${digitos}@s.whatsapp.net`;
 }
 
 // ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
@@ -69,7 +72,6 @@ function auth(req, res, next) {
   const token  = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token ausente.' });
   try {
-    // Busca a chave de forma segura no momento do request
     req.user = jwt.verify(token, getJwtSecret());
     next();
   } catch {
@@ -89,7 +91,7 @@ function adminAuth(req, res, next) {
 }
 
 // ─── RATE LIMIT de login admin ────────────────────────────────────────────────
-const tentativesLogin = new Map();
+const tentativasLogin = new Map();
 const LOGIN_MAX       = 10;
 const LOGIN_JANELA_MS = 15 * 60 * 1000;
 
@@ -132,7 +134,7 @@ router.post('/auth/token', async (req, res) => {
 
     const sessionJwt = jwt.sign(
       { telefone: registro.telefone, idWhatsApp: registro.idWhatsApp },
-      getJwtSecret(), // Chamada segura aqui
+      getJwtSecret(),
       { expiresIn: '2h' }
     );
 
@@ -144,34 +146,33 @@ router.post('/auth/token', async (req, res) => {
 });
 
 // GET /api/grupos
-// Adicionado o campo 'nomeReal' no $group para fazer par com o script de atualização
 router.get('/grupos', async (req, res) => {
   try {
     const grupos = await CarteiraGrupo.aggregate([
       { $match: { idGrupo: { $regex: /@g\.us$/ } } },
       {
         $group: {
-          _id:         '$idGrupo',
-          membros:     { $sum: 1 },
-          xpTotal:     { $sum: '$xp' },
-          nomeCustom:  { $first: '$nomeCustom' },
-          nomeReal:    { $first: '$nome' }, // Captura o nome atualizado pelo script
-          mensagens:   { $first: '$mensagens' },
-          config:      { $first: '$config' },
+          _id:        '$idGrupo',
+          membros:    { $sum: 1 },
+          xpTotal:    { $sum: '$xp' },
+          nomeCustom: { $first: '$nomeCustom' },
+          nomeReal:   { $first: '$nome' },
+          mensagens:  { $first: '$mensagens' },
+          config:     { $first: '$config' },
         },
       },
       { $sort: { xpTotal: -1 } },
     ]);
 
     const resultado = grupos.map(g => ({
-      jid:         g._id,
-      idGrupo:     g._id,
-      nome:        nomeGrupo(g, g._id),
-      nomeCustom:  g.nomeCustom || null,
-      membros:     g.membros,
-      xpTotal:     g.xpTotal,
-      mensagens:   g.mensagens || {},
-      config:      g.config || {},
+      jid:        g._id,
+      idGrupo:    g._id,
+      nome:       nomeGrupo(g, g._id),
+      nomeCustom: g.nomeCustom || null,
+      membros:    g.membros,
+      xpTotal:    g.xpTotal,
+      mensagens:  g.mensagens || {},
+      config:     g.config || {},
     }));
 
     return res.json({ grupos: resultado });
@@ -186,7 +187,6 @@ router.get('/grupos', async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/user/me
-// Dados globais do usuário (Usuario.js) + dados por grupo (CarteiraGrupo.js).
 router.get('/user/me', auth, async (req, res) => {
   try {
     const idWhatsApp = req.user.idWhatsApp;
@@ -211,7 +211,6 @@ router.get('/user/me', auth, async (req, res) => {
       ? Math.min(100, Math.max(0, Math.floor(((xpTotal - xpInicioNivel) / xpNoNivel) * 100)))
       : 100;
 
-    // FIX: usa a mesma lógica $group sem filtro prévio para não distorcer a posição
     const posicaoResult = await CarteiraGrupo.aggregate([
       { $group: { _id: '$idWhatsApp', xpTotal: { $sum: '$xp' } } },
       { $match: { xpTotal: { $gt: xpTotal } } },
@@ -220,12 +219,12 @@ router.get('/user/me', auth, async (req, res) => {
     const posicaoRanking = (posicaoResult[0]?.acima ?? 0) + 1;
 
     const grupos = carteiras.map(c => ({
-      jid:      c.idGrupo,
-      nome:     nomeGrupo(c, c.idGrupo),
-      xp:       c.xp        ?? 0,
-      level:    c.level     ?? 1,
-      gold:     c.gold      ?? 0,
-      mensagens: c.mensagens ?? 0,
+      jid:          c.idGrupo,
+      nome:         nomeGrupo(c, c.idGrupo),
+      xp:           c.xp           ?? 0,
+      level:        c.level        ?? 1,
+      gold:         c.gold         ?? 0,
+      mensagens:    c.mensagens    ?? 0,
       empregoAtual: c.empregoAtual ?? null,
       varaEquipada: c.varaEquipada ?? null,
       statsPesca:   c.statsPesca   ?? null,
@@ -263,7 +262,6 @@ router.get('/user/me', auth, async (req, res) => {
 });
 
 // GET /api/user/grupos
-// Retorna os dados do usuário em cada grupo (autenticado).
 router.get('/user/grupos', auth, async (req, res) => {
   try {
     const carteiras = await CarteiraGrupo
@@ -299,10 +297,9 @@ router.get('/admin/verify', rateLimitAdmin, adminAuth, (req, res) => {
   return res.json({ ok: true });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/usuarios
-// FIX: agora também seleciona e devolve o campo "banido" — antes a query
-// só pegava nome/telefone/idWhatsApp/warnings, então o admin.html nunca
-// conseguia mostrar corretamente quem estava banido (sempre vinha undefined).
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/admin/usuarios', adminAuth, async (req, res) => {
   try {
     const todos = await Usuario
@@ -329,7 +326,67 @@ router.get('/admin/usuarios', adminAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/usuario/:idWhatsApp
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
+  try {
+    const jid = normalizarJid(decodeURIComponent(req.params.idWhatsApp));
+
+    const [usuario, carteiras] = await Promise.all([
+      Usuario.findOne({ idWhatsApp: jid }).lean(),
+      CarteiraGrupo.find({ idWhatsApp: jid }).sort({ xp: -1 }).lean(),
+    ]);
+
+    if (!usuario && !carteiras.length)
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    const xpTotal        = carteiras.reduce((s, c) => s + (c.xp        ?? 0), 0);
+    const goldTotal      = carteiras.reduce((s, c) => s + (c.gold      ?? 0), 0);
+    const mensagensTotal = carteiras.reduce((s, c) => s + (c.mensagens ?? 0), 0);
+    const levelGlobal    = Math.max(1, Math.floor(Math.pow(xpTotal / 100, 1 / 1.5)) + 1);
+
+    // Resolve nomes dos grupos usando agregação
+    const jidsGrupos = carteiras.map(c => c.idGrupo);
+    const gruposDocs = jidsGrupos.length
+      ? await CarteiraGrupo.aggregate([
+          { $match: { idGrupo: { $in: jidsGrupos } } },
+          { $group: { _id: '$idGrupo', nomeCustom: { $first: '$nomeCustom' }, nomeReal: { $first: '$nome' } } }
+        ])
+      : [];
+    const nomesMap = Object.fromEntries(gruposDocs.map(g => [g._id, nomeGrupo(g, g._id)]));
+
+    const grupos = carteiras.map(c => ({
+      idGrupo:      c.idGrupo,
+      nomeGrupo:    nomesMap[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
+      xp:           c.xp           ?? 0,
+      level:        c.level        ?? 1,
+      gold:         c.gold         ?? 0,
+      mensagens:    c.mensagens    ?? 0,
+      empregoAtual: c.empregoAtual ?? null,
+    }));
+
+    return res.json({
+      usuario: {
+        idWhatsApp: jid,
+        nome:       usuario?.nome     || '(sem nome)',
+        telefone:   usuario?.telefone || jid.split('@')[0],
+        xp:         xpTotal,
+        level:      levelGlobal,
+        gold:       goldTotal,
+        mensagens:  mensagensTotal,
+        grupos,
+      }
+    });
+  } catch (err) {
+    console.error('[API] GET /admin/usuario/:id:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/admin/warn/:idWhatsApp?grupo=xxx
+// ─────────────────────────────────────────────────────────────────────────────
 router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
   try {
     const { idWhatsApp } = req.params;
@@ -358,13 +415,9 @@ router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/admin/usuario/:idWhatsApp/ban
-// Bane ou desbane um usuário globalmente.
-//
-// ⚠️ Requer que o model Usuario.js tenha o campo:
-//   banido: { type: Boolean, default: false }
-// Sem isso, o Mongoose (modo strict, padrão) ignora silenciosamente o
-// $set abaixo e a rota responde ok:true sem persistir nada.
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
   try {
     const { idWhatsApp } = req.params;
@@ -388,7 +441,127 @@ router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/admin/usuario/:idWhatsApp/gold
+// Dá ou remove gold de um usuário em um grupo específico.
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
+  try {
+    const idWhatsApp = normalizarJid(decodeURIComponent(req.params.idWhatsApp));
+    const { idGrupo, valor, operacao } = req.body || {};
+
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+    if (!Number.isFinite(valor) || valor <= 0)
+      return res.status(400).json({ error: 'valor deve ser um número positivo.' });
+    if (!['dar', 'remover'].includes(operacao))
+      return res.status(400).json({ error: 'operacao deve ser "dar" ou "remover".' });
+
+    const incremento = operacao === 'dar' ? valor : -valor;
+
+    const carteira = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp, idGrupo },
+      { $inc: { gold: incremento } },
+      { new: true }
+    ).lean();
+
+    if (!carteira)
+      return res.status(404).json({ error: 'Carteira não encontrada para esse usuário/grupo.' });
+
+    // Garante que o gold não fique negativo
+    if (carteira.gold < 0) {
+      await CarteiraGrupo.updateOne({ idWhatsApp, idGrupo }, { $set: { gold: 0 } });
+      carteira.gold = 0;
+    }
+
+    return res.json({ ok: true, goldAtual: carteira.gold });
+  } catch (err) {
+    console.error('[API] PATCH /admin/usuario/gold:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/admin/usuario/:idWhatsApp/gold/reset
+// Zera o gold do usuário em todos os grupos.
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/admin/usuario/:idWhatsApp/gold/reset', adminAuth, async (req, res) => {
+  try {
+    const idWhatsApp = normalizarJid(decodeURIComponent(req.params.idWhatsApp));
+
+    const resultado = await CarteiraGrupo.updateMany(
+      { idWhatsApp },
+      { $set: { gold: 0 } }
+    );
+
+    if (!resultado.matchedCount)
+      return res.status(404).json({ error: 'Nenhuma carteira encontrada para esse usuário.' });
+
+    return res.json({ ok: true, gruposAtualizados: resultado.modifiedCount });
+  } catch (err) {
+    console.error('[API] DELETE /admin/usuario/gold/reset:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/gold/transferir
+// Transfere gold de um usuário (origem) para outro (destino) dentro do mesmo grupo.
+//
+// Body: { idGrupo, idOrigem, idDestino, valor }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
+  try {
+    const { idGrupo, idOrigem, idDestino, valor } = req.body || {};
+
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+    if (!idOrigem || !idDestino)
+      return res.status(400).json({ error: 'idOrigem e idDestino são obrigatórios.' });
+    if (!Number.isFinite(valor) || valor <= 0)
+      return res.status(400).json({ error: 'valor deve ser um número positivo.' });
+
+    const jidOrigem  = normalizarJid(idOrigem);
+    const jidDestino = normalizarJid(idDestino);
+
+    if (jidOrigem === jidDestino)
+      return res.status(400).json({ error: 'Origem e destino não podem ser o mesmo usuário.' });
+
+    // Verifica saldo da origem
+    const carteiraOrigem = await CarteiraGrupo.findOne({ idWhatsApp: jidOrigem, idGrupo }).lean();
+    if (!carteiraOrigem)
+      return res.status(404).json({ error: 'Carteira de origem não encontrada.' });
+    if ((carteiraOrigem.gold || 0) < valor)
+      return res.status(400).json({ error: `Saldo insuficiente. Origem tem ${carteiraOrigem.gold || 0} gold.` });
+
+    // Verifica se o destino existe no grupo (cria se não existir via upsert)
+    const [, carteiraDestinoAtual] = await Promise.all([
+      CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: jidOrigem,  idGrupo },
+        { $inc: { gold: -valor } },
+        { new: true }
+      ),
+      CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: jidDestino, idGrupo },
+        { $inc: { gold: valor } },
+        { new: true, upsert: true }
+      ),
+    ]);
+
+    return res.json({
+      ok: true,
+      goldOrigem:  (carteiraOrigem.gold || 0) - valor,
+      goldDestino: carteiraDestinoAtual.gold,
+    });
+  } catch (err) {
+    console.error('[API] POST /admin/gold/transferir:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/admin/grupo/:jid/config
+// ─────────────────────────────────────────────────────────────────────────────
 const CAMPOS_CONFIG_VALIDOS = ['xpAtivo', 'antiLink', 'boasVindas'];
 
 router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
@@ -416,16 +589,9 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/admin/grupo/:jid/nome
-// Define um nome de exibição manual para o grupo (nomeCustom), já que o
-// CarteiraGrupo não guarda o nome real do grupo do WhatsApp — só o JID.
-// Atualiza todos os documentos daquele grupo de uma vez (updateMany),
-// então o nome fica consistente para todos os membros/queries.
-//
-// ⚠️ Requer que o model CarteiraGrupo.js tenha o campo:
-//   nomeCustom: { type: String, default: null, trim: true }
-// Sem isso, o Mongoose (modo strict, padrão) ignora silenciosamente o
-// $set abaixo e a rota responde ok:true sem persistir nada.
+// ─────────────────────────────────────────────────────────────────────────────
 const MAX_NOME_GRUPO = 80;
 
 router.patch('/admin/grupo/:jid/nome', adminAuth, async (req, res) => {
@@ -452,7 +618,9 @@ router.patch('/admin/grupo/:jid/nome', adminAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
 // PUT /api/admin/grupo/:jid/mensagens
+// ─────────────────────────────────────────────────────────────────────────────
 const MAX_MSG = 5000;
 
 router.put('/admin/grupo/:jid/mensagens', adminAuth, async (req, res) => {
@@ -475,6 +643,216 @@ router.put('/admin/grupo/:jid/mensagens', adminAuth, async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('[API] PUT /admin/grupo/mensagens:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/grupo/:jid/gold-ranking
+// Retorna o ranking de gold dos membros de um grupo específico (top 20).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/grupo/:jid/gold-ranking', adminAuth, async (req, res) => {
+  try {
+    const jid   = decodeURIComponent(req.params.jid);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+
+    const membros = await CarteiraGrupo
+      .find({ idGrupo: jid, gold: { $gt: 0 } })
+      .sort({ gold: -1 })
+      .limit(limit)
+      .lean();
+
+    // Enriquece com nome do Usuario
+    const jids = membros.map(m => m.idWhatsApp);
+    const usuariosMap = {};
+    if (jids.length) {
+      const usuarios = await Usuario.find({ idWhatsApp: { $in: jids } })
+        .select('idWhatsApp nome telefone')
+        .lean();
+      for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
+    }
+
+    const ranking = membros.map(m => {
+      const u = usuariosMap[m.idWhatsApp] || {};
+      return {
+        idWhatsApp: m.idWhatsApp,
+        nome:       u.nome || u.telefone || m.idWhatsApp?.split('@')[0] || '—',
+        gold:       m.gold ?? 0,
+        xp:         m.xp   ?? 0,
+        level:      m.level ?? 1,
+      };
+    });
+
+    return res.json({ ranking });
+  } catch (err) {
+    console.error('[API] GET /admin/grupo/:jid/gold-ranking:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/admin/grupo/:jid/gold/reset
+// Zera o gold de TODOS os membros de um grupo.
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/admin/grupo/:jid/gold/reset', adminAuth, async (req, res) => {
+  try {
+    const jid = decodeURIComponent(req.params.jid);
+
+    const resultado = await CarteiraGrupo.updateMany(
+      { idGrupo: jid },
+      { $set: { gold: 0 } }
+    );
+
+    if (!resultado.matchedCount)
+      return res.status(404).json({ error: 'Nenhum membro encontrado nesse grupo.' });
+
+    return res.json({ ok: true, membrosAtualizados: resultado.modifiedCount });
+  } catch (err) {
+    console.error('[API] DELETE /admin/grupo/:jid/gold/reset:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/economia
+// Estatísticas globais de economia + top 10 por gold, xp e mensagens.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/economia', adminAuth, async (req, res) => {
+  try {
+    // Agrega por usuário (soma de todos os grupos)
+    const [totais, topGoldRaw, topXpRaw, topMsgsRaw] = await Promise.all([
+      // Totais gerais
+      CarteiraGrupo.aggregate([
+        {
+          $group: {
+            _id:          null,
+            totalGold:    { $sum: '$gold' },
+            totalXp:      { $sum: '$xp' },
+            totalMsgs:    { $sum: '$mensagens' },
+            comGold:      { $sum: { $cond: [{ $gt: ['$gold', 0] }, 1, 0] } },
+            totalUsuarios: { $addToSet: '$idWhatsApp' },
+          }
+        }
+      ]),
+      // Top 10 gold (por usuário, soma de todos os grupos)
+      CarteiraGrupo.aggregate([
+        { $match: { gold: { $gt: 0 } } },
+        { $group: { _id: '$idWhatsApp', gold: { $sum: '$gold' }, nomeGrupo: { $first: '$idGrupo' } } },
+        { $sort: { gold: -1 } },
+        { $limit: 10 },
+      ]),
+      // Top 10 XP
+      CarteiraGrupo.aggregate([
+        { $match: { xp: { $gt: 0 } } },
+        { $group: { _id: '$idWhatsApp', xp: { $sum: '$xp' } } },
+        { $sort: { xp: -1 } },
+        { $limit: 10 },
+      ]),
+      // Top 10 mensagens
+      CarteiraGrupo.aggregate([
+        { $match: { mensagens: { $gt: 0 } } },
+        { $group: { _id: '$idWhatsApp', mensagens: { $sum: '$mensagens' } } },
+        { $sort: { mensagens: -1 } },
+        { $limit: 10 },
+      ]),
+    ]);
+
+    // Enriquece tops com nomes de usuário
+    const todosJids = [
+      ...topGoldRaw, ...topXpRaw, ...topMsgsRaw
+    ].map(x => x._id);
+    const usuariosMap = {};
+    if (todosJids.length) {
+      const us = await Usuario.find({ idWhatsApp: { $in: todosJids } })
+        .select('idWhatsApp nome telefone')
+        .lean();
+      for (const u of us) usuariosMap[u.idWhatsApp] = u;
+    }
+
+    function enriquecer(lista, campoValor) {
+      return lista.map(item => {
+        const u = usuariosMap[item._id] || {};
+        return {
+          idWhatsApp: item._id,
+          nome:       u.nome || u.telefone || item._id?.split('@')[0] || '—',
+          [campoValor]: item[campoValor],
+        };
+      });
+    }
+
+    const t = totais[0] || {};
+
+    return res.json({
+      totalGold:              t.totalGold || 0,
+      totalXp:                t.totalXp   || 0,
+      totalMsgs:              t.totalMsgs  || 0,
+      totalUsuariosComGold:   t.comGold    || 0,
+      mediaGold: (t.comGold && t.comGold > 0)
+        ? Math.round((t.totalGold || 0) / t.comGold)
+        : 0,
+      topGold: enriquecer(topGoldRaw,  'gold'),
+      topXp:   enriquecer(topXpRaw,   'xp'),
+      topMsgs: enriquecer(topMsgsRaw, 'mensagens'),
+    });
+  } catch (err) {
+    console.error('[API] GET /admin/economia:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/logs
+// Retorna logs do bot com paginação, filtro por tipo e busca por texto.
+//
+// Query params: pagina, limite, tipo (cmd|erro|warn|info), busca
+//
+// ⚠️ Requer um model BotLog (models/BotLog.js) com schema:
+//   { timestamp, tipo, comando, mensagem, detalhe, usuario, grupo }
+//
+// Se o model não existir ainda, a rota retorna array vazio sem erro,
+// então o frontend simplesmente exibe "Nenhum log encontrado" até
+// você criar o model e começar a salvar logs no bot.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/logs', adminAuth, async (req, res) => {
+  try {
+    let BotLog;
+    try {
+      BotLog = require('../models/BotLog');
+    } catch {
+      // Model ainda não existe — retorna vazio graciosamente
+      return res.json({ logs: [], total: 0 });
+    }
+
+    const pagina = Math.max(1, parseInt(req.query.pagina, 10) || 1);
+    const limite = Math.min(parseInt(req.query.limite, 10) || 50, 200);
+    const tipo   = req.query.tipo  || null;
+    const busca  = req.query.busca || null;
+
+    const filtro = {};
+    if (tipo)  filtro.tipo = tipo;
+    if (busca) {
+      const re = new RegExp(busca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filtro.$or = [
+        { comando:  re },
+        { mensagem: re },
+        { detalhe:  re },
+        { usuario:  re },
+        { grupo:    re },
+      ];
+    }
+
+    const [logs, total] = await Promise.all([
+      BotLog.find(filtro)
+        .sort({ timestamp: -1 })
+        .skip((pagina - 1) * limite)
+        .limit(limite)
+        .lean(),
+      BotLog.countDocuments(filtro),
+    ]);
+
+    return res.json({ logs, total });
+  } catch (err) {
+    console.error('[API] GET /admin/logs:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });

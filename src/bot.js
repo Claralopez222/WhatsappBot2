@@ -508,6 +508,19 @@ async function startBot() {
     // ── Saída de membros ────────────────────────────────────────────────────
     if (action === 'remove') {
       for (const participantJid of participants) {
+
+        // 🗑️ Remove os dados do usuário neste grupo do MongoDB
+        try {
+          const jidNorm = normalizarJid(participantJid);
+          if (jidNorm) {
+            await CarteiraGrupo.deleteOne({ idWhatsApp: jidNorm, idGrupo: groupJid });
+            console.log(`🗑️ CarteiraGrupo removida: ${jidNorm} saiu de ${groupJid}`);
+          }
+        } catch (e) {
+          console.error('⚠️ Erro ao remover CarteiraGrupo na saída:', e.message);
+        }
+
+        // 💔 Encerra relacionamento se houver
         const found = relacionamentoHandler.findRelByJid(groupJid, participantJid, relacionamentos);
         if (!found) continue;
 

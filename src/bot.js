@@ -1229,8 +1229,23 @@ const express = require('express');
 const app  = express();
 const port = process.env.PORT || 3000;
 
+// ─── CORS global (antes de tudo) ─────────────────────────────────────────────
+const FRONTEND = 'https://piroquinhasbot.github.io';
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin',  FRONTEND);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+app.use(express.json());
 
 app.get('/', (req, res) => res.send('Bot Online!'));
+
+// ─── Painel API ───────────────────────────────────────────────────────────────
+const apiRouter = require('./src/routes/api');
+app.use('/api', apiRouter);
 
 app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));
 

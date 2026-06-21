@@ -72,6 +72,13 @@ const usuarioSchema = new mongoose.Schema({
   uid:        { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
   bio:        { type: String, default: null,  trim: true, maxlength: 150 },
 
+  // ── Banimento global ─────────────────────────────────────────
+  // Necessário para PATCH /api/admin/usuario/:id/ban funcionar.
+  // Sem este campo o Mongoose ignora o $set silenciosamente (strict mode).
+  // GET /api/admin/usuarios também depende deste campo para retornar
+  // o status correto — sem ele sempre chegava como undefined no frontend.
+  banido: { type: Boolean, default: false },
+
   // ── Progressão global ────────────────────────────────────────
   xp:         { type: Number, default: 0,   min: 0 },
   level:      { type: Number, default: 1,   min: 1 },

@@ -69,6 +69,11 @@ const carteiraGrupoSchema = new mongoose.Schema(
     idGrupo:    { type: String, required: true, trim: true, lowercase: true },
     nome:       { type: String, default: null,  trim: true },
 
+    // ── Nome customizado do grupo (definido pelo admin no painel) ─
+    // Necessário para PATCH /api/admin/grupo/:jid/nome funcionar.
+    // Sem este campo o Mongoose ignora o $set silenciosamente (strict mode).
+    nomeCustom: { type: String, default: null, trim: true },
+
     // ── Economia local do grupo ──────────────────────────────────
     gold:       { type: Number, default: 0, min: 0 },
     quizPoints: { type: Number, default: 0, min: 0 },
@@ -154,36 +159,22 @@ carteiraGrupoSchema.statics.xpParaLevel = xpParaLevel;
 carteiraGrupoSchema.statics.levelFromXp = levelFromXp;
 
 // ─── incrementXp: forma RECOMENDADA de conceder XP ────────────────────────────
-// Incrementa o XP atomicamente (via $inc) e recalcula o "level" na mesma
-// operação — usando findOneAndUpdate em duas etapas:
-//   1) $inc no xp (atômico, seguro para concorrência)
-//   2) $set no level com base no NOVO xp retornado
-//
-// Retorna o documento já atualizado (com xp e level coerentes), ou null
-// se idWhatsApp/idGrupo/amount forem inválidos.
-//
-// Uso típico no handler de mensagens:
-//   const carteira = await CarteiraGrupo.incrementXp(userId, groupJid, 5);
-//   if (carteira?.levelUp) { ... avisar o usuário que subiu de nível ... }
 carteiraGrupoSchema.statics.incrementXp = async function (idWhatsApp, idGrupo, amount) {
   if (!idWhatsApp || !idGrupo) return null;
   if (!Number.isFinite(amount) || amount === 0) return null;
 
-  // 1) Incrementa o xp atomicamente (cria o documento se não existir)
   const atualizado = await this.findOneAndUpdate(
     { idWhatsApp, idGrupo },
     { $inc: { xp: amount } },
     { upsert: true, new: true }
   );
 
-  // Garante que xp nunca fique negativo mesmo com $inc de valores negativos
   const xpSeguro = Math.max(0, atualizado.xp ?? 0);
   if (xpSeguro !== atualizado.xp) {
     atualizado.xp = xpSeguro;
     await this.updateOne({ _id: atualizado._id }, { $set: { xp: xpSeguro } });
   }
 
-  // 2) Recalcula o level com base no xp já persistido
   const levelAntigo = atualizado.level ?? 1;
   const levelNovo   = levelFromXp(xpSeguro);
 
@@ -200,9 +191,6 @@ carteiraGrupoSchema.statics.incrementXp = async function (idWhatsApp, idGrupo, a
 };
 
 // ─── Hook: mantém "level" sincronizado com "xp" ao usar .save() ───────────────
-// Cobre os casos em que alguém faz `doc.xp = X; await doc.save()` em vez de
-// usar incrementXp. Atualizações via updateOne/findOneAndUpdate diretas
-// (sem passar por incrementXp) continuam fora do alcance deste hook.
 carteiraGrupoSchema.pre('save', function (next) {
   if (this.isModified('xp')) {
     this.level = levelFromXp(this.xp);
@@ -219,8 +207,6 @@ carteiraGrupoSchema.methods.registrarGold = function (tipo, item, amount, limite
   }
 };
 
-// Retorna nível + progresso atual com base no xp, pronto para exibir
-// (usado por !level, !ranklevel etc.)
 carteiraGrupoSchema.methods.getProgressoXp = function () {
   const xpRaw      = Math.max(0, this.xp ?? 0);
   const level      = levelFromXp(xpRaw);
@@ -238,6 +224,7 @@ carteiraGrupoSchema.methods.toSafeObject = function () {
     idWhatsApp:   this.idWhatsApp,
     idGrupo:      this.idGrupo,
     nome:         this.nome,
+    nomeCustom:   this.nomeCustom,
     gold:         this.gold,
     xp:           this.xp,
     level:        this.level,

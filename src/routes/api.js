@@ -46,6 +46,17 @@ function nomeGrupoFallback(jid) {
   return `Grupo ${numero.slice(0, 10)}…`;
 }
 
+// Resolve o nome de exibição de um grupo: usa o nome definido manualmente
+// pelo admin (nomeCustom, salvo via PATCH /admin/grupo/:jid/nome) sempre que
+// existir; caso contrário cai no fallback feio baseado no JID. Esta é a
+// ÚNICA função que deve decidir esse nome — qualquer rota que devolva nome
+// de grupo deve passar por aqui, para não reintroduzir o bug de nomes
+// inconsistentes entre endpoints.
+function nomeGrupo(doc, jid) {
+  const custom = doc && typeof doc.nomeCustom === 'string' ? doc.nomeCustom.trim() : '';
+  return custom || nomeGrupoFallback(jid);
+}
+
 // ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
 function auth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -244,7 +255,7 @@ router.get('/user/ranking/grupo', async (req, res) => {
 
 // GET /api/grupos
 // Lista grupos distintos com contagem de membros ativos.
-// PÚBLICO — usado pelo select de grupos no index.html.
+// PÚBLICO — usado pelo select de grupos no index.html e pelo admin.html.
 router.get('/grupos', async (req, res) => {
   try {
     const grupos = await CarteiraGrupo.aggregate([
@@ -253,10 +264,17 @@ router.get('/grupos', async (req, res) => {
 
       {
         $group: {
-          _id:     '$idGrupo',
-          membros: { $sum: 1 },
+          _id:        '$idGrupo',
+          membros:    { $sum: 1 },
           // xpTotal para ordenar os grupos mais ativos primeiro
-          xpTotal: { $sum: '$xp' },
+          xpTotal:    { $sum: '$xp' },
+          // nome customizado definido pelo admin (igual em todos os docs do
+          // grupo, já que é setado via updateMany — $first basta)
+          nomeCustom: { $first: '$nomeCustom' },
+          // mensagens de boas-vindas/regras também são iguais em todos os
+          // docs do grupo (setadas via updateMany na rota /mensagens)
+          mensagens:  { $first: '$mensagens' },
+          config:     { $first: '$config' },
         },
       },
 
@@ -264,10 +282,14 @@ router.get('/grupos', async (req, res) => {
     ]);
 
     const resultado = grupos.map(g => ({
-      jid:     g._id,
-      nome:    nomeGrupoFallback(g._id),
-      membros: g.membros,
-      xpTotal: g.xpTotal,
+      jid:        g._id,
+      idGrupo:    g._id,
+      nome:       nomeGrupo(g, g._id),
+      nomeCustom: g.nomeCustom || null,
+      membros:    g.membros,
+      xpTotal:    g.xpTotal,
+      mensagens:  g.mensagens || {},
+      config:     g.config || {},
     }));
 
     return res.json({ grupos: resultado });
@@ -317,7 +339,7 @@ router.get('/user/me', auth, async (req, res) => {
 
     const grupos = carteiras.map(c => ({
       jid:      c.idGrupo,
-      nome:     nomeGrupoFallback(c.idGrupo),
+      nome:     nomeGrupo(c, c.idGrupo),
       xp:       c.xp        ?? 0,
       level:    c.level     ?? 1,
       gold:     c.gold      ?? 0,
@@ -369,7 +391,7 @@ router.get('/user/grupos', auth, async (req, res) => {
 
     const grupos = carteiras.map(c => ({
       jid:          c.idGrupo,
-      nome:         nomeGrupoFallback(c.idGrupo),
+      nome:         nomeGrupo(c, c.idGrupo),
       xp:           c.xp           ?? 0,
       level:        c.level        ?? 1,
       gold:         c.gold         ?? 0,
@@ -396,11 +418,14 @@ router.get('/admin/verify', rateLimitAdmin, adminAuth, (req, res) => {
 });
 
 // GET /api/admin/usuarios
+// FIX: agora também seleciona e devolve o campo "banido" — antes a query
+// só pegava nome/telefone/idWhatsApp/warnings, então o admin.html nunca
+// conseguia mostrar corretamente quem estava banido (sempre vinha undefined).
 router.get('/admin/usuarios', adminAuth, async (req, res) => {
   try {
     const todos = await Usuario
       .find({})
-      .select('nome telefone idWhatsApp warnings')
+      .select('nome telefone idWhatsApp warnings banido')
       .lean();
 
     const comWarns = todos
@@ -410,8 +435,9 @@ router.get('/admin/usuarios', adminAuth, async (req, res) => {
         idWhatsApp:    u.idWhatsApp,
         warns:         somarMap(u.warnings),
         warnsPorGrupo: mapParaObjeto(u.warnings),
+        banido:        !!u.banido,
       }))
-      .filter(u => u.warns > 0)
+      .filter(u => u.warns > 0 || u.banido)
       .sort((a, b) => b.warns - a.warns);
 
     return res.json({ usuarios: comWarns });
@@ -450,6 +476,36 @@ router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
   }
 });
 
+// PATCH /api/admin/usuario/:idWhatsApp/ban
+// Bane ou desbane um usuário globalmente.
+//
+// ⚠️ Requer que o model Usuario.js tenha o campo:
+//   banido: { type: Boolean, default: false }
+// Sem isso, o Mongoose (modo strict, padrão) ignora silenciosamente o
+// $set abaixo e a rota responde ok:true sem persistir nada.
+router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
+  try {
+    const { idWhatsApp } = req.params;
+    const { banido }     = req.body || {};
+
+    if (typeof banido !== 'boolean')
+      return res.status(400).json({ error: '"banido" deve ser true ou false.' });
+
+    const usuario = await Usuario.findOneAndUpdate(
+      { idWhatsApp },
+      { $set: { banido } },
+      { new: true }
+    ).lean();
+
+    if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    return res.json({ ok: true, idWhatsApp, banido: !!usuario.banido });
+  } catch (err) {
+    console.error('[API] PATCH /admin/usuario/ban:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // PATCH /api/admin/grupo/:jid/config
 const CAMPOS_CONFIG_VALIDOS = ['xpAtivo', 'antiLink', 'boasVindas'];
 
@@ -474,6 +530,42 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('[API] PATCH /admin/grupo/config:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// PATCH /api/admin/grupo/:jid/nome
+// Define um nome de exibição manual para o grupo (nomeCustom), já que o
+// CarteiraGrupo não guarda o nome real do grupo do WhatsApp — só o JID.
+// Atualiza todos os documentos daquele grupo de uma vez (updateMany),
+// então o nome fica consistente para todos os membros/queries.
+//
+// ⚠️ Requer que o model CarteiraGrupo.js tenha o campo:
+//   nomeCustom: { type: String, default: null, trim: true }
+// Sem isso, o Mongoose (modo strict, padrão) ignora silenciosamente o
+// $set abaixo e a rota responde ok:true sem persistir nada.
+const MAX_NOME_GRUPO = 80;
+
+router.patch('/admin/grupo/:jid/nome', adminAuth, async (req, res) => {
+  try {
+    const jid  = decodeURIComponent(req.params.jid);
+    const nome = typeof req.body?.nome === 'string' ? req.body.nome.trim() : '';
+
+    if (!nome) return res.status(400).json({ error: 'Nome não pode ser vazio.' });
+    if (nome.length > MAX_NOME_GRUPO)
+      return res.status(400).json({ error: `Nome muito longo (máx ${MAX_NOME_GRUPO} caracteres).` });
+
+    const resultado = await CarteiraGrupo.updateMany(
+      { idGrupo: jid },
+      { $set: { nomeCustom: nome } }
+    );
+
+    if (!resultado.matchedCount)
+      return res.status(404).json({ error: 'Nenhum registro encontrado para esse grupo.' });
+
+    return res.json({ ok: true, jid, nome });
+  } catch (err) {
+    console.error('[API] PATCH /admin/grupo/nome:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });

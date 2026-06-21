@@ -582,16 +582,23 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     if (!['dar', 'remover'].includes(operacao))
       return res.status(400).json({ error: 'operacao deve ser "dar" ou "remover".' });
 
+    // Se for "remover" e a carteira ainda não existir, não faz sentido criar uma do zero
+    if (operacao === 'remover') {
+      const existe = await CarteiraGrupo.exists({ idWhatsApp, idGrupo });
+      if (!existe)
+        return res.status(404).json({ error: 'Esse usuário ainda não tem carteira nesse grupo (nada para remover).' });
+    }
+
     const incremento = operacao === 'dar' ? valor : -valor;
 
+    // upsert: true -> se o usuário ainda não tem CarteiraGrupo nesse grupo
+    // (ex: número digitado manualmente que nunca mandou mensagem no grupo),
+    // o documento é criado automaticamente em vez de retornar 404.
     const carteira = await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp, idGrupo },
       { $inc: { gold: incremento } },
-      { new: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
-
-    if (!carteira)
-      return res.status(404).json({ error: 'Carteira não encontrada para esse usuário/grupo.' });
 
     // Garante que o gold não fique negativo
     if (carteira.gold < 0) {

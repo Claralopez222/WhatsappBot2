@@ -67,7 +67,7 @@ const casalItemSchema = new mongoose.Schema({
 // ─── Schema principal ─────────────────────────────────────────────────────────
 const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
-  idWhatsApp: { type: String, required: true, unique: true, index: true, trim: true },
+  idWhatsApp: { type: String, required: true, unique: true, index: true, trim: true, lowercase: true },
   nome:       { type: String, default: null,  trim: true },
   uid:        { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
   bio:        { type: String, default: null,  trim: true, maxlength: 150 },

@@ -2,7 +2,8 @@
  * WhatsApp Sticker Bot – Piroquinhas
  * bot.js principal – roteador completo
  */
-require('dotenv').config();
+require('dotenv').config(); // Carrega o .env nativamente na raiz do projeto
+
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
@@ -23,6 +24,9 @@ const { Boom }  = require('@hapi/boom');
 const pino      = require('pino');
 const QRCode    = require('qrcode');
 const mongoose  = require('mongoose');
+
+// ─── Scripts ───────────────────────────────────────────────────────────────────
+const { rodarAtualizacao } = require('./scripts/atualizarGrupos.js');
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 const Usuario       = require(path.join(__dirname, 'models', 'Usuario'));
@@ -377,10 +381,10 @@ async function startBot() {
                 deviceListMetadata: {},
               },
               ...message,
-                },
-              },
-            };
-          }
+            },
+          },
+        };
+      }
       return message;
     },
   });
@@ -397,93 +401,94 @@ async function startBot() {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
   });
 
-// ── Mensagens ─────────────────────────────────────────────────────────────────
-sock.ev.on('messages.upsert', async ({ messages, type }) => {
-  if (type !== 'notify' && type !== 'append') return;
-for (const msg of messages) {
-  if (msg.key.fromMe) continue;
-  if (!msg.message)   continue;
+  // ── Mensagens ─────────────────────────────────────────────────────────────────
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify' && type !== 'append') return;
+    
+    for (const msg of messages) {
+      if (msg.key.fromMe) continue;
+      if (!msg.message)   continue;
 
-  const _jid       = msg.key.remoteJid || '';
-  const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
+      const _jid       = msg.key.remoteJid || '';
+      const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
 
-  if (_isPrivate) {
-    const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-    console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
-  }
-
-  (async () => {
-    try {
-      if (!_isPrivate) {
-        const remetente     = msg.key.participant || msg.key.remoteJid;
-        const remetenteNorm = normalizarJid(remetente);
-        if (!remetenteNorm) return;
-
-        const nomeDoCara = msg.pushName || 'Usuário do Zap';
-
-        await prepareDailyMissionState(remetenteNorm);
-
-        // ── Bônus diário de 100 gold (primeira mensagem do dia no grupo) ──
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-
-        const carteiraAtual = await CarteiraGrupo.findOne(
-          { idWhatsApp: remetenteNorm, idGrupo: _jid },
-          { ultimoBonusDiario: 1 }
-        ).lean();
-
-        const recebeuHoje = carteiraAtual?.ultimoBonusDiario
-          && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
-
-        const incCarteira = { mensagens: 1, xp: 1 }; // ← XP por grupo
-        const setCarteira = { nome: nomeDoCara };
-
-        if (!recebeuHoje) {
-          incCarteira.gold = 100;
-          setCarteira.ultimoBonusDiario = new Date();
-        }
-
-        // ── CarteiraGrupo: mensagens, gold diário e XP por grupo ──────────
-        await CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp: remetenteNorm, idGrupo: _jid },
-          { $inc: incCarteira, $set: setCarteira },
-          { upsert: true }
-        );
-
-        // ── Usuario global: XP global, level e missões ────────────────────
-        const usuarioAtualizado = await Usuario.findOneAndUpdate(
-          { idWhatsApp: remetenteNorm },
-          {
-            $inc: { mensagens: 1, xp: 1, 'dailyMissions.progress.msg50': 1 },
-            $set: { nome: nomeDoCara },
-          },
-          { upsert: true, new: true }
-        );
-
-        const xpAtual   = usuarioAtualizado?.xp ?? 0;
-        const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
-
-        if ((usuarioAtualizado?.level ?? 1) !== levelNovo) {
-          await Usuario.findOneAndUpdate(
-            { idWhatsApp: remetenteNorm },
-            { $set: { level: levelNovo } }
-          );
-        }
+      if (_isPrivate) {
+        const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+        console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
       }
 
-      await handleMessage(sock, msg);
+      (async () => {
+        try {
+          if (!_isPrivate) {
+            const remetente     = msg.key.participant || msg.key.remoteJid;
+            const remetenteNorm = normalizarJid(remetente);
+            if (!remetenteNorm) return;
 
-      if (_jid.endsWith('@g.us')) {
-        registerActiveGroup(_jid);
-        activeGroups.add(_jid);
-      }
+            const nomeDoCara = msg.pushName || 'Usuário do Zap';
 
-    } catch (err) {
-      console.error('❌ Erro no processamento da mensagem:', err.message);
+            await prepareDailyMissionState(remetenteNorm);
+
+            // ── Bônus diário de 100 gold (primeira mensagem do dia no grupo) ──
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+
+            const carteiraAtual = await CarteiraGrupo.findOne(
+              { idWhatsApp: remetenteNorm, idGrupo: _jid },
+              { ultimoBonusDiario: 1 }
+            ).lean();
+
+            const recebeuHoje = carteiraAtual?.ultimoBonusDiario
+              && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
+
+            const incCarteira = { mensagens: 1, xp: 1 }; // ← XP por grupo
+            const setCarteira = { nome: nomeDoCara };
+
+            if (!recebeuHoje) {
+              incCarteira.gold = 100;
+              setCarteira.ultimoBonusDiario = new Date();
+            }
+
+            // ── CarteiraGrupo: mensagens, gold diário e XP por grupo ──────────
+            await CarteiraGrupo.findOneAndUpdate(
+              { idWhatsApp: remetenteNorm, idGrupo: _jid },
+              { $inc: incCarteira, $set: setCarteira },
+              { upsert: true }
+            );
+
+            // ── Usuario global: XP global, level e missões ────────────────────
+            const usuarioAtualizado = await Usuario.findOneAndUpdate(
+              { idWhatsApp: remetenteNorm },
+              {
+                $inc: { mensagens: 1, xp: 1, 'dailyMissions.progress.msg50': 1 },
+                $set: { nome: nomeDoCara },
+              },
+              { upsert: true, new: true }
+            );
+
+            const xpAtual   = usuarioAtualizado?.xp ?? 0;
+            const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
+
+            if ((usuarioAtualizado?.level ?? 1) !== levelNovo) {
+              await Usuario.findOneAndUpdate(
+                { idWhatsApp: remetenteNorm },
+                { $set: { level: levelNovo } }
+              );
+            }
+          }
+
+          await handleMessage(sock, msg);
+
+          if (_jid.endsWith('@g.us')) {
+            registerActiveGroup(_jid);
+            activeGroups.add(_jid);
+          }
+
+        } catch (err) {
+          console.error('❌ Erro no processamento da mensagem:', err.message);
+        }
+      })();
     }
-  })();
-}
-});
+  });
 
   // ── Eventos de grupo (entradas/saídas) ───────────────────────────────────────
   sock.ev.on('group-participants.update', async ({ id: groupJid, participants, action }) => {
@@ -524,43 +529,43 @@ for (const msg of messages) {
     }
   });
 
-// ── Conexão ───────────────────────────────────────────────────────────────────
-let schedulersIniciados = false;
+  // ── Conexão ───────────────────────────────────────────────────────────────────
+  let schedulersIniciados = false;
 
-sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
 
-  // ── QR Code ────────────────────────────────────────────────────────────────
-  if (qr) {
-    console.log('\n📱 Escaneie o QR Code:\n');
-    try {
-      console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
-      await QRCode.toFile(path.resolve(__dirname, '../qrcode.png'), qr, { width: 400 });
-    } catch (err) {
-      console.error('[QRCode] Erro ao gerar QR:', err.message);
+    // ── QR Code ────────────────────────────────────────────────────────────────
+    if (qr) {
+      console.log('\n📱 Escaneie o QR Code:\n');
+      try {
+        console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
+        await QRCode.toFile(path.resolve(__dirname, '../qrcode.png'), qr, { width: 400 });
+      } catch (err) {
+        console.error('[QRCode] Erro ao gerar QR:', err.message);
+      }
     }
-  }
 
-  // ── Desconexão ─────────────────────────────────────────────────────────────
-  if (connection === 'close') {
-    schedulersIniciados = false;
+    // ── Desconexão ─────────────────────────────────────────────────────────────
+    if (connection === 'close') {
+      schedulersIniciados = false;
 
-    const code    = new Boom(lastDisconnect?.error)?.output?.statusCode;
-    const motivo  = lastDisconnect?.error?.message ?? 'desconhecido';
-    const logado  = code !== DisconnectReason.loggedOut;
+      const code    = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      const motivo  = lastDisconnect?.error?.message ?? 'desconhecido';
+      const logado  = code !== DisconnectReason.loggedOut;
 
-    console.warn(`🔌 Desconectado. Código: ${code} | Motivo: ${motivo}`);
+      console.warn(`🔌 Desconectado. Código: ${code} | Motivo: ${motivo}`);
 
-    if (logado) {
-      const delay = code === DisconnectReason.connectionReplaced ? 5_000 : 30_000;
-      console.log(`🔄 Reconectando em ${delay / 1000}s...`);
-      setTimeout(() => startBot(), delay);
-    } else {
-      console.log('🚪 Sessão encerrada definitivamente (loggedOut).');
-      process.exit(0);
+      if (logado) {
+        const delay = code === DisconnectReason.connectionReplaced ? 5_000 : 30_000;
+        console.log(`🔄 Reconectando em ${delay / 1000}s...`);
+        setTimeout(() => startBot(), delay);
+      } else {
+        console.log('🚪 Sessão encerrada definitivamente (loggedOut).');
+        process.exit(0);
+      }
     }
-  }
 
-  // ── Conexão aberta ─────────────────────────────────────────────────────────
+    // ── Conexão aberta ─────────────────────────────────────────────────────────
   if (connection === 'open') {
     botJid = sock.user?.id ?? null;
     console.log(`✅ Bot conectado! JID: ${botJid}\n`);
@@ -573,10 +578,14 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
 
       // Limpeza periódica de arquivos temporários (a cada 5min, remove >10min)
       setInterval(() => downloadsHandler.limparTmpAntigos(10 * 60 * 1000), 5 * 60 * 1000);
-downloadsHandler.limparTmpAntigos(10 * 60 * 1000);
+      downloadsHandler.limparTmpAntigos(10 * 60 * 1000);
 
       schedulersIniciados = true;
       console.log('[Schedulers] Iniciados.');
+
+      // 🚀 Sincroniza nomes dos grupos no MongoDB + Firestore (apenas na 1ª conexão)
+      setTimeout(() => rodarAtualizacao(sock), 8000);
+
     } else {
       // Reconexão — só atualiza o sock nos schedulers existentes
       initPetScheduler.updateSock?.(sock);
@@ -585,7 +594,8 @@ downloadsHandler.limparTmpAntigos(10 * 60 * 1000);
     }
   }
 });
-} // fim do startBot
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

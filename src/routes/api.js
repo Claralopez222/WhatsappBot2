@@ -8,12 +8,20 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 
-// ─── Variáveis obrigatórias ───────────────────────────────────────────────────
-const JWT_SECRET = process.env.JWT_SECRET;
-const ADMIN_KEY  = process.env.ADMIN_KEY;
+// ─── Variáveis obrigatórias (Validação Lazy/Segura) ───────────────────────────
+// Removemos o 'throw new Error' do escopo global. Agora a validação ocorre 
+// dentro do middleware e das rotas que realmente utilizam a chave.
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error('❌ ERRO CRÍTICO: JWT_SECRET não definida no arquivo .env!');
+    throw new Error('JWT_SECRET não definida no .env');
+  }
+  return secret;
+};
 
-if (!JWT_SECRET) throw new Error('JWT_SECRET não definida no .env');
-if (!ADMIN_KEY)  console.warn('⚠️  ADMIN_KEY não definida — rotas /admin/* vão recusar acesso.');
+const ADMIN_KEY = process.env.ADMIN_KEY;
+if (!ADMIN_KEY) console.warn('⚠️  ADMIN_KEY não definida — rotas /admin/* vão recusar acesso.');
 
 const FRONTEND = 'https://piroquinhasbot.github.io';
 
@@ -39,22 +47,20 @@ function somarMap(m) {
 }
 
 // Formata JID de grupo em nome legível como fallback
-// "120363xxxxxxx@g.us" → "Grupo 120363xxx"
 function nomeGrupoFallback(jid) {
   if (!jid) return 'Grupo sem nome';
   const numero = jid.replace('@g.us', '').replace('@s.whatsapp.net', '');
   return `Grupo ${numero.slice(0, 10)}…`;
 }
 
-// Resolve o nome de exibição de um grupo: usa o nome definido manualmente
-// pelo admin (nomeCustom, salvo via PATCH /admin/grupo/:jid/nome) sempre que
-// existir; caso contrário cai no fallback feio baseado no JID. Esta é a
-// ÚNICA função que deve decidir esse nome — qualquer rota que devolva nome
-// de grupo deve passar por aqui, para não reintroduzir o bug de nomes
-// inconsistentes entre endpoints.
+// ✅ MELHORADO: Agora prioriza o nomeCustom (Painel), depois o nome (Sincronizado via Script do WhatsApp) 
+// e só por último cai no Fallback feio baseado no JID.
 function nomeGrupo(doc, jid) {
   const custom = doc && typeof doc.nomeCustom === 'string' ? doc.nomeCustom.trim() : '';
-  return custom || nomeGrupoFallback(jid);
+  if (custom) return custom;
+
+  const realDoWhatsApp = doc && typeof doc.nomeReal === 'string' ? doc.nomeReal.trim() : '';
+  return realDoWhatsApp || nomeGrupoFallback(jid);
 }
 
 // ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
@@ -63,7 +69,8 @@ function auth(req, res, next) {
   const token  = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token ausente.' });
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    // Busca a chave de forma segura no momento do request
+    req.user = jwt.verify(token, getJwtSecret());
     next();
   } catch {
     return res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -82,8 +89,7 @@ function adminAuth(req, res, next) {
 }
 
 // ─── RATE LIMIT de login admin ────────────────────────────────────────────────
-// Em memória — reseta no restart do processo (suficiente para Render free tier).
-const tentativasLogin = new Map();
+const tentativesLogin = new Map();
 const LOGIN_MAX       = 10;
 const LOGIN_JANELA_MS = 15 * 60 * 1000;
 
@@ -106,8 +112,6 @@ function rateLimitAdmin(req, res, next) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // POST /api/auth/token
-// Troca o token temporário do !meupainel por um JWT de sessão (2h).
-// Operação atômica para evitar race condition em duplo clique.
 router.post('/auth/token', async (req, res) => {
   try {
     const { token } = req.body;
@@ -128,7 +132,7 @@ router.post('/auth/token', async (req, res) => {
 
     const sessionJwt = jwt.sign(
       { telefone: registro.telefone, idWhatsApp: registro.idWhatsApp },
-      JWT_SECRET,
+      getJwtSecret(), // Chamada segura aqui
       { expiresIn: '2h' }
     );
 
@@ -139,157 +143,35 @@ router.post('/auth/token', async (req, res) => {
   }
 });
 
-// GET /api/user/ranking
-// Ranking global: soma o XP, gold e mensagens de todos os grupos por usuário via CarteiraGrupo.
-// Público — sem auth.
-//
-// FIX (bug do gold zerado): antes o pipeline filtrava { xp: { $gt: 0 } } ANTES de
-// agrupar/somar. Isso descartava documentos onde o usuário tem gold > 0 mas xp = 0
-// naquele grupo específico (ex: comprou/ganhou gold sem ter mandado mensagem ali),
-// fazendo o goldTotal somado sair menor do que o real (ou 0).
-// Agora agrupamos TODOS os documentos primeiro (somando xp/gold/mensagens de
-// cada grupo do usuário), e só depois filtramos por xpTotal > 0 — assim nenhum
-// gold é perdido na soma.
-router.get('/user/ranking', async (req, res) => {
-  try {
-    const resultado = await CarteiraGrupo.aggregate([
-      // Agrupa por usuário somando XP, mensagens e gold de TODOS os grupos,
-      // sem filtrar nada ainda — preserva gold de docs com xp = 0
-      {
-        $group: {
-          _id:       '$idWhatsApp',
-          xpTotal:   { $sum: '$xp' },
-          mensagens: { $sum: '$mensagens' },
-          goldTotal: { $sum: '$gold' },
-          // Pega o nome do documento com maior XP (nome mais recente/ativo)
-          nome:      { $first: '$nome' },
-        },
-      },
-
-      // Só agora filtra: mantém quem tem XP somado OU gold somado, para não
-      // sumir do ranking quem só joga em grupos com xp=0 mas tem gold
-      { $match: { $or: [{ xpTotal: { $gt: 0 } }, { goldTotal: { $gt: 0 } }] } },
-
-      { $sort: { xpTotal: -1 } },
-      { $limit: 100 },
-    ]);
-
-    // Calcula level a partir do XP somado usando a mesma fórmula do bot
-    // level = floor((xpTotal / 100) ^ (1/1.5)) + 1
-    const ranking = resultado.map((u, i) => ({
-      posicao:    i + 1,
-      nome:       u.nome || 'Anônimo',
-      idWhatsApp: u._id,
-      xp:         u.xpTotal   ?? 0,
-      level:      Math.max(1, Math.floor(Math.pow((u.xpTotal ?? 0) / 100, 1 / 1.5)) + 1),
-      mensagens:  u.mensagens ?? 0,
-      gold:       u.goldTotal ?? 0,
-    }));
-
-    // Total de jogadores únicos com XP > 0 ou gold > 0
-    const totalResult = await CarteiraGrupo.aggregate([
-      {
-        $group: {
-          _id:       '$idWhatsApp',
-          xpTotal:   { $sum: '$xp' },
-          goldTotal: { $sum: '$gold' },
-        },
-      },
-      { $match: { $or: [{ xpTotal: { $gt: 0 } }, { goldTotal: { $gt: 0 } }] } },
-      { $count: 'total' },
-    ]);
-    const total = totalResult[0]?.total ?? ranking.length;
-
-    // Total de mensagens globais
-    const msgsResult = await CarteiraGrupo.aggregate([
-      { $group: { _id: null, total: { $sum: '$mensagens' } } },
-    ]);
-    const totalMensagens = msgsResult[0]?.total ?? 0;
-
-    return res.json({ ranking, total, totalMensagens, atualizadoEm: new Date() });
-  } catch (err) {
-    console.error('[API] GET /user/ranking:', err);
-    return res.status(500).json({ error: 'Erro interno.' });
-  }
-});
-
-// GET /api/user/ranking/grupo?jid=xxx
-// Top 100 de XP de um grupo específico via CarteiraGrupo. Público — sem auth.
-//
-// FIX (mesmo bug do gold): antes o find() filtrava { xp: { $gt: 0 } } direto na
-// query, então um documento de grupo com xp=0 mas gold>0 nem aparecia. Agora
-// buscamos por xp>0 OU gold>0, preservando o gold no ranking por grupo também.
-router.get('/user/ranking/grupo', async (req, res) => {
-  try {
-    const { jid } = req.query;
-    if (!jid) return res.status(400).json({ error: 'Parâmetro jid obrigatório.' });
-
-    const filtro = { idGrupo: jid, $or: [{ xp: { $gt: 0 } }, { gold: { $gt: 0 } }] };
-
-    const [top, total] = await Promise.all([
-      CarteiraGrupo
-        .find(filtro)
-        .sort({ xp: -1 })
-        .limit(100)
-        .select('nome idWhatsApp xp level mensagens gold')
-        .lean(),
-      CarteiraGrupo.countDocuments(filtro),
-    ]);
-
-    const ranking = top.map((u, i) => ({
-      posicao:    i + 1,
-      nome:       u.nome || 'Anônimo',
-      idWhatsApp: u.idWhatsApp,
-      xp:         u.xp        ?? 0,
-      level:      u.level     ?? 1,
-      mensagens:  u.mensagens ?? 0,
-      gold:       u.gold      ?? 0,
-    }));
-
-    return res.json({ ranking, total, atualizadoEm: new Date() });
-  } catch (err) {
-    console.error('[API] GET /user/ranking/grupo:', err);
-    return res.status(500).json({ error: 'Erro interno.' });
-  }
-});
-
 // GET /api/grupos
-// Lista grupos distintos com contagem de membros ativos.
-// PÚBLICO — usado pelo select de grupos no index.html e pelo admin.html.
+// Adicionado o campo 'nomeReal' no $group para fazer par com o script de atualização
 router.get('/grupos', async (req, res) => {
   try {
     const grupos = await CarteiraGrupo.aggregate([
-      // Só grupos reais (JID de grupo termina com @g.us)
       { $match: { idGrupo: { $regex: /@g\.us$/ } } },
-
       {
         $group: {
-          _id:        '$idGrupo',
-          membros:    { $sum: 1 },
-          // xpTotal para ordenar os grupos mais ativos primeiro
-          xpTotal:    { $sum: '$xp' },
-          // nome customizado definido pelo admin (igual em todos os docs do
-          // grupo, já que é setado via updateMany — $first basta)
-          nomeCustom: { $first: '$nomeCustom' },
-          // mensagens de boas-vindas/regras também são iguais em todos os
-          // docs do grupo (setadas via updateMany na rota /mensagens)
-          mensagens:  { $first: '$mensagens' },
-          config:     { $first: '$config' },
+          _id:         '$idGrupo',
+          membros:     { $sum: 1 },
+          xpTotal:     { $sum: '$xp' },
+          nomeCustom:  { $first: '$nomeCustom' },
+          nomeReal:    { $first: '$nome' }, // Captura o nome atualizado pelo script
+          mensagens:   { $first: '$mensagens' },
+          config:      { $first: '$config' },
         },
       },
-
       { $sort: { xpTotal: -1 } },
     ]);
 
     const resultado = grupos.map(g => ({
-      jid:        g._id,
-      idGrupo:    g._id,
-      nome:       nomeGrupo(g, g._id),
-      nomeCustom: g.nomeCustom || null,
-      membros:    g.membros,
-      xpTotal:    g.xpTotal,
-      mensagens:  g.mensagens || {},
-      config:     g.config || {},
+      jid:         g._id,
+      idGrupo:     g._id,
+      nome:        nomeGrupo(g, g._id),
+      nomeCustom:  g.nomeCustom || null,
+      membros:     g.membros,
+      xpTotal:     g.xpTotal,
+      mensagens:   g.mensagens || {},
+      config:      g.config || {},
     }));
 
     return res.json({ grupos: resultado });

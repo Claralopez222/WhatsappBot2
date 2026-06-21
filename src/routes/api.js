@@ -66,6 +66,54 @@ function normalizarJid(termo) {
   return `${digitos}@s.whatsapp.net`;
 }
 
+// Gera as possíveis variantes de JID para números brasileiros (55 + DDD + número),
+// já que o WhatsApp pode ter o contato salvo com ou sem o "9" extra na frente
+// do número (números antigos vs. novos). Sem isso, digitar o número "errado"
+// cria uma carteira nova em vez de achar a pessoa que já existe no grupo.
+function gerarVariantesJid(termo) {
+  const t = String(termo || '').trim().toLowerCase();
+  if (t.includes('@')) return [t]; // já é um JID completo, não mexe
+
+  const digitos = t.replace(/\D/g, '');
+  const variantes = new Set([digitos]);
+
+  // Só se aplica a números brasileiros (55 + DDD + número)
+  if (digitos.startsWith('55') && digitos.length >= 12) {
+    const ddd   = digitos.slice(2, 4);
+    const resto = digitos.slice(4);
+
+    if (resto.length === 8) {
+      // Faltou o "9" -> adiciona a variante completa
+      variantes.add(`55${ddd}9${resto}`);
+    } else if (resto.length === 9 && resto.startsWith('9')) {
+      // Tem o "9" -> adiciona a variante sem ele (números antigos)
+      variantes.add(`55${ddd}${resto.slice(1)}`);
+    }
+  }
+
+  return [...variantes].map(d => `${d}@s.whatsapp.net`);
+}
+
+// Dado um termo (número/JID) e um idGrupo, descobre qual variante de JID
+// já tem carteira nesse grupo. Se nenhuma existir, retorna a variante
+// "canônica" (com o 9, que é o formato correto atual do WhatsApp) pra criar.
+async function resolverJidNoGrupo(termo, idGrupo) {
+  const variantes = gerarVariantesJid(termo);
+  if (variantes.length === 1) return variantes[0];
+
+  const existente = await CarteiraGrupo.findOne({
+    idWhatsApp: { $in: variantes },
+    idGrupo,
+  }).select('idWhatsApp').lean();
+
+  if (existente) return existente.idWhatsApp;
+
+  // Nenhuma variante existe ainda -> usa a que tem o "9" (padrão atual)
+  return variantes.find(v => v.includes('@')) && variantes.length > 1
+    ? variantes.sort((a, b) => b.length - a.length)[0] // a mais longa = com o 9
+    : variantes[0];
+}
+
 // Calcula nível a partir do XP (mesma fórmula usada no bot e no frontend)
 function calcularLevel(xp) {
   return Math.max(1, Math.floor(Math.pow((xp || 0) / 100, 1 / 1.5)) + 1);
@@ -572,7 +620,7 @@ router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
   try {
-    const idWhatsApp = normalizarJid(decodeURIComponent(req.params.idWhatsApp));
+    const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
     const { idGrupo, valor, operacao } = req.body || {};
 
     if (!idGrupo)
@@ -582,7 +630,9 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     if (!['dar', 'remover'].includes(operacao))
       return res.status(400).json({ error: 'operacao deve ser "dar" ou "remover".' });
 
-    // Se for "remover" e a carteira ainda não existir, não faz sentido criar uma do zero
+    // Resolve qual variante do JID (com/sem o "9") já existe nesse grupo
+    const idWhatsApp = await resolverJidNoGrupo(termoOriginal, idGrupo);
+
     if (operacao === 'remover') {
       const existe = await CarteiraGrupo.exists({ idWhatsApp, idGrupo });
       if (!existe)
@@ -591,22 +641,18 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
 
     const incremento = operacao === 'dar' ? valor : -valor;
 
-    // upsert: true -> se o usuário ainda não tem CarteiraGrupo nesse grupo
-    // (ex: número digitado manualmente que nunca mandou mensagem no grupo),
-    // o documento é criado automaticamente em vez de retornar 404.
     const carteira = await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp, idGrupo },
       { $inc: { gold: incremento } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
 
-    // Garante que o gold não fique negativo
     if (carteira.gold < 0) {
       await CarteiraGrupo.updateOne({ idWhatsApp, idGrupo }, { $set: { gold: 0 } });
       carteira.gold = 0;
     }
 
-    return res.json({ ok: true, goldAtual: carteira.gold });
+    return res.json({ ok: true, idWhatsApp, goldAtual: carteira.gold });
   } catch (err) {
     console.error('[API] PATCH /admin/usuario/gold:', err);
     return res.status(500).json({ error: 'Erro interno.' });

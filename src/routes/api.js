@@ -66,6 +66,11 @@ function normalizarJid(termo) {
   return `${digitos}@s.whatsapp.net`;
 }
 
+// Calcula nível a partir do XP (mesma fórmula usada no bot e no frontend)
+function calcularLevel(xp) {
+  return Math.max(1, Math.floor(Math.pow((xp || 0) / 100, 1 / 1.5)) + 1);
+}
+
 // ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
 function auth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -182,6 +187,126 @@ router.get('/grupos', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/user/ranking
+// Ranking global — soma xp/gold/mensagens de cada usuário em todos os grupos.
+//
+// Query params: limit (padrão 100, máx 200)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/user/ranking', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
+
+    const [agregados, totaisGlobais] = await Promise.all([
+      CarteiraGrupo.aggregate([
+        {
+          $group: {
+            _id:       '$idWhatsApp',
+            xp:        { $sum: '$xp' },
+            gold:      { $sum: '$gold' },
+            mensagens: { $sum: '$mensagens' },
+          },
+        },
+        { $sort: { xp: -1 } },
+        { $limit: limit },
+      ]),
+      CarteiraGrupo.aggregate([
+        {
+          $group: {
+            _id:            null,
+            totalMensagens: { $sum: '$mensagens' },
+            totalUsuarios:  { $addToSet: '$idWhatsApp' },
+          },
+        },
+      ]),
+    ]);
+
+    const jids = agregados.map(a => a._id);
+    const usuariosMap = {};
+    if (jids.length) {
+      const usuarios = await Usuario.find({ idWhatsApp: { $in: jids } })
+        .select('idWhatsApp nome telefone')
+        .lean();
+      for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
+    }
+
+    const ranking = agregados.map((a, i) => {
+      const u = usuariosMap[a._id] || {};
+      return {
+        idWhatsApp: a._id,
+        nome:       u.nome || u.telefone || a._id?.split('@')[0] || 'Anônimo',
+        xp:         a.xp        ?? 0,
+        gold:       a.gold      ?? 0,
+        mensagens:  a.mensagens ?? 0,
+        level:      calcularLevel(a.xp),
+        posicao:    i + 1,
+      };
+    });
+
+    const t = totaisGlobais[0] || {};
+
+    return res.json({
+      ranking,
+      total:          t.totalUsuarios?.length || ranking.length,
+      totalMensagens: t.totalMensagens || 0,
+      atualizadoEm:   new Date(),
+    });
+  } catch (err) {
+    console.error('[API] GET /user/ranking:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/user/ranking/grupo?jid=xxx
+// Ranking de um grupo específico (xp/gold/mensagens daquele grupo).
+//
+// Query params: jid (obrigatório), limit (padrão 100, máx 200)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/user/ranking/grupo', async (req, res) => {
+  try {
+    const jid = decodeURIComponent(req.query.jid || '');
+    if (!jid) return res.status(400).json({ error: 'jid é obrigatório.' });
+
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
+
+    const membros = await CarteiraGrupo
+      .find({ idGrupo: jid })
+      .sort({ xp: -1 })
+      .limit(limit)
+      .lean();
+
+    const jidsUsuarios = membros.map(m => m.idWhatsApp);
+    const usuariosMap = {};
+    if (jidsUsuarios.length) {
+      const usuarios = await Usuario.find({ idWhatsApp: { $in: jidsUsuarios } })
+        .select('idWhatsApp nome telefone')
+        .lean();
+      for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
+    }
+
+    const ranking = membros.map((m, i) => {
+      const u = usuariosMap[m.idWhatsApp] || {};
+      return {
+        idWhatsApp: m.idWhatsApp,
+        nome:       u.nome || u.telefone || m.idWhatsApp?.split('@')[0] || 'Anônimo',
+        xp:         m.xp        ?? 0,
+        gold:       m.gold      ?? 0,
+        mensagens:  m.mensagens ?? 0,
+        level:      m.level ?? calcularLevel(m.xp),
+        posicao:    i + 1,
+      };
+    });
+
+    const total = await CarteiraGrupo.countDocuments({ idGrupo: jid });
+
+    return res.json({ ranking, total });
+  } catch (err) {
+    console.error('[API] GET /user/ranking/grupo:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ROTAS AUTENTICADAS (JWT de sessão)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -202,7 +327,7 @@ router.get('/user/me', auth, async (req, res) => {
     const goldTotal      = carteiras.reduce((s, c) => s + (c.gold      ?? 0), 0);
     const mensagensTotal = carteiras.reduce((s, c) => s + (c.mensagens ?? 0), 0);
 
-    const levelGlobal = Math.max(1, Math.floor(Math.pow(xpTotal / 100, 1 / 1.5)) + 1);
+    const levelGlobal = calcularLevel(xpTotal);
 
     const xpParaProximo = Math.ceil(100 * Math.pow(levelGlobal, 1.5));
     const xpInicioNivel = Math.ceil(100 * Math.pow(Math.max(0, levelGlobal - 1), 1.5));
@@ -344,7 +469,7 @@ router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
     const xpTotal        = carteiras.reduce((s, c) => s + (c.xp        ?? 0), 0);
     const goldTotal      = carteiras.reduce((s, c) => s + (c.gold      ?? 0), 0);
     const mensagensTotal = carteiras.reduce((s, c) => s + (c.mensagens ?? 0), 0);
-    const levelGlobal    = Math.max(1, Math.floor(Math.pow(xpTotal / 100, 1 / 1.5)) + 1);
+    const levelGlobal    = calcularLevel(xpTotal);
 
     // Resolve nomes dos grupos usando agregação
     const jidsGrupos = carteiras.map(c => c.idGrupo);

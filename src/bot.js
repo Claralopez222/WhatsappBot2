@@ -51,7 +51,7 @@ const { handleRankGold, handleGive }                                        = re
 const { handleEmprestimo, handlePayEmprestimo, handleDivida }               = require(path.join(__dirname, 'handlers', 'diversao', 'emprestimo'));
 const { initPetScheduler, registerActiveGroup, initFilhosScheduler }        = require(path.join(__dirname, 'handlers', 'diversao'));
 const { initQuizRankingScheduler }                                          = require(path.join(__dirname, 'handlers', 'quizRanking'));
-
+const painelHandler = require(path.join(__dirname, 'handlers', 'painel'));
 
 // ─── Silenciar logs de sessão ─────────────────────────────────────────────────
 const _log = console.log.bind(console);

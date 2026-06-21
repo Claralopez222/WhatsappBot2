@@ -1225,10 +1225,17 @@ if (matchCmd(cmdWord, 'worldcup'))       { await diversaoHandler.handleWorldCup(
   if (matchCmdStart(cmd, 'caixa'))      { await textoHandler.handleTextoFun(sock, msg, jid, caption, getPrefix(jid), 'caixa');     return; }
 }
 
-// â”€â”€â”€ Servidor Web â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Servidor Web ─────────────────────────────────────────────────────────────
 const express = require('express');
 const app  = express();
 const port = process.env.PORT || 3000;
+
+// Necessário pro rate limit por IP (em routes/api.js) funcionar certo atrás
+// do proxy do Render — sem isso, req.ip mostra o IP interno do proxy pra todo mundo.
+app.set('trust proxy', 1);
+
+// Evita anunciar "Express" no header x-powered-by
+app.disable('x-powered-by');
 
 // ─── CORS global (antes de tudo) ─────────────────────────────────────────────
 const FRONTEND = 'https://piroquinhasbot.github.io';
@@ -1240,7 +1247,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 app.get('/', (req, res) => res.send('Bot Online!'));
 
@@ -1248,10 +1255,22 @@ app.get('/', (req, res) => res.send('Bot Online!'));
 const apiRouter = require('./routes/api');
 app.use('/api', apiRouter);
 
+// Qualquer rota /api/* que não bateu em nada do apiRouter cai aqui
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Rota não encontrada.' });
+});
+
+// Captura JSON malformado no corpo da requisição e qualquer erro não tratado
+// vindo das rotas acima — precisa ser o último app.use(), com 4 argumentos
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'JSON inválido no corpo da requisição.' });
+  }
+  console.error('[Servidor Web] Erro não tratado:', err);
+  return res.status(500).json({ error: 'Erro interno do servidor.' });
+});
+
 app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));
-
-// ─── Servidor Web ─────────────────────────────────────────────────────────────
-
 
 // ─── Iniciar (apenas uma vez) ─────────────────────────────────────────────────
 async function main() {

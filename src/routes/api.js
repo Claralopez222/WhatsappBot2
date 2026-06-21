@@ -6,6 +6,7 @@ const jwt       = require('jsonwebtoken');
 const router    = express.Router();
 const AuthToken = require('../models/AuthToken');
 const Usuario   = require('../models/Usuario');
+const CarteiraGrupo = require('../models/CarteiraGrupo');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -146,52 +147,6 @@ router.get('/user/ranking', async (req, res) => {
   }
 });
 
-// ─── MIDDLEWARE ADMIN ────────────────────────────────────────────────────────
-
-const ADMIN_KEY = process.env.ADMIN_KEY;
-if (!ADMIN_KEY) {
-  console.warn('⚠️ ADMIN_KEY não definida — todas as rotas /api/admin/* vão recusar acesso.');
-}
-
-function adminAuth(req, res, next) {
-  const chave = req.headers['x-admin-key'];
-  if (!ADMIN_KEY || !chave) return res.status(401).json({ error: 'Chave de admin inválida.' });
-
-  const a = Buffer.from(String(chave));
-  const b = Buffer.from(String(ADMIN_KEY));
-  const valido = a.length === b.length && crypto.timingSafeEqual(a, b);
-  if (!valido) return res.status(401).json({ error: 'Chave de admin inválida.' });
-
-  next();
-}
-
-router.get('/admin/verify', adminAuth, (req, res) => {
-  return res.json({ ok: true });
-});
-
-const CarteiraGrupo = require('../models/CarteiraGrupo');
-
-router.get('/grupos', adminAuth, async (req, res) => {
-  try {
-    const grupos = await CarteiraGrupo
-      .find({})
-      .select('idGrupo nome config')
-      .lean();
-
-    const vistos = new Set();
-    const unicos = grupos.filter(g => {
-      if (vistos.has(g.idGrupo)) return false;
-      vistos.add(g.idGrupo);
-      return true;
-    });
-
-    return res.json({ grupos: unicos });
-  } catch (err) {
-    console.error('[API] /grupos:', err);
-    return res.status(500).json({ error: 'Erro interno.' });
-  }
-});
-
 router.get('/user/ranking/grupo', async (req, res) => {
   try {
     const { jid } = req.query;
@@ -218,6 +173,74 @@ router.get('/user/ranking/grupo', async (req, res) => {
     return res.json({ ranking, total });
   } catch (err) {
     console.error('[API] /user/ranking/grupo:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─── MIDDLEWARE ADMIN ────────────────────────────────────────────────────────
+
+const ADMIN_KEY = process.env.ADMIN_KEY;
+if (!ADMIN_KEY) {
+  console.warn('⚠️ ADMIN_KEY não definida — todas as rotas /api/admin/* vão recusar acesso.');
+}
+
+function adminAuth(req, res, next) {
+  const chave = req.headers['x-admin-key'];
+  if (!ADMIN_KEY || !chave) return res.status(401).json({ error: 'Chave de admin inválida.' });
+
+  const a = Buffer.from(String(chave));
+  const b = Buffer.from(String(ADMIN_KEY));
+  const valido = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!valido) return res.status(401).json({ error: 'Chave de admin inválida.' });
+
+  next();
+}
+
+// Limita tentativas de login do admin por IP (precisa de "trust proxy"
+// configurado no bot.js pra req.ip refletir o IP real do cliente no Render)
+const tentativasLogin = new Map();
+const LOGIN_MAX_TENTATIVAS = 10;
+const LOGIN_JANELA_MS = 15 * 60 * 1000;
+
+function rateLimitAdminLogin(req, res, next) {
+  const ip = req.ip || 'desconhecido';
+  const agora = Date.now();
+  const registro = tentativasLogin.get(ip);
+
+  if (!registro || agora > registro.resetAt) {
+    tentativasLogin.set(ip, { count: 1, resetAt: agora + LOGIN_JANELA_MS });
+    return next();
+  }
+
+  if (registro.count >= LOGIN_MAX_TENTATIVAS) {
+    return res.status(429).json({ error: 'Muitas tentativas. Tente novamente em alguns minutos.' });
+  }
+
+  registro.count++;
+  next();
+}
+
+router.get('/admin/verify', rateLimitAdminLogin, adminAuth, (req, res) => {
+  return res.json({ ok: true });
+});
+
+router.get('/grupos', adminAuth, async (req, res) => {
+  try {
+    const grupos = await CarteiraGrupo
+      .find({})
+      .select('idGrupo nome config mensagens')
+      .lean();
+
+    const vistos = new Set();
+    const unicos = grupos.filter(g => {
+      if (vistos.has(g.idGrupo)) return false;
+      vistos.add(g.idGrupo);
+      return true;
+    });
+
+    return res.json({ grupos: unicos });
+  } catch (err) {
+    console.error('[API] /grupos:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });
@@ -253,14 +276,75 @@ router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
   }
 });
 
+// Define o número de warns diretamente (usado pelo botão "Zerar" no admin)
+router.put('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
+  try {
+    const { idWhatsApp } = req.params;
+    const { warns } = req.body;
+
+    if (typeof warns !== 'number' || !Number.isInteger(warns) || warns < 0 || warns > 1000) {
+      return res.status(400).json({ error: 'Valor de warns inválido.' });
+    }
+
+    const usuario = await Usuario.findOneAndUpdate(
+      { idWhatsApp },
+      { $set: { warns } },
+      { new: true }
+    );
+    if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    return res.json({ ok: true, warns: usuario.warns });
+  } catch (err) {
+    console.error('[API] PUT /admin/warn/:id:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// Bane/desbane um usuário
+router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
+  try {
+    const { idWhatsApp } = req.params;
+    const { banido } = req.body;
+
+    if (typeof banido !== 'boolean') {
+      return res.status(400).json({ error: 'Campo "banido" deve ser true ou false.' });
+    }
+
+    const usuario = await Usuario.findOneAndUpdate(
+      { idWhatsApp },
+      { $set: { banido } },
+      { new: true }
+    );
+    if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    return res.json({ ok: true, banido: usuario.banido });
+  } catch (err) {
+    console.error('[API] PATCH /admin/usuario/:id/ban:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+const CAMPOS_CONFIG_PERMITIDOS = ['xpAtivo', 'antiLink', 'boasVindas'];
+
 router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
   try {
     const jid    = decodeURIComponent(req.params.jid);
-    const campos = req.body;
+    const campos = req.body || {};
+
+    const chaves = Object.keys(campos);
+    if (!chaves.length) {
+      return res.status(400).json({ error: 'Nenhum campo enviado.' });
+    }
 
     const update = {};
-    for (const [campo, valor] of Object.entries(campos)) {
-      update[`config.${campo}`] = valor;
+    for (const campo of chaves) {
+      if (!CAMPOS_CONFIG_PERMITIDOS.includes(campo)) {
+        return res.status(400).json({ error: `Campo de configuração desconhecido: ${campo}` });
+      }
+      if (typeof campos[campo] !== 'boolean') {
+        return res.status(400).json({ error: `O campo "${campo}" deve ser true ou false.` });
+      }
+      update[`config.${campo}`] = campos[campo];
     }
 
     await CarteiraGrupo.updateMany({ idGrupo: jid }, { $set: update });
@@ -272,10 +356,22 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
   }
 });
 
+const TAMANHO_MAX_MENSAGEM = 5000;
+
 router.put('/admin/grupo/:jid/mensagens', adminAuth, async (req, res) => {
   try {
     const jid = decodeURIComponent(req.params.jid);
-    const { boasVindas, regras } = req.body;
+    const { boasVindas, regras } = req.body || {};
+
+    if (boasVindas != null && typeof boasVindas !== 'string') {
+      return res.status(400).json({ error: 'boasVindas deve ser texto.' });
+    }
+    if (regras != null && typeof regras !== 'string') {
+      return res.status(400).json({ error: 'regras deve ser texto.' });
+    }
+    if ((boasVindas?.length || 0) > TAMANHO_MAX_MENSAGEM || (regras?.length || 0) > TAMANHO_MAX_MENSAGEM) {
+      return res.status(400).json({ error: `Cada mensagem deve ter no máximo ${TAMANHO_MAX_MENSAGEM} caracteres.` });
+    }
 
     await CarteiraGrupo.updateMany(
       { idGrupo: jid },

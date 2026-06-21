@@ -5,7 +5,7 @@ const AuthToken = require('../models/AuthToken');
 const Usuario   = require('../models/Usuario');
 const { normalizarJid } = require('../utils/jid');
 
-const PAINEL_URL = 'https://piroquinhasbot.github.io/painel-piroquinhas';
+const PAINEL_URL = 'https://piroquinhasbot.github.io/painel-piroquinhas/perfil.html';
 
 async function handleMeuPainel(sock, msg, jid) {
   try {

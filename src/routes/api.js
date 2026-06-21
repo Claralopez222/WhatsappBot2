@@ -1,13 +1,18 @@
 ﻿'use strict';
 
+const crypto    = require('crypto');
 const express   = require('express');
 const jwt       = require('jsonwebtoken');
 const router    = express.Router();
 const AuthToken = require('../models/AuthToken');
 const Usuario   = require('../models/Usuario');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'piroquinhas-secret-troque-no-env';
-const FRONTEND   = 'https://piroquinhasbot.github.io';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET não definida no .env — obrigatória para autenticação do painel.');
+}
+
+const FRONTEND = 'https://piroquinhasbot.github.io';
 
 router.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin',  FRONTEND);
@@ -29,18 +34,32 @@ function auth(req, res, next) {
   }
 }
 
+// Converte campos Map do Mongoose pra objeto plano — funciona tanto com
+// documentos normais (Map de verdade) quanto com .lean() (já vem como objeto)
+function mapParaObjeto(valor) {
+  if (!valor) return {};
+  return valor instanceof Map ? Object.fromEntries(valor) : valor;
+}
+
 router.post('/auth/token', async (req, res) => {
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: 'Token não informado.' });
 
-    const registro = await AuthToken.findOne({ token });
-    if (!registro)      return res.status(404).json({ error: 'Token inválido.' });
-    if (registro.usado) return res.status(410).json({ error: 'Token já utilizado.' });
-    if (registro.expiresAt < new Date()) return res.status(410).json({ error: 'Token expirado.' });
+    // Operação atômica: marca como usado e busca em um único passo,
+    // evitando que duas requisições simultâneas resgatem o mesmo token
+    const registro = await AuthToken.findOneAndUpdate(
+      { token, usado: false, expiresAt: { $gt: new Date() } },
+      { $set: { usado: true } },
+      { new: false }
+    );
 
-    registro.usado = true;
-    await registro.save();
+    if (!registro) {
+      const existe = await AuthToken.findOne({ token });
+      if (!existe)      return res.status(404).json({ error: 'Token inválido.' });
+      if (existe.usado) return res.status(410).json({ error: 'Token já utilizado.' });
+      return res.status(410).json({ error: 'Token expirado.' });
+    }
 
     const sessionToken = jwt.sign(
       { telefone: registro.telefone, idWhatsApp: registro.idWhatsApp },
@@ -60,12 +79,21 @@ router.get('/user/me', auth, async (req, res) => {
     const usuario = await Usuario.findOne({ idWhatsApp: req.user.idWhatsApp }).lean();
     if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
-    const xpHistory        = usuario.xpHistory        ? Object.fromEntries(usuario.xpHistory) : {};
-    const inventory        = usuario.inventory         ? Object.fromEntries(usuario.inventory)  : {};
-    const atividadeSemanal = usuario.atividadeSemanal  || [0,0,0,0,0,0,0];
-    const xpParaProximo    = Math.floor(usuario.level * 100 * 1.5);
-    const xpProgresso      = Math.min(100, Math.floor((usuario.xp / xpParaProximo) * 100));
-    const posicao          = await Usuario.countDocuments({ xp: { $gt: usuario.xp } });
+    const xpHistory        = mapParaObjeto(usuario.xpHistory);
+    const inventory        = mapParaObjeto(usuario.inventory);
+    const atividadeSemanal = usuario.atividadeSemanal || [0,0,0,0,0,0,0];
+
+    // Mesma fórmula de level usada em addUserXp() no bot.js:
+    // level = floor((xp/100)^(1/1.5)) + 1  →  xp pro level L = 100 * L^1.5
+    const nivelAtual        = usuario.level || 1;
+    const xpInicioNivel     = 100 * Math.pow(Math.max(0, nivelAtual - 1), 1.5);
+    const xpParaProximo     = Math.ceil(100 * Math.pow(nivelAtual, 1.5));
+    const xpNecessarioNivel = xpParaProximo - xpInicioNivel;
+    const xpProgresso       = xpNecessarioNivel > 0
+      ? Math.min(100, Math.max(0, Math.floor(((usuario.xp - xpInicioNivel) / xpNecessarioNivel) * 100)))
+      : 100;
+
+    const posicao = await Usuario.countDocuments({ xp: { $gt: usuario.xp } });
 
     return res.json({
       nome:           usuario.nome,
@@ -120,24 +148,26 @@ router.get('/user/ranking', async (req, res) => {
 
 // ─── MIDDLEWARE ADMIN ────────────────────────────────────────────────────────
 
-const ADMIN_KEY = process.env.ADMIN_KEY || '';
+const ADMIN_KEY = process.env.ADMIN_KEY;
+if (!ADMIN_KEY) {
+  console.warn('⚠️ ADMIN_KEY não definida — todas as rotas /api/admin/* vão recusar acesso.');
+}
 
 function adminAuth(req, res, next) {
   const chave = req.headers['x-admin-key'];
-  if (!chave || chave !== ADMIN_KEY)
-    return res.status(401).json({ error: 'Chave de admin inválida.' });
+  if (!ADMIN_KEY || !chave) return res.status(401).json({ error: 'Chave de admin inválida.' });
+
+  const a = Buffer.from(String(chave));
+  const b = Buffer.from(String(ADMIN_KEY));
+  const valido = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!valido) return res.status(401).json({ error: 'Chave de admin inválida.' });
+
   next();
 }
-
-// ─── GET /api/admin/verify ───────────────────────────────────────────────────
-// Valida a chave de admin (usado na tela de login do painel)
 
 router.get('/admin/verify', adminAuth, (req, res) => {
   return res.json({ ok: true });
 });
-
-// ─── GET /api/grupos ─────────────────────────────────────────────────────────
-// Lista grupos distintos da collection CarteiraGrupo
 
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 
@@ -148,7 +178,6 @@ router.get('/grupos', adminAuth, async (req, res) => {
       .select('idGrupo nome config')
       .lean();
 
-    // Deduplica por idGrupo caso haja documentos repetidos
     const vistos = new Set();
     const unicos = grupos.filter(g => {
       if (vistos.has(g.idGrupo)) return false;
@@ -162,9 +191,6 @@ router.get('/grupos', adminAuth, async (req, res) => {
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });
-
-// ─── GET /api/user/ranking/grupo?jid=xxx ─────────────────────────────────────
-// Top 100 de um grupo específico, ordenado por xp desc
 
 router.get('/user/ranking/grupo', async (req, res) => {
   try {
@@ -181,12 +207,12 @@ router.get('/user/ranking/grupo', async (req, res) => {
       .lean();
 
     const ranking = top.map((u, i) => ({
-      posicao:   i + 1,
-      nome:      u.nome || u.telefone || 'Anônimo',
+      posicao:    i + 1,
+      nome:       u.nome || u.telefone || 'Anônimo',
       idWhatsApp: u.idWhatsApp,
-      xp:        u.xp,
-      level:     u.level,
-      mensagens: u.mensagens,
+      xp:         u.xp,
+      level:      u.level,
+      mensagens:  u.mensagens,
     }));
 
     return res.json({ ranking, total });
@@ -195,9 +221,6 @@ router.get('/user/ranking/grupo', async (req, res) => {
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });
-
-// ─── GET /api/admin/usuarios ──────────────────────────────────────────────────
-// Lista usuários com warns > 0 ou banidos
 
 router.get('/admin/usuarios', adminAuth, async (req, res) => {
   try {
@@ -213,9 +236,6 @@ router.get('/admin/usuarios', adminAuth, async (req, res) => {
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });
-
-// ─── DELETE /api/admin/warn/:idWhatsApp ───────────────────────────────────────
-// Remove 1 warn do usuário
 
 router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
   try {
@@ -233,13 +253,10 @@ router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
   }
 });
 
-// ─── PATCH /api/admin/grupo/:jid/config ──────────────────────────────────────
-// Atualiza toggles de configuração do grupo
-
 router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
   try {
     const jid    = decodeURIComponent(req.params.jid);
-    const campos = req.body; // ex: { xpAtivo: true }
+    const campos = req.body;
 
     const update = {};
     for (const [campo, valor] of Object.entries(campos)) {
@@ -255,12 +272,9 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
   }
 });
 
-// ─── PUT /api/admin/grupo/:jid/mensagens ─────────────────────────────────────
-// Salva mensagem de boas-vindas e regras do grupo
-
 router.put('/admin/grupo/:jid/mensagens', adminAuth, async (req, res) => {
   try {
-    const jid          = decodeURIComponent(req.params.jid);
+    const jid = decodeURIComponent(req.params.jid);
     const { boasVindas, regras } = req.body;
 
     await CarteiraGrupo.updateMany(

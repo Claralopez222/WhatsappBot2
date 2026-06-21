@@ -3,15 +3,20 @@
 const crypto    = require('crypto');
 const AuthToken = require('../models/AuthToken');
 const Usuario   = require('../models/Usuario');
+const { normalizarJid } = require('../utils/jid');
 
 const PAINEL_URL = 'https://piroquinhasbot.github.io/painel-piroquinhas';
 
-async function handleMeuPainel(sock, msg, jidUsuario) {
+async function handleMeuPainel(sock, msg, jid) {
   try {
-    const usuario = await Usuario.findOne({ idWhatsApp: jidUsuario });
+    const remetente = msg.key.participant || msg.key.remoteJid;
+    const senderJid  = normalizarJid(remetente);
+    if (!senderJid) return;
+
+    const usuario = await Usuario.findOne({ idWhatsApp: senderJid });
 
     if (!usuario) {
-      await sock.sendMessage(jidUsuario, {
+      await sock.sendMessage(senderJid, {
         text: '❌ Você ainda não tem perfil registrado. Mande uma mensagem no grupo primeiro!',
       });
       return;
@@ -20,19 +25,15 @@ async function handleMeuPainel(sock, msg, jidUsuario) {
     const token = crypto.randomBytes(32).toString('hex');
 
     await AuthToken.create({
-      telefone:   usuario.telefone || jidUsuario.split('@')[0],
-      idWhatsApp: jidUsuario,
+      telefone:   usuario.telefone || senderJid.split('@')[0],
+      idWhatsApp: senderJid,
       token,
       expiresAt:  new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
     const link = `${PAINEL_URL}?token=${token}`;
 
-    const jidPrivado = jidUsuario.includes('@g.us')
-      ? msg.key.participant
-      : jidUsuario;
-
-    await sock.sendMessage(jidPrivado, {
+    await sock.sendMessage(senderJid, {
       text:
         `🔐 *Seu link de acesso ao Painel Piroquinhas*\n\n` +
         `${link}\n\n` +
@@ -40,18 +41,18 @@ async function handleMeuPainel(sock, msg, jidUsuario) {
         `⚠️ Não compartilhe este link com ninguém!`,
     });
 
-    if (msg.key.remoteJid !== jidPrivado) {
-      await sock.sendMessage(msg.key.remoteJid, {
-        text: `✅ @${jidPrivado.split('@')[0]}, te enviei o link no privado! 🔐`,
-        mentions: [jidPrivado],
+    if (jid !== senderJid) {
+      await sock.sendMessage(jid, {
+        text: `✅ @${senderJid.split('@')[0]}, te enviei o link no privado! 🔐`,
+        mentions: [senderJid],
       });
     }
 
   } catch (err) {
     console.error('[painel] Erro ao gerar token:', err);
-    await sock.sendMessage(msg.key.remoteJid, {
+    await sock.sendMessage(jid, {
       text: '❌ Erro ao gerar o link do painel. Tenta de novo em instantes.',
-    });
+    }).catch(() => {});
   }
 }
 

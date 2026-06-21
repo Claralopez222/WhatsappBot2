@@ -747,6 +747,7 @@ if (matchCmd(cmdWord, 'perfil'))
   { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
 if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
   { await utilidadeHandler.handleBio(sock, msg, jid, caption); return; }
+if (matchCmd(cmdWord, 'meupainel')) { await painelHandler.handleMeuPainel(sock, msg, jid, senderJid); return; }
 
   // ── MENUS ─────────────────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'menu') || matchCmdStart(cmd, 'menu '))

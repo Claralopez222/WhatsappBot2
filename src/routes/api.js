@@ -7,6 +7,7 @@ const router        = express.Router();
 const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
+const LidMapping    = require('../models/LidMapping');
 
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {
@@ -70,60 +71,50 @@ function normalizarJid(termo) {
 // já que o WhatsApp pode ter o contato salvo com ou sem o "9" extra na frente
 // do número (números antigos vs. novos). Sem isso, digitar o número "errado"
 // cria uma carteira nova em vez de achar a pessoa que já existe no grupo.
-function gerarVariantesJid(termo) {
-  const t = String(termo || '').trim().toLowerCase();
-
-  // Separa número/domínio mesmo se já vier como JID completo
-  // (ex: o frontend do painel "Ver Gold" já manda "numero@s.whatsapp.net").
-  let local   = t;
-  let dominio = 's.whatsapp.net';
-
-  if (t.includes('@')) {
-    const [parteLocal, parteDominio] = t.split('@');
-    local   = parteLocal;
-    dominio = parteDominio;
-    // Só mexe em JIDs de número de celular. Grupo (@g.us) ou @lid passa direto.
-    if (dominio !== 's.whatsapp.net') return [t];
-  }
-
-  const digitos = local.replace(/\D/g, '');
+// Gera variantes de DÍGITOS (sem domínio) pra números brasileiros, cobrindo
+// o "9" extra que pode estar presente ou não, dependendo de quando o
+// contato foi salvo.
+function gerarVariantesNumero(termo) {
+  const digitos = String(termo || '').replace(/\D/g, '');
   const variantes = new Set([digitos]);
 
-  // Só se aplica a números brasileiros (55 + DDD + número)
   if (digitos.startsWith('55') && digitos.length >= 12) {
     const ddd   = digitos.slice(2, 4);
     const resto = digitos.slice(4);
 
     if (resto.length === 8) {
-      // Faltou o "9" -> adiciona a variante completa
       variantes.add(`55${ddd}9${resto}`);
     } else if (resto.length === 9 && resto.startsWith('9')) {
-      // Tem o "9" -> adiciona a variante sem ele (números antigos)
       variantes.add(`55${ddd}${resto.slice(1)}`);
     }
   }
 
-  return [...variantes].map(d => `${d}@${dominio}`);
+  return [...variantes];
 }
 
-// Dado um termo (número/JID) e um idGrupo, descobre qual variante de JID
-// já tem carteira nesse grupo. Se nenhuma existir, retorna a variante
-// "canônica" (com o 9, que é o formato correto atual do WhatsApp) pra criar.
-async function resolverJidNoGrupo(termo, idGrupo) {
-  const variantes = gerarVariantesJid(termo);
-  if (variantes.length === 1) return variantes[0];
+// Resolve o que o admin digitou (telefone OU JID) pro idWhatsApp REAL usado
+// nas carteiras desse grupo. Ordem de prioridade:
+//   1. Já veio como JID completo (@lid ou @s.whatsapp.net) -> usa direto.
+//   2. É um telefone com LID mapeado (capturado pelo bot.js)  -> usa o LID.
+//   3. Telefone sem mapeamento, mas já tem carteira nesse grupo -> usa essa.
+//   4. Nada encontrado -> usa a variante "completa" (com o 9) pra criar.
+async function resolverIdWhatsApp(termo, idGrupo) {
+  const t = String(termo || '').trim().toLowerCase();
+  if (t.includes('@')) return t;
+
+  const variantesDigitos = gerarVariantesNumero(t);
+  const variantesPn      = variantesDigitos.map(d => `${d}@s.whatsapp.net`);
+
+  const mapeamento = await LidMapping.findOne({ pn: { $in: variantesPn } }).lean();
+  if (mapeamento) return mapeamento.lid;
 
   const existente = await CarteiraGrupo.findOne({
-    idWhatsApp: { $in: variantes },
+    idWhatsApp: { $in: variantesPn },
     idGrupo,
   }).select('idWhatsApp').lean();
-
   if (existente) return existente.idWhatsApp;
 
-  // Nenhuma variante existe ainda -> usa a que tem o "9" (padrão atual)
-  return variantes.find(v => v.includes('@')) && variantes.length > 1
-    ? variantes.sort((a, b) => b.length - a.length)[0] // a mais longa = com o 9
-    : variantes[0];
+  return variantesPn.sort((a, b) => b.length - a.length)[0];
 }
 
 // Calcula nível a partir do XP (mesma fórmula usada no bot e no frontend)
@@ -643,7 +634,7 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'operacao deve ser "dar" ou "remover".' });
 
     // Resolve qual variante do JID (com/sem o "9") já existe nesse grupo
-    const idWhatsApp = await resolverJidNoGrupo(termoOriginal, idGrupo);
+    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
 
     if (operacao === 'remover') {
       const existe = await CarteiraGrupo.exists({ idWhatsApp, idGrupo });
@@ -1046,6 +1037,77 @@ router.get('/admin/logs', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('[API] GET /admin/logs:', err);
     return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/util/mesclar-felipe
+// ⚠️  ROTA TEMPORÁRIA — remover após executar a mesclagem.
+// Acesse com ?executar=true para aplicar. Sem o parâmetro, é dry-run.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/util/mesclar-felipe', adminAuth, async (req, res) => {
+  const DRY_RUN    = req.query.executar !== 'true';
+  const ID_GRUPO   = '120363158061167558@g.us';
+  const JID_REAL   = '173396520337564@lid';
+  const JIDS_FANTASMA = [
+    '5565993354137@s.whatsapp.net',
+    '556593354137@s.whatsapp.net',
+  ];
+
+  try {
+    const real = await CarteiraGrupo.findOne({ idWhatsApp: JID_REAL, idGrupo: ID_GRUPO }).lean();
+    if (!real) return res.status(404).json({ erro: 'Carteira real do Felipe não encontrada.' });
+
+    let totalGold = 0, totalXp = 0, totalMensagens = 0;
+    const detalhes = [];
+
+    for (const jid of JIDS_FANTASMA) {
+      const doc = await CarteiraGrupo.findOne({ idWhatsApp: jid, idGrupo: ID_GRUPO }).lean();
+      if (!doc) { detalhes.push({ jid, status: 'não existe — pulado' }); continue; }
+
+      totalGold      += doc.gold      || 0;
+      totalXp        += doc.xp        || 0;
+      totalMensagens += doc.mensagens || 0;
+
+      if (!DRY_RUN) await CarteiraGrupo.deleteOne({ _id: doc._id });
+
+      detalhes.push({
+        jid,
+        gold:      doc.gold,
+        xp:        doc.xp,
+        mensagens: doc.mensagens,
+        status:    DRY_RUN ? 'seria deletado' : 'deletado ✅',
+      });
+    }
+
+    const resultado = {
+      goldFinal:      (real.gold      || 0) + totalGold,
+      xpFinal:        (real.xp        || 0) + totalXp,
+      mensagensFinal: (real.mensagens || 0) + totalMensagens,
+    };
+
+    if (!DRY_RUN) {
+      await CarteiraGrupo.updateOne(
+        { idWhatsApp: JID_REAL, idGrupo: ID_GRUPO },
+        { $set: { gold: resultado.goldFinal, xp: resultado.xpFinal, mensagens: resultado.mensagensFinal } }
+      );
+      // Registra o LidMapping enquanto estamos aqui
+      await LidMapping.findOneAndUpdate(
+        { lid: JID_REAL },
+        { $set: { pn: '5565993354137@s.whatsapp.net' } },
+        { upsert: true }
+      );
+    }
+
+    return res.json({
+      modo:       DRY_RUN ? '🔍 DRY-RUN — nada alterado' : '✅ EXECUTADO',
+      felipeAntes: { gold: real.gold, xp: real.xp, mensagens: real.mensagens },
+      fantasmas:  detalhes,
+      resultado,
+    });
+  } catch (err) {
+    console.error('[API] mesclar-felipe:', err);
+    return res.status(500).json({ erro: 'Erro interno.', detalhe: err.message });
   }
 });
 

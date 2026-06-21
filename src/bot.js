@@ -31,6 +31,18 @@ const { rodarAtualizacao } = require('./scripts/atualizarGrupos.js');
 // ─── Models ───────────────────────────────────────────────────────────────────
 const Usuario       = require(path.join(__dirname, 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
+const LidMapping    = require(path.join(__dirname, 'models', 'LidMapping'));
+
+// Salva (ou atualiza) o par LID ↔ telefone real. Roda em background, sem
+// travar o processamento da mensagem — se falhar, só loga e segue a vida.
+async function salvarLidMapping(lid, pn) {
+  if (!lid || !pn || !lid.endsWith('@lid')) return;
+  try {
+    await LidMapping.findOneAndUpdate({ lid }, { $set: { pn } }, { upsert: true });
+  } catch (e) {
+    console.error('⚠️ Erro ao salvar LID mapping:', e.message);
+  }
+}
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
 const { normalizarJid } = require('./utils/jid');
@@ -423,6 +435,14 @@ async function startBot() {
             const remetente     = msg.key.participant || msg.key.remoteJid;
             const remetenteNorm = normalizarJid(remetente);
             if (!remetenteNorm) return;
+
+            // ── Captura o par LID↔telefone, se o Baileys entregou (campo
+            // disponível desde a v6.7.19 para mensagens de grupo que não
+            // são "fromMe"). Isso roda em paralelo, não bloqueia nada.
+            if (remetenteNorm.endsWith('@lid') && msg.key.participantPn) {
+              const pnNorm = normalizarJid(msg.key.participantPn);
+              if (pnNorm) salvarLidMapping(remetenteNorm, pnNorm);
+            }
 
             const nomeDoCara = msg.pushName || 'Usuário do Zap';
 

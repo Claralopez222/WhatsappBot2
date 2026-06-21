@@ -1244,7 +1244,7 @@ app.use(express.json());
 app.get('/', (req, res) => res.send('Bot Online!'));
 
 // ─── Painel API ───────────────────────────────────────────────────────────────
-const apiRouter = require('./src/routes/api');
+const apiRouter = require('./routes/api');
 app.use('/api', apiRouter);
 
 app.listen(port, () => console.log(`Servidor web do bot rodando na porta ${port}`));

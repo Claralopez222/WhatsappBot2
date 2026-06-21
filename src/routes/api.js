@@ -72,9 +72,21 @@ function normalizarJid(termo) {
 // cria uma carteira nova em vez de achar a pessoa que já existe no grupo.
 function gerarVariantesJid(termo) {
   const t = String(termo || '').trim().toLowerCase();
-  if (t.includes('@')) return [t]; // já é um JID completo, não mexe
 
-  const digitos = t.replace(/\D/g, '');
+  // Separa número/domínio mesmo se já vier como JID completo
+  // (ex: o frontend do painel "Ver Gold" já manda "numero@s.whatsapp.net").
+  let local   = t;
+  let dominio = 's.whatsapp.net';
+
+  if (t.includes('@')) {
+    const [parteLocal, parteDominio] = t.split('@');
+    local   = parteLocal;
+    dominio = parteDominio;
+    // Só mexe em JIDs de número de celular. Grupo (@g.us) ou @lid passa direto.
+    if (dominio !== 's.whatsapp.net') return [t];
+  }
+
+  const digitos = local.replace(/\D/g, '');
   const variantes = new Set([digitos]);
 
   // Só se aplica a números brasileiros (55 + DDD + número)
@@ -91,7 +103,7 @@ function gerarVariantesJid(termo) {
     }
   }
 
-  return [...variantes].map(d => `${d}@s.whatsapp.net`);
+  return [...variantes].map(d => `${d}@${dominio}`);
 }
 
 // Dado um termo (número/JID) e um idGrupo, descobre qual variante de JID
@@ -851,10 +863,12 @@ router.get('/admin/grupo/:jid/gold-ranking', adminAuth, async (req, res) => {
     }
 
     const ranking = membros.map(m => {
-      const u = usuariosMap[m.idWhatsApp] || {};
+      const u         = usuariosMap[m.idWhatsApp] || {};
+      const numeroPuro = m.idWhatsApp?.split('@')[0] || '';
       return {
         idWhatsApp: m.idWhatsApp,
-        nome:       u.nome || u.telefone || m.idWhatsApp?.split('@')[0] || '—',
+        nome:       u.nome || u.telefone || numeroPuro || '—',
+        telefone:   u.telefone || numeroPuro || '—', // sempre mandado separado, mesmo quando há nome
         gold:       m.gold ?? 0,
         xp:         m.xp   ?? 0,
         level:      m.level ?? 1,

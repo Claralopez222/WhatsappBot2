@@ -660,11 +660,6 @@ async function handleMessage(sock, msg) {
   const cmdWord = raw.split(/\s+/)[0];
   const cmd     = raw;
 
-  if (senderJid) {
-    contarMensagem(senderJid, author);
-    await addUserXp(senderJid, 1, msg.pushName || author);
-  }
-
   const isPrivate = jid && !jid.endsWith('@g.us') && !jid.endsWith('@broadcast');
   const isGroup   = jid && jid.endsWith('@g.us');
 
@@ -770,15 +765,23 @@ async function handleMessage(sock, msg) {
   if (senderJid) contarCmd(senderJid);
 
   // ── Mute check ───────────────────────────────────────────────
-if (jid?.endsWith('@g.us') && senderJid && isMuted(jid, senderJid)) {
-  try {
-    await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
-  } catch (e) {
-    console.error('❌ Erro ao remover mutado:', e.message);
+  if (isGroup && senderJid) {
+    const senderNorm = normalizarJid(senderJid);
+    if (senderNorm && isMuted(jid, senderNorm)) {
+      try {
+        await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
+      } catch (e) {
+        console.error('❌ Erro ao remover mutado:', e.message);
+      }
+      unmuteUser(jid, senderNorm);
+      return;
+    }
   }
-  unmuteUser(jid, senderJid);
-  return;
-}
+
+  if (senderJid) {
+    contarMensagem(senderJid, author);
+    await addUserXp(senderJid, 1, msg.pushName || author);
+  }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // â”€â”€â”€ ROTEADOR

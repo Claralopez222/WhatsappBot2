@@ -1231,5 +1231,51 @@ router.post('/cassino/slots', auth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/user/grupos/:idWhatsApp
+// Retorna os grupos de um usuário com nome e gold (pública).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/user/grupos/:idWhatsApp', async (req, res) => {
+  try {
+    const idWhatsApp = decodeURIComponent(req.params.idWhatsApp).trim().toLowerCase();
+
+    const carteiras = await CarteiraGrupo
+      .find({ idWhatsApp })
+      .sort({ xp: -1 })
+      .lean();
+
+    if (!carteiras.length)
+      return res.json({ grupos: [] });
+
+    const jids = carteiras.map(c => c.idGrupo);
+    const nomesMap = {};
+    if (jids.length) {
+      const docs = await CarteiraGrupo.aggregate([
+        { $match: { idGrupo: { $in: jids } } },
+        { $group: {
+          _id:        '$idGrupo',
+          nomeCustom: { $first: { $ifNull: ['$nomeCustom', null] } },
+          nomeReal:   { $first: { $ifNull: ['$nome',       null] } },
+        }},
+      ]);
+      for (const d of docs) nomesMap[d._id] = nomeGrupo(d, d._id);
+    }
+
+    const grupos = carteiras.map(c => ({
+      jid:      c.idGrupo,
+      nome:     nomesMap[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
+      gold:     c.gold     ?? 0,
+      xp:       c.xp       ?? 0,
+      level:    c.level    ?? 1,
+      mensagens: c.mensagens ?? 0,
+    }));
+
+    return res.json({ grupos });
+  } catch (err) {
+    console.error('[API] GET /user/grupos/:idWhatsApp:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

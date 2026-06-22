@@ -68,6 +68,7 @@ const { handleEmprestimo, handlePayEmprestimo, handleDivida }               = re
 const { initPetScheduler, registerActiveGroup, initFilhosScheduler }        = require(path.join(__dirname, 'handlers', 'diversao'));
 const { initQuizRankingScheduler }                                          = require(path.join(__dirname, 'handlers', 'quizRanking'));
 const painelHandler = require(path.join(__dirname, 'handlers', 'painel'));
+const { isMuted, unmuteUser } = require(path.join(__dirname, 'handlers', 'grupo'));
 
 // ─── Silenciar logs de sessão ─────────────────────────────────────────────────
 const _log = console.log.bind(console);

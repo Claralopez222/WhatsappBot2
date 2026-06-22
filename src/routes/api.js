@@ -462,9 +462,24 @@ router.get('/user/grupos', auth, async (req, res) => {
       .sort({ xp: -1 })
       .lean();
 
+    // Busca nomes reais dos grupos a partir de qualquer carteira que tenha o campo
+    const jidsGruposUser = carteiras.map(c => c.idGrupo);
+    const nomesGruposMap = {};
+    if (jidsGruposUser.length) {
+      const docsNomes = await CarteiraGrupo.aggregate([
+        { $match: { idGrupo: { $in: jidsGruposUser } } },
+        { $group: {
+          _id:        '$idGrupo',
+          nomeCustom: { $first: { $ifNull: ['$nomeCustom', null] } },
+          nomeReal:   { $first: { $ifNull: ['$nomeReal',   null] } },
+        }},
+      ]);
+      for (const d of docsNomes) nomesGruposMap[d._id] = nomeGrupo(d, d._id);
+    }
+
     const grupos = carteiras.map(c => ({
       jid:          c.idGrupo,
-      nome:         nomeGrupo(c, c.idGrupo),
+      nome:         nomesGruposMap[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
       xp:           c.xp           ?? 0,
       level:        c.level        ?? 1,
       gold:         c.gold         ?? 0,

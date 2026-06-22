@@ -476,10 +476,16 @@ async function startBot() {
             );
 
             // ── Usuario global: XP global, level e missões ────────────────────
+            const hoje = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
             const usuarioAtualizado = await Usuario.findOneAndUpdate(
               { idWhatsApp: remetenteNorm },
               {
-                $inc: { mensagens: 1, xp: 1, 'dailyMissions.progress.msg50': 1 },
+                $inc: {
+                  mensagens: 1,
+                  xp: 1,
+                  'dailyMissions.progress.msg50': 1,
+                  [`xpHistory.${hoje}`]: 1, // ← acumula XP do dia no histórico
+                },
                 $set: { nome: nomeDoCara },
               },
               { upsert: true, new: true }

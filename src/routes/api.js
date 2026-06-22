@@ -413,11 +413,17 @@ router.get('/user/me', auth, async (req, res) => {
       if (mapa?.pn) casadoComResolvido = mapa.pn;
     }
 
+    // 🔥 NOVO: Busca o nome do parceiro no banco de dados global
+    let nomeParceiro = null;
+    if (casadoComResolvido) {
+      const uParceiro = await Usuario.findOne({ idWhatsApp: casadoComResolvido }).select('nome').lean();
+      if (uParceiro && uParceiro.nome) nomeParceiro = uParceiro.nome;
+    }
+
     // xpHistory: garante que é um objeto plano com chaves "YYYY-MM-DD"
     const xpHistoryRaw  = mapParaObjeto(usuario.xpHistory);
     const xpHistoryLimpo = {};
     for (const [k, v] of Object.entries(xpHistoryRaw)) {
-      // aceita só chaves no formato de data válido e valores numéricos
       if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) {
         xpHistoryLimpo[k] = Number(v);
       }
@@ -442,7 +448,10 @@ router.get('/user/me', auth, async (req, res) => {
       inventory:        mapParaObjeto(usuario.inventory),
       goldHistory:      (usuario.goldHistory || []).slice(-20),
       pet:              usuario.pet        ?? null,
+      
+      // ✨ ATUALIZADO: Enviando o nome do parceiro para o frontend
       casadoCom:        casadoComResolvido,
+      nomeParceiro:     nomeParceiro,
       casadoTipo:       usuario.casadoTipo ?? null,
       casadoDesde:      usuario.casadoDesde ?? null,
 

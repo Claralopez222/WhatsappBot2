@@ -471,7 +471,7 @@ router.get('/user/grupos', auth, async (req, res) => {
         { $group: {
           _id:        '$idGrupo',
           nomeCustom: { $first: { $ifNull: ['$nomeCustom', null] } },
-          nomeReal:   { $first: { $ifNull: ['$nomeReal',   null] } },
+          nomeReal:   { $first: { $ifNull: ['$nome',       null] } }, // campo real é "nome"
         }},
       ]);
       for (const d of docsNomes) nomesGruposMap[d._id] = nomeGrupo(d, d._id);

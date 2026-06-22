@@ -929,104 +929,8 @@ router.delete('/admin/grupo/:jid/gold/reset', adminAuth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/admin/economia
-// Estatísticas globais de economia + top 10 por gold, xp e mensagens.
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/admin/economia', adminAuth, async (req, res) => {
-  try {
-    // Agrega por usuário (soma de todos os grupos)
-    const [totais, topGoldRaw, topXpRaw, topMsgsRaw] = await Promise.all([
-      // Totais gerais
-      CarteiraGrupo.aggregate([
-        {
-          $group: {
-            _id:          null,
-            totalGold:    { $sum: '$gold' },
-            totalXp:      { $sum: '$xp' },
-            totalMsgs:    { $sum: '$mensagens' },
-            comGold:      { $sum: { $cond: [{ $gt: ['$gold', 0] }, 1, 0] } },
-            totalUsuarios: { $addToSet: '$idWhatsApp' },
-          }
-        }
-      ]),
-      // Top 10 gold (por usuário, soma de todos os grupos)
-      CarteiraGrupo.aggregate([
-        { $match: { gold: { $gt: 0 } } },
-        { $group: { _id: '$idWhatsApp', gold: { $sum: '$gold' }, nomeGrupo: { $first: '$idGrupo' } } },
-        { $sort: { gold: -1 } },
-        { $limit: 10 },
-      ]),
-      // Top 10 XP
-      CarteiraGrupo.aggregate([
-        { $match: { xp: { $gt: 0 } } },
-        { $group: { _id: '$idWhatsApp', xp: { $sum: '$xp' } } },
-        { $sort: { xp: -1 } },
-        { $limit: 10 },
-      ]),
-      // Top 10 mensagens
-      CarteiraGrupo.aggregate([
-        { $match: { mensagens: { $gt: 0 } } },
-        { $group: { _id: '$idWhatsApp', mensagens: { $sum: '$mensagens' } } },
-        { $sort: { mensagens: -1 } },
-        { $limit: 10 },
-      ]),
-    ]);
-
-    // Enriquece tops com nomes de usuário
-    const todosJids = [
-      ...topGoldRaw, ...topXpRaw, ...topMsgsRaw
-    ].map(x => x._id);
-    const usuariosMap = {};
-    if (todosJids.length) {
-      const us = await Usuario.find({ idWhatsApp: { $in: todosJids } })
-        .select('idWhatsApp nome telefone')
-        .lean();
-      for (const u of us) usuariosMap[u.idWhatsApp] = u;
-    }
-
-    function enriquecer(lista, campoValor) {
-      return lista.map(item => {
-        const u = usuariosMap[item._id] || {};
-        return {
-          idWhatsApp: item._id,
-          nome:       u.nome || u.telefone || item._id?.split('@')[0] || '—',
-          [campoValor]: item[campoValor],
-        };
-      });
-    }
-
-    const t = totais[0] || {};
-
-    return res.json({
-      totalGold:              t.totalGold || 0,
-      totalXp:                t.totalXp   || 0,
-      totalMsgs:              t.totalMsgs  || 0,
-      totalUsuariosComGold:   t.comGold    || 0,
-      mediaGold: (t.comGold && t.comGold > 0)
-        ? Math.round((t.totalGold || 0) / t.comGold)
-        : 0,
-      topGold: enriquecer(topGoldRaw,  'gold'),
-      topXp:   enriquecer(topXpRaw,   'xp'),
-      topMsgs: enriquecer(topMsgsRaw, 'mensagens'),
-    });
-  } catch (err) {
-    console.error('[API] GET /admin/economia:', err);
-    return res.status(500).json({ error: 'Erro interno.' });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/logs
 // Retorna logs do bot com paginação, filtro por tipo e busca por texto.
-//
-// Query params: pagina, limite, tipo (cmd|erro|warn|info), busca
-//
-// ⚠️ Requer um model BotLog (models/BotLog.js) com schema:
-//   { timestamp, tipo, comando, mensagem, detalhe, usuario, grupo }
-//
-// Se o model não existir ainda, a rota retorna array vazio sem erro,
-// então o frontend simplesmente exibe "Nenhum log encontrado" até
-// você criar o model e começar a salvar logs no bot.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/admin/logs', adminAuth, async (req, res) => {
   try {
@@ -1072,4 +976,34 @@ router.get('/admin/logs', adminAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/user/ranking
+// Rota pública que alimenta o painel frontal com o Top 10 Global de XP
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/user/ranking', async (req, res) => {
+  try {
+    // Busca os 10 usuários com maior XP acumulado no banco global
+    const topUsuarios = await Usuario.find({})
+      .sort({ xp: -1 })
+      .limit(10)
+      .select('nome idWhatsApp xp level mensagens')
+      .lean();
+
+    // Formata os dados limpando JIDs e garantindo fallbacks seguros
+    const rankingFormatado = topUsuarios.map((u, index) => ({
+      posicao: index + 1,
+      nome: u.nome || u.idWhatsApp?.split('@')[0] || 'Usuário Anônimo',
+      xp: u.xp || 0,
+      level: u.level || 1,
+      mensagens: u.mensagens || 0
+    }));
+
+    return res.json({ ranking: rankingFormatado });
+  } catch (err) {
+    console.error('[API] GET /user/ranking:', err);
+    return res.status(500).json({ error: 'Erro interno ao carregar o ranking.' });
+  }
+});
+
+// ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

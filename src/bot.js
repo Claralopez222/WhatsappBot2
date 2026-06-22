@@ -663,6 +663,25 @@ async function handleMessage(sock, msg) {
   const isPrivate = jid && !jid.endsWith('@g.us') && !jid.endsWith('@broadcast');
   const isGroup   = jid && jid.endsWith('@g.us');
 
+  // ── Mute check ───────────────────────────────────────────────
+  if (isGroup && senderJid) {
+    const senderNorm = normalizarJid(senderJid);
+    if (senderNorm && isMuted(jid, senderNorm)) {
+      try {
+        await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
+      } catch (e) {
+        console.error('❌ Erro ao remover mutado:', e.message);
+      }
+      unmuteUser(jid, senderNorm);
+      return;
+    }
+  }
+
+  if (senderJid) {
+    contarMensagem(senderJid, author);
+    await addUserXp(senderJid, 1, msg.pushName || author);
+  }
+
   // ── Slow Mode ────────────────────────────────────────────────
   if (isGroup && !isAnyCmd(raw)) {
     const permitido = grupoHandler.verificarSlowMode(jid, senderJid);
@@ -763,25 +782,6 @@ async function handleMessage(sock, msg) {
   // Ignorar sem prefixo
   if (!isAnyCmd(raw)) return;
   if (senderJid) contarCmd(senderJid);
-
-  // ── Mute check ───────────────────────────────────────────────
-  if (isGroup && senderJid) {
-    const senderNorm = normalizarJid(senderJid);
-    if (senderNorm && isMuted(jid, senderNorm)) {
-      try {
-        await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
-      } catch (e) {
-        console.error('❌ Erro ao remover mutado:', e.message);
-      }
-      unmuteUser(jid, senderNorm);
-      return;
-    }
-  }
-
-  if (senderJid) {
-    contarMensagem(senderJid, author);
-    await addUserXp(senderJid, 1, msg.pushName || author);
-  }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // â”€â”€â”€ ROTEADOR

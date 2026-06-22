@@ -769,15 +769,15 @@ async function handleMessage(sock, msg) {
   if (senderJid) contarCmd(senderJid);
 
   // ── Mute check ───────────────────────────────────────────────
-  if (isGroup && mutedUsers.has(senderJid)) {
-    setTimeout(async () => {
-      try {
-        await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
-        mutedUsers.delete(senderJid);
-      } catch (e) { console.error('❌ Erro ao remover mutado:', e.message); }
-    }, 20000);
-    return;
+if (jid?.endsWith('@g.us') && senderJid && isMuted(jid, senderJid)) {
+  try {
+    await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
+  } catch (e) {
+    console.error('❌ Erro ao remover mutado:', e.message);
   }
+  unmuteUser(jid, senderJid);
+  return;
+}
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // â”€â”€â”€ ROTEADOR

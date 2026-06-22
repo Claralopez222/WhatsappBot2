@@ -11,7 +11,7 @@ const BANCO_CONFIG = {
   PRAZO_MS:         3 * 60 * 60 * 1000,
   JUROS_MIN:        5,
   JUROS_MAX:        15,
-  DAILY_LIMIT: 15000,
+  DAILY_LIMIT: 100000,
   HISTORICO_LIMITE: 10,
 };
 

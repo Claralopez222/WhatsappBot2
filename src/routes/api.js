@@ -1097,5 +1097,139 @@ router.post('/admin/usuario/gold/reset-grupo', adminAuth, async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ROTAS DO CASSINO (JWT de sessão)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const SLOTS_SIMBOLOS = [
+  { emoji: '💎', nome: 'Diamante', peso: 2  },
+  { emoji: '7️⃣',  nome: 'Sete',    peso: 5  },
+  { emoji: '🔔', nome: 'Sino',    peso: 10 },
+  { emoji: '🍇', nome: 'Uva',     peso: 15 },
+  { emoji: '🍉', nome: 'Melancia',peso: 18 },
+  { emoji: '🍋', nome: 'Limão',   peso: 22 },
+  { emoji: '🍒', nome: 'Cereja',  peso: 28 },
+];
+
+const SLOTS_POOL = SLOTS_SIMBOLOS.flatMap(s => Array(s.peso).fill(s.emoji));
+
+const SLOTS_MULTIPLICADORES = {
+  '💎': { tres: 50, dois: 5   },
+  '7️⃣':  { tres: 25, dois: 3   },
+  '🔔': { tres: 15, dois: 2   },
+  '🍇': { tres: 10, dois: 1.5 },
+  '🍉': { tres: 8,  dois: 1.5 },
+  '🍋': { tres: 6,  dois: 1.2 },
+  '🍒': { tres: 4,  dois: 1.2 },
+};
+
+function sortearSlotBackend() {
+  const pick = () => SLOTS_POOL[Math.floor(Math.random() * SLOTS_POOL.length)];
+  return [pick(), pick(), pick()];
+}
+
+function calcularResultadoSlot(r1, r2, r3) {
+  if (r1 === r2 && r2 === r3) {
+    const mult = SLOTS_MULTIPLICADORES[r1]?.tres ?? 4;
+    const tipo = mult >= 25 ? 'jackpot_lendario' : mult >= 10 ? 'jackpot' : 'tres_iguais';
+    return { mult, tipo };
+  }
+  if (r1 === r2 || r2 === r3 || r1 === r3) {
+    const simbolo = r1 === r2 ? r1 : r3 === r2 ? r2 : r1;
+    const mult    = SLOTS_MULTIPLICADORES[simbolo]?.dois ?? 1.2;
+    return { mult, tipo: 'dois_iguais' };
+  }
+  return { mult: 0, tipo: 'derrota' };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/cassino/slots
+// Body: { idGrupo, aposta }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/cassino/slots', auth, async (req, res) => {
+  try {
+    const idWhatsApp = req.user.idWhatsApp;
+    const { idGrupo, aposta } = req.body || {};
+
+    // ── Validações ────────────────────────────────────────────────────────────
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+
+    const valorAposta = parseInt(aposta, 10);
+    if (!valorAposta || isNaN(valorAposta) || valorAposta <= 0)
+      return res.status(400).json({ error: 'Aposta deve ser um número positivo.' });
+
+    if (valorAposta > 100_000)
+      return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
+
+    // ── Confirma que o usuário pertence ao grupo ──────────────────────────────
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
+    if (!carteira)
+      return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
+
+    // ── Verifica saldo ────────────────────────────────────────────────────────
+    if ((carteira.gold ?? 0) < valorAposta)
+      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
+
+    // ── Debita aposta atomicamente ────────────────────────────────────────────
+    const carteiraDebitada = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp, idGrupo, gold: { $gte: valorAposta } },
+      {
+        $inc: { gold: -valorAposta },
+        $push: {
+          goldHistory: {
+            $each:  [{ type: 'gasto', item: 'Slots (aposta)', amount: valorAposta, date: new Date() }],
+            $slice: -50,
+          },
+        },
+      },
+      { new: true }
+    );
+
+    if (!carteiraDebitada)
+      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
+
+    // ── Sorteia resultado ─────────────────────────────────────────────────────
+    const [r1, r2, r3]    = sortearSlotBackend();
+    const { mult, tipo }  = calcularResultadoSlot(r1, r2, r3);
+    const premio          = Math.floor(valorAposta * mult);
+    const lucroLiq        = premio - valorAposta;
+
+    // ── Credita prêmio (se ganhou) ────────────────────────────────────────────
+    let saldoFinal = carteiraDebitada.gold;
+
+    if (premio > 0) {
+      const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp, idGrupo },
+        {
+          $inc: { gold: premio },
+          $push: {
+            goldHistory: {
+              $each:  [{ type: 'recebido', item: `Slots (${mult}x)`, amount: premio, date: new Date() }],
+              $slice: -50,
+            },
+          },
+        },
+        { new: true }
+      );
+      saldoFinal = carteiraAtualizada?.gold ?? saldoFinal;
+    }
+
+    return res.json({
+      resultado: [r1, r2, r3],
+      tipo,
+      mult,
+      premio,
+      lucroLiq,
+      aposta:     valorAposta,
+      saldoFinal,
+    });
+
+  } catch (err) {
+    console.error('[API] POST /cassino/slots:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

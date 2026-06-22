@@ -86,6 +86,12 @@ const usuarioSchema = new mongoose.Schema({
   quizPoints: { type: Number, default: 0,   min: 0 },
   mensagens:  { type: Number, default: 0,   min: 0 },
 
+  // ── Histórico diário de XP (chave: "YYYY-MM-DD", valor: XP ganho no dia) ──
+  xpHistory:        { type: Map, of: Number, default: {} },
+
+  // ── Atividade semanal (array de 7 posições, dom→sáb) ─────────────────────
+  atividadeSemanal: { type: [Number], default: [0, 0, 0, 0, 0, 0, 0] },
+
   // ── Relacionamento ───────────────────────────────────────────
   xpCasal:     { type: Number, default: 0,    min: 0 },
   casadoCom:   { type: String, default: null },

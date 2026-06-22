@@ -1301,8 +1301,14 @@ app.use(express.json({ limit: '1mb' }));
 app.get('/', (req, res) => res.send('Bot Online!'));
 
 // ─── Painel API ───────────────────────────────────────────────────────────────
-const apiRouter = require('./routes/api');
-app.use('/api', apiRouter);
+let apiRouter;
+try {
+  apiRouter = require('./routes/api');
+  app.use('/api', apiRouter);
+  console.log('✅ API router carregado com sucesso');
+} catch (err) {
+  console.error('❌ ERRO AO CARREGAR API ROUTER:', err);
+}
 
 // Qualquer rota /api/* que não bateu em nada do apiRouter cai aqui
 app.use('/api', (req, res) => {

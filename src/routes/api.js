@@ -1073,11 +1073,12 @@ router.get('/admin/economia', adminAuth, async (req, res) => {
 // Zera o gold de um usuário em um grupo específico.
 // Body: { idGrupo }
 // ─────────────────────────────────────────────────────────────────────────────
-router.delete('/admin/usuario/:idWhatsApp/gold/reset-grupo', adminAuth, async (req, res) => {
+router.post('/admin/usuario/gold/reset-grupo', adminAuth, async (req, res) => {
   try {
-    const idWhatsApp = decodeURIComponent(req.params.idWhatsApp);
-    const { idGrupo } = req.body || {};
+    const { idWhatsApp, idGrupo } = req.body || {};
 
+    if (!idWhatsApp)
+      return res.status(400).json({ error: 'idWhatsApp é obrigatório.' });
     if (!idGrupo)
       return res.status(400).json({ error: 'idGrupo é obrigatório.' });
 
@@ -1091,7 +1092,7 @@ router.delete('/admin/usuario/:idWhatsApp/gold/reset-grupo', adminAuth, async (r
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('[API] DELETE /admin/usuario/gold/reset-grupo:', err);
+    console.error('[API] POST /admin/usuario/gold/reset-grupo:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });

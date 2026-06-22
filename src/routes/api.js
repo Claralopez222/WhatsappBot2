@@ -986,31 +986,113 @@ router.get('/admin/logs', adminAuth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/user/ranking
-// Rota pública que alimenta o painel frontal com o Top 10 Global de XP
+// GET /api/admin/economia
+// Retorna dados agregados da economia global com rankings de gold, xp e mensagens
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/user/ranking', async (req, res) => {
+router.get('/admin/economia', adminAuth, async (req, res) => {
   try {
-    // Busca os 10 usuários com maior XP acumulado no banco global
-    const topUsuarios = await Usuario.find({})
-      .sort({ xp: -1 })
-      .limit(10)
-      .select('nome idWhatsApp xp level mensagens')
-      .lean();
+    const [agregacao, topGoldRaw, topXpRaw, topMsgsRaw] = await Promise.all([
+      CarteiraGrupo.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalGold:   { $sum: '$gold' },
+            totalXp:     { $sum: '$xp' },
+            totalContas: { $sum: 1 },
+          }
+        }
+      ]),
+      CarteiraGrupo.aggregate([
+        { $group: { _id: '$idWhatsApp', gold: { $sum: '$gold' }, xp: { $sum: '$xp' } } },
+        { $sort: { gold: -1 } },
+        { $limit: 10 },
+      ]),
+      CarteiraGrupo.aggregate([
+        { $group: { _id: '$idWhatsApp', xp: { $sum: '$xp' }, gold: { $sum: '$gold' } } },
+        { $sort: { xp: -1 } },
+        { $limit: 10 },
+      ]),
+      CarteiraGrupo.aggregate([
+        { $group: { _id: '$idWhatsApp', mensagens: { $sum: '$mensagens' } } },
+        { $sort: { mensagens: -1 } },
+        { $limit: 10 },
+      ]),
+    ]);
 
-    // Formata os dados limpando JIDs e garantindo fallbacks seguros
-    const rankingFormatado = topUsuarios.map((u, index) => ({
-      posicao: index + 1,
-      nome: u.nome || u.idWhatsApp?.split('@')[0] || 'Usuário Anônimo',
-      xp: u.xp || 0,
-      level: u.level || 1,
-      mensagens: u.mensagens || 0
-    }));
+    const dados = agregacao[0] || { totalGold: 0, totalXp: 0, totalContas: 0 };
 
-    return res.json({ ranking: rankingFormatado });
+    // Enriquece rankings com nomes dos usuários
+    const todosJids = [...topGoldRaw, ...topXpRaw, ...topMsgsRaw]
+      .map(m => m._id)
+      .filter(Boolean);
+
+    const usuariosMap = {};
+    if (todosJids.length) {
+      const usuarios = await Usuario.find({ idWhatsApp: { $in: todosJids } })
+        .select('idWhatsApp nome telefone')
+        .lean();
+      for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
+    }
+
+    const enriquecer = (lista) => lista.map(m => {
+      const u = usuariosMap[m._id] || {};
+      return {
+        idWhatsApp: m._id,
+        nome:       u.nome || u.telefone || m._id?.split('@')[0] || 'Anônimo',
+        gold:       m.gold      ?? 0,
+        xp:         m.xp        ?? 0,
+        mensagens:  m.mensagens ?? 0,
+      };
+    });
+
+    const totalUsuariosComGold = await CarteiraGrupo
+      .distinct('idWhatsApp', { gold: { $gt: 0 } })
+      .then(r => r.length);
+
+    const mediaGold = totalUsuariosComGold > 0
+      ? Math.round(dados.totalGold / totalUsuariosComGold)
+      : 0;
+
+    return res.json({
+      totalGold:            dados.totalGold,
+      totalXp:              dados.totalXp,
+      mediaGold,
+      totalUsuariosComGold,
+      topGold:  enriquecer(topGoldRaw),
+      topXp:    enriquecer(topXpRaw),
+      topMsgs:  enriquecer(topMsgsRaw),
+    });
   } catch (err) {
-    console.error('[API] GET /user/ranking:', err);
-    return res.status(500).json({ error: 'Erro interno ao carregar o ranking.' });
+    console.error('[API] GET /admin/economia:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/admin/usuario/:idWhatsApp/gold/reset-grupo
+// Zera o gold de um usuário em um grupo específico.
+// Body: { idGrupo }
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/admin/usuario/:idWhatsApp/gold/reset-grupo', adminAuth, async (req, res) => {
+  try {
+    const idWhatsApp = decodeURIComponent(req.params.idWhatsApp);
+    const { idGrupo } = req.body || {};
+
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+
+    const resultado = await CarteiraGrupo.updateOne(
+      { idWhatsApp, idGrupo },
+      { $set: { gold: 0 } }
+    );
+
+    if (!resultado.matchedCount)
+      return res.status(404).json({ error: 'Carteira não encontrada.' });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[API] DELETE /admin/usuario/gold/reset-grupo:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
   }
 });
 

@@ -147,23 +147,24 @@ function adminAuth(req, res, next) {
 }
 
 // ─── RATE LIMIT de login admin ────────────────────────────────────────────────
-const tentativasLogin = new Map();
 const LOGIN_MAX       = 10;
 const LOGIN_JANELA_MS = 15 * 60 * 1000;
 
-function rateLimitAdmin(req, res, next) {
-  const ip    = req.ip || 'desconhecido';
-  const agora = Date.now();
-  const reg   = tentativasLogin.get(ip);
-  if (!reg || agora > reg.resetAt) {
-    tentativasLogin.set(ip, { count: 1, resetAt: agora + LOGIN_JANELA_MS });
-    return next();
-  }
-  if (reg.count >= LOGIN_MAX)
-    return res.status(429).json({ error: 'Muitas tentativas. Aguarde 15 minutos.' });
-  reg.count++;
-  next();
-}
+const rateLimitAdmin = rateLimit({
+  windowMs:     LOGIN_JANELA_MS,
+  max:          LOGIN_MAX,
+  keyGenerator: (req) => req.ip || 'desconhecido',
+  store: new MongoStore({
+    uri:            process.env.MONGODB_URI,
+    collectionName: 'rateLimits',
+    expireTimeMs:   LOGIN_JANELA_MS,
+  }),
+  handler: (req, res) => {
+    return res.status(429).json({
+      error: 'Muitas tentativas. Tente novamente mais tarde.'
+    });
+  },
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ROTAS PÚBLICAS
@@ -789,6 +790,7 @@ const CAMPOS_CONFIG_VALIDOS = ['xpAtivo', 'antiLink', 'boasVindas'];
 router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
   try {
     const jid    = decodeURIComponent(req.params.jid);
+    if (!jid || jid.length > 200) return res.status(400).json({ error: 'JID inválido.' });
     const campos = req.body || {};
     const chaves = Object.keys(campos);
 
@@ -819,6 +821,7 @@ const MAX_NOME_GRUPO = 80;
 router.patch('/admin/grupo/:jid/nome', adminAuth, async (req, res) => {
   try {
     const jid  = decodeURIComponent(req.params.jid);
+    if (!jid || jid.length > 200) return res.status(400).json({ error: 'JID inválido.' });
     const nome = typeof req.body?.nome === 'string' ? req.body.nome.trim() : '';
 
     if (!nome) return res.status(400).json({ error: 'Nome não pode ser vazio.' });
@@ -848,6 +851,7 @@ const MAX_MSG = 5000;
 router.put('/admin/grupo/:jid/mensagens', adminAuth, async (req, res) => {
   try {
     const jid = decodeURIComponent(req.params.jid);
+    if (!jid || jid.length > 200) return res.status(400).json({ error: 'JID inválido.' });
     const { boasVindas, regras } = req.body || {};
 
     if (boasVindas != null && typeof boasVindas !== 'string')
@@ -876,6 +880,7 @@ router.put('/admin/grupo/:jid/mensagens', adminAuth, async (req, res) => {
 router.get('/admin/grupo/:jid/gold-ranking', adminAuth, async (req, res) => {
   try {
     const jid   = decodeURIComponent(req.params.jid);
+    if (!jid || jid.length > 200) return res.status(400).json({ error: 'JID inválido.' });
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
     const membros = await CarteiraGrupo
@@ -921,6 +926,7 @@ router.get('/admin/grupo/:jid/gold-ranking', adminAuth, async (req, res) => {
 router.delete('/admin/grupo/:jid/gold/reset', adminAuth, async (req, res) => {
   try {
     const jid = decodeURIComponent(req.params.jid);
+    if (!jid || jid.length > 200) return res.status(400).json({ error: 'JID inválido.' });
 
     const resultado = await CarteiraGrupo.updateMany(
       { idGrupo: jid },
@@ -1142,11 +1148,35 @@ function calcularResultadoSlot(r1, r2, r3) {
   return { mult: 0, tipo: 'derrota' };
 }
 
+// ─── Rate limit do cassino (10 giros/min por usuário) ─────────────────────────
+const rateLimit      = require('express-rate-limit');
+const { MongoStore } = require('rate-limit-mongo');
+
+const CASSINO_MAX    = 10;
+const CASSINO_JANELA = 60 * 1000;
+
+const cassinoRateLimit = rateLimit({
+  windowMs:     CASSINO_JANELA,
+  max:          CASSINO_MAX,
+  keyGenerator: (req) => req.user?.idWhatsApp || req.ip,
+  store: new MongoStore({
+    uri:            process.env.MONGODB_URI,
+    collectionName: 'rateLimits',
+    expireTimeMs:   CASSINO_JANELA,
+  }),
+  handler: (req, res) => {
+    return res.status(429).json({
+      error: 'Muitos giros! Aguarde antes de tentar novamente.'
+    });
+  },
+  skip: (req) => !req.user,
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/cassino/slots
 // Body: { idGrupo, aposta }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/cassino/slots', auth, async (req, res) => {
+router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
   try {
     const idWhatsApp = req.user.idWhatsApp;
     const { idGrupo, aposta } = req.body || {};
@@ -1233,9 +1263,9 @@ router.post('/cassino/slots', auth, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/user/grupos/:idWhatsApp
-// Retorna os grupos de um usuário com nome e gold (pública).
+// Retorna os grupos de um usuário com nome e gold (requer JWT).
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/user/grupos/:idWhatsApp', async (req, res) => {
+router.get('/user/grupos/:idWhatsApp', auth, async (req, res) => {
   try {
     const idWhatsApp = decodeURIComponent(req.params.idWhatsApp).trim().toLowerCase();
 

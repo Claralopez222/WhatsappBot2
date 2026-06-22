@@ -406,6 +406,23 @@ router.get('/user/me', auth, async (req, res) => {
       statsPesca:   c.statsPesca   ?? null,
     }));
 
+    // Resolve casadoCom: se for @lid, tenta achar o telefone real no LidMapping
+    let casadoComResolvido = usuario.casadoCom ?? null;
+    if (casadoComResolvido && casadoComResolvido.endsWith('@lid')) {
+      const mapa = await LidMapping.findOne({ lid: casadoComResolvido }).lean();
+      if (mapa?.pn) casadoComResolvido = mapa.pn;
+    }
+
+    // xpHistory: garante que é um objeto plano com chaves "YYYY-MM-DD"
+    const xpHistoryRaw  = mapParaObjeto(usuario.xpHistory);
+    const xpHistoryLimpo = {};
+    for (const [k, v] of Object.entries(xpHistoryRaw)) {
+      // aceita só chaves no formato de data válido e valores numéricos
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) {
+        xpHistoryLimpo[k] = Number(v);
+      }
+    }
+
     return res.json({
       nome:     usuario.nome,
       telefone: usuario.telefone,
@@ -420,12 +437,12 @@ router.get('/user/me', auth, async (req, res) => {
       xpProgresso,
       posicaoRanking,
 
-      xpHistory:        mapParaObjeto(usuario.xpHistory),
+      xpHistory:        xpHistoryLimpo,
       atividadeSemanal: usuario.atividadeSemanal || [0, 0, 0, 0, 0, 0, 0],
       inventory:        mapParaObjeto(usuario.inventory),
       goldHistory:      (usuario.goldHistory || []).slice(-20),
-      pet:              usuario.pet       ?? null,
-      casadoCom:        usuario.casadoCom  ?? null,
+      pet:              usuario.pet        ?? null,
+      casadoCom:        casadoComResolvido,
       casadoTipo:       usuario.casadoTipo ?? null,
       casadoDesde:      usuario.casadoDesde ?? null,
 

@@ -8,7 +8,8 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
-const rateLimit = require('express-rate-limit');
+const rateLimit      = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {
@@ -154,7 +155,7 @@ const LOGIN_JANELA_MS = 15 * 60 * 1000;
 const rateLimitAdmin = rateLimit({
   windowMs:     LOGIN_JANELA_MS,
   max:          LOGIN_MAX,
-  keyGenerator: (req) => req.ip || 'desconhecido',
+  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
   handler: (req, res) => {
     return res.status(429).json({
       error: 'Muitas tentativas. Tente novamente mais tarde.'
@@ -1151,7 +1152,7 @@ const CASSINO_JANELA = 60 * 1000;
 const cassinoRateLimit = rateLimit({
   windowMs:     CASSINO_JANELA,
   max:          CASSINO_MAX,
-  keyGenerator: (req) => req.user?.idWhatsApp || req.ip,
+  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req),
   handler: (req, res) => {
     return res.status(429).json({
       error: 'Muitos giros! Aguarde antes de tentar novamente.'

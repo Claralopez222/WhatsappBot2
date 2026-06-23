@@ -8,8 +8,7 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
-const rateLimit      = require('express-rate-limit');
-const MongoStore = require('rate-limit-mongo');
+const rateLimit = require('express-rate-limit');
 
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {
@@ -152,27 +151,16 @@ function adminAuth(req, res, next) {
 const LOGIN_MAX       = 10;
 const LOGIN_JANELA_MS = 15 * 60 * 1000;
 
-let _rateLimitAdmin = null;
-function rateLimitAdmin(req, res, next) {
-  if (!_rateLimitAdmin) {
-    _rateLimitAdmin = rateLimit({
-      windowMs:     LOGIN_JANELA_MS,
-      max:          LOGIN_MAX,
-      keyGenerator: (req) => req.ip || 'desconhecido',
-      store: new MongoStore({
-        uri:            process.env.MONGODB_URI,
-        collectionName: 'rateLimits',
-        expireTimeMs:   LOGIN_JANELA_MS,
-      }),
-      handler: (req, res) => {
-        return res.status(429).json({
-          error: 'Muitas tentativas. Tente novamente mais tarde.'
-        });
-      },
+const rateLimitAdmin = rateLimit({
+  windowMs:     LOGIN_JANELA_MS,
+  max:          LOGIN_MAX,
+  keyGenerator: (req) => req.ip || 'desconhecido',
+  handler: (req, res) => {
+    return res.status(429).json({
+      error: 'Muitas tentativas. Tente novamente mais tarde.'
     });
-  }
-  return _rateLimitAdmin(req, res, next);
-}
+  },
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ROTAS PÚBLICAS
@@ -1160,28 +1148,17 @@ function calcularResultadoSlot(r1, r2, r3) {
 const CASSINO_MAX    = 10;
 const CASSINO_JANELA = 60 * 1000;
 
-let _cassinoRateLimit = null;
-function cassinoRateLimit(req, res, next) {
-  if (!_cassinoRateLimit) {
-    _cassinoRateLimit = rateLimit({
-      windowMs:     CASSINO_JANELA,
-      max:          CASSINO_MAX,
-      keyGenerator: (req) => req.user?.idWhatsApp || req.ip,
-      store: new MongoStore({
-        uri:            process.env.MONGODB_URI,
-        collectionName: 'rateLimits',
-        expireTimeMs:   CASSINO_JANELA,
-      }),
-      handler: (req, res) => {
-        return res.status(429).json({
-          error: 'Muitos giros! Aguarde antes de tentar novamente.'
-        });
-      },
-      skip: (req) => !req.user,
+const cassinoRateLimit = rateLimit({
+  windowMs:     CASSINO_JANELA,
+  max:          CASSINO_MAX,
+  keyGenerator: (req) => req.user?.idWhatsApp || req.ip,
+  handler: (req, res) => {
+    return res.status(429).json({
+      error: 'Muitos giros! Aguarde antes de tentar novamente.'
     });
-  }
-  return _cassinoRateLimit(req, res, next);
-}
+  },
+  skip: (req) => !req.user,
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/cassino/slots

@@ -1485,5 +1485,205 @@ router.get('/corrida/bichos', (req, res) => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/admin/usuario/:idWhatsApp/level
+// Define level E xp de um usuário em um grupo específico (ambos juntos).
+// Body: { idGrupo, level, xp }
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/admin/usuario/:idWhatsApp/level', adminAuth, async (req, res) => {
+  try {
+    const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
+    const { idGrupo, level, xp } = req.body || {};
+
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+    if (!Number.isInteger(level) || level < 1)
+      return res.status(400).json({ error: 'level deve ser um inteiro >= 1.' });
+    if (!Number.isFinite(xp) || xp < 0)
+      return res.status(400).json({ error: 'xp deve ser um número >= 0.' });
+
+    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+
+    const carteira = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp, idGrupo },
+      { $set: { level, xp } },
+      { new: true }
+    ).lean();
+
+    if (!carteira)
+      return res.status(404).json({ error: 'Carteira não encontrada para esse usuário nesse grupo.' });
+
+    return res.json({ ok: true, idWhatsApp, idGrupo, level: carteira.level, xp: carteira.xp });
+  } catch (err) {
+    console.error('[API] PATCH /admin/usuario/level:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/usuario/:idWhatsApp/inventario?idGrupo=xxx
+// Retorna o inventário do usuário em um grupo específico.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
+  try {
+    const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
+    const idGrupo       = req.query.idGrupo;
+
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+
+    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
+      .select('inventario')
+      .lean();
+
+    if (!carteira)
+      return res.status(404).json({ error: 'Carteira não encontrada.' });
+
+    // Normaliza inventário — aceita Map, objeto ou array
+    let inventario = carteira.inventario;
+
+    if (!inventario) {
+      return res.json({ inventario: [] });
+    }
+
+    // Se for Map ou objeto simples (chave→quantidade)
+    if (!Array.isArray(inventario)) {
+      const obj = inventario instanceof Map
+        ? Object.fromEntries(inventario)
+        : inventario;
+      inventario = Object.entries(obj).map(([nome, quantidade]) => ({
+        nome,
+        quantidade: Number(quantidade) || 1,
+      }));
+    }
+
+    return res.json({ inventario });
+  } catch (err) {
+    console.error('[API] GET /admin/usuario/inventario:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/usuario/:idWhatsApp/inventario
+// Adiciona um item ao inventário do usuário em um grupo.
+// Body: { idGrupo, item, quantidade }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
+  try {
+    const termoOriginal        = decodeURIComponent(req.params.idWhatsApp);
+    const { idGrupo, item, quantidade } = req.body || {};
+
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+    if (!item || typeof item !== 'string' || !item.trim())
+      return res.status(400).json({ error: 'item deve ser uma string não vazia.' });
+    const qtd = parseInt(quantidade, 10) || 1;
+    if (qtd < 1)
+      return res.status(400).json({ error: 'quantidade deve ser >= 1.' });
+
+    const nomeItem   = item.trim();
+    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+
+    // Tenta achar a carteira pra saber o formato atual do inventário
+    const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
+      .select('inventario')
+      .lean();
+
+    if (!carteiraAtual)
+      return res.status(404).json({ error: 'Carteira não encontrada.' });
+
+    const invAtual = carteiraAtual.inventario;
+    const ehArray  = Array.isArray(invAtual);
+
+    let carteira;
+
+    if (ehArray) {
+      // Formato array: [{nome, quantidade}]
+      const idx = (invAtual || []).findIndex(i => i.nome === nomeItem);
+      if (idx >= 0) {
+        // Incrementa quantidade do item existente
+        carteira = await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp, idGrupo, 'inventario.nome': nomeItem },
+          { $inc: { 'inventario.$.quantidade': qtd } },
+          { new: true }
+        ).lean();
+      } else {
+        // Insere novo item no array
+        carteira = await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp, idGrupo },
+          { $push: { inventario: { nome: nomeItem, quantidade: qtd } } },
+          { new: true }
+        ).lean();
+      }
+    } else {
+      // Formato objeto/Map: { "nomeItem": quantidade }
+      carteira = await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp, idGrupo },
+        { $inc: { [`inventario.${nomeItem}`]: qtd } },
+        { new: true }
+      ).lean();
+    }
+
+    return res.json({ ok: true, inventario: carteira?.inventario });
+  } catch (err) {
+    console.error('[API] POST /admin/usuario/inventario:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/admin/usuario/:idWhatsApp/inventario
+// Remove um item do inventário do usuário em um grupo.
+// Body: { idGrupo, item }
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
+  try {
+    const termoOriginal  = decodeURIComponent(req.params.idWhatsApp);
+    const { idGrupo, item } = req.body || {};
+
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+    if (!item || typeof item !== 'string' || !item.trim())
+      return res.status(400).json({ error: 'item deve ser uma string não vazia.' });
+
+    const nomeItem   = item.trim();
+    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+
+    const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
+      .select('inventario')
+      .lean();
+
+    if (!carteiraAtual)
+      return res.status(404).json({ error: 'Carteira não encontrada.' });
+
+    const invAtual = carteiraAtual.inventario;
+    const ehArray  = Array.isArray(invAtual);
+
+    let carteira;
+
+    if (ehArray) {
+      carteira = await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp, idGrupo },
+        { $pull: { inventario: { nome: nomeItem } } },
+        { new: true }
+      ).lean();
+    } else {
+      carteira = await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp, idGrupo },
+        { $unset: { [`inventario.${nomeItem}`]: '' } },
+        { new: true }
+      ).lean();
+    }
+
+    return res.json({ ok: true, inventario: carteira?.inventario });
+  } catch (err) {
+    console.error('[API] DELETE /admin/usuario/inventario:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

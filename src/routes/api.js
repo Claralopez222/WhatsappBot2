@@ -672,27 +672,35 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     if (!['dar', 'remover'].includes(operacao))
       return res.status(400).json({ error: 'operacao deve ser "dar" ou "remover".' });
 
-    // Resolve qual variante do JID (com/sem o "9") já existe nesse grupo
+    // Resolve qual variante do JID já existe nesse grupo
     const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
 
-    if (operacao === 'remover') {
-      const existe = await CarteiraGrupo.exists({ idWhatsApp, idGrupo });
-      if (!existe)
-        return res.status(404).json({ error: 'Esse usuário ainda não tem carteira nesse grupo (nada para remover).' });
-    }
+    // Verifica se a carteira realmente existe antes de qualquer operação
+    const carteiraExistente = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo }).lean();
+    if (!carteiraExistente)
+      return res.status(404).json({ error: 'Carteira não encontrada para esse usuário nesse grupo.' });
+
+    if (operacao === 'remover' && (carteiraExistente.gold ?? 0) < valor)
+      return res.status(400).json({ error: `Saldo insuficiente. Usuário tem ${carteiraExistente.gold ?? 0} gold.` });
 
     const incremento = operacao === 'dar' ? valor : -valor;
 
     const carteira = await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp, idGrupo },
-      { $inc: { gold: incremento } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      {
+        $inc: { gold: incremento },
+        $push: {
+          goldHistory: {
+            $each: [{ type: operacao === 'dar' ? 'recebido' : 'gasto', item: 'Ajuste Admin', amount: valor, date: new Date() }],
+            $slice: -50,
+          },
+        },
+      },
+      { new: true }
     ).lean();
 
-    if (carteira.gold < 0) {
-      await CarteiraGrupo.updateOne({ idWhatsApp, idGrupo }, { $set: { gold: 0 } });
-      carteira.gold = 0;
-    }
+    if (!carteira)
+      return res.status(404).json({ error: 'Carteira não encontrada.' });
 
     return res.json({ ok: true, idWhatsApp, goldAtual: carteira.gold });
   } catch (err) {

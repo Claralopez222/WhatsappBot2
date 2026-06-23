@@ -79,10 +79,13 @@ async function syncQuizPointsFromDB(userId) {
 
 async function saveQuizPointsToDB(userId, groupJid) {
   if (!userId) return;
+  const idNorm = userId.endsWith('@lid')
+    ? userId
+    : userId.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   try {
     const ops = [
       Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
+        { idWhatsApp: idNorm },
         { $inc: { quizPoints: 10 } },
         { upsert: true }
       ),
@@ -90,7 +93,7 @@ async function saveQuizPointsToDB(userId, groupJid) {
     if (groupJid) {
       ops.push(
         CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp: userId, idGrupo: groupJid },
+          { idWhatsApp: idNorm, idGrupo: groupJid },
           { $inc: { quizPoints: 10 } },
           { upsert: true }
         )
@@ -107,36 +110,55 @@ async function changeGold(userId, amount, groupJid) {
     console.warn('⚠️ changeGold ignorado: jid vazio:', userId);
     return 0;
   }
+
+  // Normaliza: remove sufixo de dispositivo (:83) — @lid permanece intocado
+  const idNorm = userId.endsWith('@lid')
+    ? userId
+    : userId.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+
   try {
-    // ✅ CarteiraGrupo atualizado primeiro (gold local do grupo)
+    // ── 1. Atualiza CarteiraGrupo (gold LOCAL do grupo) ───────────────────
     if (groupJid) {
       await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: groupJid },
+        { idWhatsApp: idNorm, idGrupo: groupJid },
         { $inc: { gold: amount } },
         { upsert: true }
       );
     }
 
-    // ✅ $inc montado de uma vez — MongoDB rejeita dois $inc separados
-    const incPayload = { gold: amount };
+    // ── 2. Atualiza Usuario global (missões diárias) ──────────────────────
+    const incPayload = {};
     if (amount > 0) incPayload['dailyMissions.progress.gold500'] = amount;
 
-    const user = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      { $inc: incPayload },
-      { upsert: true, new: true }
-    );
+    if (Object.keys(incPayload).length > 0) {
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: idNorm },
+        { $inc: incPayload },
+        { upsert: true }
+      );
+    }
 
-    // ✅ prepareDailyMissionState executado APÓS o $inc, evitando race
-    // condition com o próprio documento que acabou de ser atualizado
+    // ── 3. prepareDailyMissionState APÓS o $inc (evita race condition) ────
     if (amount > 0) {
-      await prepareDailyMissionState(userId).catch(e =>
+      await prepareDailyMissionState(idNorm).catch(e =>
         console.error('⚠️ Erro ao preparar estado de missão diária:', e.message)
       );
     }
 
-    console.log(`✅ Gold alterado: ${userId} → ${amount} (novo saldo: ${user?.gold})`);
-    return user?.gold ?? 0;   // ✅ ?? em vez de || — evita retornar 0 quando gold é 0 válido
+    // ── 4. Retorna saldo REAL da CarteiraGrupo (gold local, não global) ───
+    if (groupJid) {
+      const carteira = await CarteiraGrupo.findOne(
+        { idWhatsApp: idNorm, idGrupo: groupJid },
+        { gold: 1 }
+      ).lean();
+      const saldo = carteira?.gold ?? 0;
+      console.log(`✅ Gold alterado: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (saldo no grupo: ${saldo})`);
+      return saldo;
+    }
+
+    console.log(`✅ Gold alterado: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (sem grupo)`);
+    return 0;
+
   } catch (e) {
     console.error('⚠️ Erro ao alterar gold:', e.message);
     return 0;

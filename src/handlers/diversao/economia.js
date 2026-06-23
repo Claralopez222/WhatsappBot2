@@ -13,7 +13,7 @@ const { getCarteira, alterarGold, transferirGold } = require(path.join(__dirname
 const { prepareDailyMissionState } = require('./missoes');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { VARAS_PESCA, ISCAS } = require('./pesca');
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+// removido — jidNormalizedUser não é mais utilizado neste arquivo
 
 // ─── RE-EXPORTA ITENS_LOJA (reduzido) ─────────────────────────────────
 const ITENS_LOJA = {
@@ -144,8 +144,11 @@ async function getSaldoGrupo(userId, idGrupo) {
  */
 async function debitarGold(userId, idGrupo, valor, descricao) {
   const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+  const idNorm = userId.endsWith('@lid')
+    ? userId
+    : userId.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   return CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: userId, idGrupo, gold: { $gte: valor } },
+    { idWhatsApp: idNorm, idGrupo, gold: { $gte: valor } },
     {
       $inc: { gold: -valor },
       $push: {
@@ -162,14 +165,16 @@ async function debitarGold(userId, idGrupo, valor, descricao) {
 // !gold
 async function handleGold(sock, msg, jid, getPrefix, contactNames) {
   const userIdRaw = msg.key.participant || msg.key.remoteJid;
-  const userId    = userIdRaw.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  const userId    = userIdRaw?.endsWith('@lid')
+    ? userIdRaw
+    : userIdRaw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   const idGrupo   = jid;
 
   try {
     const carteira  = await getCarteira(userId, idGrupo);
     const gold      = carteira?.gold ?? 0;
-    const numero    = userId.split('@')[0].split(':')[0];
-    const userName  = contactNames?.[userId] || numero;
+    const numero    = userIdRaw.split('@')[0].split(':')[0].replace(/\D/g, '');
+    const userName  = contactNames?.[userIdRaw] || contactNames?.[userId] || numero;
 
     let status = '🪨 Pobre';
     if (gold >= 1000)     status = '💰 Rico';
@@ -353,7 +358,10 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
 // Gold debitado da CarteiraGrupo; inventário salvo no Usuario global.
 
 async function handleComprar(sock, msg, jid, caption) {
-  const userId  = msg.key.participant || msg.key.remoteJid;
+  const userIdRaw = msg.key.participant || msg.key.remoteJid;
+  const userId    = userIdRaw?.endsWith('@lid')
+    ? userIdRaw
+    : userIdRaw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   const idGrupo = jid;
   const match   = caption.match(/buy\s+(.+)/i);
 
@@ -363,7 +371,6 @@ async function handleComprar(sock, msg, jid, caption) {
   }
 
   const itemDigitado = match[1].trim();
-  const chaveNorm     = normalizarChaveItem(itemDigitado);
 
   // Aceita tanto a chave técnica quanto o nome de exibição (com ou sem
   // acento/espaço), tanto para itens da loja quanto de pesca.
@@ -430,7 +437,7 @@ async function handleComprar(sock, msg, jid, caption) {
   } catch (e) {
     console.error('⚠️ Erro ao adicionar inventário:', e.message);
     // Tenta devolver o gold em caso de falha no inventário
-    await alterarGold(userId, idGrupo, preco, `Estorno: ${itemInfo.nome}`).catch(() => {});
+    await alterarGold(userId, jid, preco, `Estorno: ${itemInfo.nome}`).catch(() => {});
     await sock.sendMessage(jid, { text: '⚠️ Erro ao processar a compra! Gold devolvido. Tente novamente.' }, { quoted: msg });
     return;
   }
@@ -452,7 +459,10 @@ async function handleComprar(sock, msg, jid, caption) {
 // ─── !vender (sem mudança de lógica) ─────────────────────────────────────────
 
 async function handleVender(sock, msg, jid, caption) {
-  const userId = msg.key.participant || msg.key.remoteJid;
+  const userIdRaw = msg.key.participant || msg.key.remoteJid;
+  const userId    = userIdRaw?.endsWith('@lid')
+    ? userIdRaw
+    : userIdRaw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   const match  = caption.match(/vender\s+(\S+)\s+(\d+)\s+(\d+)/i);
 
   if (!match) {
@@ -523,7 +533,10 @@ const MSG_INVENTARIO_VAZIO =
   `Use *!buy <item>* para começar!`;
 
 async function handleInventario(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
+  const userIdRaw = msg.key.participant || msg.key.remoteJid;
+  const userId    = userIdRaw?.endsWith('@lid')
+    ? userIdRaw
+    : userIdRaw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
 
   const [user, carteira] = await Promise.all([
     Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean(),
@@ -583,9 +596,13 @@ function parsearPix(msg, caption) {
     const parts   = caption.trim().split(/\s+/);
     const quantia = parseInt(parts[parts.length - 1], 10);
     if (isNaN(quantia) || quantia <= 0) return null;
-    
+
+    const targetJid = mentionedJid?.endsWith('@lid')
+      ? mentionedJid
+      : mentionedJid.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+
     return {
-      targetJid:  jidNormalizedUser(mentionedJid),
+      targetJid,
       numeroPura: mentionedJid.split('@')[0].split(':')[0],
       quantia,
     };
@@ -599,9 +616,8 @@ function parsearPix(msg, caption) {
   const quantia    = parseInt(numMatch[2], 10);
   if (!numeroPura || isNaN(quantia) || quantia <= 0) return null;
 
-  // Para buscas manuais por número puro, o fallback padrão da rede ainda é @s.whatsapp.net
   return {
-    targetJid:  jidNormalizedUser(`${numeroPura}@s.whatsapp.net`),
+    targetJid:  `${numeroPura}@s.whatsapp.net`,
     numeroPura,
     quantia,
   };
@@ -609,9 +625,10 @@ function parsearPix(msg, caption) {
 
 // !pix
 async function handlePix(sock, msg, jid, caption) {
-  // Limpa e normaliza o ID do remetente (resolve problemas com @lid e sessões multi-dispositivo)
   const rawUserId = msg.key.participant || msg.key.remoteJid;
-  const userId = jidNormalizedUser(rawUserId);
+  const userId    = rawUserId?.endsWith('@lid')
+    ? rawUserId
+    : rawUserId.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   
   const parsed = parsearPix(msg, caption);
 
@@ -672,7 +689,10 @@ async function handlePix(sock, msg, jid, caption) {
 // ─── !apostar ─────────────────────────────────────────────────────────────────
 
 async function handleApostar(sock, msg, jid, caption) {
-  const userId  = msg.key.participant || msg.key.remoteJid;
+  const userIdRaw = msg.key.participant || msg.key.remoteJid;
+  const userId    = userIdRaw?.endsWith('@lid')
+    ? userIdRaw
+    : userIdRaw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   const idGrupo = jid;
   const match   = caption.match(/apostar\s+(\d+)/i);
 
@@ -796,7 +816,10 @@ function buildLinhaTransacao(t, index, contactNames = {}) {
 // passando contactNames como quarto argumento:
 //   handleExtrato(sock, msg, jid, contactNames)
 async function handleExtrato(sock, msg, jid, contactNames = {}) {
-  const userId    = msg.key.participant || msg.key.remoteJid;
+  const userIdRaw = msg.key.participant || msg.key.remoteJid;
+  const userId    = userIdRaw?.endsWith('@lid')
+    ? userIdRaw
+    : userIdRaw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   const carteira  = await getCarteira(userId, jid);
   const historico = carteira?.goldHistory ?? [];
 
@@ -1213,8 +1236,11 @@ function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal) {
 // ─── Handler principal ────────────────────────────────────────────────────────
 
 async function handleSlots(sock, msg, jid, senderJid, caption) {
-  const args   = caption.trim().split(/\s+/);
-  const aposta = parseInt(args[1]);
+  const args       = caption.trim().split(/\s+/);
+  const aposta     = parseInt(args[1]);
+  const senderNorm = senderJid?.endsWith('@lid')
+    ? senderJid
+    : senderJid.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
 
   // ── Validação da aposta
   if (!aposta || isNaN(aposta) || aposta <= 0) {
@@ -1232,7 +1258,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   }
 
   // ── Verifica e debita saldo
-  const carteira = await getCarteira(senderJid, jid);
+  const carteira = await getCarteira(senderNorm, jid);
   const saldo    = carteira?.gold ?? 0;
 
   if (saldo < aposta) {
@@ -1248,7 +1274,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
     return;
   }
 
-  await alterarGold(senderJid, jid, -aposta, 'Slots (aposta)');
+  await alterarGold(senderNorm, jid, -aposta, 'Slots (aposta)');
 
   // ── Animação de giro
   const msgInicial = await sock.sendMessage(
@@ -1273,7 +1299,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   // ── Credita prêmio e calcula saldo final
   let saldoFinal = saldo - aposta;
   if (premio > 0) {
-    const carteiraAtualizada = await alterarGold(senderJid, jid, premio, `Slots (${mult}x)`);
+    const carteiraAtualizada = await alterarGold(senderNorm, jid, premio, `Slots (${mult}x)`);
     saldoFinal = carteiraAtualizada.gold;
   }
 
@@ -1376,9 +1402,12 @@ function buildResultadoCorrida(vencedorIdx, escolhaIdx, aposta, lucroLiq, saldoF
 // ─── Handler principal ────────────────────────────────────────────────────────
 
 async function handleCorrida(sock, msg, jid, senderJid, caption) {
-  const args   = caption.trim().split(/\s+/);
-  const escolha = parseInt(args[1]);
-  const aposta  = parseInt(args[2]);
+  const args      = caption.trim().split(/\s+/);
+  const escolha   = parseInt(args[1]);
+  const aposta    = parseInt(args[2]);
+  const senderNorm = senderJid?.endsWith('@lid')
+    ? senderJid
+    : senderJid.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
 
   const escolhaValida = escolha >= 1 && escolha <= CORRIDA_BICHOS.length;
 
@@ -1400,7 +1429,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   const escolhaIdx = escolha - 1;
 
   // ── Verifica e debita saldo
-  const carteira = await getCarteira(senderJid, jid);
+  const carteira = await getCarteira(senderNorm, jid);
   const saldo    = carteira?.gold ?? 0;
 
   if (saldo < aposta) {
@@ -1416,7 +1445,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
     return;
   }
 
-  await alterarGold(senderJid, jid, -aposta, `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`);
+  await alterarGold(senderNorm, jid, -aposta, `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`);
 
   // ── Sortear vencedor antes da animação (resultado já definido)
   const vencedorIdx = sortearVencedor();
@@ -1453,7 +1482,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
 
   let saldoFinal = saldo - aposta;
   if (premio > 0) {
-    const carteiraAtualizada = await alterarGold(senderJid, jid, premio, `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`);
+    const carteiraAtualizada = await alterarGold(senderNorm, jid, premio, `Corrida (${CORRIDA_BICHOS[escolhaIdx].nome})`);
     saldoFinal = carteiraAtualizada.gold;
   }
 
@@ -1550,7 +1579,10 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
 // ─── !give ────────────────────────────────────────────────────────────────────
 
 async function handleGive(sock, msg, jid, caption) {
-  const userId       = msg.key.participant || msg.key.remoteJid;
+  const userIdRaw    = msg.key.participant || msg.key.remoteJid;
+  const userId       = userIdRaw?.endsWith('@lid')
+    ? userIdRaw
+    : userIdRaw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
   const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
 
   if (!mentionedJid) {
@@ -1613,8 +1645,12 @@ async function handleGive(sock, msg, jid, caption) {
   );
 
   // ── Adicionar ao destinatário ──
+  const mentionedNorm = mentionedJid?.endsWith('@lid')
+    ? mentionedJid
+    : mentionedJid.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+
   await Usuario.findOneAndUpdate(
-    { idWhatsApp: mentionedJid },
+    { idWhatsApp: mentionedNorm },
     { $inc: { [`inventory.${itemKey}`]: 1 } },
     { upsert: true }
   );

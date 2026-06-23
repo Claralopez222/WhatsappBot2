@@ -565,12 +565,32 @@ router.get('/admin/usuarios', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
   try {
-    const jid = normalizarJid(decodeURIComponent(req.params.idWhatsApp));
+    const termo = decodeURIComponent(req.params.idWhatsApp);
+    let jid = normalizarJid(termo);
 
-    const [usuario, carteiras] = await Promise.all([
-      Usuario.findOne({ idWhatsApp: jid }).lean(),
-      CarteiraGrupo.find({ idWhatsApp: jid }).sort({ xp: -1 }).lean(),
-    ]);
+    // Se não achar carteiras pelo pn, tenta resolver via LidMapping
+    let carteiras = await CarteiraGrupo.find({ idWhatsApp: jid }).sort({ xp: -1 }).lean();
+
+    if (!carteiras.length && !jid.endsWith('@lid')) {
+      const digitos = jid.split('@')[0].replace(/\D/g, '');
+      const variantesPn = [];
+      variantesPn.push(`${digitos}@s.whatsapp.net`);
+      if (digitos.startsWith('55') && digitos.length >= 12) {
+        const ddd = digitos.slice(2, 4);
+        const resto = digitos.slice(4);
+        if (resto.length === 8) variantesPn.push(`55${ddd}9${resto}@s.whatsapp.net`);
+        else if (resto.length === 9 && resto.startsWith('9')) variantesPn.push(`55${ddd}${resto.slice(1)}@s.whatsapp.net`);
+      }
+
+      const mapeamento = await LidMapping.findOne({ pn: { $in: variantesPn } }).lean();
+      if (mapeamento) {
+        jid = mapeamento.lid;
+        carteiras = await CarteiraGrupo.find({ idWhatsApp: jid }).sort({ xp: -1 }).lean();
+      }
+    }
+
+    const usuario = await Usuario.findOne({ idWhatsApp: jid }).lean()
+      || await Usuario.findOne({ idWhatsApp: normalizarJid(termo) }).lean();
 
     if (!usuario && !carteiras.length)
       return res.status(404).json({ error: 'Usuário não encontrado.' });

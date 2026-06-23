@@ -107,15 +107,34 @@ async function resolverIdWhatsApp(termo, idGrupo) {
   const variantesDigitos = gerarVariantesNumero(t);
   const variantesPn      = variantesDigitos.map(d => `${d}@s.whatsapp.net`);
 
+  // 1. Tenta achar LID pelo número de telefone
   const mapeamento = await LidMapping.findOne({ pn: { $in: variantesPn } }).lean();
   if (mapeamento) return mapeamento.lid;
 
+  // 2. Tenta achar carteira existente pelo pn
   const existente = await CarteiraGrupo.findOne({
     idWhatsApp: { $in: variantesPn },
     idGrupo,
   }).select('idWhatsApp').lean();
   if (existente) return existente.idWhatsApp;
 
+  // 3. Busca direta na CarteiraGrupo por qualquer @lid nesse grupo,
+  //    depois cruza com LidMapping pra ver se o pn bate
+  const todasCarteiras = await CarteiraGrupo.find({
+    idGrupo,
+    idWhatsApp: { $regex: /@lid$/ },
+  }).select('idWhatsApp').lean();
+
+  if (todasCarteiras.length) {
+    const lids = todasCarteiras.map(c => c.idWhatsApp);
+    const lidMatch = await LidMapping.findOne({
+      lid: { $in: lids },
+      pn:  { $in: variantesPn },
+    }).lean();
+    if (lidMatch) return lidMatch.lid;
+  }
+
+  // 4. Fallback: usa a variante mais longa
   return variantesPn.sort((a, b) => b.length - a.length)[0];
 }
 

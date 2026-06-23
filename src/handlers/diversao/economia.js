@@ -1007,18 +1007,11 @@ async function handleGarimpar(sock, msg, jid) {
   const userIdRaw = msg.key.participant || msg.key.remoteJid;
   const agora     = Date.now();
 
-  // ── Resolver @lid → telefone real via LidMapping ──────────────────────────
-  let userId = userIdRaw;
-  if (userIdRaw?.endsWith('@lid')) {
-    try {
-      const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
-      const mapa = await LidMapping.findOne({ lid: userIdRaw }).lean();
-      if (mapa?.pn) userId = mapa.pn;
-    } catch { /* mantém userId original */ }
-  }
-
-  // Normaliza para @s.whatsapp.net com apenas dígitos
-  userId = userId.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  // ── Mantém o JID original (@lid ou @s.whatsapp.net) ──────────────────────
+// Após a mesclagem, carteiras estão salvas como @lid — não converter!
+const userId = userIdRaw?.includes('@')
+  ? userIdRaw
+  : userIdRaw + '@s.whatsapp.net';
 
   // ── 1. Checar cache local (chave = userId normalizado) ────────────────────
   const tsCache = garimpoCache.get(userId) ?? 0;

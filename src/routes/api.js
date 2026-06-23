@@ -1353,5 +1353,132 @@ router.get('/user/grupos/:idWhatsApp', auth, async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ROTAS DA CORRIDA (JWT de sessão)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CORRIDA_BICHOS_API = [
+  { nome: '🐎 Cavalo',    emoji: '🐎', odds: 2.0, velocidade: 9 },
+  { nome: '🐅 Tigre',     emoji: '🐅', odds: 2.5, velocidade: 8 },
+  { nome: '🦊 Raposa',    emoji: '🦊', odds: 3.0, velocidade: 7 },
+  { nome: '🐕 Cachorro',  emoji: '🐕', odds: 3.5, velocidade: 6 },
+  { nome: '🐗 Javali',    emoji: '🐗', odds: 4.0, velocidade: 5 },
+  { nome: '🐢 Tartaruga', emoji: '🐢', odds: 8.0, velocidade: 2 },
+];
+
+const CORRIDA_RATE_MAX    = 10;
+const CORRIDA_RATE_JANELA = 60 * 1000;
+
+const corridaRateLimit = rateLimit({
+  windowMs:     CORRIDA_RATE_JANELA,
+  max:          CORRIDA_RATE_MAX,
+  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req),
+  handler: (req, res) => {
+    return res.status(429).json({ error: 'Muitas apostas! Aguarde antes de tentar novamente.' });
+  },
+  skip: (req) => !req.user,
+});
+
+function sortearVencedorApi() {
+  const pool = CORRIDA_BICHOS_API.flatMap((b, i) => Array(b.velocidade).fill(i));
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// POST /api/corrida/apostar
+// Body: { idGrupo, escolha (0-5), aposta }
+router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
+  try {
+    const idWhatsApp = req.user.idWhatsApp;
+    const { idGrupo, escolha, aposta } = req.body || {};
+
+    if (!idGrupo)
+      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+
+    const escolhaIdx = parseInt(escolha, 10);
+    if (isNaN(escolhaIdx) || escolhaIdx < 0 || escolhaIdx >= CORRIDA_BICHOS_API.length)
+      return res.status(400).json({ error: 'Escolha inválida.' });
+
+    const valorAposta = parseInt(aposta, 10);
+    if (!valorAposta || isNaN(valorAposta) || valorAposta <= 0)
+      return res.status(400).json({ error: 'Aposta deve ser um número positivo.' });
+
+    if (valorAposta > 100_000)
+      return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
+
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
+    if (!carteira)
+      return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
+
+    if ((carteira.gold ?? 0) < valorAposta)
+      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
+
+    const carteiraDebitada = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp, idGrupo, gold: { $gte: valorAposta } },
+      {
+        $inc: { gold: -valorAposta },
+        $push: {
+          goldHistory: {
+            $each:  [{ type: 'gasto', item: `Corrida (${CORRIDA_BICHOS_API[escolhaIdx].nome})`, amount: valorAposta, date: new Date() }],
+            $slice: -50,
+          },
+        },
+      },
+      { new: true }
+    );
+
+    if (!carteiraDebitada)
+      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
+
+    const vencedorIdx = sortearVencedorApi();
+    const ganhou      = escolhaIdx === vencedorIdx;
+    const bicho       = CORRIDA_BICHOS_API[escolhaIdx];
+    const premio      = ganhou ? Math.floor(valorAposta * bicho.odds) : 0;
+    const lucroLiq    = premio - valorAposta;
+
+    let saldoFinal = carteiraDebitada.gold;
+
+    if (premio > 0) {
+      const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp, idGrupo },
+        {
+          $inc: { gold: premio },
+          $push: {
+            goldHistory: {
+              $each:  [{ type: 'recebido', item: `Corrida (${bicho.odds}x)`, amount: premio, date: new Date() }],
+              $slice: -50,
+            },
+          },
+        },
+        { new: true }
+      );
+      saldoFinal = carteiraAtualizada?.gold ?? saldoFinal;
+    }
+
+    return res.json({
+      vencedorIdx,
+      escolhaIdx,
+      bichos:    CORRIDA_BICHOS_API.map(b => ({ nome: b.nome, emoji: b.emoji, odds: b.odds })),
+      ganhou,
+      premio,
+      lucroLiq,
+      aposta:    valorAposta,
+      saldoFinal,
+    });
+
+  } catch (err) {
+    console.error('[API] POST /corrida/apostar:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// GET /api/corrida/bichos
+router.get('/corrida/bichos', (req, res) => {
+  return res.json({
+    bichos: CORRIDA_BICHOS_API.map((b, i) => ({
+      idx: i, nome: b.nome, emoji: b.emoji, odds: b.odds, velocidade: b.velocidade,
+    }))
+  });
+});
+
 // ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

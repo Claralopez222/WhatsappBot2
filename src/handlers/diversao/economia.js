@@ -1006,38 +1006,33 @@ async function handleGarimpar(sock, msg, jid) {
     }
   }
 
-  // ── 2. Update atômico no banco ────────────────────────────────────────────
-  // upsert: true → cria o documento se o usuário ainda não existir,
-  // evitando falso cooldown na primeira vez que alguém usa o comando.
-  const agora_date = new Date(agora);
-  const limiteData = new Date(agora - GARIMPO_COOLDOWN_MS);
+  // ── 2. Busca o doc atual para checar cooldown real no banco ───────────────
+  // Separar leitura de escrita evita a ambiguidade do upsert com $or,
+  // que era a causa do cooldown sempre mostrar 15 minutos.
+  const docAtual = await Usuario.findOne(
+    { idWhatsApp: userId },
+    { ultimoGarimpo: 1 }
+  ).lean();
 
-  const userAtualizado = await Usuario.findOneAndUpdate(
-    {
-      idWhatsApp: userId,
-      $or: [
-        { ultimoGarimpo: { $exists: false } },
-        { ultimoGarimpo: null               },
-        { ultimoGarimpo: { $lte: limiteData } },
-      ],
-    },
-    { $set: { ultimoGarimpo: agora_date } },
-    { new: false, upsert: true }  // ← upsert: true corrige o falso cooldown
-  );
-
-  // Se o doc já existia E não bateu no filtro, significa que está em cooldown
-  if (userAtualizado && userAtualizado.ultimoGarimpo) {
-    const tsUltimo = new Date(userAtualizado.ultimoGarimpo).getTime();
+  if (docAtual?.ultimoGarimpo) {
+    const tsUltimo  = new Date(docAtual.ultimoGarimpo).getTime();
     const passadoDB = agora - tsUltimo;
     if (passadoDB < GARIMPO_COOLDOWN_MS) {
+      // Sincroniza cache com o valor real do banco
       garimpoCache.set(userId, tsUltimo);
       await sock.sendMessage(jid, { text: msgCooldown(GARIMPO_COOLDOWN_MS - passadoDB) }, { quoted: msg });
       return;
     }
   }
 
-  // ── 3. Cooldown livre — registra cache e sorteia ──────────────────────────
+  // ── 3. Cooldown livre — grava timestamp e sorteia ─────────────────────────
   garimpoCache.set(userId, agora);
+
+  await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId },
+    { $set: { ultimoGarimpo: new Date(agora) } },
+    { upsert: true }
+  );
 
   try {
     const minerio     = sortearMinerio();
@@ -1100,10 +1095,10 @@ async function handleGarimpar(sock, msg, jid) {
     await sock.sendMessage(jid, { text: linhas.join('\n') }, { quoted: msg });
 
   } catch (e) {
-    // Rollback: restaura o ultimoGarimpo anterior para não "queimar" o cooldown
+    // Rollback: restaura ultimoGarimpo anterior para não queimar o cooldown
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      { $set: { ultimoGarimpo: userAtualizado?.ultimoGarimpo ?? null } }
+      { $set: { ultimoGarimpo: docAtual?.ultimoGarimpo ?? null } }
     ).catch(() => {});
 
     garimpoCache.delete(userId);

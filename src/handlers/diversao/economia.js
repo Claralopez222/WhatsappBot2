@@ -161,8 +161,9 @@ async function debitarGold(userId, idGrupo, valor, descricao) {
 
 // !gold
 async function handleGold(sock, msg, jid, getPrefix, contactNames) {
-  const userId  = msg.key.participant || msg.key.remoteJid;
-  const idGrupo = jid;
+  const userIdRaw = msg.key.participant || msg.key.remoteJid;
+  const userId    = userIdRaw.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  const idGrupo   = jid;
 
   try {
     const carteira  = await getCarteira(userId, idGrupo);

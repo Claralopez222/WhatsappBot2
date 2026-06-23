@@ -509,24 +509,32 @@ const perguntasQuiz = [
   { p: '⚔️ Qual é a arma usada pelos soldados para se mover entre os telhados?', r: 'equipamento de mobilidade', d: 'Anime' },
 ];
 
+// handleQuiz
 async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
-  // ── Resolver @lid para jid real e normalizar ──────────────────────────────
-  let resolvedJid = senderJid;
+  // ── Resolver @lid → telefone real via LidMapping ──────────────────────────
+  let resolvedJidNorm = senderJid;
+
   if (senderJid?.endsWith('@lid')) {
     try {
-      const number  = senderJid.split('@')[0].split(':')[0];
-      const results = await sock.onWhatsApp(number);
-      if (results?.length > 0 && results[0].jid) {
-        resolvedJid = results[0].jid;
+      const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
+      const mapa = await LidMapping.findOne({ lid: senderJid }).lean();
+      if (mapa?.pn) {
+        resolvedJidNorm = mapa.pn;
+      } else {
+        // Sem mapeamento: usa o senderJid como está (melhor que tentar construir número errado)
+        resolvedJidNorm = senderJid;
       }
     } catch {
-      resolvedJid = senderJid;
+      resolvedJidNorm = senderJid;
     }
   }
 
-  // Normaliza para garantir consistência com CarteiraGrupo e !gold
-  const resolvedJidNorm = resolvedJid.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  // Garante formato @s.whatsapp.net com apenas dígitos
+  if (!resolvedJidNorm.endsWith('@lid')) {
+    const digitos = resolvedJidNorm.split('@')[0].replace(/\D/g, '');
+    resolvedJidNorm = `${digitos}@s.whatsapp.net`;
+  }
 
   await syncQuizPointsFromDB(resolvedJidNorm);
 
@@ -534,7 +542,8 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   if (quizState.has(senderJid)) {
     const state = quizState.get(senderJid);
 
-    const textoRaw = caption ||
+    const textoRaw =
+      caption ||
       msg.message?.conversation ||
       msg.message?.extendedTextMessage?.text ||
       msg.message?.ephemeralMessage?.message?.conversation ||
@@ -555,9 +564,8 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     clearTimeout(state.timeout);
     quizState.delete(senderJid);
 
-    // Usa sempre o JID normalizado para consistência com CarteiraGrupo
-    const effectiveJid = (state.resolvedJid ?? resolvedJidNorm)
-      .split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+    // Usa o JID resolvido salvo no state (garante que veio do LidMapping correto)
+    const effectiveJid = state.resolvedJid ?? resolvedJidNorm;
 
     const correta = normalize(state.r);
     const respostasValidas = correta
@@ -663,7 +671,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     }
   }, 30_000);
 
-  // Salva resolvedJidNorm para usar na correção
+  // Salva resolvedJidNorm para usar na correção da resposta
   quizState.set(senderJid, { r: q.r, resolvedJid: resolvedJidNorm, timeout });
 
   const restantes = DAILY_QUIZ_LIMIT - quizCount - 1;

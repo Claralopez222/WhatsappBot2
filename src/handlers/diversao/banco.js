@@ -67,6 +67,17 @@ async function getCarteiraGrupo(userId, idGrupo) {
   );
 }
 
+// ─── calcularLimiteBanco ─────────────────────────────────────────────────────
+// Calcula o limite diário de depósito baseado no level do usuário
+function calcularLimiteBanco(level) {
+  if (level >= 100) return 5000000;
+  if (level >= 50)  return 2500000;
+  if (level >= 20)  return 1000000;
+  if (level >= 10)  return 500000;
+  if (level >= 5)   return 250000;
+  return 100000;    // Level 1 a 4
+}
+
 // ─── handleBanco ─────────────────────────────────────────────────────────────
 
 // !banco
@@ -75,6 +86,7 @@ async function handleBanco(sock, msg, jid, caption) {
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
   const match   = caption.match(/banco\s+(\d+)/i);
   console.log('[banco] userId:', userId, '| idGrupo:', idGrupo);
+  
   // ── Banco obrigatoriamente por grupo ────────────────────────────────────────
   if (!idGrupo) {
     await sock.sendMessage(jid, {
@@ -86,6 +98,10 @@ async function handleBanco(sock, msg, jid, caption) {
   const carteira = await getCarteiraGrupo(userId, idGrupo);
   const banco    = carteira.banco ?? {};
   const today    = new Date().toISOString().split('T')[0];
+  
+  // 🔥 NOVO: Pega o level do usuário e calcula o limite diário dinâmico
+  const userLevel    = carteira.level ?? 1;
+  const limiteDiario = calcularLimiteBanco(userLevel);
 
   // ── Resetar limite diário se necessário ─────────────────────────────────────
   if (banco.lastDepositDate !== today) {
@@ -100,13 +116,12 @@ async function handleBanco(sock, msg, jid, caption) {
   const saldoDisponivel = carteira.gold ?? 0;
   const depositedToday  = banco.depositedToday ?? 0;
 
-  // ✅ Math.max evita exibir/limite negativo caso depositedToday > DAILY_LIMIT
-  // (ex: limite reduzido manualmente após o usuário já ter depositado mais)
-  const remainingLimit  = Math.max(0, BANCO_CONFIG.DAILY_LIMIT - depositedToday);
+  // ✅ Substituído BANCO_CONFIG.DAILY_LIMIT por limiteDiario
+  const remainingLimit  = Math.max(0, limiteDiario - depositedToday);
 
-  // ✅ Bloco de limite diário reutilizado em 2 lugares — evita duplicação
+  // ✅ Bloco de limite diário reutilizado — mostra o level do usuário
   const linhaLimite =
-    `*LIMITE DIÁRIO:*\n` +
+    `*LIMITE DIÁRIO (Lvl ${userLevel}):*\n` +
     `  📊 Depositado hoje: *${depositedToday}* gold\n` +
     `  🔓 Disponível: *${remainingLimit}* gold`;
 
@@ -169,7 +184,6 @@ async function handleBanco(sock, msg, jid, caption) {
   // ── Processar depósito ───────────────────────────────────────────────────────
   const amount = parseInt(match[1], 10);
 
-  // ✅ Number.isSafeInteger evita números absurdamente grandes (overflow/precisão)
   if (!amount || amount <= 0 || !Number.isSafeInteger(amount)) {
     await sock.sendMessage(jid, {
       text: `⚠️ *QUANTIDADE INVÁLIDA*\n\nA quantia deve ser um número positivo válido!\n\n*EXEMPLO:*\n  *!banco 500*`,
@@ -182,7 +196,7 @@ async function handleBanco(sock, msg, jid, caption) {
       text:
         `⚠️ *LIMITE DIÁRIO ATINGIDO*\n\nVocê já depositou *${depositedToday}* gold hoje!\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `  📊 Limite diário: *${BANCO_CONFIG.DAILY_LIMIT}* gold\n` +
+        `  📊 Limite (Lvl ${userLevel}): *${limiteDiario}* gold\n` +
         `  🔒 Limite restante: *0* gold\n\n` +
         `_Volte amanhã para depositar mais!_ ⏰`,
     }, { quoted: msg });
@@ -193,7 +207,7 @@ async function handleBanco(sock, msg, jid, caption) {
     await sock.sendMessage(jid, {
       text:
         `⚠️ *LIMITE DIÁRIO EXCEDIDO*\n\n` +
-        `  📊 Limite diário: *${BANCO_CONFIG.DAILY_LIMIT}* gold\n` +
+        `  📊 Limite (Lvl ${userLevel}): *${limiteDiario}* gold\n` +
         `  ✅ Depositado hoje: *${depositedToday}* gold\n` +
         `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
         `*Você tentou depositar:* ${amount} gold\n\n` +
@@ -224,12 +238,10 @@ async function handleBanco(sock, msg, jid, caption) {
 
   // ── Atualizar dados do banco no CarteiraGrupo ────────────────────────────────
   const newDepositedToday  = depositedToday + amount;
-  const limiteRestanteHoje = Math.max(0, BANCO_CONFIG.DAILY_LIMIT - newDepositedToday);
+  const limiteRestanteHoje = Math.max(0, limiteDiario - newDepositedToday);
   const hasActiveInvestment = (banco.amount ?? 0) > 0;
 
   if (hasActiveInvestment) {
-    // ✅ $inc evita condição de corrida — soma direto sobre o valor já
-    // persistido no banco, sem depender do snapshot lido no início da função
     await CarteiraGrupo.updateOne(
       { idWhatsApp: userId, idGrupo },
       {

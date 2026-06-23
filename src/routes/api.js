@@ -1078,12 +1078,14 @@ router.get('/admin/economia', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/admin/usuario/gold/reset-grupo', adminAuth, async (req, res) => {
   try {
-    const { idWhatsApp, idGrupo } = req.body || {};
+    const { idWhatsApp: idRaw, idGrupo } = req.body || {};
 
-    if (!idWhatsApp)
+    if (!idRaw)
       return res.status(400).json({ error: 'idWhatsApp é obrigatório.' });
     if (!idGrupo)
       return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+
+    const idWhatsApp = await resolverIdWhatsApp(idRaw, idGrupo);
 
     const resultado = await CarteiraGrupo.updateOne(
       { idWhatsApp, idGrupo },

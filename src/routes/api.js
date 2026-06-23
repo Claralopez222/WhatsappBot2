@@ -896,21 +896,37 @@ router.get('/admin/grupo/:jid/gold-ranking', adminAuth, async (req, res) => {
 
     // Enriquece com nome do Usuario
     const jids = membros.map(m => m.idWhatsApp);
+
+    // Resolve @lid → PN para buscar nomes no Usuario
+    const lidMappings = await LidMapping.find({
+      lid: { $in: jids.filter(j => j?.endsWith('@lid')) }
+    }).lean();
+    const lidParaPn = Object.fromEntries(lidMappings.map(m => [m.lid, m.pn]));
+    const pnsResolvidos = Object.values(lidParaPn);
+
     const usuariosMap = {};
     if (jids.length) {
-      const usuarios = await Usuario.find({ idWhatsApp: { $in: jids } })
+      const usuarios = await Usuario.find({ idWhatsApp: { $in: [...jids, ...pnsResolvidos] } })
         .select('idWhatsApp nome telefone')
         .lean();
       for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
     }
 
+    // Busca também pelo LID mapeado para resolver nomes de usuários @lid
+    const lidMappings = await LidMapping.find({
+      lid: { $in: membros.map(m => m.idWhatsApp).filter(j => j?.endsWith('@lid')) }
+    }).lean();
+    const lidParaPn = Object.fromEntries(lidMappings.map(m => [m.lid, m.pn]));
+
     const ranking = membros.map(m => {
-      const u         = usuariosMap[m.idWhatsApp] || {};
-      const numeroPuro = m.idWhatsApp?.split('@')[0] || '';
+      // Tenta achar o usuário pelo JID direto, ou pelo PN mapeado se for @lid
+      const pnResolvido = lidParaPn[m.idWhatsApp] || m.idWhatsApp;
+      const u = usuariosMap[m.idWhatsApp] || usuariosMap[pnResolvido] || {};
+      const numeroPuro = (pnResolvido || m.idWhatsApp)?.split('@')[0]?.replace(/\D/g, '') || '';
       return {
         idWhatsApp: m.idWhatsApp,
         nome:       u.nome || u.telefone || numeroPuro || '—',
-        telefone:   u.telefone || numeroPuro || '—', // sempre mandado separado, mesmo quando há nome
+        telefone:   u.telefone || numeroPuro || '—',
         gold:       m.gold ?? 0,
         xp:         m.xp   ?? 0,
         level:      m.level ?? 1,

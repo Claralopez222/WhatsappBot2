@@ -454,27 +454,46 @@ async function startBot() {
             hoje.setHours(0, 0, 0, 0);
 
             const carteiraAtual = await CarteiraGrupo.findOne(
-              { idWhatsApp: remetenteNorm, idGrupo: _jid },
-              { ultimoBonusDiario: 1 }
-            ).lean();
+  { idWhatsApp: remetenteNorm, idGrupo: _jid },
+  { ultimoBonusDiario: 1, gold: 1 }
+).lean();
 
-            const recebeuHoje = carteiraAtual?.ultimoBonusDiario
-              && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
+const recebeuHoje = carteiraAtual?.ultimoBonusDiario
+  && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
 
-            const incCarteira = { mensagens: 1, xp: 1 }; // ← XP por grupo
-            const setCarteira = { nome: nomeDoCara };
+const incCarteira = { mensagens: 1, xp: 1 };
+const setCarteira = { nome: nomeDoCara };
 
-            if (!recebeuHoje) {
-              incCarteira.gold = 100;
-              setCarteira.ultimoBonusDiario = new Date();
-            }
+if (!recebeuHoje && carteiraAtual) {
+  // Só dá bônus se a carteira JÁ EXISTE (evita criar duplicata com upsert)
+  incCarteira.gold = 100;
+  setCarteira.ultimoBonusDiario = new Date();
+}
 
-            // ── CarteiraGrupo: mensagens, gold diário e XP por grupo ──────────
-            await CarteiraGrupo.findOneAndUpdate(
-              { idWhatsApp: remetenteNorm, idGrupo: _jid },
-              { $inc: incCarteira, $set: setCarteira },
-              { upsert: true }
-            );
+// ── CarteiraGrupo: mensagens, gold diário e XP por grupo ──────────
+if (carteiraAtual) {
+  // Carteira existe — atualiza normalmente
+  await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: remetenteNorm, idGrupo: _jid },
+    { $inc: incCarteira, $set: setCarteira },
+    { new: true }
+  );
+
+  // Notifica bônus diário
+  if (!recebeuHoje) {
+    await sock.sendMessage(_jid, {
+      text: `🪙 *${nomeDoCara}*, você ganhou seu bônus diário de *100 gold*! Volte amanhã para ganhar mais. 💰`,
+      mentions: [remetenteNorm],
+    }).catch(() => {});
+  }
+} else {
+  // Carteira não existe — cria sem gold (vai receber no próximo dia)
+  await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: remetenteNorm, idGrupo: _jid },
+    { $inc: { mensagens: 1, xp: 1 }, $set: { nome: nomeDoCara, ultimoBonusDiario: new Date() } },
+    { upsert: true }
+  );
+}
 
             // ── Usuario global: XP global, level e missões ────────────────────
             const hojeISO = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"

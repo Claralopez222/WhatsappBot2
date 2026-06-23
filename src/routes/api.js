@@ -1437,22 +1437,27 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
 
     let saldoFinal = carteiraDebitada.gold;
 
-    if (premio > 0) {
-      const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp, idGrupo },
-        {
-          $inc: { gold: premio },
-          $push: {
-            goldHistory: {
-              $each:  [{ type: 'recebido', item: `Corrida (${bicho.odds}x)`, amount: premio, date: new Date() }],
-              $slice: -50,
-            },
-          },
+if (premio > 0) {
+  const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp, idGrupo },
+    {
+      $inc: { gold: premio },
+      $push: {
+        goldHistory: {
+          $each: [{
+            type: 'recebido',
+            item: `Corrida (${bicho.odds}x)`,
+            amount: premio,
+            date: new Date(),
+          }],
+          $slice: -50,
         },
-        { new: true }
-      );
-      saldoFinal = carteiraAtualizada?.gold ?? saldoFinal;
-    }
+      },
+    },
+    { new: true }
+  );
+  saldoFinal = carteiraAtualizada?.gold ?? (carteiraDebitada.gold + premio);
+}
 
     return res.json({
       vencedorIdx,

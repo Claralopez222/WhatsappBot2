@@ -8,6 +8,8 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
+const rateLimit      = require('express-rate-limit');
+const { MongoStore } = require('rate-limit-mongo');
 
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {
@@ -1149,9 +1151,6 @@ function calcularResultadoSlot(r1, r2, r3) {
 }
 
 // ─── Rate limit do cassino (10 giros/min por usuário) ─────────────────────────
-const rateLimit      = require('express-rate-limit');
-const { MongoStore } = require('rate-limit-mongo');
-
 const CASSINO_MAX    = 10;
 const CASSINO_JANELA = 60 * 1000;
 

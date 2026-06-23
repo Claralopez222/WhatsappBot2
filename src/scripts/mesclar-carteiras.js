@@ -2,181 +2,221 @@
 
 /**
  * mesclar-carteiras.js
- * Script pontual para mesclar carteiras "fantasma" (JIDs duplicados)
- * numa carteira real, preservando todos os dados.
+ * Mescla automaticamente TODAS as carteiras duplicadas (@s.whatsapp.net + @lid)
+ * usando o LidMapping como base.
  *
  * USO:
- *   node scripts/mesclar-carteiras.js           ← dry-run (só mostra o que faria, não mexe em nada)
+ *   node scripts/mesclar-carteiras.js           ← dry-run (só mostra, não mexe)
  *   node scripts/mesclar-carteiras.js --executar ← executa de verdade
- *
- * ANTES DE RODAR:
- *   1. Preencha JID_REAL com o JID que aparece no painel do Felipe (ex: 17339652033756@lid)
- *   2. Confirme ID_GRUPO e JIDS_FANTASMA abaixo
  */
 
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 const mongoose      = require('mongoose');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
-
-// ─── CONFIGURAÇÃO ────────────────────────────────────────────────────────────
-
-const ID_GRUPO = '120363158061167558@g.us';
-
-// JID real do Felipe — copie do botão "copiar" no painel gold do grupo.
-// Provavelmente é um @lid, tipo: 17339652033756@lid
-const JID_REAL = '173396520337564@lid';
-
-// Carteiras duplicadas que serão SOMADAS e depois APAGADAS.
-const JIDS_FANTASMA = [
-  { jid: '5565993354137@s.whatsapp.net', descricao: 'fantasma com 9 (165k gold)'  },
-  { jid: '556593354137@s.whatsapp.net',  descricao: 'fantasma sem 9 (2.3k gold)'  },
-];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 const DRY_RUN = !process.argv.includes('--executar');
 
-function fmt(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+const RESET    = '\x1b[0m';
+const VERDE    = '\x1b[32m';
+const AMARELO  = '\x1b[33m';
+const VERMELHO = '\x1b[31m';
+const CYAN     = '\x1b[36m';
+const BRANCO   = '\x1b[37m';
 
-function titulo(texto) {
-  const linha = '─'.repeat(60);
-  console.log(`\n${linha}\n  ${texto}\n${linha}`);
-}
+function fmt(n)  { return Number(n || 0).toLocaleString('pt-BR'); }
+function sep()   { console.log(`${BRANCO}${'─'.repeat(70)}${RESET}`); }
+function titulo(t) { sep(); console.log(`  ${AMARELO}${t}${RESET}`); sep(); }
+function ok(t)   { console.log(`  ${VERDE}✅ ${t}${RESET}`); }
+function info(t) { console.log(`  ${CYAN}ℹ️  ${t}${RESET}`); }
+function warn(t) { console.log(`  ${AMARELO}⚠️  ${t}${RESET}`); }
+function erro(t) { console.log(`  ${VERMELHO}❌ ${t}${RESET}`); }
 
-function linha(label, valor, cor = '') {
-  const RESET = '\x1b[0m', VERDE = '\x1b[32m', AMARELO = '\x1b[33m', VERMELHO = '\x1b[31m', CYAN = '\x1b[36m';
-  const cores = { verde: VERDE, amarelo: AMARELO, vermelho: VERMELHO, cyan: CYAN };
-  const c = cores[cor] || '';
-  console.log(`  ${c}${label.padEnd(22)}${valor}${RESET}`);
+// Gera variantes de pn brasileiro (com/sem o 9)
+function gerarVariantesPn(pn) {
+  const digitos = pn.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+  const variantes = new Set([`${digitos}@s.whatsapp.net`]);
+
+  if (digitos.startsWith('55') && digitos.length >= 12) {
+    const ddd   = digitos.slice(2, 4);
+    const resto = digitos.slice(4);
+    if (resto.length === 8)
+      variantes.add(`55${ddd}9${resto}@s.whatsapp.net`);
+    else if (resto.length === 9 && resto.startsWith('9'))
+      variantes.add(`55${ddd}${resto.slice(1)}@s.whatsapp.net`);
+  }
+
+  return [...variantes];
 }
 
 // ─── MAIN ────────────────────────────────────────────────────────────────────
 
 async function main() {
-
-  // Validação antecipada da config
-  if (JID_REAL === 'COLAR_AQUI_O_JID_DO_FELIPE') {
-    console.error('\n❌  Preencha JID_REAL no topo do script antes de rodar.\n');
-    process.exit(1);
-  }
-  if (!ID_GRUPO || JIDS_FANTASMA.length === 0) {
-    console.error('\n❌  ID_GRUPO ou JIDS_FANTASMA vazio. Confere a config.\n');
-    process.exit(1);
-  }
-
   titulo(DRY_RUN
     ? '🔍  DRY-RUN — nada será alterado no banco'
     : '⚡  EXECUÇÃO REAL — alterações permanentes');
 
-  if (DRY_RUN) {
-    console.log('  Para executar de verdade, rode com a flag --executar\n');
-  }
+  if (DRY_RUN)
+    info('Para executar de verdade: node scripts/mesclar-carteiras.js --executar\n');
 
   await mongoose.connect(process.env.MONGO_URI);
-  console.log('  ✅ MongoDB conectado\n');
+  ok('MongoDB conectado\n');
 
-  // ── 1. Busca carteira real ──────────────────────────────────────────────────
-  const real = await CarteiraGrupo.findOne({ idWhatsApp: JID_REAL, idGrupo: ID_GRUPO });
+  // ── 1. Carrega todos os mapeamentos LID ↔ PN ─────────────────────────────
+  const mappings = await LidMapping.find({}).lean();
+  info(`${mappings.length} mapeamento(s) LID↔PN encontrado(s)\n`);
 
-  if (!real) {
-    console.error(`\n❌  Carteira real NÃO ENCONTRADA para JID: ${JID_REAL}`);
-    console.error('    Confere se o JID está certo e se é desse grupo.\n');
-    process.exit(1);
-  }
+  let totalMesclados  = 0;
+  let totalRenomeados = 0;
+  let totalPulados    = 0;
+  let totalErros      = 0;
 
-  titulo('📋  Estado ATUAL da carteira real (Felipe)');
-  linha('JID',        real.idWhatsApp, 'cyan');
-  linha('Gold',       fmt(real.gold),   'amarelo');
-  linha('XP',         fmt(real.xp));
-  linha('Mensagens',  fmt(real.mensagens));
+  for (const map of mappings) {
+    const { lid, pn } = map;
+    if (!lid || !pn) { totalPulados++; continue; }
 
-  // ── 2. Busca e valida fantasmas ────────────────────────────────────────────
-  titulo('👻  Carteiras fantasma encontradas');
+    const variantesPn = gerarVariantesPn(pn);
 
-  let totalGold = 0, totalXp = 0, totalMensagens = 0;
-  const fantasmasEncontradas = [];
+    try {
+      // Busca todas as carteiras do @lid nesse usuário
+      const carteirasLid = await CarteiraGrupo.find({ idWhatsApp: lid }).lean();
 
-  for (const { jid, descricao } of JIDS_FANTASMA) {
-    const doc = await CarteiraGrupo.findOne({ idWhatsApp: jid, idGrupo: ID_GRUPO });
-    if (!doc) {
-      linha(`${jid}`, `(não existe no banco — pulando)`, 'amarelo');
-      continue;
+      // Busca todas as carteiras de qualquer variante @pn
+      const carteirasPn = await CarteiraGrupo.find({
+        idWhatsApp: { $in: variantesPn }
+      }).lean();
+
+      if (!carteirasLid.length && !carteirasPn.length) {
+        totalPulados++;
+        continue;
+      }
+
+      // Agrupa por idGrupo
+      const porGrupo = {};
+
+      for (const c of carteirasLid) {
+        porGrupo[c.idGrupo] = porGrupo[c.idGrupo] || {};
+        porGrupo[c.idGrupo].lid = c;
+      }
+      for (const c of carteirasPn) {
+        porGrupo[c.idGrupo] = porGrupo[c.idGrupo] || {};
+        porGrupo[c.idGrupo].pn = c;
+      }
+
+      for (const [idGrupo, par] of Object.entries(porGrupo)) {
+        const cLid = par.lid;
+        const cPn  = par.pn;
+
+        // Caso 1: só @lid → nada a fazer
+        if (cLid && !cPn) continue;
+
+        // Caso 2: só @pn → renomeia para @lid
+        if (!cLid && cPn) {
+          info(`[RENOMEAR] ${cPn.idWhatsApp} → ${lid} | Grupo: ${idGrupo} | Gold: ${fmt(cPn.gold)}`);
+
+          if (!DRY_RUN) {
+            await CarteiraGrupo.updateOne(
+              { _id: cPn._id },
+              { $set: { idWhatsApp: lid } }
+            );
+          }
+
+          totalRenomeados++;
+          continue;
+        }
+
+        // Caso 3: ambas existem → mescla no @lid e deleta o @pn
+        if (cLid && cPn) {
+          const goldFinal      = (cLid.gold      || 0) + (cPn.gold      || 0);
+          const xpFinal        = (cLid.xp        || 0) + (cPn.xp        || 0);
+          const mensagensFinal = (cLid.mensagens || 0) + (cPn.mensagens || 0);
+          const levelFinal     = Math.max(cLid.level || 1, cPn.level || 1);
+
+          // Bônus diário mais recente
+          const bonusLid = cLid.ultimoBonusDiario ? new Date(cLid.ultimoBonusDiario) : null;
+          const bonusPn  = cPn.ultimoBonusDiario  ? new Date(cPn.ultimoBonusDiario)  : null;
+          const bonusFinal = bonusLid && bonusPn
+            ? (bonusLid > bonusPn ? bonusLid : bonusPn)
+            : bonusLid || bonusPn;
+
+          // Mescla goldHistory (últimos 50 ordenados por data)
+          const histLid = Array.isArray(cLid.goldHistory) ? cLid.goldHistory : [];
+          const histPn  = Array.isArray(cPn.goldHistory)  ? cPn.goldHistory  : [];
+          const goldHistory = [...histLid, ...histPn]
+            .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0))
+            .slice(-50);
+
+          // Campos com fallback para o @pn se @lid estiver vazio
+          const nomeFinal        = cLid.nome        || cPn.nome        || '';
+          const empregoFinal     = cLid.empregoAtual || cPn.empregoAtual || null;
+          const varaFinal        = cLid.varaEquipada || cPn.varaEquipada || null;
+          const pescaFinal       = cLid.statsPesca   || cPn.statsPesca   || null;
+          const inventarioFinal  = cLid.inventory    || cPn.inventory    || {};
+          const configFinal      = cLid.config       || cPn.config       || {};
+          const nomeCustomFinal  = cLid.nomeCustom   || cPn.nomeCustom   || '';
+
+          info(`[MESCLAR] ${pn} (${fmt(cPn.gold)}g) + ${lid} (${fmt(cLid.gold)}g) = ${fmt(goldFinal)}g | Grupo: ${idGrupo}`);
+
+          if (!DRY_RUN) {
+            // Atualiza @lid com dados mesclados
+            await CarteiraGrupo.updateOne(
+              { _id: cLid._id },
+              {
+                $set: {
+                  gold:              goldFinal,
+                  xp:                xpFinal,
+                  mensagens:         mensagensFinal,
+                  level:             levelFinal,
+                  ultimoBonusDiario: bonusFinal,
+                  goldHistory,
+                  nome:              nomeFinal,
+                  empregoAtual:      empregoFinal,
+                  varaEquipada:      varaFinal,
+                  statsPesca:        pescaFinal,
+                  inventory:         inventarioFinal,
+                  config:            configFinal,
+                  nomeCustom:        nomeCustomFinal,
+                }
+              }
+            );
+
+            // Deleta a duplicata @pn
+            await CarteiraGrupo.deleteOne({ _id: cPn._id });
+          }
+
+          totalMesclados++;
+        }
+      }
+
+    } catch (e) {
+      erro(`Erro em ${lid} / ${pn}: ${e.message}`);
+      totalErros++;
     }
-
-    linha(descricao, '');
-    linha('  JID',       doc.idWhatsApp, 'cyan');
-    linha('  Gold',      fmt(doc.gold),   'amarelo');
-    linha('  XP',        fmt(doc.xp));
-    linha('  Mensagens', fmt(doc.mensagens));
-    console.log();
-
-    totalGold      += doc.gold      || 0;
-    totalXp        += doc.xp        || 0;
-    totalMensagens += doc.mensagens || 0;
-    fantasmasEncontradas.push(doc);
   }
 
-  if (fantasmasEncontradas.length === 0) {
-    console.log('  Nenhuma carteira fantasma encontrada. Nada a mesclar.');
-    await mongoose.disconnect();
-    process.exit(0);
-  }
-
-  // ── 3. Prévia do resultado ─────────────────────────────────────────────────
-  titulo('📊  Resultado APÓS a mesclagem (prévia)');
-  linha('Gold',      `${fmt(real.gold)}  +  ${fmt(totalGold)}  =  ${fmt((real.gold || 0) + totalGold)}`, 'amarelo');
-  linha('XP',        `${fmt(real.xp)}  +  ${fmt(totalXp)}  =  ${fmt((real.xp || 0) + totalXp)}`);
-  linha('Mensagens', `${fmt(real.mensagens)}  +  ${fmt(totalMensagens)}  =  ${fmt((real.mensagens || 0) + totalMensagens)}`);
-  linha('Deletados', `${fantasmasEncontradas.length} registro(s)`, 'vermelho');
+  // ── Resumo final ──────────────────────────────────────────────────────────
+  titulo('📊  RESUMO FINAL');
+  ok(`Mesclados:   ${totalMesclados}`);
+  ok(`Renomeados:  ${totalRenomeados}`);
+  warn(`Pulados:     ${totalPulados}`);
+  if (totalErros) erro(`Erros:       ${totalErros}`);
 
   if (DRY_RUN) {
-    console.log('\n  ⚠️  Dry-run concluído. Nada foi alterado.');
-    console.log('  Para aplicar, rode: node scripts/mesclar-carteiras.js --executar\n');
-    await mongoose.disconnect();
-    process.exit(0);
+    console.log(`\n  ${AMARELO}⚠️  Dry-run concluído. Nada foi alterado.${RESET}`);
+    console.log(`  Para aplicar: node scripts/mesclar-carteiras.js --executar\n`);
+  } else {
+    console.log(`\n  ${VERDE}✅ Mesclagem concluída com sucesso!${RESET}\n`);
   }
-
-  // ── 4. Execução real ───────────────────────────────────────────────────────
-  titulo('🚀  Aplicando mesclagem...');
-
-  // Apaga fantasmas
-  for (const doc of fantasmasEncontradas) {
-    await CarteiraGrupo.deleteOne({ _id: doc._id });
-    console.log(`  🗑️  Deletado: ${doc.idWhatsApp}`);
-  }
-
-  // Atualiza real
-  real.gold      = (real.gold      || 0) + totalGold;
-  real.xp        = (real.xp        || 0) + totalXp;
-  real.mensagens = (real.mensagens || 0) + totalMensagens;
-  await real.save();
-
-  // Registra LidMapping se JID for @lid (aproveita pra já linkar)
-  if (JID_REAL.endsWith('@lid')) {
-    // Tenta pegar o PN de alguma fantasma @s.whatsapp.net
-    const pnFantasma = JIDS_FANTASMA.find(f => f.jid.endsWith('@s.whatsapp.net'));
-    if (pnFantasma) {
-      await LidMapping.findOneAndUpdate(
-        { lid: JID_REAL },
-        { $set: { pn: pnFantasma.jid } },
-        { upsert: true }
-      );
-      console.log(`  🔗  LidMapping salvo: ${JID_REAL} → ${pnFantasma.jid}`);
-    }
-  }
-
-  titulo('✅  Concluído — carteira do Felipe atualizada');
-  linha('Gold final',      fmt(real.gold),       'amarelo');
-  linha('XP final',        fmt(real.xp));
-  linha('Mensagens final', fmt(real.mensagens));
 
   await mongoose.disconnect();
-  console.log('\n  Conexão encerrada.\n');
   process.exit(0);
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro inesperado:', err);
+  erro(`Erro inesperado: ${err.message}`);
   process.exit(1);
 });

@@ -9,7 +9,7 @@ const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
 const rateLimit      = require('express-rate-limit');
-const { MongoStore } = require('rate-limit-mongo');
+const MongoStore = require('rate-limit-mongo');
 
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {

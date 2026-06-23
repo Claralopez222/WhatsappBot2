@@ -43,7 +43,7 @@ async function getCarteira(idWhatsApp, idGrupo) {
 
   return CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: idNorm, idGrupo },
-    { $setOnInsert: { idWhatsApp, idGrupo } },
+    { $setOnInsert: { idWhatsApp: idNorm, idGrupo } },  // ← idNorm
     { upsert: true, new: true }
   );
 }

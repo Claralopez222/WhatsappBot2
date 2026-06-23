@@ -36,8 +36,13 @@ async function getCarteira(idWhatsApp, idGrupo) {
   assertJid(idWhatsApp, 'idWhatsApp');
   assertJid(idGrupo,    'idGrupo');
 
+  // Normaliza: remove sufixo de dispositivo (:83) e garante @s.whatsapp.net
+  const idNorm = idWhatsApp.endsWith('@lid')
+    ? idWhatsApp
+    : idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+
   return CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp, idGrupo },
+    { idWhatsApp: idNorm, idGrupo },
     { $setOnInsert: { idWhatsApp, idGrupo } },
     { upsert: true, new: true }
   );
@@ -63,6 +68,11 @@ async function getCarteira(idWhatsApp, idGrupo) {
 async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
   assertJid(idWhatsApp, 'idWhatsApp');
   assertJid(idGrupo,    'idGrupo');
+
+  const idNorm = idWhatsApp.endsWith('@lid')
+    ? idWhatsApp
+    : idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  idWhatsApp = idNorm;
 
   if (typeof valor !== 'number' || isNaN(valor)) {
     throw new TypeError('carteiraService.alterarGold: "valor" deve ser um número.');

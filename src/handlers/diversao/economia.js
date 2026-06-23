@@ -850,48 +850,48 @@ const GARIMPO_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutos
 // ─── Tabela de minérios (do mais raro ao mais comum) ─────────────────────────
 const MINERIOS = [
   // ── LENDÁRIOS (chance ≤ 1%) ───────────────────────────────────────────────
-  { nome: '🌟 Cristal Estelar',   emoji: '🌟', gold: 5000, chance: 0.1,  xp: 120 },
-  { nome: '🔱 Obsidiana Divina',  emoji: '🔱', gold: 3500, chance: 0.2,  xp: 100 },
-  { nome: '💎 Diamante Negro',    emoji: '💎', gold: 2500, chance: 0.3,  xp: 85  },
-  { nome: '🪬 Pedra do Destino',  emoji: '🪬', gold: 2000, chance: 0.4,  xp: 75  },
-  { nome: '💎 Diamante',          emoji: '💎', gold: 1800, chance: 0.5,  xp: 65  },
+  { nome: '🌟 Cristal Estelar',  emoji: '🌟', gold: 5000, chance: 0.1,  xp: 120 },
+  { nome: '🔱 Obsidiana Divina', emoji: '🔱', gold: 3500, chance: 0.2,  xp: 100 },
+  { nome: '💎 Diamante Negro',   emoji: '💎', gold: 2500, chance: 0.3,  xp: 85  },
+  { nome: '🪬 Pedra do Destino', emoji: '🪬', gold: 2000, chance: 0.4,  xp: 75  },
+  { nome: '💎 Diamante',         emoji: '💎', gold: 1800, chance: 0.5,  xp: 65  },
 
   // ── ÉPICOS (chance 1–3%) ──────────────────────────────────────────────────
-  { nome: '🔮 Ametista Negra',    emoji: '🔮', gold: 1400, chance: 1.0,  xp: 55  },
-  { nome: '🔮 Ametista',          emoji: '🔮', gold: 1200, chance: 1.5,  xp: 48  },
-  { nome: '💠 Safira Real',       emoji: '💠', gold: 1000, chance: 2.0,  xp: 42  },
-  { nome: '💠 Safira',            emoji: '💠', gold: 850,  chance: 3.0,  xp: 38  },
+  { nome: '🔮 Ametista Negra',   emoji: '🔮', gold: 1400, chance: 1.0,  xp: 55  },
+  { nome: '🔮 Ametista',         emoji: '🔮', gold: 1200, chance: 1.5,  xp: 48  },
+  { nome: '💠 Safira Real',      emoji: '💠', gold: 1000, chance: 2.0,  xp: 42  },
+  { nome: '💠 Safira',           emoji: '💠', gold: 850,  chance: 3.0,  xp: 38  },
 
-  // ── RAROS (chance 3–8%) ───────────────────────────────────────────────────
-  { nome: '❤️‍🔥 Rubi de Fogo',    emoji: '❤️‍🔥', gold: 750, chance: 4.0,  xp: 32  },
-  { nome: '❤️ Rubi',              emoji: '❤️', gold: 600,  chance: 5.0,  xp: 28  },
-  { nome: '🫧 Aquamarine',        emoji: '🫧', gold: 520,  chance: 6.0,  xp: 24  },
-  { nome: '🟣 Tanzanita',         emoji: '🟣', gold: 450,  chance: 7.0,  xp: 22  },
-  { nome: '🔵 Turquesa',          emoji: '🔵', gold: 400,  chance: 8.0,  xp: 20  },
+  // ── RAROS (chance 4–8%) ───────────────────────────────────────────────────
+  { nome: '❤️‍🔥 Rubi de Fogo',   emoji: '❤️‍🔥', gold: 750, chance: 4.0, xp: 32  },
+  { nome: '❤️ Rubi',             emoji: '❤️', gold: 600,  chance: 5.0,  xp: 28  },
+  { nome: '🫧 Aquamarine',       emoji: '🫧', gold: 520,  chance: 6.0,  xp: 24  },
+  { nome: '🟣 Tanzanita',        emoji: '🟣', gold: 450,  chance: 7.0,  xp: 22  },
+  { nome: '🔵 Turquesa',         emoji: '🔵', gold: 400,  chance: 8.0,  xp: 20  },
 
-  // ── INCOMUNS (chance 8–20%) ───────────────────────────────────────────────
-  { nome: '🟡 Topázio Dourado',   emoji: '🟡', gold: 350,  chance: 9.0,  xp: 18  },
-  { nome: '🟡 Topázio',           emoji: '🟡', gold: 280,  chance: 11.0, xp: 15  },
-  { nome: '🟢 Esmeralda',         emoji: '🟢', gold: 230,  chance: 13.0, xp: 13  },
-  { nome: '🟠 Ônix Laranja',      emoji: '🟠', gold: 190,  chance: 15.0, xp: 11  },
-  { nome: '🪩 Opala',             emoji: '🪩', gold: 160,  chance: 17.0, xp: 9   },
+  // ── INCOMUNS (chance 9–17%) ───────────────────────────────────────────────
+  { nome: '🟡 Topázio Dourado',  emoji: '🟡', gold: 350,  chance: 9.0,  xp: 18  },
+  { nome: '🟡 Topázio',          emoji: '🟡', gold: 280,  chance: 11.0, xp: 15  },
+  { nome: '🟢 Esmeralda',        emoji: '🟢', gold: 230,  chance: 13.0, xp: 13  },
+  { nome: '🟠 Ônix Laranja',     emoji: '🟠', gold: 190,  chance: 15.0, xp: 11  },
+  { nome: '🪩 Opala',            emoji: '🪩', gold: 160,  chance: 17.0, xp: 9   },
 
   // ── COMUNS (chance 20–40%) ────────────────────────────────────────────────
-  { nome: '⚪ Quartzo Rosa',      emoji: '⚪', gold: 130,  chance: 20.0, xp: 7   },
-  { nome: '⚪ Quartzo',           emoji: '⚪', gold: 100,  chance: 25.0, xp: 5   },
-  { nome: '🩶 Granito',           emoji: '🩶', gold: 75,   chance: 28.0, xp: 4   },
-  { nome: '🪨 Pedra Calcária',    emoji: '🪨', gold: 55,   chance: 33.0, xp: 3   },
-  { nome: '🪨 Pedra Comum',       emoji: '🪨', gold: 35,   chance: 40.0, xp: 2   },
+  { nome: '⚪ Quartzo Rosa',     emoji: '⚪', gold: 130,  chance: 20.0, xp: 7   },
+  { nome: '⚪ Quartzo',          emoji: '⚪', gold: 100,  chance: 25.0, xp: 5   },
+  { nome: '🩶 Granito',          emoji: '🩶', gold: 75,   chance: 28.0, xp: 4   },
+  { nome: '🪨 Pedra Calcária',   emoji: '🪨', gold: 55,   chance: 33.0, xp: 3   },
+  { nome: '🪨 Pedra Comum',      emoji: '🪨', gold: 35,   chance: 40.0, xp: 2   },
 ];
-// Soma das chances ≈ 100% (alguns floats podem somar 99.x — o fallback cobre)
+// Soma das chances ≈ 100% — o fallback cobre eventuais diferenças de float
 
-// ─── Eventos especiais de garimpo (ativados aleatoriamente) ──────────────────
+// ─── Eventos especiais ────────────────────────────────────────────────────────
 const EVENTOS_GARIMPO = [
-  { id: 'veia_rica',    chance: 5,  multiplicador: 2,   msg: '✨ *VEIA RICA ENCONTRADA!* Você achou o dobro!' },
-  { id: 'explosao',     chance: 3,  multiplicador: 0,   msg: '💥 *EXPLOSÃO!* O minério foi destruído. Você saiu ileso, mas sem nada!' },
-  { id: 'treasure',     chance: 1,  multiplicador: 3,   msg: '🏆 *TESOURO ESCONDIDO!* Você triplicou o ganho!' },
-  { id: 'inundacao',    chance: 4,  multiplicador: 0.5, msg: '🌊 *INUNDAÇÃO!* A mina alagou e você salvou só metade.' },
-  { id: 'pedra_magica', chance: 2,  multiplicador: 2.5, msg: '🔮 *PEDRA MÁGICA!* Uma energia estranha multiplicou seu ganho!' },
+  { id: 'veia_rica',    chance: 5, multiplicador: 2,   msg: '✨ *VEIA RICA ENCONTRADA!* Você achou o dobro!'                       },
+  { id: 'explosao',     chance: 3, multiplicador: 0,   msg: '💥 *EXPLOSÃO!* O minério foi destruído. Você saiu ileso, mas sem nada!' },
+  { id: 'treasure',     chance: 1, multiplicador: 3,   msg: '🏆 *TESOURO ESCONDIDO!* Você triplicou o ganho!'                       },
+  { id: 'inundacao',    chance: 4, multiplicador: 0.5, msg: '🌊 *INUNDAÇÃO!* A mina alagou e você salvou só metade.'                },
+  { id: 'pedra_magica', chance: 2, multiplicador: 2.5, msg: '🔮 *PEDRA MÁGICA!* Uma energia estranha multiplicou seu ganho!'        },
 ];
 
 // ─── Frases de narrativa por raridade ────────────────────────────────────────
@@ -937,7 +937,7 @@ function sortearEvento() {
     acumulado += e.chance;
     if (roll < acumulado) return e;
   }
-  return null; // sem evento
+  return null;
 }
 
 function getRaridadeKey(chance) {
@@ -975,7 +975,7 @@ function msgCooldown(restante) {
   );
 }
 
-// ─── Cache local ──────────────────────────────────────────────────────────────
+// ─── Cache local: userId normalizado → timestamp do último garimpo ────────────
 const garimpoCache = new Map();
 
 // ─── Handler principal ────────────────────────────────────────────────────────
@@ -983,7 +983,7 @@ async function handleGarimpar(sock, msg, jid) {
   const userIdRaw = msg.key.participant || msg.key.remoteJid;
   const agora     = Date.now();
 
-  // ── Resolver @lid via LidMapping ──────────────────────────────────────────
+  // ── Resolver @lid → telefone real via LidMapping ──────────────────────────
   let userId = userIdRaw;
   if (userIdRaw?.endsWith('@lid')) {
     try {
@@ -992,11 +992,11 @@ async function handleGarimpar(sock, msg, jid) {
       if (mapa?.pn) userId = mapa.pn;
     } catch { /* mantém userId original */ }
   }
-  // Normaliza para @s.whatsapp.net
-  const digitos = userId.split('@')[0].replace(/\D/g, '');
-  userId = `${digitos}@s.whatsapp.net`;
 
-  // ── 1. Checar cache local ─────────────────────────────────────────────────
+  // Normaliza para @s.whatsapp.net com apenas dígitos
+  userId = userId.split('@')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+
+  // ── 1. Checar cache local (chave = userId normalizado) ────────────────────
   const tsCache = garimpoCache.get(userId) ?? 0;
   if (tsCache > 0) {
     const passado = agora - tsCache;
@@ -1006,7 +1006,9 @@ async function handleGarimpar(sock, msg, jid) {
     }
   }
 
-  // ── 2. Update atômico no banco (evita race condition) ────────────────────
+  // ── 2. Update atômico no banco ────────────────────────────────────────────
+  // upsert: true → cria o documento se o usuário ainda não existir,
+  // evitando falso cooldown na primeira vez que alguém usa o comando.
   const agora_date = new Date(agora);
   const limiteData = new Date(agora - GARIMPO_COOLDOWN_MS);
 
@@ -1020,36 +1022,30 @@ async function handleGarimpar(sock, msg, jid) {
       ],
     },
     { $set: { ultimoGarimpo: agora_date } },
-    { new: false, upsert: false }
+    { new: false, upsert: true }  // ← upsert: true corrige o falso cooldown
   );
 
-  if (!userAtualizado) {
-    const userAtual = await Usuario.findOne({ idWhatsApp: userId })
-      .select('ultimoGarimpo')
-      .lean();
-
-    const tsUltimo = userAtual?.ultimoGarimpo
-      ? new Date(userAtual.ultimoGarimpo).getTime()
-      : agora;
-
-    const restante = GARIMPO_COOLDOWN_MS - (agora - tsUltimo);
-    garimpoCache.set(userId, tsUltimo);
-
-    await sock.sendMessage(jid, { text: msgCooldown(Math.max(restante, 0)) }, { quoted: msg });
-    return;
+  // Se o doc já existia E não bateu no filtro, significa que está em cooldown
+  if (userAtualizado && userAtualizado.ultimoGarimpo) {
+    const tsUltimo = new Date(userAtualizado.ultimoGarimpo).getTime();
+    const passadoDB = agora - tsUltimo;
+    if (passadoDB < GARIMPO_COOLDOWN_MS) {
+      garimpoCache.set(userId, tsUltimo);
+      await sock.sendMessage(jid, { text: msgCooldown(GARIMPO_COOLDOWN_MS - passadoDB) }, { quoted: msg });
+      return;
+    }
   }
 
-  // ── 3. Cooldown livre — registra cache ───────────────────────────────────
+  // ── 3. Cooldown livre — registra cache e sorteia ──────────────────────────
   garimpoCache.set(userId, agora);
 
   try {
-    const minerio      = sortearMinerio();
-    const evento       = sortearEvento();
-    const raridadeKey  = getRaridadeKey(minerio.chance);
-    const raridadeTxt  = getRaridadeLabel(minerio.chance);
-    const narrativa    = narrativaAleatoria(raridadeKey);
+    const minerio     = sortearMinerio();
+    const evento      = sortearEvento();
+    const raridadeKey = getRaridadeKey(minerio.chance);
+    const raridadeTxt = getRaridadeLabel(minerio.chance);
+    const narrativa   = narrativaAleatoria(raridadeKey);
 
-    // Aplica multiplicador do evento (se houver)
     let goldFinal = minerio.gold;
     let xpFinal   = minerio.xp ?? 5;
     let eventoTxt = '';
@@ -1057,7 +1053,7 @@ async function handleGarimpar(sock, msg, jid) {
     if (evento) {
       goldFinal = Math.floor(minerio.gold * evento.multiplicador);
       xpFinal   = Math.floor(xpFinal * Math.max(evento.multiplicador, 0.5));
-      eventoTxt = `\n⚡ *EVENTO:* ${evento.msg}`;
+      eventoTxt = evento.msg;
     }
 
     await prepareDailyMissionState(userId);
@@ -1066,12 +1062,7 @@ async function handleGarimpar(sock, msg, jid) {
       alterarGold(userId, jid, goldFinal, `Garimpo - ${minerio.nome}`),
       Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
-        {
-          $inc: {
-            'dailyMissions.progress.gold500': goldFinal,
-            xp: xpFinal,
-          },
-        },
+        { $inc: { 'dailyMissions.progress.gold500': goldFinal, xp: xpFinal } },
         { upsert: true }
       ),
       CarteiraGrupo.findOneAndUpdate(
@@ -1083,34 +1074,36 @@ async function handleGarimpar(sock, msg, jid) {
 
     // ── Monta mensagem ────────────────────────────────────────────────────
     const linhas = [
-      `⛏️ *═══ GARIMPO ═══* ⛏️\n`,
-      `_${narrativa}_\n`,
+      `⛏️ *═══ GARIMPO ═══* ⛏️`,
+      ``,
+      `_${narrativa}_`,
+      ``,
       `━━━━━━━━━━━━━━━━`,
       `${minerio.emoji} Minério: *${minerio.nome}*`,
       `⭐ Raridade: ${raridadeTxt}`,
     ];
 
-    if (evento) {
-      linhas.push(eventoTxt);
-    }
+    if (evento) linhas.push(``, `⚡ *EVENTO:* ${eventoTxt}`);
 
+    linhas.push(``);
     if (goldFinal > 0) {
-      linhas.push(`💎 Encontrado: *+${goldFinal} gold*`);
+      linhas.push(`💰 Encontrado: *+${goldFinal} gold*`);
     } else {
-      linhas.push(`💎 Encontrado: *nada (evento destruiu tudo!)*`);
+      linhas.push(`💰 Encontrado: *nada — evento destruiu tudo!*`);
     }
 
     linhas.push(`⚡ XP ganho: *+${xpFinal} XP*`);
-    linhas.push(`💰 Novo saldo: *${carteira?.gold ?? '?'} gold*`);
-    linhas.push(`\n⏰ Próximo garimpo em: *15 minutos*`);
+    linhas.push(`💳 Novo saldo: *${carteira?.gold ?? '?'} gold*`);
+    linhas.push(``);
+    linhas.push(`⏰ Próximo garimpo em: *15 minutos*`);
 
     await sock.sendMessage(jid, { text: linhas.join('\n') }, { quoted: msg });
 
   } catch (e) {
-    // Rollback do cooldown no banco
+    // Rollback: restaura o ultimoGarimpo anterior para não "queimar" o cooldown
     await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      { $set: { ultimoGarimpo: userAtualizado.ultimoGarimpo ?? null } }
+      { $set: { ultimoGarimpo: userAtualizado?.ultimoGarimpo ?? null } }
     ).catch(() => {});
 
     garimpoCache.delete(userId);

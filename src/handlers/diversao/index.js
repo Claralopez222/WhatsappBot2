@@ -94,7 +94,7 @@ const {
 const {
   handleMenuRoubo, handleMenuSec, handleComprarRoubo, handleComprarSec,
   handleEquiparRoubo, handleEquiparSec, handleInvRoubo, handleInvSec,
-  handleMeioSec, handleRoubar, handleRoubarBanco,
+  handleMeioSec, handleRoubar, handleRoubarBanco, handlePolicia,
 } = require('./roubo');
 // ─── Utilitários ────────────────────────────────────────────────────────────
 
@@ -261,6 +261,7 @@ initFilhosScheduler,
   handleMeioSec,
   handleRoubar,
   handleRoubarBanco,
+  handlePolicia,
 
 // Emprego
   handleProcurarEmprego,

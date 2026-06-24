@@ -1140,4 +1140,5 @@ module.exports = {
   handleMeioSec,
   handleRoubar,
   handleRoubarBanco,
+  handlePolicia,
 };

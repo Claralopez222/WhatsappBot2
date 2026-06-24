@@ -1,7 +1,6 @@
 'use strict';
 
 const path = require('path');
-const path          = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 // Usuario removido — level agora vem do grupo
 

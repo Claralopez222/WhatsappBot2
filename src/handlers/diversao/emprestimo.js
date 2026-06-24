@@ -1,8 +1,9 @@
 'use strict';
 
 const path = require('path');
+const path          = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+// Usuario removido — level agora vem do grupo
 
 // ─── Configuração ─────────────────────────────────────────────────────────────
 
@@ -336,13 +337,11 @@ async function handleEmprestimo(sock, msg, jid, caption) {
     }
 
     // 2. Buscar nível e carteira em paralelo
-    const [usuario, carteira] = await Promise.all([
-      Usuario.findOne({ idWhatsApp: userId }).select('level').lean(),
-      CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean(),
-    ]);
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
 
-    const level  = usuario?.level ?? 1;
+    const level  = CarteiraGrupo.levelFromXp(carteira?.xp ?? 0);
     const limite = getLimitePorNivel(level);
+
 
     // 3. Cooldown pós-quitação
     if (carteira?.emprestimo?.proximoEmprestimo) {

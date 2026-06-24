@@ -110,92 +110,253 @@ async function handleCep(sock, msg, jid, caption) {
   }
 }
 
+// !clima
 async function handleClima(sock, msg, jid, caption) {
   const cidade = caption.replace(/^[!.,\/]clima\s*/i, '').trim();
+
   if (!cidade) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite o nome da cidade.\nExemplo: *!clima São Paulo*' }, { quoted: msg });
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Digite o nome da cidade.\nExemplo: *!clima São Paulo*' },
+      { quoted: msg }
+    );
     return;
   }
+
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
   try {
-    const url = `https://wttr.in/${encodeURIComponent(cidade)}?format=j1`;
-    const data = await fetchJson(url);
+    const url = `https://wttr.in/${encodeURIComponent(cidade)}?format=j1&lang=pt`;
+    const res = await fetch(url);
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
     const cur = data.current_condition?.[0];
-    if (!cur) throw new Error('Sem dados');
-    const desc = cur.weatherDesc?.[0]?.value || '—';
-    const temp = cur.temp_C;
-    const sens = cur.FeelsLikeC;
-    const umid = cur.humidity;
-    const vento = cur.windspeedKmph;
-    const area = data.nearest_area?.[0];
-    const local = area ? `${area.areaName?.[0]?.value || ''}, ${area.country?.[0]?.value || ''}` : cidade;
-    const emoji = Number(temp) >= 30 ? '🥵' : Number(temp) >= 20 ? '☀️' : Number(temp) >= 10 ? '🌤️' : '🥶';
-    const texto = `${emoji} *Clima em ${local}*\n\n🌡️ *Temperatura:* ${temp}°C\n🤔 *Sensação:* ${sens}°C\n💧 *Umidade:* ${umid}%\n💨 *Vento:* ${vento} km/h\n📋 *Condição:* ${desc}`;
+
+    if (!cur) throw new Error('Sem dados de clima');
+
+    const desc  = cur.lang_pt?.[0]?.value || cur.weatherDesc?.[0]?.value || '—';
+    const temp  = cur.temp_C          ?? '—';
+    const sens  = cur.FeelsLikeC      ?? '—';
+    const umid  = cur.humidity        ?? '—';
+    const vento = cur.windspeedKmph   ?? '—';
+    const uv    = cur.uvIndex         ?? '—';
+    const vis   = cur.visibility      ?? '—';
+    const press = cur.pressure        ?? '—';
+
+    const area  = data.nearest_area?.[0];
+    const local = area
+      ? `${area.areaName?.[0]?.value || ''}, ${area.country?.[0]?.value || ''}`.replace(/^,\s*|,\s*$/g, '')
+      : cidade;
+
+    const t = Number(temp);
+    const emoji =
+      t >= 35 ? '🔥' :
+      t >= 28 ? '🥵' :
+      t >= 20 ? '☀️' :
+      t >= 10 ? '🌤️' :
+      t >= 0  ? '🧊' : '🥶';
+
+    const texto = [
+      `${emoji} *Clima em ${local}*`,
+      '',
+      `🌡️ *Temperatura:* ${temp}°C`,
+      `🤔 *Sensação térmica:* ${sens}°C`,
+      `📋 *Condição:* ${desc}`,
+      `💧 *Umidade:* ${umid}%`,
+      `💨 *Vento:* ${vento} km/h`,
+      `☀️ *Índice UV:* ${uv}`,
+      `👁️ *Visibilidade:* ${vis} km`,
+      `🔵 *Pressão:* ${press} hPa`,
+    ].join('\n');
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch {
-    await sock.sendMessage(jid, { text: `❌ Não consegui obter o clima de *${cidade}*.\nVerifique o nome da cidade.` }, { quoted: msg });
+
+  } catch (err) {
+    console.error('[handleClima] Erro:', err?.message || err);
+    await sock.sendMessage(
+      jid,
+      { text: `❌ Não consegui obter o clima de *${cidade}*.\nVerifique o nome da cidade e tente novamente.` },
+      { quoted: msg }
+    );
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
 }
 
+// !moeda
 async function handleMoeda(sock, msg, jid, caption) {
-  const parts = caption.replace(/^[!.,\/]moeda\s*/i, '').trim().split(/\s+/);
+  const input = caption.replace(/^[!.,\/]moeda\s*/i, '').trim();
+  const parts = input.split(/\s+/);
+
   if (parts.length < 3) {
-    await sock.sendMessage(jid, { text: '⚠️ Uso: *!moeda [valor] [de] [para]*\nExemplo: *!moeda 100 USD BRL*' }, { quoted: msg });
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Uso: *!moeda [valor] [de] [para]*\nExemplo: *!moeda 100 USD BRL*' },
+      { quoted: msg }
+    );
     return;
   }
-  const valor = parseFloat(parts[0]);
-  const de = parts[1].toUpperCase();
-  const para = parts[2].toUpperCase();
-  if (isNaN(valor)) {
-    await sock.sendMessage(jid, { text: '⚠️ Valor inválido. Exemplo: *!moeda 100 USD BRL*' }, { quoted: msg });
+
+  const valor = parseFloat(parts[0].replace(',', '.'));
+  const de    = parts[1].toUpperCase();
+  const para  = parts[2].toUpperCase();
+
+  if (isNaN(valor) || valor <= 0) {
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Valor inválido. Use um número positivo.\nExemplo: *!moeda 100 USD BRL*' },
+      { quoted: msg }
+    );
     return;
   }
+
+  if (de.length !== 3 || para.length !== 3) {
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Código de moeda inválido. Use 3 letras (ex: USD, BRL, EUR).' },
+      { quoted: msg }
+    );
+    return;
+  }
+
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
   try {
     const url = `https://api.exchangerate-api.com/v4/latest/${de}`;
-    const data = await fetchJson(url);
+    const res  = await fetch(url);
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
     const taxa = data.rates?.[para];
-    if (!taxa) throw new Error('Par de moeda inválido');
-    const resultado = (valor * taxa).toFixed(2);
-    const texto = `💱 *Conversão de Moeda*\n\n💵 ${valor} ${de} = *${resultado} ${para}*\n\n📊 Taxa: 1 ${de} = ${taxa.toFixed(4)} ${para}\n\n_Fonte: exchangerate-api.com_`;
+
+    if (!taxa) throw new Error(`Par ${de}/${para} não encontrado`);
+
+    const resultado   = (valor * taxa).toFixed(2);
+    const taxaInversa = (1 / taxa).toFixed(4);
+    const atualizado  = data.date ?? '—';
+
+    // Formatação numérica legível
+    const fmtValor     = valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    const fmtResultado = parseFloat(resultado).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+    const texto = [
+      `💱 *Conversão de Moeda*`,
+      '',
+      `💵 *${fmtValor} ${de}* = *${fmtResultado} ${para}*`,
+      '',
+      `📊 *Taxa:* 1 ${de} = ${taxa.toFixed(4)} ${para}`,
+      `🔁 *Inversa:* 1 ${para} = ${taxaInversa} ${de}`,
+      `📅 *Atualizado em:* ${atualizado}`,
+      '',
+      `_Fonte: exchangerate-api.com_`,
+    ].join('\n');
+
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch {
-    await sock.sendMessage(jid, { text: `❌ Não consegui converter *${de}* para *${para}*.\nVerifique os códigos de moeda (ex: USD, BRL, EUR).` }, { quoted: msg });
+
+  } catch (err) {
+    console.error('[handleMoeda] Erro:', err?.message || err);
+    await sock.sendMessage(
+      jid,
+      { text: `❌ Não consegui converter *${de}* para *${para}*.\nVerifique os códigos de moeda (ex: USD, BRL, EUR).` },
+      { quoted: msg }
+    );
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
 }
 
+// !calcular
 async function handleCalcular(sock, msg, jid, caption) {
   const expr = caption.replace(/^[!.,\/]calcular\s*/i, '').trim();
+
   if (!expr) {
-    await sock.sendMessage(jid, { text: '⚠️ Digite uma expressão.\nExemplo: *!calcular 15 * 3 + 2*' }, { quoted: msg });
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Digite uma expressão.\nExemplo: *!calcular 15 * 3 + 2*' },
+      { quoted: msg }
+    );
     return;
   }
+
+  // Valida: apenas dígitos, espaços e operadores permitidos
+  if (!/^[\d\s+\-*/().%^,]+$/.test(expr)) {
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Expressão inválida. Use apenas números e operadores ( + - * / % ^ ).' },
+      { quoted: msg }
+    );
+    return;
+  }
+
   try {
-    if (!/^[\d\s\+\-\*\/\.\(\)\%\^]+$/.test(expr)) {
-      await sock.sendMessage(jid, { text: '⚠️ Expressão inválida. Use apenas números e operadores (+, -, *, /, %, ^).' }, { quoted: msg });
-      return;
-    }
-    const safeExpr = expr.replace(/\^/g, '**');
+    const safeExpr = expr
+      .replace(/,/g, '.')   // aceita vírgula decimal: 3,14 → 3.14
+      .replace(/\^/g, '**') // potência: 2^8 → 2**8
+
     const resultado = Function(`'use strict'; return (${safeExpr})`)();
-    await sock.sendMessage(jid, { text: `🧮 *Calculadora*\n\n📝 Expressão: \`${expr}\`\n✅ Resultado: *${resultado}*` }, { quoted: msg });
-  } catch {
-    await sock.sendMessage(jid, { text: '❌ Expressão inválida ou erro de cálculo.' }, { quoted: msg });
+
+    // Rejeita resultados não numéricos (Infinity, NaN, objetos, etc.)
+    if (typeof resultado !== 'number' || !isFinite(resultado)) {
+      throw new Error('Resultado não numérico');
+    }
+
+    // Formata: remove trailing zeros de decimais longos (ex: 0.1+0.2 = 0.3)
+    const fmtResultado = parseFloat(resultado.toPrecision(12)).toString();
+
+    const texto = [
+      `🧮 *Calculadora*`,
+      '',
+      `📝 *Expressão:* \`${expr}\``,
+      `✅ *Resultado:* *${fmtResultado}*`,
+    ].join('\n');
+
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+
+  } catch (err) {
+    console.error('[handleCalcular] Erro:', err?.message || err);
+    await sock.sendMessage(
+      jid,
+      { text: '❌ Expressão inválida ou erro de cálculo.\nExemplo válido: *!calcular (10 + 5) * 2 / 3*' },
+      { quoted: msg }
+    );
   }
 }
 
+// !dado
 async function handleDado(sock, msg, jid, caption) {
-  const arg = caption.replace(/^[!.,\/]dado\s*/i, '').trim();
-  const lados = parseInt(arg) || 6;
-  if (lados < 2 || lados > 1000) {
-    await sock.sendMessage(jid, { text: '⚠️ Número de lados deve ser entre 2 e 1000.' }, { quoted: msg });
+  const arg    = caption.replace(/^[!.,\/]dado\s*/i, '').trim();
+  const lados  = arg === '' ? 6 : parseInt(arg, 10);
+
+  if (isNaN(lados) || lados < 2 || lados > 1000) {
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Número de lados deve ser entre 2 e 1000.\nExemplo: *!dado 20*\n_(padrão: 6 lados)_' },
+      { quoted: msg }
+    );
     return;
   }
+
   const resultado = Math.floor(Math.random() * lados) + 1;
-  await sock.sendMessage(jid, { text: `🎲 *Dado de ${lados} lados*\n\nResultado: *${resultado}*` }, { quoted: msg });
+
+  const emoji =
+    resultado === lados ? '🏆' : // máximo
+    resultado === 1     ? '💀' : // mínimo
+    '🎲';
+
+  const texto = [
+    `${emoji} *Dado de ${lados} lados*`,
+    '',
+    `🎯 *Resultado:* ${resultado}`,
+    `📊 *Faixa:* 1 até ${lados}`,
+  ].join('\n');
+
+  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
+// !piada
 async function handlePiada(sock, msg, jid) {
   const piadas = [
     'Por que o livro de matemática foi ao psicólogo?\nPorque tinha muitos problemas! 😂',
@@ -207,79 +368,312 @@ async function handlePiada(sock, msg, jid) {
     'Por que o espantalho ganhou um prêmio?\nPorque era o melhor do campo! 🌾',
     'Qual o animal mais antigo?\nA zebra. Porque ainda está em preto e branco! 🦓',
     'Por que o vampiro virou vegetariano?\nPorque o Drácula ficou enjoado! 🧛',
-    'O que o oceanos disse para a praia?\nNada, apenas deu uma onda! 🌊',
+    'O que o oceano disse para a praia?\nNada, apenas deu uma onda! 🌊',
+    'Por que o parafuso foi ao psicólogo?\nPorque estava muito enroscado! 🔩',
+    'O que o açúcar disse para o café?\nSem mim sua vida seria amarga! ☕',
+    'Por que a pedra foi à academia?\nQueria ficar mais pedrada! 💪',
+    'O que o relógio disse para a parede?\nFico de olho em você! ⏰',
+    'Por que o tomate ficou vermelho?\nPorque viu a salada se vestindo! 🍅',
   ];
+
   const piada = piadas[Math.floor(Math.random() * piadas.length)];
-  await sock.sendMessage(jid, { text: `😂 *Piada do Dia*\n\n${piada}` }, { quoted: msg });
+
+  await sock.sendMessage(
+    jid,
+    { text: `😂 *Piada do Dia*\n\n${piada}` },
+    { quoted: msg }
+  );
 }
 
+// !fato
 async function handleFato(sock, msg, jid) {
   const fatos = [
-    '🤓 Os polvos têm três corações e sangue azul.',
-    '🤓 Uma colher de sopa de estrela de nêutrons pesaria cerca de um bilhão de toneladas.',
-    '🤓 Mel não estraga nunca. Arqueólogos encontraram mel com 3.000 anos e ainda comestível.',
-    '🤓 O cérebro humano produz energia suficiente para acender uma pequena lâmpada.',
-    '🤓 As abelhas podem reconhecer rostos humanos como os humanos reconhecem.',
-    '🤓 A maioria dos astronautas fica alguns centímetros mais alta no espaço.',
-    '🤓 O coração de uma baleia azul bate apenas 2 vezes por minuto.',
-    '🤓 As digitais dos koalas são quase idênticas às dos humanos.',
-    '🤓 O WiFi e o Bluetooth foram inventados pelo mesmo australiano.',
-    '🤓 Existe um lago na Austrália naturalmente cor-de-rosa chamado Hillier.',
-    '🤓 A língua portuguesa tem mais de 250 milhões de falantes nativos no mundo.',
-    '🤓 O Brasil é o 5º maior país do mundo em território.',
+    'Os polvos têm três corações e sangue azul.',
+    'Uma colher de sopa de estrela de nêutrons pesaria cerca de um bilhão de toneladas.',
+    'Mel não estraga nunca. Arqueólogos encontraram mel com 3.000 anos ainda comestível.',
+    'O cérebro humano produz energia suficiente para acender uma pequena lâmpada.',
+    'As abelhas conseguem reconhecer rostos humanos assim como nós reconhecemos.',
+    'A maioria dos astronautas fica alguns centímetros mais alta no espaço.',
+    'O coração de uma baleia azul bate apenas 2 vezes por minuto.',
+    'As digitais dos koalas são quase idênticas às dos humanos.',
+    'O WiFi e o Bluetooth foram inventados pelo mesmo australiano.',
+    'Existe um lago na Austrália naturalmente cor-de-rosa chamado Hillier.',
+    'A língua portuguesa tem mais de 250 milhões de falantes nativos no mundo.',
+    'O Brasil é o 5º maior país do mundo em território.',
+    'O ser humano é o único animal que cora de vergonha.',
+    'A lua se afasta da Terra cerca de 3,8 cm por ano.',
+    'Uma nuvem comum pesa cerca de 500 toneladas.',
+    'O símbolo @ existia antes da internet — era usado em documentos comerciais medievais.',
+    'Os flamingos nascem brancos e ficam rosados pela alimentação.',
+    'A Grande Barreira de Coral é visível do espaço e é o maior ser vivo do planeta.',
   ];
+
   const fato = fatos[Math.floor(Math.random() * fatos.length)];
-  await sock.sendMessage(jid, { text: `📚 *Fato Incrível*\n\n${fato}` }, { quoted: msg });
+  const num  = Math.floor(Math.random() * fatos.length) + 1; // número decorativo do fato
+
+  await sock.sendMessage(
+    jid,
+    { text: `📚 *Fato Incrível #${num}*\n\n🤓 ${fato}` },
+    { quoted: msg }
+  );
 }
 
+// !traduzir
 async function handleTraduzir(sock, msg, jid, caption) {
-  const raw = caption.replace(/^[!.,\/]traduzir\s*/i, '').trim();
+  const NOMES_IDIOMA = {
+    en: 'Inglês',    es: 'Espanhol',  fr: 'Francês',
+    de: 'Alemão',    it: 'Italiano',  ja: 'Japonês',
+    zh: 'Chinês',    ru: 'Russo',     ar: 'Árabe',
+    pt: 'Português', ko: 'Coreano',   nl: 'Holandês',
+    pl: 'Polonês',   sv: 'Sueco',     tr: 'Turco',
+  };
+
+  const raw   = caption.replace(/^[!.,\/]traduzir\s*/i, '').trim();
   const parts = raw.split(/\s+/);
+
   let idioma = 'en';
-  let texto = raw;
+  let texto  = raw;
   if (parts.length >= 2 && /^[a-z]{2,3}$/i.test(parts[0])) {
     idioma = parts[0].toLowerCase();
-    texto = parts.slice(1).join(' ');
+    texto  = parts.slice(1).join(' ').trim();
   }
+
   if (!texto) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!traduzir [idioma] [texto]*\nExemplo: *!traduzir en Olá mundo*\nIdiomas: en (inglês), es (espanhol), fr (francês), de (alemão), pt (português)...' }, { quoted: msg });
+    const lista = Object.entries(NOMES_IDIOMA)
+      .map(([k, v]) => `${k} → ${v}`)
+      .join(', ');
+    await sock.sendMessage(
+      jid,
+      { text: `⚠️ Use: *!traduzir [idioma] [texto]*\nExemplo: *!traduzir en Olá mundo*\n\n📋 *Idiomas disponíveis:*\n${lista}` },
+      { quoted: msg }
+    );
     return;
   }
+
+  if (texto.length > 500) {
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Texto muito longo. Máximo de 500 caracteres.' },
+      { quoted: msg }
+    );
+    return;
+  }
+
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
   try {
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(texto)}&langpair=pt|${idioma}`;
-    const data = await fetchJson(url);
-    const traduzido = data?.responseData?.translatedText;
-    if (!traduzido || traduzido === texto) throw new Error('Sem tradução');
-    const nomesIdioma = { en: 'Inglês', es: 'Espanhol', fr: 'Francês', de: 'Alemão', it: 'Italiano', ja: 'Japonês', zh: 'Chinês', ru: 'Russo', ar: 'Árabe', pt: 'Português' };
-    const nomeIdioma = nomesIdioma[idioma] || idioma.toUpperCase();
-    await sock.sendMessage(jid, { text: `🌐 *Tradução para ${nomeIdioma}*\n\n📝 Original: _${texto}_\n\n✅ Traduzido: *${traduzido}*` }, { quoted: msg });
+    const res  = await fetch(url);
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data      = await res.json();
+    const traduzido = data?.responseData?.translatedText?.trim();
+    const status    = data?.responseStatus;
+
+    if (!traduzido || status !== 200) throw new Error(`API status ${status}`);
+
+    if (traduzido.toLowerCase() === texto.toLowerCase())
+      throw new Error('Tradução igual ao original');
+
+    const nomeIdioma = NOMES_IDIOMA[idioma] ?? idioma.toUpperCase();
+
+    const textoMsg = [
+      `🌐 *Tradução para ${nomeIdioma}*`,
+      '',
+      `📝 *Original:* _${texto}_`,
+      `✅ *Traduzido:* *${traduzido}*`,
+      '',
+      `_Fonte: MyMemory_`,
+    ].join('\n');
+
+    await sock.sendMessage(jid, { text: textoMsg }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
-  } catch {
-    await sock.sendMessage(jid, { text: '❌ Não consegui traduzir o texto. Tente novamente.' }, { quoted: msg });
+
+  } catch (err) {
+    console.error('[handleTraduzir] Erro:', err?.message || err);
+    await sock.sendMessage(
+      jid,
+      { text: `❌ Não consegui traduzir para *${idioma.toUpperCase()}*.\nVerifique o código do idioma e tente novamente.` },
+      { quoted: msg }
+    );
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
 }
 
+// ─────────────────────────────────────────
+// Tabelas Morse
+// ─────────────────────────────────────────
+
+const MORSE_ENCODE = {
+  A:'.-',   B:'-...', C:'-.-.', D:'-..', E:'.',    F:'..-.',
+  G:'--.',  H:'....', I:'..',   J:'.---',K:'-.-',  L:'.-..',
+  M:'--',   N:'-.',   O:'---',  P:'.--.',Q:'--.-', R:'.-.',
+  S:'...',  T:'-',    U:'..-',  V:'...-',W:'.--',  X:'-..-',
+  Y:'-.--', Z:'--..',
+  '0':'-----','1':'.----','2':'..---','3':'...--','4':'....-',
+  '5':'.....','6':'-....','7':'--...','8':'---..','9':'----.',
+  '.':'.-.-.-', ',':'--..--', '?':'..--..', '!':'-.-.--',
+  '-':'-....-', '/':'-..-.', '(':'-.--.', ')':'-.--.-',
+  '&':'.-...', ':':'---...', ';':'-.-.-.', '=':'-...-',
+  '+':'.-.-.', '_':'..--.-', '"':'.-..-.', '@':'.--.-.',
+  "'":'.----.',  ' ':'/',
+};
+
+const MORSE_DECODE = Object.fromEntries(
+  Object.entries(MORSE_ENCODE).map(([k, v]) => [v, k])
+);
+
+function encodeMorse(texto) {
+  return texto
+    .toUpperCase()
+    .split('')
+    .map(c => MORSE_ENCODE[c] ?? '?')
+    .join(' ')
+    .replace(/ \/ /g, '  /  ');
+}
+
+function decodeMorse(codigo) {
+  return codigo
+    .trim()
+    .split(/\s{2,}|\s*\/\s*/)
+    .map(palavra =>
+      palavra.trim().split(' ')
+        .map(token => MORSE_DECODE[token] ?? '?')
+        .join('')
+    )
+    .join(' ');
+}
+
+// ─────────────────────────────────────────
+// !morse
+// ─────────────────────────────────────────
 async function handleCodigoMorse(sock, msg, jid, caption) {
   const texto = caption.replace(/^[!.,\/]?(codigomorse|morse)\s*/i, '').trim();
+
   if (!texto) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!morse texto* ou *!codigomorse texto*' }, { quoted: msg });
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Use: *!morse [texto]*\nExemplo: *!morse Olá mundo*' },
+      { quoted: msg }
+    );
     return;
   }
+
+  if (texto.length > 200) {
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Texto muito longo. Máximo de 200 caracteres.' },
+      { quoted: msg }
+    );
+    return;
+  }
+
   const morse = encodeMorse(texto);
-  await sock.sendMessage(jid, { text: `📡 *Morse*\n\n${morse}` }, { quoted: msg });
+
+  await sock.sendMessage(
+    jid,
+    {
+      text: [
+        `📡 *Texto → Morse*`,
+        '',
+        `📝 *Original:* ${texto}`,
+        `✅ *Morse:*\n\`${morse}\``,
+      ].join('\n'),
+    },
+    { quoted: msg }
+  );
 }
 
+// ─────────────────────────────────────────
+// !demorse
+// ─────────────────────────────────────────
 async function handleDecodificarMorse(sock, msg, jid, caption) {
-  const texto = caption.replace(/^[!.,\/]?(decodificarmorse|demorse)\s*/i, '').trim();
-  if (!texto) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!demorse código* ou *!decodificarmorse código*' }, { quoted: msg });
+  const codigo = caption.replace(/^[!.,\/]?(decodificarmorse|demorse)\s*/i, '').trim();
+
+  if (!codigo) {
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Use: *!demorse [código morse]*\nExemplo: *!demorse .... --- .-.. .-*' },
+      { quoted: msg }
+    );
     return;
   }
-  const decoded = decodeMorse(texto);
-  await sock.sendMessage(jid, { text: `📡 *Texto*\n\n${decoded}` }, { quoted: msg });
+
+  if (!/^[.\- /]+$/.test(codigo)) {
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Código inválido. Use apenas pontos (.), traços (-), barras (/) e espaços.' },
+      { quoted: msg }
+    );
+    return;
+  }
+
+  const decoded = decodeMorse(codigo);
+
+  await sock.sendMessage(
+    jid,
+    {
+      text: [
+        `📡 *Morse → Texto*`,
+        '',
+        `📝 *Morse:* \`${codigo}\``,
+        `✅ *Texto:* ${decoded}`,
+      ].join('\n'),
+    },
+    { quoted: msg }
+  );
 }
 
+// ─────────────────────────────────────────
+// Helpers — letra
+// ─────────────────────────────────────────
+
+/**
+ * Divide texto longo em chunks de até maxLen caracteres,
+ * quebrando em '\n' sempre que possível.
+ */
+function chunkLongText(text, maxLen = 3500) {
+  const chunks = [];
+  while (text.length > maxLen) {
+    let cut = text.lastIndexOf('\n', maxLen);
+    if (cut <= 0) cut = maxLen;
+    chunks.push(text.slice(0, cut).trimEnd());
+    text = text.slice(cut).trimStart();
+  }
+  if (text) chunks.push(text);
+  return chunks;
+}
+
+/**
+ * Tenta buscar letra pela API lyrics.ovh (formato "artista - música").
+ */
+async function tryFetchLyricsFromOvh(tema) {
+  const sep = tema.includes(' - ') ? ' - ' : tema.includes(' – ') ? ' – ' : null;
+  if (!sep) return null;
+
+  const [artist, title] = tema.split(sep).map(s => s.trim());
+  if (!artist || !title) return null;
+
+  try {
+    const res = await fetch(
+      `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`
+    );
+    if (!res.ok) return null;
+
+    const data   = await res.json();
+    const lyrics = data?.lyrics?.trim();
+    if (!lyrics) return null;
+
+    return { lyrics, title, author: artist };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tenta buscar letra pela some-random-api com múltiplas variações do título.
+ */
 async function tryFetchLyricsFromRandomApi(tema) {
   const queries = [
     tema,
@@ -293,10 +687,23 @@ async function tryFetchLyricsFromRandomApi(tema) {
     const normalized = q.trim();
     if (!normalized || tried.has(normalized)) continue;
     tried.add(normalized);
+
     try {
-      const result = await fetchJson(`https://some-random-api.ml/lyrics?title=${encodeURIComponent(normalized)}`);
-      const lyrics = result?.lyrics?.trim();
-      if (lyrics) return { source: 'random', result, query: normalized };
+      const res = await fetch(
+        `https://some-random-api.com/lyrics?title=${encodeURIComponent(normalized)}`
+      );
+      if (!res.ok) continue;
+
+      const data   = await res.json();
+      const lyrics = data?.lyrics?.trim();
+      if (!lyrics) continue;
+
+      return {
+        lyrics,
+        title:  data.title  ?? normalized,
+        author: data.author ?? data.artist ?? '',
+        genius: data.links?.genius ?? '',
+      };
     } catch {
       continue;
     }
@@ -304,47 +711,57 @@ async function tryFetchLyricsFromRandomApi(tema) {
   return null;
 }
 
-async function tryFetchLyricsFromOvh(tema) {
-  const separator = tema.includes(' - ') ? ' - ' : tema.includes(' – ') ? ' – ' : null;
-  if (!separator) return null;
-  const [artist, title] = tema.split(separator).map(s => s.trim());
-  if (!artist || !title) return null;
-  try {
-    const result = await fetchJson(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
-    const lyrics = result?.lyrics?.trim();
-    if (lyrics) return { source: 'ovh', result: { lyrics, title, author: artist }, query: tema };
-  } catch {
-    return null;
-  }
-  return null;
-}
-
+// ─────────────────────────────────────────
+// !letra
+// ─────────────────────────────────────────
 async function handleLetra(sock, msg, jid, caption) {
   const tema = caption.replace(/^[!.,\/]letra\s*/i, '').trim();
+
   if (!tema) {
-    await sock.sendMessage(jid, { text: '⚠️ Especifique o nome da música. Exemplo: *!letra bohemian rhapsody*' }, { quoted: msg });
+    await sock.sendMessage(
+      jid,
+      { text: '⚠️ Especifique o nome da música.\nExemplo: *!letra Queen - Bohemian Rhapsody*' },
+      { quoted: msg }
+    );
     return;
   }
+
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
   try {
-    const lyricsSource = await tryFetchLyricsFromOvh(tema) || await tryFetchLyricsFromRandomApi(tema);
-    if (!lyricsSource) throw new Error('Não encontrei a letra.');
-    const result = lyricsSource.result;
-    const title = result.title || tema;
-    const author = result.author || result.artist || '';
-    const genius = result.links?.genius || '';
-    const lyrics = result.lyrics?.trim();
-    const infoLines = [`🎵 *${title}*`];
+    // Tenta OVH primeiro (mais confiável), depois some-random-api
+    const found = await tryFetchLyricsFromOvh(tema)
+               ?? await tryFetchLyricsFromRandomApi(tema);
+
+    if (!found) throw new Error('Letra não encontrada');
+
+    const { lyrics, title, author, genius } = found;
+
+    const infoLines = [`🎵 *${title ?? tema}*`];
     if (author) infoLines.push(`👤 *Artista:* ${author}`);
     if (genius) infoLines.push(`🔗 *Link:* ${genius}`);
+
     const fullText = `${infoLines.join('\n')}\n\n${lyrics}`;
-    const chunks = chunkLongText(fullText);
+    const chunks   = chunkLongText(fullText);
+
     for (let i = 0; i < chunks.length; i++) {
-      await sock.sendMessage(jid, { text: chunks[i] }, i === 0 ? { quoted: msg } : {});
+      await sock.sendMessage(
+        jid,
+        { text: chunks[i] },
+        i === 0 ? { quoted: msg } : {}
+      );
     }
+
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+
   } catch (err) {
-    console.log(`⚠️ Letra não encontrada para "${tema}":`, err.message);
-    await sock.sendMessage(jid, { text: '❌ Não foi possível obter a letra. Tente usar o formato: *!letra artista - música*' }, { quoted: msg });
+    console.error(`[handleLetra] Erro para "${tema}":`, err?.message || err);
+    await sock.sendMessage(
+      jid,
+      { text: '❌ Não foi possível obter a letra.\nTente o formato: *!letra artista - música*' },
+      { quoted: msg }
+    );
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
 }
 

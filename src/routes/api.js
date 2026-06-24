@@ -1685,5 +1685,126 @@ router.delete('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, re
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/cadastrar
+// Cria usuário e senha para acesso ao painel.
+// Body: { idWhatsApp, username, password }
+// O idWhatsApp deve ser de alguém que já existe no banco (membro ativo).
+// ─────────────────────────────────────────────────────────────────────────────
+const bcrypt = require('bcryptjs');
+
+router.post('/auth/cadastrar', async (req, res) => {
+  try {
+    const { idWhatsApp, username, password } = req.body || {};
+
+    if (!idWhatsApp || !username || !password)
+      return res.status(400).json({ error: 'idWhatsApp, username e password são obrigatórios.' });
+
+    // Validações básicas
+    if (username.length < 3 || username.length > 30)
+      return res.status(400).json({ error: 'Usuário deve ter entre 3 e 30 caracteres.' });
+    if (!/^[a-zA-Z0-9_]+$/.test(username))
+      return res.status(400).json({ error: 'Usuário só pode conter letras, números e _.' });
+    if (password.length < 6)
+      return res.status(400).json({ error: 'Senha deve ter no mínimo 6 caracteres.' });
+
+    // Verifica se já existe perfil no bot
+    const usuario = await Usuario.findOne({ idWhatsApp });
+    if (!usuario)
+      return res.status(404).json({ error: 'Perfil não encontrado. Mande uma mensagem no grupo primeiro.' });
+
+    // Verifica se já tem conta
+    if (usuario.username && usuario.passwordHash)
+      return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
+
+    // Verifica se username já está em uso
+    const usernameEmUso = await Usuario.findOne({ username: username.toLowerCase() }).lean();
+    if (usernameEmUso)
+      return res.status(409).json({ error: 'Este nome de usuário já está em uso.' });
+
+    // Hash da senha e salva
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp },
+      { $set: { username: username.toLowerCase(), passwordHash } }
+    );
+
+    return res.json({ ok: true, message: 'Conta criada com sucesso! Faça login para acessar o painel.' });
+
+  } catch (err) {
+    console.error('[API] POST /auth/cadastrar:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/login
+// Login com usuário e senha. Retorna JWT de sessão.
+// Body: { username, password }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/auth/login', rateLimitAdmin, async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+
+    if (!username || !password)
+      return res.status(400).json({ error: 'username e password são obrigatórios.' });
+
+    const usuario = await Usuario.findOne({ username: username.toLowerCase() }).lean();
+    if (!usuario || !usuario.passwordHash)
+      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+
+    const senhaCorreta = await bcrypt.compare(password, usuario.passwordHash);
+    if (!senhaCorreta)
+      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+
+    const sessionJwt = jwt.sign(
+      { idWhatsApp: usuario.idWhatsApp, telefone: usuario.telefone },
+      getJwtSecret(),
+      { expiresIn: '7d' }
+    );
+
+    return res.json({ jwt: sessionJwt });
+
+  } catch (err) {
+    console.error('[API] POST /auth/login:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/resetsenha
+// Reseta a senha do usuário — ele precisa estar autenticado via JWT.
+// Body: { senhaAtual, novaSenha }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/auth/resetsenha', auth, async (req, res) => {
+  try {
+    const { senhaAtual, novaSenha } = req.body || {};
+    const idWhatsApp = req.user.idWhatsApp;
+
+    if (!senhaAtual || !novaSenha)
+      return res.status(400).json({ error: 'senhaAtual e novaSenha são obrigatórios.' });
+    if (novaSenha.length < 6)
+      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+
+    const usuario = await Usuario.findOne({ idWhatsApp }).lean();
+    if (!usuario || !usuario.passwordHash)
+      return res.status(404).json({ error: 'Conta não encontrada.' });
+
+    const senhaCorreta = await bcrypt.compare(senhaAtual, usuario.passwordHash);
+    if (!senhaCorreta)
+      return res.status(401).json({ error: 'Senha atual incorreta.' });
+
+    const novoHash = await bcrypt.hash(novaSenha, 12);
+    await Usuario.findOneAndUpdate({ idWhatsApp }, { $set: { passwordHash: novoHash } });
+
+    return res.json({ ok: true, message: 'Senha alterada com sucesso!' });
+
+  } catch (err) {
+    console.error('[API] POST /auth/resetsenha:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

@@ -67,10 +67,14 @@ const casalItemSchema = new mongoose.Schema({
 // ─── Schema principal ─────────────────────────────────────────────────────────
 const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
-  idWhatsApp: { type: String, required: true, unique: true, index: true, trim: true, lowercase: true },
-  nome:       { type: String, default: null,  trim: true },
-  uid:        { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
-  bio:        { type: String, default: null,  trim: true, maxlength: 150 },
+  idWhatsApp:   { type: String, required: true, unique: true, index: true, trim: true, lowercase: true },
+  nome:         { type: String, default: null,  trim: true },
+  uid:          { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
+  bio:          { type: String, default: null,  trim: true, maxlength: 150 },
+
+  // ── Conta do painel (login com usuário e senha) ──────────────
+  username:     { type: String, default: null, unique: true, sparse: true, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
+  passwordHash: { type: String, default: null },
 
   // ── Banimento global ─────────────────────────────────────────
   // Necessário para PATCH /api/admin/usuario/:id/ban funcionar.
@@ -133,6 +137,7 @@ const usuarioSchema = new mongoose.Schema({
 usuarioSchema.index({ gold: -1 });
 usuarioSchema.index({ xp: -1 });
 usuarioSchema.index({ quizPoints: -1 });
+usuarioSchema.index({ username: 1 }, { unique: true, sparse: true });
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 module.exports = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);

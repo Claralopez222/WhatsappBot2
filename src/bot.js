@@ -819,7 +819,15 @@ if (matchCmd(cmdWord, 'perfil'))
   { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
 if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
   { await utilidadeHandler.handleBio(sock, msg, jid, caption); return; }
-if (matchCmd(cmdWord, 'meupainel')) { await painelHandler.handleMeuPainel(sock, msg, jid, senderJid); return; }
+if (matchCmd(cmdWord, 'meupainel'))   { await painelHandler.handleMeuPainel(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'resetsenha'))  {
+  await sock.sendMessage(jid, {
+    text:
+      `🔑 Para resetar sua senha, acesse o painel e use a opção *"Alterar senha"* após fazer login.\n\n` +
+      `🌐 ${PAINEL_URL ?? 'https://piroquinhasbot.github.io/painel-piroquinhas/perfil.html'}`,
+  }, { quoted: msg });
+  return;
+}
 
   // ── MENUS ─────────────────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'menu') || matchCmdStart(cmd, 'menu '))

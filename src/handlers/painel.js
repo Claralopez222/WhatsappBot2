@@ -1,8 +1,6 @@
 ﻿'use strict';
 
-const crypto    = require('crypto');
-const AuthToken = require('../models/AuthToken');
-const Usuario   = require('../models/Usuario');
+const Usuario = require('../models/Usuario');
 const { normalizarJid } = require('../utils/jid');
 
 const PAINEL_URL = 'https://piroquinhasbot.github.io/painel-piroquinhas/perfil.html';
@@ -10,48 +8,47 @@ const PAINEL_URL = 'https://piroquinhasbot.github.io/painel-piroquinhas/perfil.h
 async function handleMeuPainel(sock, msg, jid) {
   try {
     const remetente = msg.key.participant || msg.key.remoteJid;
-    const senderJid  = normalizarJid(remetente);
+    const senderJid = normalizarJid(remetente);
     if (!senderJid) return;
 
-    const usuario = await Usuario.findOne({ idWhatsApp: senderJid });
+    const usuario = await Usuario.findOne({ idWhatsApp: senderJid }).lean();
 
     if (!usuario) {
-      await sock.sendMessage(senderJid, {
-        text: '❌ Você ainda não tem perfil registrado. Mande uma mensagem no grupo primeiro!',
+      await sock.sendMessage(jid, {
+        text: `❌ @${senderJid.split('@')[0]}, você ainda não tem perfil registrado. Mande uma mensagem no grupo primeiro!`,
+        mentions: [senderJid],
       });
       return;
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
+    // Verifica se já tem conta criada no painel
+    const temConta = !!(usuario.username && usuario.passwordHash);
 
-    await AuthToken.create({
-      telefone:   usuario.telefone || senderJid.split('@')[0],
-      idWhatsApp: senderJid,
-      token,
-      expiresAt:  new Date(Date.now() + 24 * 60 * 60 * 1000),
-    });
-
-    const link = `${PAINEL_URL}?token=${token}`;
-
-    await sock.sendMessage(senderJid, {
-      text:
-        `🔐 *Seu link de acesso ao Painel Piroquinhas*\n\n` +
-        `${link}\n\n` +
-        `⏱ Válido por *24 horas* e de uso único.\n` +
-        `⚠️ Não compartilhe este link com ninguém!`,
-    });
-
-    if (jid !== senderJid) {
+    if (temConta) {
       await sock.sendMessage(jid, {
-        text: `✅ @${senderJid.split('@')[0]}, te enviei o link no privado! 🔐`,
+        text:
+          `🔐 @${senderJid.split('@')[0]}, acesse o painel com seu usuário e senha:\n\n` +
+          `🌐 ${PAINEL_URL}\n\n` +
+          `👤 Usuário: *${usuario.username}*\n` +
+          `🔑 Senha: a que você cadastrou\n\n` +
+          `_Esqueceu a senha? Use !resetsenha no grupo._`,
+        mentions: [senderJid],
+      });
+    } else {
+      await sock.sendMessage(jid, {
+        text:
+          `🔐 @${senderJid.split('@')[0]}, acesse o painel e crie sua conta:\n\n` +
+          `🌐 ${PAINEL_URL}\n\n` +
+          `_Na primeira vez, clique em "Criar conta" e registre seu usuário e senha._\n` +
+          `_Seu WhatsApp será vinculado automaticamente._`,
         mentions: [senderJid],
       });
     }
 
   } catch (err) {
-    console.error('[painel] Erro ao gerar token:', err);
+    console.error('[painel] Erro ao processar !meupainel:', err);
     await sock.sendMessage(jid, {
-      text: '❌ Erro ao gerar o link do painel. Tenta de novo em instantes.',
+      text: '❌ Erro ao acessar o painel. Tenta de novo em instantes.',
     }).catch(() => {});
   }
 }

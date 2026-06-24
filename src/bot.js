@@ -990,6 +990,7 @@ if (matchCmd(cmdWord, 'equiparsec'))   { await diversaoHandler.handleEquiparSec(
 if (matchCmd(cmdWord, 'roubar'))       { await diversaoHandler.handleRoubar(sock, msg, jid, caption);       return; }
 if (matchCmd(cmdWord, 'invroubo'))     { await diversaoHandler.handleInvRoubo(sock, msg, jid);              return; }
 if (matchCmd(cmdWord, 'invsec'))       { await diversaoHandler.handleInvSec(sock, msg, jid);                return; }
+if (matchCmd(cmdWord, 'policia'))      { await diversaoHandler.handlePolicia(sock, msg, jid);               return; }
 
 // ─── Utilitários ──────────────────────────────────────────────────────────────
 

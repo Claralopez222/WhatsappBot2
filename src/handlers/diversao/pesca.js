@@ -29,71 +29,166 @@ const CONFIG_PESCA = {
 // ─── VARAS DE PESCA ───────────────────────────────────────────────────────────
 
 const VARAS_PESCA = {
-  vara_bambu:    { nome: '🎋 Vara de Bambu',   preco: 80,   bonus_raridade: 0,  reduce_falha: 5  },
-  vara_madeira:  { nome: '🪵 Vara de Madeira',  preco: 150,  bonus_raridade: 5,  reduce_falha: 8  },
-  vara_fibra:    { nome: '🎣 Vara de Fibra',    preco: 300,  bonus_raridade: 10, reduce_falha: 12 },
-  vara_carbono:  { nome: '⚫ Vara de Carbono',  preco: 600,  bonus_raridade: 18, reduce_falha: 18 },
-  vara_titanio:  { nome: '🔩 Vara de Titânio',  preco: 1200, bonus_raridade: 28, reduce_falha: 22 },
-  vara_lendaria: { nome: '✨ Vara Lendária',    preco: 3000, bonus_raridade: 45, reduce_falha: 25 },
+  // ── Progressão base ───────────────────────────────────────────────────────
+  vara_bambu:      { nome: '🎋 Vara de Bambu',       preco: 80,    bonus_raridade: 0,  reduce_falha: 5  },
+  vara_galho:      { nome: '🌿 Vara de Galho',        preco: 110,   bonus_raridade: 2,  reduce_falha: 6  },
+  vara_madeira:    { nome: '🪵 Vara de Madeira',      preco: 150,   bonus_raridade: 5,  reduce_falha: 8  },
+  vara_reforçada:  { nome: '🔧 Vara Reforçada',       preco: 220,   bonus_raridade: 8,  reduce_falha: 10 },
+  vara_fibra:      { nome: '🎣 Vara de Fibra',        preco: 300,   bonus_raridade: 10, reduce_falha: 12 },
+  vara_carbono:    { nome: '⚫ Vara de Carbono',      preco: 600,   bonus_raridade: 18, reduce_falha: 18 },
+  vara_titanio:    { nome: '🔩 Vara de Titânio',      preco: 1200,  bonus_raridade: 28, reduce_falha: 22 },
+  vara_lendaria:   { nome: '✨ Vara Lendária',        preco: 3000,  bonus_raridade: 45, reduce_falha: 25 },
+  // ── Temáticas ─────────────────────────────────────────────────────────────
+  vara_magica:     { nome: '🪄 Vara Mágica',          preco: 2000,  bonus_raridade: 38, reduce_falha: 20 },
+  vara_amaldiçoada:{ nome: '💀 Vara Amaldiçoada',     preco: 2500,  bonus_raridade: 42, reduce_falha: 15 },
+  vara_divina:     { nome: '⚡ Vara Divina',           preco: 5000,  bonus_raridade: 60, reduce_falha: 28 },
+  vara_sombria:    { nome: '🌑 Vara das Sombras',      preco: 4000,  bonus_raridade: 52, reduce_falha: 24 },
+  vara_coral:      { nome: '🪸 Vara de Coral',         preco: 1800,  bonus_raridade: 35, reduce_falha: 19 },
+  vara_cristal:    { nome: '💠 Vara de Cristal',       preco: 3500,  bonus_raridade: 48, reduce_falha: 26 },
 };
 
 // ─── ISCAS ────────────────────────────────────────────────────────────────────
 
 const ISCAS = {
-  isca_minhoca:  { nome: '🪱 Minhoca',          preco: 20,  bonus_raridade: 0,  reduce_falha: 2  },
-  isca_camarao:  { nome: '🦐 Camarão',          preco: 50,  bonus_raridade: 5,  reduce_falha: 5  },
-  isca_mosca:    { nome: '🪰 Mosca Artificial',  preco: 80,  bonus_raridade: 8,  reduce_falha: 7  },
-  isca_peixinho: { nome: '🐟 Peixinho Vivo',     preco: 120, bonus_raridade: 12, reduce_falha: 10 },
-  isca_lula:     { nome: '🦑 Lula',              preco: 200, bonus_raridade: 18, reduce_falha: 14 },
-  isca_magica:   { nome: '🌟 Isca Mágica',       preco: 500, bonus_raridade: 30, reduce_falha: 20 },
+  // ── Progressão base ───────────────────────────────────────────────────────
+  isca_minhoca:   { nome: '🪱 Minhoca',           preco: 20,   bonus_raridade: 0,  reduce_falha: 2  },
+  isca_grilo:     { nome: '🦗 Grilo',              preco: 35,   bonus_raridade: 3,  reduce_falha: 3  },
+  isca_camarao:   { nome: '🦐 Camarão',            preco: 50,   bonus_raridade: 5,  reduce_falha: 5  },
+  isca_mosca:     { nome: '🪰 Mosca Artificial',   preco: 80,   bonus_raridade: 8,  reduce_falha: 7  },
+  isca_peixinho:  { nome: '🐟 Peixinho Vivo',      preco: 120,  bonus_raridade: 12, reduce_falha: 10 },
+  isca_caranguejo:{ nome: '🦀 Caranguejo',          preco: 160,  bonus_raridade: 15, reduce_falha: 12 },
+  isca_lula:      { nome: '🦑 Lula',               preco: 200,  bonus_raridade: 18, reduce_falha: 14 },
+  isca_polvo:     { nome: '🐙 Polvo Pequeno',      preco: 280,  bonus_raridade: 22, reduce_falha: 16 },
+  isca_magica:    { nome: '🌟 Isca Mágica',        preco: 500,  bonus_raridade: 30, reduce_falha: 20 },
+  // ── Temáticas ─────────────────────────────────────────────────────────────
+  isca_sangue:    { nome: '🩸 Isca de Sangue',     preco: 350,  bonus_raridade: 25, reduce_falha: 18 },
+  isca_cristal:   { nome: '💎 Isca de Cristal',    preco: 600,  bonus_raridade: 33, reduce_falha: 21 },
+  isca_divina:    { nome: '✨ Isca Divina',         preco: 1000, bonus_raridade: 45, reduce_falha: 25 },
+  isca_sombria:   { nome: '🌑 Isca das Sombras',   preco: 800,  bonus_raridade: 38, reduce_falha: 22 },
+  isca_vulcânica: { nome: '🌋 Isca Vulcânica',     preco: 750,  bonus_raridade: 35, reduce_falha: 23 },
 };
 
 // ─── CATÁLOGO DE ITENS PESCÁVEIS ──────────────────────────────────────────────
 
 const PEIXES_E_ITENS = {
-  // ── Peixes ────────────────────────────────────────────────────────────────
-  peixe_pequeno:    { nome: '🐟 Peixe Pequeno',     raridade: 'comum',    peso: 55, gold: 18  },
-  peixe_medio:      { nome: '🐠 Peixe Médio',        raridade: 'incomum',  peso: 22, gold: 45  },
-  peixe_grande:     { nome: '🐡 Peixe Grande',       raridade: 'raro',     peso: 9,  gold: 100 },
-  peixe_espada:     { nome: '⚔️ Peixe-Espada',       raridade: 'epico',    peso: 3,  gold: 250 },
-  peixe_lendario:   { nome: '🌈 Peixe Arco-Íris',    raridade: 'lendario', peso: 1,  gold: 600 },
-  peixe_dourado:    { nome: '✨ Peixe Dourado',       raridade: 'lendario', peso: 1,  gold: 750 },
-  peixe_abissal:    { nome: '🦑 Peixe Abissal',      raridade: 'epico',    peso: 2,  gold: 300 },
-  peixe_fantasma:   { nome: '👻 Peixe Fantasma',     raridade: 'raro',     peso: 5,  gold: 130 },
+  // ── Peixes comuns ─────────────────────────────────────────────────────────
+  peixe_pequeno:    { nome: '🐟 Peixe Pequeno',       raridade: 'comum',    peso: 55, gold: 18  },
+  peixe_listrado:   { nome: '🐠 Peixe Listrado',      raridade: 'comum',    peso: 45, gold: 22  },
+  peixe_gordinho:   { nome: '🐡 Peixe Gordinho',      raridade: 'comum',    peso: 38, gold: 28  },
+  bagre:            { nome: '😶 Bagre',                raridade: 'comum',    peso: 42, gold: 25  },
+  sardinha:         { nome: '🐟 Sardinha',             raridade: 'comum',    peso: 48, gold: 15  },
 
-  // ── Lixo (gold = 0 → não vendável) ───────────────────────────────────────
-  bota_velha:       { nome: '👢 Bota Velha',          raridade: 'comum',    peso: 40, gold: 0   },
-  lata_enferrujada: { nome: '🥫 Lata Enferrujada',   raridade: 'comum',    peso: 35, gold: 0   },
-  alga:             { nome: '🌿 Monte de Algas',       raridade: 'comum',    peso: 28, gold: 3   },
+  // ── Peixes incomuns ───────────────────────────────────────────────────────
+  peixe_medio:      { nome: '🐠 Peixe Médio',         raridade: 'incomum',  peso: 22, gold: 45  },
+  truta:            { nome: '🎣 Truta',                raridade: 'incomum',  peso: 20, gold: 55  },
+  piranha:          { nome: '🦷 Piranha',              raridade: 'incomum',  peso: 18, gold: 65  },
+  peixe_voador:     { nome: '🕊️ Peixe Voador',        raridade: 'incomum',  peso: 15, gold: 70  },
+  enguia:           { nome: '⚡ Enguia Elétrica',      raridade: 'incomum',  peso: 16, gold: 75  },
+
+  // ── Peixes raros ──────────────────────────────────────────────────────────
+  peixe_grande:     { nome: '🐡 Peixe Grande',        raridade: 'raro',     peso: 9,  gold: 100 },
+  peixe_fantasma:   { nome: '👻 Peixe Fantasma',      raridade: 'raro',     peso: 5,  gold: 130 },
+  tubarao_pequeno:  { nome: '🦈 Tubarão Filhote',     raridade: 'raro',     peso: 6,  gold: 145 },
+  peixe_fogo:       { nome: '🔥 Peixe de Fogo',       raridade: 'raro',     peso: 5,  gold: 160 },
+  peixe_gelo:       { nome: '❄️ Peixe de Gelo',       raridade: 'raro',     peso: 5,  gold: 155 },
+  arraia:           { nome: '🌊 Arraia Gigante',       raridade: 'raro',     peso: 7,  gold: 135 },
+
+  // ── Peixes épicos ─────────────────────────────────────────────────────────
+  peixe_espada:     { nome: '⚔️ Peixe-Espada',        raridade: 'epico',    peso: 3,  gold: 250 },
+  peixe_abissal:    { nome: '🦑 Peixe Abissal',       raridade: 'epico',    peso: 2,  gold: 300 },
+  peixe_venenoso:   { nome: '☠️ Peixe Venenoso',      raridade: 'epico',    peso: 2,  gold: 320 },
+  kraken_filhote:   { nome: '🐙 Filhote de Kraken',   raridade: 'epico',    peso: 1,  gold: 400 },
+  peixe_celestial:  { nome: '🌠 Peixe Celestial',     raridade: 'epico',    peso: 2,  gold: 350 },
+  sereia_escama:    { nome: '🧜 Escama de Sereia',     raridade: 'epico',    peso: 2,  gold: 380 },
+
+  // ── Peixes lendários ──────────────────────────────────────────────────────
+  peixe_lendario:   { nome: '🌈 Peixe Arco-Íris',     raridade: 'lendario', peso: 1,  gold: 600 },
+  peixe_dourado:    { nome: '✨ Peixe Dourado',        raridade: 'lendario', peso: 1,  gold: 750 },
+  leviatã:          { nome: '🐋 Leviatã Miniatura',    raridade: 'lendario', peso: 1,  gold: 1000},
+  peixe_temporal:   { nome: '⏳ Peixe Temporal',       raridade: 'lendario', peso: 1,  gold: 950 },
+  dragao_aquatico:  { nome: '🐉 Dragão Aquático',      raridade: 'lendario', peso: 1,  gold: 1200},
+
+  // ── Lixo (descartável) ────────────────────────────────────────────────────
+  bota_velha:       { nome: '👢 Bota Velha',           raridade: 'comum',    peso: 40, gold: 0   },
+  lata_enferrujada: { nome: '🥫 Lata Enferrujada',    raridade: 'comum',    peso: 35, gold: 0   },
   pneu_velho:       { nome: '🛞 Pneu Velho',           raridade: 'comum',    peso: 30, gold: 0   },
   garrafa_vazia:    { nome: '🍾 Garrafa Vazia',        raridade: 'comum',    peso: 32, gold: 0   },
+  meia_velha:       { nome: '🧦 Meia Velha',           raridade: 'comum',    peso: 28, gold: 0   },
+  guarda_chuva:     { nome: '☂️ Guarda-chuva Quebrado',raridade: 'comum',    peso: 25, gold: 0   },
+  calcinha_perdida: { nome: '👙 Roupa Molhada',        raridade: 'comum',    peso: 27, gold: 0   },
 
-  // ── Tesouros ──────────────────────────────────────────────────────────────
+  // ── Lixo com pequeno valor ────────────────────────────────────────────────
+  alga:             { nome: '🌿 Monte de Algas',       raridade: 'comum',    peso: 28, gold: 3   },
+  osso_peixe:       { nome: '🦴 Espinha de Peixe',     raridade: 'comum',    peso: 30, gold: 5   },
+  concha_quebrada:  { nome: '🐚 Concha Quebrada',      raridade: 'comum',    peso: 26, gold: 8   },
+
+  // ── Tesouros incomuns ─────────────────────────────────────────────────────
   moeda_antiga:     { nome: '🪙 Moeda Antiga',         raridade: 'incomum',  peso: 18, gold: 60  },
-  anel_perdido:     { nome: '💍 Anel Perdido',         raridade: 'raro',     peso: 7,  gold: 180 },
-  perola:           { nome: '🦪 Pérola Rara',          raridade: 'epico',    peso: 3,  gold: 450 },
-  tesouro:          { nome: '💎 Cristal do Fundo',     raridade: 'lendario', peso: 1,  gold: 900 },
-  estatueta:        { nome: '🗿 Estatueta Antiga',     raridade: 'raro',     peso: 6,  gold: 200 },
   mapa_afundado:    { nome: '🗺️ Mapa Afundado',        raridade: 'incomum',  peso: 12, gold: 80  },
+  ampulheta:        { nome: '⏳ Ampulheta Antiga',      raridade: 'incomum',  peso: 14, gold: 75  },
+  dente_tubarao:    { nome: '🦷 Dente de Tubarão',     raridade: 'incomum',  peso: 16, gold: 65  },
+  frasco_poção:     { nome: '🧪 Frasco com Poção',     raridade: 'incomum',  peso: 13, gold: 85  },
+
+  // ── Tesouros raros ────────────────────────────────────────────────────────
+  anel_perdido:     { nome: '💍 Anel Perdido',         raridade: 'raro',     peso: 7,  gold: 180 },
+  estatueta:        { nome: '🗿 Estatueta Antiga',     raridade: 'raro',     peso: 6,  gold: 200 },
+  espada_enferrujada:{ nome:'⚔️ Espada Enferrujada',   raridade: 'raro',     peso: 5,  gold: 220 },
+  calice_dourado:   { nome: '🏆 Cálice Dourado',       raridade: 'raro',     peso: 5,  gold: 240 },
+  livro_submerso:   { nome: '📖 Livro Submerso',       raridade: 'raro',     peso: 6,  gold: 190 },
+
+  // ── Tesouros épicos ───────────────────────────────────────────────────────
+  perola:           { nome: '🦪 Pérola Rara',          raridade: 'epico',    peso: 3,  gold: 450 },
   cofre_miniatura:  { nome: '🔒 Cofre Miniatura',      raridade: 'epico',    peso: 2,  gold: 500 },
+  coroa_afundada:   { nome: '👑 Coroa Afundada',       raridade: 'epico',    peso: 2,  gold: 550 },
+  orbe_magico:      { nome: '🔮 Orbe Mágico',          raridade: 'epico',    peso: 2,  gold: 520 },
+  armadura_sereia:  { nome: '🧜 Armadura de Sereia',   raridade: 'epico',    peso: 2,  gold: 480 },
+
+  // ── Tesouros lendários ────────────────────────────────────────────────────
+  tesouro:          { nome: '💎 Cristal do Fundo',     raridade: 'lendario', peso: 1,  gold: 900 },
+  tridente_poseidon:{ nome: '🔱 Tridente de Poseidon', raridade: 'lendario', peso: 1,  gold: 1100},
+  ovo_dragao:       { nome: '🥚 Ovo de Dragão',        raridade: 'lendario', peso: 1,  gold: 1300},
+  espelho_abissal:  { nome: '🪞 Espelho Abissal',      raridade: 'lendario', peso: 1,  gold: 1050},
 };
 
 const ITENS_BONUS_PESCA = {
-  mascara:          { nome: '🎭 Máscara',              raridade: 'incomum',  peso: 14, gold: 45  },
-  corda:            { nome: '🪢 Corda Ninja',           raridade: 'raro',     peso: 5,  gold: 120 },
-  chocolate:        { nome: '🍫 Chocolate',             raridade: 'comum',    peso: 22, gold: 20  },
-  flores:           { nome: '🌹 Flores',                raridade: 'incomum',  peso: 13, gold: 40  },
-  garrafa_mensagem: { nome: '📜 Garrafa com Mensagem', raridade: 'raro',     peso: 6,  gold: 160 },
-  bussola_quebrada: { nome: '🧭 Bússola Quebrada',     raridade: 'incomum',  peso: 10, gold: 70  },
-  lanterna_fundo:   { nome: '🔦 Lanterna do Fundo',    raridade: 'raro',     peso: 5,  gold: 140 },
+  // ── Comuns ────────────────────────────────────────────────────────────────
+  chocolate:        { nome: '🍫 Chocolate',              raridade: 'comum',    peso: 22, gold: 20  },
+  pedra_rio:        { nome: '🪨 Pedra do Rio',           raridade: 'comum',    peso: 30, gold: 10  },
+  cogumelo_aqua:    { nome: '🍄 Cogumelo Aquático',      raridade: 'comum',    peso: 20, gold: 15  },
+
+  // ── Incomuns ──────────────────────────────────────────────────────────────
+  mascara:          { nome: '🎭 Máscara',                raridade: 'incomum',  peso: 14, gold: 45  },
+  flores:           { nome: '🌹 Flores',                 raridade: 'incomum',  peso: 13, gold: 40  },
+  bussola_quebrada: { nome: '🧭 Bússola Quebrada',       raridade: 'incomum',  peso: 10, gold: 70  },
+  pena_rara:        { nome: '🪶 Pena Rara',              raridade: 'incomum',  peso: 12, gold: 55  },
+  estrela_do_mar:   { nome: '⭐ Estrela-do-Mar',         raridade: 'incomum',  peso: 15, gold: 60  },
+  boneco_pano:      { nome: '🪆 Boneco de Pano',         raridade: 'incomum',  peso: 11, gold: 50  },
+
+  // ── Raros ─────────────────────────────────────────────────────────────────
+  corda:            { nome: '🪢 Corda Ninja',             raridade: 'raro',     peso: 5,  gold: 120 },
+  garrafa_mensagem: { nome: '📜 Garrafa com Mensagem',   raridade: 'raro',     peso: 6,  gold: 160 },
+  lanterna_fundo:   { nome: '🔦 Lanterna do Fundo',      raridade: 'raro',     peso: 5,  gold: 140 },
+  telescopio:       { nome: '🔭 Telescópio Antigo',      raridade: 'raro',     peso: 5,  gold: 175 },
+  harpa_sereia:     { nome: '🎵 Harpa de Sereia',        raridade: 'raro',     peso: 4,  gold: 185 },
+  tinta_magica:     { nome: '🖋️ Tinta Mágica',           raridade: 'raro',     peso: 5,  gold: 150 },
+
+  // ── Épicos ────────────────────────────────────────────────────────────────
+  mapa_estelar:     { nome: '🗺️ Mapa Estelar',           raridade: 'epico',    peso: 2,  gold: 420 },
+  reliquiario:      { nome: '⚗️ Relicário Místico',      raridade: 'epico',    peso: 2,  gold: 460 },
+  cristal_tempo:    { nome: '💠 Cristal do Tempo',       raridade: 'epico',    peso: 2,  gold: 490 },
+
+  // ── Lendários ─────────────────────────────────────────────────────────────
+  tomo_abissal:     { nome: '📚 Tomo Abissal',           raridade: 'lendario', peso: 1,  gold: 850 },
+  amuleto_poseidon: { nome: '🔱 Amuleto de Poseidon',    raridade: 'lendario', peso: 1,  gold: 1150},
 };
 
 const CATALOGO_PESCA = { ...PEIXES_E_ITENS, ...ITENS_BONUS_PESCA };
 
-// Itens que vão para o inventário mas não têm gold (não vendáveis diretamente)
-const LIXO_KEYS     = new Set(['bota_velha', 'lata_enferrujada', 'alga']);
-// Itens que ficam apenas na mensagem, não vão para o inventário
-const DESCARTAVEL_KEYS = new Set(['bota_velha', 'lata_enferrujada']);
+const LIXO_KEYS        = new Set(['bota_velha', 'lata_enferrujada', 'alga', 'pneu_velho', 'garrafa_vazia']);
+const DESCARTAVEL_KEYS = new Set([
+  'bota_velha', 'lata_enferrujada', 'pneu_velho', 'garrafa_vazia',
+  'meia_velha', 'guarda_chuva', 'calcinha_perdida',
+]);
 
 const RARIDADE_LABEL = {
   comum:    '⚪ Comum',
@@ -527,7 +622,7 @@ async function handleComprarPesca(sock, msg, jid, caption) {
       }
     }
 
-    const qtdComprar = ehVara ? 1 : qtd; // varas: sempre 1, mesmo se pedir mais
+    const qtdComprar = ehVara ? 1 : qtd;
     const custoTotal = info.preco * qtdComprar;
 
     // ── Verifica saldo e debita de forma atômica ─────────────────────────────
@@ -559,7 +654,9 @@ async function handleComprarPesca(sock, msg, jid, caption) {
     }
 
     const tipoLabel = ehVara ? '🪝 Vara' : '🪱 Isca';
-    const qtdLabel  = ehVara ? '' : ` ×${qtdComprar}`;
+    const qtdLabel = ehVara
+  ? (qtd > 1 ? ' _(varas são unitárias, comprada apenas 1)_' : '')
+  : ` ×${qtdComprar}`;
 
     return reply(sock, jid, msg,
       `✅ *COMPRA REALIZADA!*\n\n` +
@@ -634,7 +731,8 @@ async function handleInventarioPesca(sock, msg, jid) {
       for (const k of iscas) {
         const info  = ISCAS[k];
         const ativa = k === melhorIsca ? ' ✅ _(próxima a usar)_' : '';
-        const precoVenda = Math.floor(info.preco * 0.50);
+        // Para iscas (consumíveis vendem a 70% assim como itens pescados):
+const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.70
         texto += `   ${info.nome} × ${inv[k]}${ativa}\n`;
         texto += `   ├ Bônus raridade: *+${info.bonus_raridade}* · Reduz falha: *-${info.reduce_falha}%*\n`;
         texto += `   └ Venda: *${precoVenda}g* → \`!sellpesca ${k}\`\n\n`;
@@ -836,9 +934,9 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
       .map(c => {
         const invRaw = c.itensPesca;
         const inv    = invRaw instanceof Map ? Object.fromEntries(invRaw) : (invRaw ?? {});
-        const total  = Object.entries(inv)
-          .filter(([k]) => !VARAS_PESCA[k] && !ISCAS[k])
-          .reduce((acc, [, v]) => acc + (v ?? 0), 0);
+        const total = Object.entries(inv)
+  .filter(([k]) => !VARAS_PESCA[k] && !ISCAS[k] && !DESCARTAVEL_KEYS.has(k))
+  .reduce((acc, [, v]) => acc + (v ?? 0), 0);
         return { idWhatsApp: c.idWhatsApp, total, gold: c.gold ?? 0 };
       })
       .filter(s => s.total > 0 && membrosAtuais.has(s.idWhatsApp)); // Remove inativos/banidos
@@ -1087,6 +1185,25 @@ async function handleGivePesca(sock, msg, jid, caption) {
         `📊 Precisa de: *${qtd}×*\n\n` +
         `_Use !inventariopesca para ver seu inventário completo._`
       );
+    }
+
+    // ── Bloqueia give de vara se destinatário já tiver uma igual ─────────────
+    if (VARAS_PESCA[itemKey]) {
+      const carteiraAlvo = await CarteiraGrupo
+        .findOne({ idWhatsApp: mentionedJid, idGrupo: groupId })
+        .lean();
+
+      if (getQtdItem(carteiraAlvo, itemKey) > 0) {
+        // Estorna a retirada já feita do remetente
+        await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp: userId, idGrupo: groupId },
+          { $inc: { [`itensPesca.${itemKey}`]: qtd } }
+        );
+        return reply(sock, jid, msg,
+          `⚠️ *@${alvoNumero} já possui ${info.nome}!*\n\n` +
+          `_Varas não acumulam. Item devolvido para você._`
+        );
+      }
     }
 
     // ── Credita ao destinatário ───────────────────────────────────────────────

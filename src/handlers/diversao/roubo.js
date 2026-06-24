@@ -635,7 +635,17 @@ async function handleRoubar(sock, msg, jid) {
     return;
   }
 
-  // ── Verificar saldo da vítima ────────────────────────────────────────────────
+  // ── Verificar imunidade da vítima ────────────────────────────────────────
+  const imunidadeAte = _tsOuZero(carteiraVitima.imunidadeRouboAte);
+  if (agora < imunidadeAte) {
+    const restante = imunidadeAte - agora;
+    await sock.sendMessage(jid, {
+      text: `🛡️ *VÍTIMA IMUNE!*\n\nEssa pessoa foi roubada recentemente e está protegida por mais *${formatarTempo(restante)}*.`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Verificar saldo da vítima ────────────────────────────────────────────
   const saldoVitima = carteiraVitima.gold ?? 0;
   if (saldoVitima <= 0) {
     await sock.sendMessage(jid, {
@@ -678,36 +688,59 @@ async function handleRoubar(sock, msg, jid) {
     `🎲 *Rolagem:* ${rolagem.toFixed(1)} / ${taxaSucesso}% necessário\n` +
     `━━━━━━━━━━━━━━━━\n`;
 
+  // ── Consumir item de ataque (sempre, independente do resultado) ──────────
+  await incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1);
+
+  // ── Consumir item de defesa da vítima (se houver, sempre) ────────────────
+  if (itemDefesa) {
+    await incrementarItem(vitimaId, idGrupo, 'itensSec', itemDefesaSlug, -1);
+
+    // Se o item de defesa acabou, remover o slot equipado
+    const carteiraVitAtualizada = await getCarteira(vitimaId, idGrupo);
+    const qtdDefesaRestante = getItemQtd(carteiraVitAtualizada.itensSec, itemDefesaSlug);
+    if (qtdDefesaRestante <= 0) {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: vitimaId, idGrupo },
+        { $unset: { equiparsec: '' } }
+      );
+    }
+  }
+
+  // ── Verificar se atacante ainda tem o item (para exibir no resultado) ────
+  const carteiraAtacanteAtualizada = await getCarteira(atacanteId, idGrupo);
+  const qtdItemAtaqueRestante = getItemQtd(carteiraAtacanteAtualizada.itensRoubo, itemSlugAtaque);
+  if (qtdItemAtaqueRestante <= 0) {
+    await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: atacanteId, idGrupo },
+      { $unset: { equiparoubo: '' } }
+    );
+  }
+
   if (sucesso) {
     // ── Roubo bem-sucedido ──────────────────────────────────────────────────
     const pct          = Math.floor(Math.random() * (ROUBO_MAX_PCT - ROUBO_MIN_PCT + 1)) + ROUBO_MIN_PCT;
     const ouroRoubado  = Math.max(1, Math.floor(saldoVitima * pct / 100));
 
-    // alterarGoldSeguro: debita o que houver — sem lançar erro se a vítima
-    // foi parcialmente roubada por outra tentativa simultânea
     const { debitado } = await alterarGoldSeguro(
       vitimaId, idGrupo, -ouroRoubado, `Roubado por ${atacanteId}`
     );
 
     if (debitado === 0) {
-      // Vítima ficou sem gold entre a verificação e o débito
       textoResposta +=
         `😅 *AZAR!*\n\n` +
         `A vítima ficou sem gold no último segundo!\n` +
+        `🗑️ *Item consumido:* ${itemAtaque.nome}\n` +
         `⏱️ *Próxima tentativa em:* ${formatarTempo(COOLDOWN_ROUBO_MS)}`;
       await sock.sendMessage(jid, { text: textoResposta }, { quoted: msg });
       return;
     }
 
-    // Creditar atacante apenas pelo valor efetivamente debitado
     const carteiraAtualizada = await alterarGold(
       atacanteId, idGrupo, debitado, `Roubou de ${vitimaId}`
     );
 
-    // Progresso de missão
     await incrementMission(atacanteId, 'roubo3', 1).catch(() => {});
 
-    // Imunidade e registro do ladrão na carteira da vítima
     await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: vitimaId, idGrupo },
       {
@@ -725,6 +758,8 @@ async function handleRoubar(sock, msg, jid) {
       `💰 *Ouro roubado:* ${debitado} gold (${pct}% do saldo)\n` +
       `👤 *Seu novo saldo:* ${carteiraAtualizada.gold} gold\n` +
       `😢 *Saldo da vítima:* ${saldoVitima - debitado} gold\n` +
+      `🗑️ *Item consumido:* ${itemAtaque.nome}\n` +
+      (itemDefesa ? `🛡️ *Defesa da vítima consumida:* ${itemDefesa.nome}\n` : ``) +
       `💡 A vítima pode usar *!policia @você* nas próximas 2h!`;
   } else {
     // ── Roubo fracassado — vai preso ────────────────────────────────────────
@@ -737,6 +772,8 @@ async function handleRoubar(sock, msg, jid) {
       `❌ *ROUBO FRACASSADO!*\n\n` +
       `🚔 A polícia chegou e te prendeu!\n` +
       `😌 *Saldo da vítima:* ${saldoVitima} gold (intacto)\n` +
+      `🗑️ *Item consumido:* ${itemAtaque.nome}\n` +
+      (itemDefesa ? `🛡️ *Defesa da vítima consumida:* ${itemDefesa.nome}\n` : ``) +
       `🔒 *Você ficará preso por:* ${formatarTempo(COOLDOWN_PRESO_MS)}`;
   }
 
@@ -839,16 +876,21 @@ async function handlePolicia(sock, msg, jid) {
     const debitavel     = Math.min(valorDevolver, saldoLadrao);
 
     // Todas as escritas em paralelo
-    await Promise.all([
+    const ops = [
       CarteiraGrupo.findOneAndUpdate(
         { idWhatsApp: ladrao, idGrupo },
         { $set: { prestoAte: new Date(novoPrestoAte) } }
       ),
-      debitavel > 0 && Promise.all([
+    ];
+
+    if (debitavel > 0) {
+      ops.push(
         alterarGold(ladrao,   idGrupo, -debitavel, `Apreensão policial para ${vitimaId}`),
-        alterarGold(vitimaId, idGrupo,  debitavel, `Recuperado pela polícia de ${ladrao}`),
-      ]),
-    ].filter(Boolean));
+        alterarGold(vitimaId, idGrupo,  debitavel, `Recuperado pela polícia de ${ladrao}`)
+      );
+    }
+
+    await Promise.all(ops);
 
     textoResultado = _buildTextoCaptura(numeroLadrao, debitavel);
   } else {
@@ -1020,11 +1062,23 @@ async function handleRoubarBanco(sock, msg, jid) {
       atacanteId, idGrupo, valorRoubado, `Assaltou banco de ${vitimaId}`
     );
 
+    // Consumir item de ataque
+    await incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1);
+    const carteiraAtacanteAtualizada = await getCarteira(atacanteId, idGrupo);
+    const qtdRestante = getItemQtd(carteiraAtacanteAtualizada.itensRoubo, itemSlugAtaque);
+    if (qtdRestante <= 0) {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: atacanteId, idGrupo },
+        { $unset: { equiparoubo: '' } }
+      );
+    }
+
     texto +=
       `✅ *ASSALTO BEM-SUCEDIDO!*\n\n` +
       `🏦 *Roubado do banco:* ${valorRoubado} gold (${pct}% do investimento)\n` +
       `💰 *Seu novo saldo:* ${carteiraAtualizada.gold} gold\n` +
-      `🏦 *Banco da vítima restante:* ${saldoBanco - valorRoubado} gold\n\n` +
+      `🏦 *Banco da vítima restante:* ${saldoBanco - valorRoubado} gold\n` +
+      `🗑️ *Item consumido:* ${itemAtaque.nome}\n\n` +
       `💡 A vítima pode usar *!policia @você* nas próximas 2h!`;
 
     // Registrar para o !policia funcionar

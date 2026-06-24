@@ -743,14 +743,35 @@ async function handleRoubar(sock, msg, jid) {
   await sock.sendMessage(jid, { text: textoResposta }, { quoted: msg });
 }
 
+// ─── Helpers locais ───────────────────────────────────────────────────────────
+
+function _tsOuZero(valor) {
+  if (!valor) return 0;
+  const ts = new Date(valor).getTime();
+  return isNaN(ts) ? 0 : ts;
+}
+
+function _buildTextoCaptura(numeroLadrao, debitavel = 0) {
+  const cabecalho =
+    `✅ *LADRÃO PRESO!*\n\n` +
+    `🚔 @${numeroLadrao} foi capturado!\n` +
+    `🔒 *Ficará preso por mais:* ${formatarTempo(COOLDOWN_PRESO_MS)}\n`;
+
+  if (debitavel > 0) {
+    return cabecalho + `💰 *Gold recuperado:* ${debitavel} gold (${DEVOLUCAO_POLICIA}% do roubado)`;
+  }
+  return cabecalho + `😔 O ladrão não tem gold para devolver.`;
+}
+
 // ─── !policia @ladrão ─────────────────────────────────────────────────────────
 
 async function handlePolicia(sock, msg, jid) {
-  const vitimaId   = getUserId(msg);
-  const ladrao     = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-  const idGrupo    = getGroupId(msg, jid);
-  const agora      = Date.now();
+  const vitimaId = getUserId(msg);
+  const ladrao   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const idGrupo  = getGroupId(msg, jid);
+  const agora    = Date.now();
 
+  // ── Validações rápidas ────────────────────────────────────────────────────
   if (!ladrao) {
     await sock.sendMessage(jid, {
       text: '⚠️ Use: *!policia @ladrão*\nMencione quem te roubou!',
@@ -759,25 +780,22 @@ async function handlePolicia(sock, msg, jid) {
   }
 
   if (vitimaId === ladrao) {
-    await sock.sendMessage(jid, { text: '❌ Você não pode chamar a polícia em si mesmo!' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '❌ Você não pode chamar a polícia em si mesmo!',
+    }, { quoted: msg });
     return;
   }
 
+  // ── Buscar carteiras em paralelo ──────────────────────────────────────────
   const [carteiraVitima, carteiraLadrao] = await Promise.all([
     getCarteira(vitimaId, idGrupo),
     getCarteira(ladrao,   idGrupo),
   ]);
 
-  // Verifica se foi roubada nas últimas 2h por este ladrão
-  const lastRobbedBy  = carteiraVitima.lastRobbedBy;
-  const lastRobbedAt  = carteiraVitima.lastRobbedAt
-    ? new Date(carteiraVitima.lastRobbedAt).getTime()
-    : 0;
-  const imunidadeAte  = carteiraVitima.imunidadeRouboAte
-    ? new Date(carteiraVitima.imunidadeRouboAte).getTime()
-    : 0;
+  // ── Verificar janela de roubo (imunidade) ─────────────────────────────────
+  const imunidadeAte = _tsOuZero(carteiraVitima.imunidadeRouboAte);
 
-  if (lastRobbedBy !== ladrao || agora > imunidadeAte) {
+  if (carteiraVitima.lastRobbedBy !== ladrao || agora > imunidadeAte) {
     await sock.sendMessage(jid, {
       text:
         `❌ *NÃO É POSSÍVEL CHAMAR A POLÍCIA!*\n\n` +
@@ -786,86 +804,270 @@ async function handlePolicia(sock, msg, jid) {
     return;
   }
 
-  // Cooldown de 30min pra não spammar polícia
-  const ultimaPolicia = carteiraVitima.ultimaPolicia
-    ? new Date(carteiraVitima.ultimaPolicia).getTime()
-    : 0;
-  if (agora - ultimaPolicia < COOLDOWN_POLICIA_MS) {
-    const restante = COOLDOWN_POLICIA_MS - (agora - ultimaPolicia);
+  // ── Cooldown anti-spam ────────────────────────────────────────────────────
+  const ultimaPolicia = _tsOuZero(carteiraVitima.ultimaPolicia);
+  const restanteCd    = COOLDOWN_POLICIA_MS - (agora - ultimaPolicia);
+
+  if (restanteCd > 0) {
     await sock.sendMessage(jid, {
-      text: `⏱️ Aguarde *${formatarTempo(restante)}* para acionar a polícia novamente.`,
+      text: `⏱️ Aguarde *${formatarTempo(restanteCd)}* para acionar a polícia novamente.`,
     }, { quoted: msg });
     return;
   }
 
-  // Registrar chamada da polícia
+  // ── Registrar chamada (antes da rolagem para evitar spam em erro) ─────────
   await CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: vitimaId, idGrupo },
     { $set: { ultimaPolicia: new Date() } }
   );
 
-  const rolagem = Math.random() * 100;
-  const prendeu = rolagem < CHANCE_POLICIA;
-
+  // ── Rolagem ───────────────────────────────────────────────────────────────
+  const rolagem      = Math.random() * 100;
+  const prendeu      = rolagem < CHANCE_POLICIA;
   const numeroLadrao = ladrao.split('@')[0].replace(/\D/g, '');
 
-  let texto =
-    `👮 ═══ ACIONANDO A POLÍCIA! ═══ 👮\n\n` +
-    `🎲 *Rolagem:* ${rolagem.toFixed(1)} / ${CHANCE_POLICIA}% necessário\n` +
-    `━━━━━━━━━━━━━━━━\n`;
+  let textoResultado;
 
   if (prendeu) {
-    // Prender o ladrão por 2h adicionais
-    const novoPrestoAte = Math.max(
-      agora,
-      carteiraLadrao.prestoAte ? new Date(carteiraLadrao.prestoAte).getTime() : 0
-    ) + COOLDOWN_PRESO_MS;
+    // Estender prisão acumulando o tempo restante atual
+    const prestoAteAtual = _tsOuZero(carteiraLadrao.prestoAte);
+    const novoPrestoAte  = Math.max(agora, prestoAteAtual) + COOLDOWN_PRESO_MS;
 
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: ladrao, idGrupo },
-      { $set: { prestoAte: new Date(novoPrestoAte) } }
-    );
-
-    // Devolver parte do gold roubado
     const valorRoubado  = carteiraVitima.lastRobbedAmount ?? 0;
     const valorDevolver = Math.floor(valorRoubado * DEVOLUCAO_POLICIA / 100);
+    const saldoLadrao   = carteiraLadrao.gold ?? 0;
+    const debitavel     = Math.min(valorDevolver, saldoLadrao);
 
-    if (valorDevolver > 0) {
-      const saldoLadrao = carteiraLadrao.gold ?? 0;
-      const debitavel   = Math.min(valorDevolver, saldoLadrao);
+    // Todas as escritas em paralelo
+    await Promise.all([
+      CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: ladrao, idGrupo },
+        { $set: { prestoAte: new Date(novoPrestoAte) } }
+      ),
+      debitavel > 0 && Promise.all([
+        alterarGold(ladrao,   idGrupo, -debitavel, `Apreensão policial para ${vitimaId}`),
+        alterarGold(vitimaId, idGrupo,  debitavel, `Recuperado pela polícia de ${ladrao}`),
+      ]),
+    ].filter(Boolean));
 
-      if (debitavel > 0) {
-        await Promise.all([
-          alterarGold(ladrao,   idGrupo, -debitavel, `Apreensão policial para ${vitimaId}`),
-          alterarGold(vitimaId, idGrupo,  debitavel, `Recuperado pela polícia de ${ladrao}`),
-        ]);
-
-        texto +=
-          `✅ *LADRÃO PRESO!*\n\n` +
-          `🚔 @${numeroLadrao} foi capturado!\n` +
-          `🔒 *Ficará preso por mais:* ${formatarTempo(COOLDOWN_PRESO_MS)}\n` +
-          `💰 *Gold recuperado:* ${debitavel} gold (${DEVOLUCAO_POLICIA}% do roubado)`;
-      } else {
-        texto +=
-          `✅ *LADRÃO PRESO!*\n\n` +
-          `🚔 @${numeroLadrao} foi capturado!\n` +
-          `🔒 *Ficará preso por mais:* ${formatarTempo(COOLDOWN_PRESO_MS)}\n` +
-          `😔 O ladrão não tem gold para devolver.`;
-      }
-    } else {
-      texto +=
-        `✅ *LADRÃO PRESO!*\n\n` +
-        `🚔 @${numeroLadrao} foi capturado!\n` +
-        `🔒 *Ficará preso por mais:* ${formatarTempo(COOLDOWN_PRESO_MS)}`;
-    }
+    textoResultado = _buildTextoCaptura(numeroLadrao, debitavel);
   } else {
-    texto +=
+    textoResultado =
       `❌ *LADRÃO ESCAPOU!*\n\n` +
       `🏃 @${numeroLadrao} conseguiu fugir da polícia!\n` +
       `😔 Nenhum gold foi recuperado.`;
   }
 
+  const texto =
+    `👮 ═══ ACIONANDO A POLÍCIA! ═══ 👮\n\n` +
+    `🎲 *Rolagem:* ${rolagem.toFixed(1)} / ${CHANCE_POLICIA}% necessário\n` +
+    `━━━━━━━━━━━━━━━━\n` +
+    textoResultado;
+
   await sock.sendMessage(jid, { text: texto, mentions: [ladrao] }, { quoted: msg });
+}
+
+// ─── Configuração !roubarbanco ────────────────────────────────────────────────
+
+const COOLDOWN_ROUBARBANCO_MS = 30 * 60 * 1000;  // 30min entre tentativas
+const COOLDOWN_PRESO_BANCO_MS =  4 * 60 * 60 * 1000; // 4h preso se falhar
+const TAXA_SUCESSO_BASE_BANCO = 30; // % base (menor que roubo normal)
+const MULTA_FALHA_PCT         = 10; // % do gold perdido se falhar
+const ROUBO_BANCO_MIN_PCT     = 20; // % mínimo do banco.amount roubado
+const ROUBO_BANCO_MAX_PCT     = 40; // % máximo do banco.amount roubado
+
+/**
+ * Calcula o intervalo de % roubável do banco baseado no bônus do item.
+ * Item melhor → teto mais alto, podendo chegar até 55%.
+ */
+function calcularPctBanco(bonusItem) {
+  const min = ROUBO_BANCO_MIN_PCT;
+  const max = Math.min(55, ROUBO_BANCO_MAX_PCT + Math.floor(bonusItem / 10));
+  return { min, max };
+}
+
+// ─── !roubarbanco @pessoa ─────────────────────────────────────────────────────
+
+async function handleRoubarBanco(sock, msg, jid) {
+  const atacanteId = getUserId(msg);
+  const vitimaId   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const idGrupo    = getGroupId(msg, jid);
+  const agora      = Date.now();
+
+  // ── Validações básicas ────────────────────────────────────────────────────
+  if (!vitimaId) {
+    await sock.sendMessage(jid, {
+      text:
+        '⚠️ Use: *!roubarbanco @pessoa*\n' +
+        'Mencione quem você quer assaltar no banco!',
+    }, { quoted: msg });
+    return;
+  }
+
+  if (atacanteId === vitimaId) {
+    await sock.sendMessage(jid, {
+      text: '❌ Você não pode roubar seu próprio banco!',
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Buscar carteiras em paralelo ──────────────────────────────────────────
+  const [carteiraAtacante, carteiraVitima] = await Promise.all([
+    getCarteira(atacanteId, idGrupo),
+    getCarteira(vitimaId,   idGrupo),
+  ]);
+
+  // ── Item equipado obrigatório ─────────────────────────────────────────────
+  const itemSlugAtaque = carteiraAtacante.equiparoubo;
+  const itemAtaque     = itemSlugAtaque && ITENS_ROUBO[itemSlugAtaque];
+
+  if (!itemAtaque) {
+    await sock.sendMessage(jid, {
+      text:
+        `❌ *Você precisa equipar um item de roubo antes!*\n\n` +
+        `🛒 Compre com *!menuroubar*\n` +
+        `⚡ Equipe com *!equiparroubo <item>*`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Verificar se atacante tem o item no inventário (vai consumir se falhar) ─
+  const qtdItem = getItemQtd(carteiraAtacante.itensRoubo, itemSlugAtaque);
+  if (qtdItem <= 0) {
+    await sock.sendMessage(jid, {
+      text:
+        `❌ Você não possui *${itemAtaque.nome}* no inventário!\n\n` +
+        `🛒 Compre com *!buyroubo ${itemSlugAtaque}*`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Preso? ────────────────────────────────────────────────────────────────
+  const prestoAte = _tsOuZero(carteiraAtacante.prestoAte);
+  if (agora < prestoAte) {
+    await sock.sendMessage(jid, {
+      text: `🚔 *VOCÊ ESTÁ PRESO!*\n\nAguarde *${formatarTempo(prestoAte - agora)}* para sair da prisão.`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Cooldown específico do roubarbanco ────────────────────────────────────
+  const ultimoRouboBanco = _tsOuZero(carteiraAtacante.ultimoRouboBanco);
+  const restanteCd       = COOLDOWN_ROUBARBANCO_MS - (agora - ultimoRouboBanco);
+  if (restanteCd > 0) {
+    await sock.sendMessage(jid, {
+      text: `⏱️ *COOLDOWN ATIVO!*\n\nAguarde *${formatarTempo(restanteCd)}* para tentar assaltar o banco novamente.`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Vítima tem investimento ativo? ────────────────────────────────────────
+  const bancoDaVitima = carteiraVitima.banco ?? {};
+  const saldoBanco    = bancoDaVitima.amount ?? 0;
+
+  if (saldoBanco <= 0) {
+    await sock.sendMessage(jid, {
+      text: '❌ *A vítima não possui nenhum investimento ativo no banco!*',
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Registrar cooldown antes da tentativa ─────────────────────────────────
+  await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: atacanteId, idGrupo },
+    { $set: { ultimoRouboBanco: new Date() } }
+  );
+
+  // ── Calcular taxa de sucesso ──────────────────────────────────────────────
+  let taxaSucesso = TAXA_SUCESSO_BASE_BANCO + itemAtaque.bonus;
+
+  const itemDefesaSlug = carteiraVitima.equiparsec;
+  const itemDefesa     = itemDefesaSlug && ITENS_SEGURANCA[itemDefesaSlug];
+  if (itemDefesa) taxaSucesso -= itemDefesa.defesa;
+
+  taxaSucesso = Math.max(TAXA_MIN, Math.min(TAXA_MAX, taxaSucesso));
+
+  const rolagem = Math.random() * 100;
+  const sucesso = rolagem < taxaSucesso;
+
+  // ── Cabeçalho da resposta ─────────────────────────────────────────────────
+  let texto =
+    `🏦 ═══ ASSALTO AO BANCO! ═══ 🏦\n\n` +
+    `🔫 *Ferramenta:* ${itemAtaque.nome}\n`;
+
+  if (itemDefesa) {
+    texto += `🛡️ *Defesa da vítima:* ${itemDefesa.nome}\n`;
+  }
+
+  texto +=
+    `🎲 *Rolagem:* ${rolagem.toFixed(1)} / ${taxaSucesso}% necessário\n` +
+    `━━━━━━━━━━━━━━━━\n`;
+
+  if (sucesso) {
+    // ── Sucesso ───────────────────────────────────────────────────────────
+    const { min, max } = calcularPctBanco(itemAtaque.bonus);
+    const pct          = Math.floor(Math.random() * (max - min + 1)) + min;
+    const valorRoubado = Math.max(1, Math.floor(saldoBanco * pct / 100));
+
+    // Debitar do banco da vítima atomicamente
+    await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: vitimaId, idGrupo },
+      { $inc: { 'banco.amount': -valorRoubado } }
+    );
+
+    // Creditar atacante
+    const carteiraAtualizada = await alterarGold(
+      atacanteId, idGrupo, valorRoubado, `Assaltou banco de ${vitimaId}`
+    );
+
+    texto +=
+      `✅ *ASSALTO BEM-SUCEDIDO!*\n\n` +
+      `🏦 *Roubado do banco:* ${valorRoubado} gold (${pct}% do investimento)\n` +
+      `💰 *Seu novo saldo:* ${carteiraAtualizada.gold} gold\n` +
+      `🏦 *Banco da vítima restante:* ${saldoBanco - valorRoubado} gold\n\n` +
+      `💡 A vítima pode usar *!policia @você* nas próximas 2h!`;
+
+    // Registrar para o !policia funcionar
+    await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: vitimaId, idGrupo },
+      {
+        $set: {
+          imunidadeRouboAte: new Date(agora + IMUNIDADE_ROUBO_MS),
+          lastRobbedBy:      atacanteId,
+          lastRobbedAmount:  valorRoubado,
+          lastRobbedAt:      new Date(),
+        },
+      }
+    );
+
+  } else {
+    // ── Falha — prisão 4h + multa 10% gold + consome item ────────────────
+    const saldoAtacante = carteiraAtacante.gold ?? 0;
+    const multa         = Math.max(1, Math.floor(saldoAtacante * MULTA_FALHA_PCT / 100));
+
+    await Promise.all([
+      // 4h preso
+      CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: atacanteId, idGrupo },
+        { $set: { prestoAte: new Date(agora + COOLDOWN_PRESO_BANCO_MS) } }
+      ),
+      // Multa em gold
+      alterarGold(atacanteId, idGrupo, -multa, 'Multa por falha no assalto ao banco'),
+      // Consome 1 item equipado
+      incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1),
+    ]);
+
+    texto +=
+      `❌ *ASSALTO FRACASSADO!*\n\n` +
+      `🚔 A segurança do banco te capturou!\n\n` +
+      `*PUNIÇÕES:*\n` +
+      `  🔒 Preso por: *${formatarTempo(COOLDOWN_PRESO_BANCO_MS)}*\n` +
+      `  💸 Multa: *${multa} gold* (10% do seu saldo)\n` +
+      `  🗑️ Item destruído: *${itemAtaque.nome}*\n\n` +
+      `😌 *Banco da vítima:* ${saldoBanco} gold (intacto)`;
+  }
+
+  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
@@ -883,4 +1085,5 @@ module.exports = {
   handleInvSec,
   handleMeioSec,
   handleRoubar,
+  handleRoubarBanco,
 };

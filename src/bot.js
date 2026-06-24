@@ -988,6 +988,7 @@ if (matchCmd(cmdWord, 'buysec'))       { await diversaoHandler.handleComprarSec(
 if (matchCmd(cmdWord, 'equiparroubo')) { await diversaoHandler.handleEquiparRoubo(sock, msg, jid, caption); return; }
 if (matchCmd(cmdWord, 'equiparsec'))   { await diversaoHandler.handleEquiparSec(sock, msg, jid, caption);   return; }
 if (matchCmd(cmdWord, 'roubar'))       { await diversaoHandler.handleRoubar(sock, msg, jid, caption);       return; }
+if (matchCmd(cmdWord, 'roubarbanco'))  { await diversaoHandler.handleRoubarBanco(sock, msg, jid);           return; }
 if (matchCmd(cmdWord, 'invroubo'))     { await diversaoHandler.handleInvRoubo(sock, msg, jid);              return; }
 if (matchCmd(cmdWord, 'invsec'))       { await diversaoHandler.handleInvSec(sock, msg, jid);                return; }
 if (matchCmd(cmdWord, 'policia'))      { await diversaoHandler.handlePolicia(sock, msg, jid);               return; }

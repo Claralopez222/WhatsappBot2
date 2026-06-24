@@ -94,7 +94,7 @@ const {
 const {
   handleMenuRoubo, handleMenuSec, handleComprarRoubo, handleComprarSec,
   handleEquiparRoubo, handleEquiparSec, handleInvRoubo, handleInvSec,
-  handleMeioSec, handleRoubar,
+  handleMeioSec, handleRoubar, handleRoubarBanco,
 } = require('./roubo');
 // ─── Utilitários ────────────────────────────────────────────────────────────
 
@@ -249,7 +249,7 @@ initFilhosScheduler,
   handleCurarPet,
   handlePetToggle,
 
-// ── Roubo (10 itens) ──────────────────────────────────────────────────────
+// ── Roubo (11 itens) ──────────────────────────────────────────────────────
   handleMenuRoubo,
   handleMenuSec,
   handleComprarRoubo,
@@ -260,6 +260,7 @@ initFilhosScheduler,
   handleInvSec,
   handleMeioSec,
   handleRoubar,
+  handleRoubarBanco,
 
 // Emprego
   handleProcurarEmprego,

@@ -646,8 +646,22 @@ router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
     const { idWhatsApp } = req.params;
     const { grupo }      = req.query;
 
-    const usuario = await Usuario.findOne({ idWhatsApp });
-    if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    // Tenta achar o usuário com variantes de número brasileiro (com/sem 9)
+const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
+  .map(d => `${d}@s.whatsapp.net`);
+
+// Também tenta via LID
+const lidMap = await LidMapping.findOne({ pn: { $in: variantesPn } }).lean();
+const jidsParaBuscar = lidMap
+  ? [lidMap.lid, ...variantesPn]
+  : variantesPn;
+
+const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsParaBuscar } });
+if (!usuario)
+  return res.status(404).json({ error: 'Perfil não encontrado. Mande uma mensagem no grupo primeiro.' });
+
+// Usa o idWhatsApp real do banco pra salvar o username/hash
+const idWhatsAppReal = usuario.idWhatsApp;
 
     const warns = mapParaObjeto(usuario.warnings);
 
@@ -1693,41 +1707,75 @@ router.delete('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, re
 // ─────────────────────────────────────────────────────────────────────────────
 const bcrypt = require('bcryptjs');
 
-router.post('/auth/cadastrar', async (req, res) => {
+// Rate limit específico pro cadastro — evita criação em massa
+const rateLimitCadastro = rateLimit({
+  windowMs:     60 * 60 * 1000, // 1 hora
+  max:          5,
+  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
+  handler: (req, res) =>
+    res.status(429).json({ error: 'Muitas tentativas de cadastro. Tente novamente em 1 hora.' }),
+});
+
+router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
   try {
     const { idWhatsApp, username, password } = req.body || {};
 
-    if (!idWhatsApp || !username || !password)
+    // ── Validação de presença ─────────────────────────────────────────────────
+    if (!idWhatsApp || typeof idWhatsApp !== 'string' ||
+        !username   || typeof username   !== 'string' ||
+        !password   || typeof password   !== 'string')
       return res.status(400).json({ error: 'idWhatsApp, username e password são obrigatórios.' });
 
-    // Validações básicas
-    if (username.length < 3 || username.length > 30)
-      return res.status(400).json({ error: 'Usuário deve ter entre 3 e 30 caracteres.' });
-    if (!/^[a-zA-Z0-9_]+$/.test(username))
-      return res.status(400).json({ error: 'Usuário só pode conter letras, números e _.' });
-    if (password.length < 6)
-      return res.status(400).json({ error: 'Senha deve ter no mínimo 6 caracteres.' });
+    // ── Sanitização básica ────────────────────────────────────────────────────
+    const usernameLimpo = username.trim().toLowerCase();
+    const passwordLimpa = password; // não trimma senha — espaços podem ser intencionais
 
-    // Verifica se já existe perfil no bot
-    const usuario = await Usuario.findOne({ idWhatsApp });
-    if (!usuario)
+    // ── Validações de formato ─────────────────────────────────────────────────
+    if (usernameLimpo.length < 3 || usernameLimpo.length > 30)
+      return res.status(400).json({ error: 'Usuário deve ter entre 3 e 30 caracteres.' });
+    if (!/^[a-z0-9_]+$/.test(usernameLimpo))
+      return res.status(400).json({ error: 'Usuário só pode conter letras, números e _.' });
+    if (passwordLimpa.length < 6 || passwordLimpa.length > 128)
+      return res.status(400).json({ error: 'Senha deve ter entre 6 e 128 caracteres.' });
+
+    // ── Valida formato do idWhatsApp recebido ─────────────────────────────────
+    const digitosBase = idWhatsApp.split('@')[0].replace(/\D/g, '');
+    if (!digitosBase || digitosBase.length < 8 || digitosBase.length > 15)
+      return res.status(400).json({ error: 'Número de WhatsApp inválido.' });
+
+    // ── Resolve variantes (BR com/sem 9; estrangeiro passa direto; @lid) ──────
+    const variantesPn = gerarVariantesNumero(digitosBase).map(d => `${d}@s.whatsapp.net`);
+
+    const [lidMap, usuario] = await Promise.all([
+      LidMapping.findOne({ pn: { $in: variantesPn } }).lean(),
+      Usuario.findOne({ idWhatsApp: { $in: variantesPn } }),
+    ]);
+
+    // Se não achou pelo pn, tenta pelo LID
+    const usuarioFinal = usuario
+      ?? (lidMap ? await Usuario.findOne({ idWhatsApp: lidMap.lid }) : null);
+
+    if (!usuarioFinal)
       return res.status(404).json({ error: 'Perfil não encontrado. Mande uma mensagem no grupo primeiro.' });
 
-    // Verifica se já tem conta
-    if (usuario.username && usuario.passwordHash)
+    const idWhatsAppReal = usuarioFinal.idWhatsApp;
+
+    // ── Verifica se já tem conta ──────────────────────────────────────────────
+    if (usuarioFinal.username && usuarioFinal.passwordHash)
       return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
 
-    // Verifica se username já está em uso
-    const usernameEmUso = await Usuario.findOne({ username: username.toLowerCase() }).lean();
+    // ── Verifica disponibilidade do username (case-insensitive) ───────────────
+    const usernameEmUso = await Usuario.exists({ username: usernameLimpo });
     if (usernameEmUso)
       return res.status(409).json({ error: 'Este nome de usuário já está em uso.' });
 
-    // Hash da senha e salva
-    const passwordHash = await bcrypt.hash(password, 12);
+    // ── Hash e salva ──────────────────────────────────────────────────────────
+    const passwordHash = await bcrypt.hash(passwordLimpa, 12);
 
     await Usuario.findOneAndUpdate(
-      { idWhatsApp },
-      { $set: { username: username.toLowerCase(), passwordHash } }
+      { idWhatsApp: idWhatsAppReal },
+      { $set: { username: usernameLimpo, passwordHash } },
+      { new: true }
     );
 
     return res.json({ ok: true, message: 'Conta criada com sucesso! Faça login para acessar o painel.' });

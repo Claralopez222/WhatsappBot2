@@ -386,10 +386,18 @@ router.get('/user/me', auth, async (req, res) => {
   try {
     const idWhatsApp = req.user.idWhatsApp;
 
-    const [usuario, carteiras] = await Promise.all([
-      Usuario.findOne({ idWhatsApp }).lean(),
-      CarteiraGrupo.find({ idWhatsApp }).sort({ xp: -1 }).lean(),
-    ]);
+    let carteiras = await CarteiraGrupo.find({ idWhatsApp }).sort({ xp: -1 }).lean();
+
+if (!carteiras.length) {
+  const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
+    .map(d => `${d}@s.whatsapp.net`);
+  const lidMap = await LidMapping.findOne({ pn: { $in: [idWhatsApp, ...variantesPn] } }).lean();
+  if (lidMap) {
+    carteiras = await CarteiraGrupo.find({ idWhatsApp: lidMap.lid }).sort({ xp: -1 }).lean();
+  }
+}
+
+const usuario = await Usuario.findOne({ idWhatsApp }).lean();
 
     if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
 

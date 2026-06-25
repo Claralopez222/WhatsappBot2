@@ -69,6 +69,7 @@ const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
   idWhatsApp:   { type: String, required: true, unique: true, index: true, trim: true, lowercase: true },
   nome:         { type: String, default: null,  trim: true },
+  telefone:     { type: String, default: null,  trim: true },
   uid:          { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
   bio:          { type: String, default: null,  trim: true, maxlength: 150 },
 
@@ -104,7 +105,8 @@ const usuarioSchema = new mongoose.Schema({
   casalItens:  { type: [casalItemSchema], default: [] },
 
   // ── Inventário ───────────────────────────────────────────────
-  inventory:   { type: Map, of: Number, default: {} },
+  // Mixed aceita Map<string,number>, objeto plano ou array — o frontend normaliza.
+  inventory:   { type: mongoose.Schema.Types.Mixed, default: {} },
 
   // ── Histórico de gold ────────────────────────────────────────
   goldHistory: { type: [goldHistorySchema], default: [] },

@@ -39,7 +39,9 @@ router.use((req, res, next) => {
 
 function mapParaObjeto(valor) {
   if (!valor) return {};
-  return valor instanceof Map ? Object.fromEntries(valor) : valor;
+  if (valor instanceof Map) return Object.fromEntries(valor);
+  if (typeof valor === 'object' && !Array.isArray(valor)) return valor;
+  return {};
 }
 
 function somarMap(m) {
@@ -446,9 +448,13 @@ router.get('/user/me', auth, async (req, res) => {
       }
     }
 
+    // Resolve nome e telefone — prioriza Usuario, fallback pra CarteiraGrupo
+    const nomeResolvido     = usuario.nome     || carteiras[0]?.nome || null;
+    const telefoneResolvido = usuario.telefone || idWhatsApp.split('@')[0] || null;
+
     return res.json({
-      nome:     usuario.nome,
-      telefone: usuario.telefone,
+      nome:     nomeResolvido,
+      telefone: telefoneResolvido,
       bio:      usuario.bio,
 
       xp:         xpTotal,
@@ -462,7 +468,7 @@ router.get('/user/me', auth, async (req, res) => {
 
       xpHistory:        xpHistoryLimpo,
       atividadeSemanal: usuario.atividadeSemanal || [0, 0, 0, 0, 0, 0, 0],
-      inventory:        mapParaObjeto(usuario.inventory),
+      inventory:        mapParaObjeto(usuario.inventory ?? {}),
       goldHistory:      (usuario.goldHistory || []).slice(-20),
       pet:              usuario.pet        ?? null,
       
@@ -620,11 +626,14 @@ router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
       empregoAtual: c.empregoAtual ?? null,
     }));
 
+    const nomeAdmin     = usuario?.nome     || carteiras[0]?.nome || '(sem nome)';
+    const telefoneAdmin = usuario?.telefone || jid.replace('@s.whatsapp.net', '').replace('@lid', '');
+
     return res.json({
       usuario: {
         idWhatsApp: jid,
-        nome:       usuario?.nome     || '(sem nome)',
-        telefone:   usuario?.telefone || jid.split('@')[0],
+        nome:       nomeAdmin,
+        telefone:   telefoneAdmin,
         xp:         xpTotal,
         level:      levelGlobal,
         gold:       goldTotal,
@@ -1716,6 +1725,65 @@ const rateLimitCadastro = rateLimit({
     res.status(429).json({ error: 'Muitas tentativas de cadastro. Tente novamente em 1 hora.' }),
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/otp/enviar
+// ─────────────────────────────────────────────────────────────────────────────
+const OtpCadastro = require('../models/OtpCadastro');
+
+const rateLimitOtp = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
+  handler: (req, res) =>
+    res.status(429).json({ error: 'Muitas tentativas. Aguarde 5 minutos.' }),
+});
+
+router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
+  try {
+    const { idWhatsApp } = req.body || {};
+    if (!idWhatsApp || typeof idWhatsApp !== 'string')
+      return res.status(400).json({ error: 'idWhatsApp é obrigatório.' });
+
+    const digitosBase = idWhatsApp.split('@')[0].replace(/\D/g, '');
+    if (!digitosBase || digitosBase.length < 8 || digitosBase.length > 15)
+      return res.status(400).json({ error: 'Número inválido.' });
+
+    const variantesPn = gerarVariantesNumero(digitosBase).map(d => `${d}@s.whatsapp.net`);
+    const [lidMap, usuario] = await Promise.all([
+      LidMapping.findOne({ pn: { $in: variantesPn } }).lean(),
+      Usuario.findOne({ idWhatsApp: { $in: variantesPn } }).lean(),
+    ]);
+    const usuarioFinal = usuario
+      ?? (lidMap ? await Usuario.findOne({ idWhatsApp: lidMap.lid }).lean() : null);
+
+    if (!usuarioFinal)
+      return res.status(404).json({ error: 'Perfil não encontrado. Mande uma mensagem no grupo primeiro.' });
+
+    if (usuarioFinal.username && usuarioFinal.passwordHash)
+      return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
+
+    const codigo    = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await OtpCadastro.findOneAndUpdate(
+      { idWhatsApp: usuarioFinal.idWhatsApp },
+      { codigo, expiresAt, usado: false },
+      { upsert: true }
+    );
+
+    const { sendMessage } = require('../bot');
+    await sendMessage(
+      usuarioFinal.idWhatsApp,
+      `🔐 *Código de verificação Piroquinhas Bot*\n\nSeu código é: *${codigo}*\n\nVálido por 10 minutos. Não compartilhe com ninguém.`
+    );
+
+    return res.json({ ok: true, message: 'Código enviado via WhatsApp.' });
+  } catch (err) {
+    console.error('[API] POST /auth/otp/enviar:', err);
+    return res.status(500).json({ error: 'Erro interno ao enviar código.' });
+  }
+});
+
 router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
   try {
     const { idWhatsApp, username, password } = req.body || {};
@@ -1768,6 +1836,24 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
     const usernameEmUso = await Usuario.exists({ username: usernameLimpo });
     if (usernameEmUso)
       return res.status(409).json({ error: 'Este nome de usuário já está em uso.' });
+
+    // ── Valida OTP ────────────────────────────────────────────────────────────
+    const { otp } = req.body || {};
+    if (!otp || typeof otp !== 'string' || otp.length !== 6)
+      return res.status(400).json({ error: 'Código de verificação inválido.' });
+
+    const otpDoc = await OtpCadastro.findOne({
+      idWhatsApp: idWhatsAppReal,
+      usado: false,
+      expiresAt: { $gt: new Date() },
+    });
+    if (!otpDoc || otpDoc.codigo !== otp)
+      return res.status(401).json({ error: 'Código incorreto ou expirado.' });
+
+    await OtpCadastro.findOneAndUpdate(
+      { idWhatsApp: idWhatsAppReal },
+      { $set: { usado: true } }
+    );
 
     // ── Hash e salva ──────────────────────────────────────────────────────────
     const passwordHash = await bcrypt.hash(passwordLimpa, 12);

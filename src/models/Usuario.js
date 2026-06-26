@@ -67,7 +67,7 @@ const casalItemSchema = new mongoose.Schema({
 // ─── Schema principal ─────────────────────────────────────────────────────────
 const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
-  idWhatsApp:   { type: String, required: true, unique: true, index: true, trim: true, lowercase: true },
+  idWhatsApp: { type: String, required: true, unique: true, trim: true, lowercase: true },
   nome:         { type: String, default: null,  trim: true },
   telefone:     { type: String, default: null,  trim: true },
   uid:          { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
@@ -139,7 +139,6 @@ const usuarioSchema = new mongoose.Schema({
 usuarioSchema.index({ gold: -1 });
 usuarioSchema.index({ xp: -1 });
 usuarioSchema.index({ quizPoints: -1 });
-usuarioSchema.index({ username: 1 }, { unique: true, sparse: true });
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 module.exports = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);

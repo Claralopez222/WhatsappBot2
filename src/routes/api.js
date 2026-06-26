@@ -1283,9 +1283,21 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
       return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
 
     // ── Confirma que o usuário pertence ao grupo ──────────────────────────────
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
-    if (!carteira)
-      return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
+    let idResolvido = idWhatsApp;
+let carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
+
+if (!carteira) {
+  const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
+    .map(d => `${d}@s.whatsapp.net`);
+  const lidMap = await LidMapping.findOne({ pn: { $in: [idWhatsApp, ...variantesPn] } }).lean();
+  if (lidMap) {
+    idResolvido = lidMap.lid;
+    carteira = await CarteiraGrupo.findOne({ idWhatsApp: idResolvido, idGrupo });
+  }
+}
+
+if (!carteira)
+  return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
 
     // ── Verifica saldo ────────────────────────────────────────────────────────
     if ((carteira.gold ?? 0) < valorAposta)

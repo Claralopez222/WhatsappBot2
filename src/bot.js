@@ -47,6 +47,24 @@ async function salvarLidMapping(lid, pn) {
 // ─── Utils ───────────────────────────────────────────────────────────────────
 const { normalizarJid } = require('./utils/jid');
 
+function gerarVariantesNumero(termo) {
+  const digitos = String(termo || '').replace(/\D/g, '');
+  const variantes = new Set([digitos]);
+
+  if (digitos.startsWith('55') && digitos.length >= 12) {
+    const ddd   = digitos.slice(2, 4);
+    const resto = digitos.slice(4);
+
+    if (resto.length === 8) {
+      variantes.add(`55${ddd}9${resto}`);
+    } else if (resto.length === 9 && resto.startsWith('9')) {
+      variantes.add(`55${ddd}${resto.slice(1)}`);
+    }
+  }
+
+  return [...variantes];
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
 
@@ -377,7 +395,7 @@ async function startBot() {
     version,
     auth: state,
     logger,
-    browser: ['Ubuntu', 'Chrome-Bot', '1.0.0'], // Nome alterado para evitar bloqueios de filtros
+    browser: ['Ubuntu', 'Chrome-Bot', '1.0.0'],
     patchMessageBeforeSending: (message) => {
       const requiresPatch = !!(
         message.buttonsMessage  ||
@@ -417,7 +435,7 @@ async function startBot() {
   // ── Mensagens ─────────────────────────────────────────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify' && type !== 'append') return;
-    
+
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
       if (!msg.message)   continue;
@@ -437,9 +455,7 @@ async function startBot() {
             const remetenteNorm = normalizarJid(remetente);
             if (!remetenteNorm) return;
 
-            // ── Captura o par LID↔telefone, se o Baileys entregou (campo
-            // disponível desde a v6.7.19 para mensagens de grupo que não
-            // são "fromMe"). Isso roda em paralelo, não bloqueia nada.
+            // ── Captura o par LID↔telefone
             if (remetenteNorm.endsWith('@lid') && msg.key.participantPn) {
               const pnNorm = normalizarJid(msg.key.participantPn);
               if (pnNorm) salvarLidMapping(remetenteNorm, pnNorm);
@@ -454,49 +470,44 @@ async function startBot() {
             hoje.setHours(0, 0, 0, 0);
 
             const carteiraAtual = await CarteiraGrupo.findOne(
-  { idWhatsApp: remetenteNorm, idGrupo: _jid },
-  { ultimoBonusDiario: 1, gold: 1 }
-).lean();
+              { idWhatsApp: remetenteNorm, idGrupo: _jid },
+              { ultimoBonusDiario: 1, gold: 1 }
+            ).lean();
 
-const recebeuHoje = carteiraAtual?.ultimoBonusDiario
-  && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
+            const recebeuHoje = carteiraAtual?.ultimoBonusDiario
+              && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
 
-const incCarteira = { mensagens: 1, xp: 1 };
-const setCarteira = { nome: nomeDoCara };
+            const incCarteira = { mensagens: 1, xp: 1 };
+            const setCarteira = { nome: nomeDoCara };
 
-if (!recebeuHoje && carteiraAtual) {
-  // Só dá bônus se a carteira JÁ EXISTE (evita criar duplicata com upsert)
-  incCarteira.gold = 100;
-  setCarteira.ultimoBonusDiario = new Date();
-}
+            if (!recebeuHoje && carteiraAtual) {
+              incCarteira.gold = 100;
+              setCarteira.ultimoBonusDiario = new Date();
+            }
 
-// ── CarteiraGrupo: mensagens, gold diário e XP por grupo ──────────
-if (carteiraAtual) {
-  // Carteira existe — atualiza normalmente
-  await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: remetenteNorm, idGrupo: _jid },
-    { $inc: incCarteira, $set: setCarteira },
-    { new: true }
-  );
+            if (carteiraAtual) {
+              await CarteiraGrupo.findOneAndUpdate(
+                { idWhatsApp: remetenteNorm, idGrupo: _jid },
+                { $inc: incCarteira, $set: setCarteira },
+                { new: true }
+              );
 
-  // Notifica bônus diário
-  if (!recebeuHoje) {
-    await sock.sendMessage(_jid, {
-      text: `🪙 *${nomeDoCara}*, você ganhou seu bônus diário de *100 gold*! Volte amanhã para ganhar mais. 💰`,
-      mentions: [remetenteNorm],
-    }).catch(() => {});
-  }
-} else {
-  // Carteira não existe — cria sem gold (vai receber no próximo dia)
-  await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: remetenteNorm, idGrupo: _jid },
-    { $inc: { mensagens: 1, xp: 1 }, $set: { nome: nomeDoCara, ultimoBonusDiario: new Date() } },
-    { upsert: true }
-  );
-}
+              if (!recebeuHoje) {
+                await sock.sendMessage(_jid, {
+                  text: `🪙 *${nomeDoCara}*, você ganhou seu bônus diário de *100 gold*! Volte amanhã para ganhar mais. 💰`,
+                  mentions: [remetenteNorm],
+                }).catch(() => {});
+              }
+            } else {
+              await CarteiraGrupo.findOneAndUpdate(
+                { idWhatsApp: remetenteNorm, idGrupo: _jid },
+                { $inc: { mensagens: 1, xp: 1 }, $set: { nome: nomeDoCara, ultimoBonusDiario: new Date() } },
+                { upsert: true }
+              );
+            }
 
             // ── Usuario global: XP global, level e missões ────────────────────
-            const hojeISO = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+            const hojeISO = new Date().toISOString().slice(0, 10);
             const usuarioAtualizado = await Usuario.findOneAndUpdate(
               { idWhatsApp: remetenteNorm },
               {
@@ -555,11 +566,21 @@ if (carteiraAtual) {
     if (action === 'remove') {
       for (const participantJid of participants) {
 
-        // 🗑️ Remove os dados do usuário neste grupo do MongoDB
+        // 🗑️ Remove a carteira do usuário neste grupo
         try {
           const jidNorm = normalizarJid(participantJid);
           if (jidNorm) {
-            await CarteiraGrupo.deleteOne({ idWhatsApp: jidNorm, idGrupo: groupJid });
+            const deletado = await CarteiraGrupo.deleteOne({ idWhatsApp: jidNorm, idGrupo: groupJid });
+
+            // Se não achou pelo JID direto, tenta via LidMapping
+            if (!deletado.deletedCount) {
+              const variantesPn = gerarVariantesNumero(jidNorm.split('@')[0])
+                .map(d => `${d}@s.whatsapp.net`);
+              const lidMap = await LidMapping.findOne({ pn: { $in: [jidNorm, ...variantesPn] } }).lean();
+              if (lidMap?.lid) {
+                await CarteiraGrupo.deleteOne({ idWhatsApp: lidMap.lid, idGrupo: groupJid });
+              }
+            }
             console.log(`🗑️ CarteiraGrupo removida: ${jidNorm} saiu de ${groupJid}`);
           }
         } catch (e) {
@@ -586,7 +607,7 @@ if (carteiraAtual) {
         }).catch(() => {});
       }
     }
-  });
+  }); // ← fecha group-participants.update
 
   // ── Conexão ───────────────────────────────────────────────────────────────────
   let schedulersIniciados = false;

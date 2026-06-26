@@ -497,10 +497,23 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
 // GET /api/user/grupos
 router.get('/user/grupos', auth, async (req, res) => {
   try {
-    const carteiras = await CarteiraGrupo
-      .find({ idWhatsApp: req.user.idWhatsApp })
+    const idWhatsApp = req.user.idWhatsApp;
+    let carteiras = await CarteiraGrupo
+      .find({ idWhatsApp })
       .sort({ xp: -1 })
       .lean();
+
+    if (!carteiras.length) {
+      const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
+        .map(d => `${d}@s.whatsapp.net`);
+      const lidMap = await LidMapping.findOne({ pn: { $in: [idWhatsApp, ...variantesPn] } }).lean();
+      if (lidMap) {
+        carteiras = await CarteiraGrupo
+          .find({ idWhatsApp: lidMap.lid })
+          .sort({ xp: -1 })
+          .lean();
+      }
+    }
 
     // Busca nomes reais dos grupos a partir de qualquer carteira que tenha o campo
     const jidsGruposUser = carteiras.map(c => c.idGrupo);

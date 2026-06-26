@@ -1282,22 +1282,22 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
     if (valorAposta > 100_000)
       return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
 
-    // ── Confirma que o usuário pertence ao grupo ──────────────────────────────
+    // ── Confirma que o usuário pertence ao grupo (resolve @lid se necessário) ─
     let idResolvido = idWhatsApp;
-let carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
+    let carteira = await CarteiraGrupo.findOne({ idWhatsApp: idResolvido, idGrupo });
 
-if (!carteira) {
-  const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
-    .map(d => `${d}@s.whatsapp.net`);
-  const lidMap = await LidMapping.findOne({ pn: { $in: [idWhatsApp, ...variantesPn] } }).lean();
-  if (lidMap) {
-    idResolvido = lidMap.lid;
-    carteira = await CarteiraGrupo.findOne({ idWhatsApp: idResolvido, idGrupo });
-  }
-}
+    if (!carteira) {
+      const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
+        .map(d => `${d}@s.whatsapp.net`);
+      const lidMap = await LidMapping.findOne({ pn: { $in: [idWhatsApp, ...variantesPn] } }).lean();
+      if (lidMap) {
+        idResolvido = lidMap.lid;
+        carteira = await CarteiraGrupo.findOne({ idWhatsApp: idResolvido, idGrupo });
+      }
+    }
 
-if (!carteira)
-  return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
+    if (!carteira)
+      return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
 
     // ── Verifica saldo ────────────────────────────────────────────────────────
     if ((carteira.gold ?? 0) < valorAposta)
@@ -1305,7 +1305,7 @@ if (!carteira)
 
     // ── Debita aposta atomicamente ────────────────────────────────────────────
     const carteiraDebitada = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp, idGrupo, gold: { $gte: valorAposta } },
+      { idWhatsApp: idResolvido, idGrupo, gold: { $gte: valorAposta } },
       {
         $inc: { gold: -valorAposta },
         $push: {
@@ -1322,17 +1322,17 @@ if (!carteira)
       return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
 
     // ── Sorteia resultado ─────────────────────────────────────────────────────
-    const [r1, r2, r3]    = sortearSlotBackend();
-    const { mult, tipo }  = calcularResultadoSlot(r1, r2, r3);
-    const premio          = Math.floor(valorAposta * mult);
-    const lucroLiq        = premio - valorAposta;
+    const [r1, r2, r3]   = sortearSlotBackend();
+    const { mult, tipo } = calcularResultadoSlot(r1, r2, r3);
+    const premio         = Math.floor(valorAposta * mult);
+    const lucroLiq       = premio - valorAposta;
 
     // ── Credita prêmio (se ganhou) ────────────────────────────────────────────
     let saldoFinal = carteiraDebitada.gold;
 
     if (premio > 0) {
       const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp, idGrupo },
+        { idWhatsApp: idResolvido, idGrupo },
         {
           $inc: { gold: premio },
           $push: {
@@ -1353,7 +1353,7 @@ if (!carteira)
       mult,
       premio,
       lucroLiq,
-      aposta:     valorAposta,
+      aposta:    valorAposta,
       saldoFinal,
     });
 
@@ -1362,7 +1362,6 @@ if (!carteira)
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/user/grupos/:idWhatsApp
 // Retorna os grupos de um usuário com nome e gold (requer JWT).

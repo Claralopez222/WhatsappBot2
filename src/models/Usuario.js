@@ -102,6 +102,7 @@ const usuarioSchema = new mongoose.Schema({
   casadoCom:   { type: String, default: null },
   casadoTipo:  { type: String, enum: ['casamento', 'namoro', null], default: null },
   casadoDesde: { type: Date,   default: null },
+  casadoGrupo: { type: String, default: null },
   casalItens:  { type: [casalItemSchema], default: [] },
 
   // ── Inventário ───────────────────────────────────────────────

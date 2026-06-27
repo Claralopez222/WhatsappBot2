@@ -2191,18 +2191,17 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
       const nomeA = u.nome || u.telefone || jidA.split('@')[0];
       const nomeB = parceiro.nome || parceiro.telefone || jidB?.split('@')[0] || '—';
 
-      relacionamentos.push({
+relacionamentos.push({
         jidA,
         jidB,
         nomeA,
         nomeB,
         tipo:      u.casadoTipo  || 'namoro',
         desde:     u.casadoDesde || null,
-        idGrupo:   null,
-        nomeGrupo: null,
+        idGrupo:   u.casadoGrupo || null,
+        nomeGrupo: u.casadoGrupo ? nomeGrupoFallback(u.casadoGrupo) : null,
         xp:        0,
-      });
-    }
+      });    }
 
     return res.json({ relacionamentos, fantasmasLimpos: fantasmas.length });
   } catch (err) {

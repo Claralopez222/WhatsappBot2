@@ -104,17 +104,17 @@ function getRelacionamento(jid, a, b, relacionamentos) {
   return relacionamentos.get(relKey(jid, a, b)) || null;
 }
 
-async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.now()) {
+async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.now(), idGrupo = null) {
   try {
     await Promise.all([
       Usuario.findOneAndUpdate(
         { idWhatsApp: jidA },
-        { $set: { casadoCom: jidB, casadoTipo: tipo, casadoDesde: desde, idWhatsApp: jidA } },
+        { $set: { casadoCom: jidB, casadoTipo: tipo, casadoDesde: desde, casadoGrupo: idGrupo, idWhatsApp: jidA } },
         { upsert: true, new: true }
       ),
       Usuario.findOneAndUpdate(
         { idWhatsApp: jidB },
-        { $set: { casadoCom: jidA, casadoTipo: tipo, casadoDesde: desde, idWhatsApp: jidB } },
+        { $set: { casadoCom: jidA, casadoTipo: tipo, casadoDesde: desde, casadoGrupo: idGrupo, idWhatsApp: jidB } },
         { upsert: true, new: true }
       ),
     ]);
@@ -546,10 +546,11 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
     nomeB: nomeAlvo,
     jidA:  jidPedinte,
     jidB:  senderJid,
-    desde: agora, // ← mesmo valor que vai pro banco
+    desde: agora,
+    idGrupo: jidOrigem || jid,
   });
   xpCasais.set(key, 0);
-  await syncCasamentoToDb(jidPedinte, senderJid, tipo, agora); // ← passa o desde
+  await syncCasamentoToDb(jidPedinte, senderJid, tipo, agora, jidOrigem || jid);
 
   const frases = [
     `💍 CARALHOOOOO! *${nomePedinte}* e *${nomeAlvo}* são CASADOS AGORA! Corre gritando que ninguém acreditava! 😂💍`,

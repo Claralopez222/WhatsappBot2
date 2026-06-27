@@ -687,14 +687,20 @@ router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
     const { grupo }      = req.query;
 
     // Tenta achar o usuário com variantes de número brasileiro (com/sem 9)
+const jidNorm = normalizarJid(idWhatsApp);
 const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
   .map(d => `${d}@s.whatsapp.net`);
 
-// Também tenta via LID
-const lidMap = await LidMapping.findOne({ pn: { $in: variantesPn } }).lean();
-const jidsParaBuscar = lidMap
-  ? [lidMap.lid, ...variantesPn]
-  : variantesPn;
+const lidMap = await LidMapping.findOne({ $or: [
+  { pn:  { $in: variantesPn } },
+  { lid: jidNorm }
+]}).lean();
+
+const jidsParaBuscar = [...new Set([
+  jidNorm,
+  ...(lidMap ? [lidMap.lid, lidMap.pn] : []),
+  ...variantesPn,
+].filter(Boolean))];
 
 const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsParaBuscar } });
 if (!usuario)
@@ -734,8 +740,17 @@ router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
     if (typeof banido !== 'boolean')
       return res.status(400).json({ error: '"banido" deve ser true ou false.' });
 
+    const jidNorm = normalizarJid(idWhatsApp);
+    const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
+      .map(d => `${d}@s.whatsapp.net`);
+    const lidMap = await LidMapping.findOne({ $or: [
+      { pn: { $in: variantesPn } },
+      { lid: jidNorm }
+    ]}).lean();
+    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+
     const usuario = await Usuario.findOneAndUpdate(
-      { idWhatsApp },
+      { idWhatsApp: { $in: jidsBusca } },
       { $set: { banido } },
       { new: true }
     ).lean();
@@ -2107,20 +2122,61 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
       casadoCom: { $exists: true, $ne: null, $ne: '' }
     }).select('idWhatsApp nome telefone casadoCom casadoTipo casadoDesde').lean();
 
+    // Monta índice por JID para lookup rápido
+    // Resolve @lid para pn via LidMapping
+    const lids = comRelacionamento.map(u => u.idWhatsApp).filter(j => j?.endsWith('@lid'));
+    const lidMaps = lids.length ? await LidMapping.find({ lid: { $in: lids } }).lean() : [];
+    const lidParaPn = Object.fromEntries(lidMaps.map(m => [m.lid, m.pn]));
+    const pnParaLid = Object.fromEntries(lidMaps.map(m => [m.pn, m.lid]));
+
+    // Índice por JID E por PN equivalente
+    const porJid = new Map();
+    for (const u of comRelacionamento) {
+      porJid.set(u.idWhatsApp, u);
+      const pn = lidParaPn[u.idWhatsApp];
+      if (pn) porJid.set(pn, u);
+    }
+
+    // Detecta e limpa fantasmas (um lado zerado ou parceiro inexistente)
+    const fantasmas = comRelacionamento.filter(u => {
+      const parceiro = porJid.get(u.casadoCom);
+      if (!parceiro) return true;
+      // Verifica também equivalente @lid <-> pn
+      const casadoComParceiro = parceiro.casadoCom;
+      const lidEquivalente = pnParaLid[u.idWhatsApp] || lidParaPn[u.idWhatsApp];
+      return casadoComParceiro !== u.idWhatsApp && casadoComParceiro !== lidEquivalente;
+    });
+
+    if (fantasmas.length) {
+      const jidsFantasma = fantasmas.map(u => u.idWhatsApp);
+      await Usuario.updateMany(
+        { idWhatsApp: { $in: jidsFantasma } },
+        { $unset: { casadoCom: '', casadoTipo: '', casadoDesde: '' } }
+      );
+      console.log(`[Admin] Limpou ${fantasmas.length} relacionamento(s) fantasma(s).`);
+    }
+
+    // Só processa os válidos (ambos apontam um pro outro)
+    const validos = comRelacionamento.filter(u => {
+      const parceiro = porJid.get(u.casadoCom);
+      if (!parceiro) return false;
+      const casadoComParceiro = parceiro.casadoCom;
+      const lidEquivalente = pnParaLid[u.idWhatsApp] || lidParaPn[u.idWhatsApp];
+      return casadoComParceiro === u.idWhatsApp || casadoComParceiro === lidEquivalente;
+    });
+
     // Deduplica pares (A-B e B-A viram um só)
     const vistos = new Set();
     const relacionamentos = [];
 
-    for (const u of comRelacionamento) {
+    for (const u of validos) {
       const jidA  = u.idWhatsApp;
       const jidB  = u.casadoCom;
       const chave = [jidA, jidB].sort().join('|');
       if (vistos.has(chave)) continue;
       vistos.add(chave);
 
-      const parceiro = comRelacionamento.find(x => x.idWhatsApp === jidB) || {};
-
-      // Resolve nomes via CarteiraGrupo se não tiver no Usuario
+      const parceiro = porJid.get(jidB) || {};
       const nomeA = u.nome || u.telefone || jidA.split('@')[0];
       const nomeB = parceiro.nome || parceiro.telefone || jidB?.split('@')[0] || '—';
 
@@ -2129,15 +2185,15 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
         jidB,
         nomeA,
         nomeB,
-        tipo:        u.casadoTipo  || 'namoro',
-        desde:       u.casadoDesde || null,
-        idGrupo:     null, // campo global, sem escopo de grupo
-        nomeGrupo:   null,
-        xp:          0,
+        tipo:      u.casadoTipo  || 'namoro',
+        desde:     u.casadoDesde || null,
+        idGrupo:   null,
+        nomeGrupo: null,
+        xp:        0,
       });
     }
 
-    return res.json({ relacionamentos });
+    return res.json({ relacionamentos, fantasmasLimpos: fantasmas.length });
   } catch (err) {
     console.error('[API] GET /admin/relacionamentos:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -2173,7 +2229,7 @@ router.post('/admin/relacionamentos/encerrar', adminAuth, async (req, res) => {
 router.get('/admin/pets', adminAuth, async (req, res) => {
   try {
     const usuarios = await Usuario.find({
-      'pet.nome': { $exists: true, $ne: null }
+      pet: { $exists: true, $ne: null }
     }).select('idWhatsApp nome telefone pet').lean();
 
     const jids = usuarios.map(u => u.idWhatsApp);
@@ -2189,7 +2245,7 @@ router.get('/admin/pets', adminAuth, async (req, res) => {
     const grupoMap = Object.fromEntries(carteiras.map(c => [c._id, c]));
 
     const pets = usuarios
-      .filter(u => u.pet && u.pet.nome)
+      .filter(u => u.pet && (u.pet.nome || u.pet.tipo || u.pet.especie))
       .map(u => {
         const g = grupoMap[u.idWhatsApp] || {};
         return {

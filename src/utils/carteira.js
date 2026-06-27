@@ -1,6 +1,7 @@
 'use strict';
 
 const CarteiraGrupo = require('../models/CarteiraGrupo');
+const LidMapping    = require('../models/LidMapping');
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -32,18 +33,32 @@ function assertJid(jid, nome) {
  * @param {string} idGrupo    - JID do grupo    (ex: "120363@g.us")
  * @returns {Promise<import('../models/CarteiraGrupo').default>}
  */
-async function getCarteira(idWhatsApp, idGrupo) {
-  assertJid(idWhatsApp, 'idWhatsApp');
-  assertJid(idGrupo,    'idGrupo');
 
-  // Normaliza: remove sufixo de dispositivo (:83) e garante @s.whatsapp.net
+async function resolverJidCarteira(idWhatsApp, idGrupo) {
   const idNorm = idWhatsApp.endsWith('@lid')
     ? idWhatsApp
     : idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
 
+  if (!idNorm.endsWith('@lid')) {
+    const lidMap = await LidMapping.findOne({ pn: idNorm }).lean();
+    if (lidMap?.lid) {
+      const carteiraLid = await CarteiraGrupo.findOne({ idWhatsApp: lidMap.lid, idGrupo }).lean();
+      if (carteiraLid) return lidMap.lid;
+    }
+  }
+
+  return idNorm;
+}
+
+async function getCarteira(idWhatsApp, idGrupo) {
+  assertJid(idWhatsApp, 'idWhatsApp');
+  assertJid(idGrupo,    'idGrupo');
+
+  const idNorm = await resolverJidCarteira(idWhatsApp, idGrupo);
+
   return CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: idNorm, idGrupo },
-    { $setOnInsert: { idWhatsApp: idNorm, idGrupo } },  // ← idNorm
+    { $setOnInsert: { idWhatsApp: idNorm, idGrupo } },
     { upsert: true, new: true }
   );
 }
@@ -69,10 +84,7 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
   assertJid(idWhatsApp, 'idWhatsApp');
   assertJid(idGrupo,    'idGrupo');
 
-  const idNorm = idWhatsApp.endsWith('@lid')
-    ? idWhatsApp
-    : idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
-  idWhatsApp = idNorm;
+  idWhatsApp = await resolverJidCarteira(idWhatsApp, idGrupo);
 
   if (typeof valor !== 'number' || isNaN(valor)) {
     throw new TypeError('carteiraService.alterarGold: "valor" deve ser um número.');
@@ -210,4 +222,5 @@ module.exports = {
   rankingGold,
   rankingXp,
   transferirGold,
+  resolverJidCarteira, // ← adicionar
 };

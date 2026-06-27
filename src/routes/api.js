@@ -598,6 +598,16 @@ router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
     // Se não achar carteiras pelo pn, tenta resolver via LidMapping
     let carteiras = await CarteiraGrupo.find({ idWhatsApp: jid }).sort({ xp: -1 }).lean();
 
+// Busca também pelo PN equivalente
+const pnEquivalente = jid.endsWith('@lid')
+  ? (await LidMapping.findOne({ lid: jid }).lean())?.pn
+  : null;
+
+if (pnEquivalente) {
+  const carteirasPn = await CarteiraGrupo.find({ idWhatsApp: pnEquivalente }).sort({ xp: -1 }).lean();
+  carteiras = [...carteiras, ...carteirasPn];
+}
+
     if (!carteiras.length && !jid.endsWith('@lid')) {
       const digitos = jid.split('@')[0].replace(/\D/g, '');
       const variantesPn = [];

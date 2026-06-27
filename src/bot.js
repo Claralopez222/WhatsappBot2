@@ -469,10 +469,21 @@ async function startBot() {
             const hoje = new Date();
             hoje.setHours(0, 0, 0, 0);
 
-            const carteiraAtual = await CarteiraGrupo.findOne(
-              { idWhatsApp: remetenteNorm, idGrupo: _jid },
-              { ultimoBonusDiario: 1, gold: 1 }
-            ).lean();
+            let remetenteReal = remetenteNorm;
+
+// Se for @s.whatsapp.net, verifica se existe carteira com @lid no mesmo grupo
+if (!remetenteNorm.endsWith('@lid')) {
+  const lidMap = await LidMapping.findOne({ pn: remetenteNorm }).lean();
+  if (lidMap?.lid) {
+    const carteiraLid = await CarteiraGrupo.findOne({ idWhatsApp: lidMap.lid, idGrupo: _jid }).lean();
+    if (carteiraLid) remetenteReal = lidMap.lid;
+  }
+}
+
+const carteiraAtual = await CarteiraGrupo.findOne(
+  { idWhatsApp: remetenteReal, idGrupo: _jid },
+  { ultimoBonusDiario: 1, gold: 1 }
+).lean();
 
             const recebeuHoje = carteiraAtual?.ultimoBonusDiario
               && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
@@ -486,25 +497,25 @@ async function startBot() {
             }
 
             if (carteiraAtual) {
-              await CarteiraGrupo.findOneAndUpdate(
-                { idWhatsApp: remetenteNorm, idGrupo: _jid },
-                { $inc: incCarteira, $set: setCarteira },
-                { new: true }
-              );
+  await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: remetenteReal, idGrupo: _jid },
+    { $inc: incCarteira, $set: setCarteira },
+    { new: true }
+  );
 
-              if (!recebeuHoje) {
-                await sock.sendMessage(_jid, {
-                  text: `🪙 *${nomeDoCara}*, você ganhou seu bônus diário de *100 gold*! Volte amanhã para ganhar mais. 💰`,
-                  mentions: [remetenteNorm],
-                }).catch(() => {});
-              }
-            } else {
-              await CarteiraGrupo.findOneAndUpdate(
-                { idWhatsApp: remetenteNorm, idGrupo: _jid },
-                { $inc: { mensagens: 1, xp: 1 }, $set: { nome: nomeDoCara, ultimoBonusDiario: new Date() } },
-                { upsert: true }
-              );
-            }
+  if (!recebeuHoje) {
+    await sock.sendMessage(_jid, {
+      text: `🪙 *${nomeDoCara}*, você ganhou seu bônus diário de *100 gold*! Volte amanhã para ganhar mais. 💰`,
+      mentions: [remetenteReal],
+    }).catch(() => {});
+  }
+} else {
+  await CarteiraGrupo.findOneAndUpdate(
+  { idWhatsApp: remetenteReal, idGrupo: jid },
+  { $inc: { xp: xpFinal } },
+  { upsert: true }
+);
+}
 
             // ── Usuario global: XP global, level e missões ────────────────────
             const hojeISO = new Date().toISOString().slice(0, 10);

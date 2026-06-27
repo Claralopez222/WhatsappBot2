@@ -883,7 +883,8 @@ router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/admin/grupo/:jid/config
 // ─────────────────────────────────────────────────────────────────────────────
-const CAMPOS_CONFIG_VALIDOS = ['xpAtivo', 'antiLink', 'boasVindas'];
+const CAMPOS_CONFIG_BOOL    = ['xpAtivo', 'antiLink', 'boasVindas'];
+const PREFIXOS_VALIDOS      = ['!', '.', '/', ','];
 
 router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
   try {
@@ -896,11 +897,17 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
 
     const update = {};
     for (const campo of chaves) {
-      if (!CAMPOS_CONFIG_VALIDOS.includes(campo))
+      if (campo === 'prefixo') {
+        if (!PREFIXOS_VALIDOS.includes(campos[campo]))
+          return res.status(400).json({ error: `Prefixo inválido. Use um de: ${PREFIXOS_VALIDOS.join(' ')}` });
+        update['config.prefixo'] = campos[campo];
+      } else if (CAMPOS_CONFIG_BOOL.includes(campo)) {
+        if (typeof campos[campo] !== 'boolean')
+          return res.status(400).json({ error: `"${campo}" deve ser true ou false.` });
+        update[`config.${campo}`] = campos[campo];
+      } else {
         return res.status(400).json({ error: `Campo desconhecido: ${campo}` });
-      if (typeof campos[campo] !== 'boolean')
-        return res.status(400).json({ error: `"${campo}" deve ser true ou false.` });
-      update[`config.${campo}`] = campos[campo];
+      }
     }
 
     await CarteiraGrupo.updateMany({ idGrupo: jid }, { $set: update });
@@ -1978,6 +1985,276 @@ router.post('/auth/resetsenha', auth, async (req, res) => {
 
   } catch (err) {
     console.error('[API] POST /auth/resetsenha:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/grupo/:jid/remover-membro
+// Remove um membro de um grupo via bot.
+// Body: { idWhatsApp }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/admin/grupo/:jid/remover-membro', adminAuth, async (req, res) => {
+  try {
+    const jid        = decodeURIComponent(req.params.jid);
+    const { idWhatsApp } = req.body || {};
+
+    if (!jid || jid.length > 200)
+      return res.status(400).json({ error: 'JID inválido.' });
+    if (!idWhatsApp)
+      return res.status(400).json({ error: 'idWhatsApp é obrigatório.' });
+
+    const { sock: botSock } = require('../bot');
+    if (!botSock)
+      return res.status(503).json({ error: 'Bot não conectado.' });
+
+    await botSock.groupParticipantsUpdate(jid, [idWhatsApp], 'remove');
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[API] POST /admin/grupo/remover-membro:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/broadcast
+// Envia mensagem para todos os grupos ativos.
+// Body: { mensagem }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/admin/broadcast', adminAuth, async (req, res) => {
+  try {
+    const { mensagem } = req.body || {};
+    if (!mensagem || typeof mensagem !== 'string' || !mensagem.trim())
+      return res.status(400).json({ error: 'mensagem é obrigatória.' });
+    if (mensagem.length > 4000)
+      return res.status(400).json({ error: 'Mensagem muito longa (máx 4000 caracteres).' });
+
+    const { sock: botSock } = require('../bot');
+    if (!botSock)
+      return res.status(503).json({ error: 'Bot não conectado.' });
+
+    const grupos = await CarteiraGrupo.distinct('idGrupo');
+    let enviados = 0, falhas = 0;
+
+    for (const jid of grupos) {
+      try {
+        await botSock.sendMessage(jid, { text: mensagem.trim() });
+        enviados++;
+        await new Promise(r => setTimeout(r, 500));
+      } catch { falhas++; }
+    }
+
+    return res.json({ ok: true, enviados, falhas });
+  } catch (err) {
+    console.error('[API] POST /admin/broadcast:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/grupo/:jid/export
+// Exporta todos os dados de um grupo em JSON.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/grupo/:jid/export', adminAuth, async (req, res) => {
+  try {
+    const jid = decodeURIComponent(req.params.jid);
+    if (!jid || jid.length > 200) return res.status(400).json({ error: 'JID inválido.' });
+
+    const membros = await CarteiraGrupo.find({ idGrupo: jid }).lean();
+    if (!membros.length) return res.status(404).json({ error: 'Nenhum dado encontrado para esse grupo.' });
+
+    const jids = membros.map(m => m.idWhatsApp);
+    const usuarios = await Usuario.find({ idWhatsApp: { $in: jids } })
+      .select('idWhatsApp nome telefone warnings banido')
+      .lean();
+    const usuariosMap = Object.fromEntries(usuarios.map(u => [u.idWhatsApp, u]));
+
+    const dados = membros.map(m => {
+      const u = usuariosMap[m.idWhatsApp] || {};
+      return {
+        idWhatsApp:   m.idWhatsApp,
+        nome:         u.nome || m.nome || '—',
+        telefone:     u.telefone || m.idWhatsApp.split('@')[0],
+        xp:           m.xp       ?? 0,
+        level:        m.level    ?? 1,
+        gold:         m.gold     ?? 0,
+        mensagens:    m.mensagens ?? 0,
+        empregoAtual: m.empregoAtual ?? null,
+        banido:       !!u.banido,
+      };
+    });
+
+    return res.json({
+      idGrupo:     jid,
+      exportadoEm: new Date(),
+      totalMembros: dados.length,
+      membros:      dados,
+    });
+  } catch (err) {
+    console.error('[API] GET /admin/grupo/:jid/export:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/relacionamentos
+// Lista todos os relacionamentos ativos (casadoCom no Usuario).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
+  try {
+    const comRelacionamento = await Usuario.find({
+      casadoCom: { $exists: true, $ne: null, $ne: '' }
+    }).select('idWhatsApp nome telefone casadoCom casadoTipo casadoDesde').lean();
+
+    // Deduplica pares (A-B e B-A viram um só)
+    const vistos = new Set();
+    const relacionamentos = [];
+
+    for (const u of comRelacionamento) {
+      const jidA  = u.idWhatsApp;
+      const jidB  = u.casadoCom;
+      const chave = [jidA, jidB].sort().join('|');
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+
+      const parceiro = comRelacionamento.find(x => x.idWhatsApp === jidB) || {};
+
+      // Resolve nomes via CarteiraGrupo se não tiver no Usuario
+      const nomeA = u.nome || u.telefone || jidA.split('@')[0];
+      const nomeB = parceiro.nome || parceiro.telefone || jidB?.split('@')[0] || '—';
+
+      relacionamentos.push({
+        jidA,
+        jidB,
+        nomeA,
+        nomeB,
+        tipo:        u.casadoTipo  || 'namoro',
+        desde:       u.casadoDesde || null,
+        idGrupo:     null, // campo global, sem escopo de grupo
+        nomeGrupo:   null,
+        xp:          0,
+      });
+    }
+
+    return res.json({ relacionamentos });
+  } catch (err) {
+    console.error('[API] GET /admin/relacionamentos:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/relacionamentos/encerrar
+// Encerra um relacionamento entre dois usuários.
+// Body: { jidA, jidB, idGrupo? }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/admin/relacionamentos/encerrar', adminAuth, async (req, res) => {
+  try {
+    const { jidA, jidB } = req.body || {};
+    if (!jidA || !jidB) return res.status(400).json({ error: 'jidA e jidB são obrigatórios.' });
+
+    await Usuario.updateMany(
+      { idWhatsApp: { $in: [jidA, jidB] } },
+      { $unset: { casadoCom: '', casadoTipo: '', casadoDesde: '' } }
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[API] POST /admin/relacionamentos/encerrar:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/pets
+// Lista todos os pets ativos no banco.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/pets', adminAuth, async (req, res) => {
+  try {
+    const usuarios = await Usuario.find({
+      'pet.nome': { $exists: true, $ne: null }
+    }).select('idWhatsApp nome telefone pet').lean();
+
+    const jids = usuarios.map(u => u.idWhatsApp);
+
+    // Busca grupo mais ativo de cada usuário (primeiro por xp desc)
+    const carteiras = jids.length
+      ? await CarteiraGrupo.aggregate([
+          { $match: { idWhatsApp: { $in: jids } } },
+          { $sort:  { xp: -1 } },
+          { $group: { _id: '$idWhatsApp', idGrupo: { $first: '$idGrupo' }, nomeGrupo: { $first: '$nome' }, nomeCustom: { $first: '$nomeCustom' } } }
+        ])
+      : [];
+    const grupoMap = Object.fromEntries(carteiras.map(c => [c._id, c]));
+
+    const pets = usuarios
+      .filter(u => u.pet && u.pet.nome)
+      .map(u => {
+        const g = grupoMap[u.idWhatsApp] || {};
+        return {
+          idDono:   u.idWhatsApp,
+          nomeDono: u.nome || u.telefone || u.idWhatsApp.split('@')[0],
+          nome:     u.pet.nome,
+          tipo:     u.pet.tipo  || '?',
+          hp:       u.pet.hp    ?? 100,
+          maxHp:    u.pet.maxHp ?? 100,
+          fome:     u.pet.fome  ?? 0,
+          nivel:    u.pet.nivel ?? 1,
+          idGrupo:  g.idGrupo   || null,
+          nomeGrupo: g.nomeCustom || g.nomeGrupo || null,
+        };
+      });
+
+    return res.json({ pets });
+  } catch (err) {
+    console.error('[API] GET /admin/pets:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/pets/curar
+// Restaura HP do pet ao máximo.
+// Body: { idDono, idGrupo? }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/admin/pets/curar', adminAuth, async (req, res) => {
+  try {
+    const { idDono } = req.body || {};
+    if (!idDono) return res.status(400).json({ error: 'idDono é obrigatório.' });
+
+    const usuario = await Usuario.findOne({ idWhatsApp: idDono });
+    if (!usuario || !usuario.pet) return res.status(404).json({ error: 'Pet não encontrado.' });
+
+    usuario.pet.hp = usuario.pet.maxHp ?? 100;
+    await usuario.save();
+
+    return res.json({ ok: true, hp: usuario.pet.hp });
+  } catch (err) {
+    console.error('[API] POST /admin/pets/curar:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/pets/alimentar
+// Zera a fome do pet.
+// Body: { idDono, idGrupo? }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/admin/pets/alimentar', adminAuth, async (req, res) => {
+  try {
+    const { idDono } = req.body || {};
+    if (!idDono) return res.status(400).json({ error: 'idDono é obrigatório.' });
+
+    const usuario = await Usuario.findOne({ idWhatsApp: idDono });
+    if (!usuario || !usuario.pet) return res.status(404).json({ error: 'Pet não encontrado.' });
+
+    usuario.pet.fome = 0;
+    await usuario.save();
+
+    return res.json({ ok: true, fome: 0 });
+  } catch (err) {
+    console.error('[API] POST /admin/pets/alimentar:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });

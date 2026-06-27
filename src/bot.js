@@ -420,6 +420,8 @@ async function startBot() {
     },
   });
 
+  _botSock = sock;
+
   // ── Credenciais ───────────────────────────────────────────────────────────────
   sock.ev.on('creds.update', saveCreds);
 
@@ -511,10 +513,10 @@ const carteiraAtual = await CarteiraGrupo.findOne(
   }
 } else {
   await CarteiraGrupo.findOneAndUpdate(
-  { idWhatsApp: remetenteReal, idGrupo: jid },
-  { $inc: { xp: xpFinal } },
-  { upsert: true }
-);
+    { idWhatsApp: remetenteReal, idGrupo: _jid },
+    { $inc: { mensagens: 1, xp: 1 }, $set: { nome: nomeDoCara, ultimoBonusDiario: new Date() } },
+    { upsert: true }
+  );
 }
 
             // ── Usuario global: XP global, level e missões ────────────────────
@@ -1404,5 +1406,15 @@ async function main() {
   await loadRelationshipsFromDb();
   startBot();
 }
+
+let _botSock = null;
+function getSock() { return _botSock; }
+
+async function sendMessage(jid, content) {
+  if (!_botSock) throw new Error('Bot não conectado.');
+  return _botSock.sendMessage(jid, content);
+}
+
+module.exports = { sendMessage, getSock, get sock() { return _botSock; } };
 
 main().catch(err => console.error('❌ Erro crítico na inicialização:', err));

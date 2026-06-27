@@ -981,10 +981,23 @@ router.put('/admin/grupo/:jid/mensagens', adminAuth, async (req, res) => {
     if ((boasVindas?.length || 0) > MAX_MSG || (regras?.length || 0) > MAX_MSG)
       return res.status(400).json({ error: `Máximo de ${MAX_MSG} caracteres por mensagem.` });
 
+    // Persiste no MongoDB como backup
     await CarteiraGrupo.updateMany(
       { idGrupo: jid },
       { $set: { 'mensagens.boasVindas': boasVindas ?? '', 'mensagens.regras': regras ?? '' } }
     );
+
+    // Atualiza em memória no bot (onde o processarBemVindo realmente lê)
+    try {
+      const { getSock } = require('../bot');
+      const grupoHandler = require('../handlers/grupo');
+      // Injeta direto no Map do handler via função exposta
+      if (grupoHandler.setBemVindo) {
+        grupoHandler.setBemVindo(jid, boasVindas || '');
+      }
+    } catch (e) {
+      console.warn('[Admin] Não foi possível atualizar bemVindoGroups em memória:', e.message);
+    }
 
     return res.json({ ok: true });
   } catch (err) {

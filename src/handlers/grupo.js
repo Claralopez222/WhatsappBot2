@@ -19,6 +19,14 @@ const antiFloodGroups = new Map();
 /** @type {Map<string, { ativo: boolean, mensagem: string }>} */
 const bemVindoGroups = new Map();
 
+function setBemVindo(jid, mensagem) {
+  if (!mensagem || !mensagem.trim()) {
+    bemVindoGroups.delete(jid);
+  } else {
+    bemVindoGroups.set(jid, { ativo: true, mensagem: mensagem.trim() });
+  }
+}
+
 /** @type {Map<string, Array<{ texto: string, data: number }>>} */
 const grupoAvisosMap = new Map();
 
@@ -1896,4 +1904,5 @@ module.exports = {
   isAdmin,
   handleRemoverReporte,
   handleAdvertencia,
+  setBemVindo,
 };

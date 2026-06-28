@@ -1825,12 +1825,18 @@ const rateLimitCadastro = rateLimit({
 // ─────────────────────────────────────────────────────────────────────────────
 const OtpCadastro  = require('../models/OtpCadastro');
 const nodemailer   = require('nodemailer');
-const transporter  = nodemailer.createTransport({
-  service: 'gmail',
+const transporter = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_PASS,
   },
+  tls: {
+    rejectUnauthorized: false,
+  },
+  family: 4, // força IPv4 — necessário no Render
 });
 
 const rateLimitOtp = rateLimit({

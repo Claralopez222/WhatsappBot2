@@ -1823,9 +1823,15 @@ const rateLimitCadastro = rateLimit({
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/otp/enviar
 // ─────────────────────────────────────────────────────────────────────────────
-const OtpCadastro = require('../models/OtpCadastro');
-const { Resend }  = require('resend');
-const resend      = new Resend(process.env.RESEND_API_KEY);
+const OtpCadastro  = require('../models/OtpCadastro');
+const nodemailer   = require('nodemailer');
+const transporter  = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_PASS,
+  },
+});
 
 const rateLimitOtp = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -1888,9 +1894,9 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
       );
     }
 
-    // Envia email via Resend
-    await resend.emails.send({
-      from:    'Piroquinhas Bot <onboarding@resend.dev>',
+    // Envia email via Gmail
+    await transporter.sendMail({
+      from:    `"Horseman" <${process.env.GMAIL_USER}>`,
       to:      email.toLowerCase().trim(),
       subject: '🔐 Código de verificação — Piroquinhas Bot',
       html: `
@@ -1965,17 +1971,6 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
     if (usernameEmUso)
       return res.status(409).json({ error: 'Este nome de usuário já está em uso.' });
 
-    // Verifica se o email já está em uso
-    const emailFinal = otpDoc?.email || null;
-    if (emailFinal) {
-      const emailJaUsado = await Usuario.findOne({
-        email: emailFinal,
-        idWhatsApp: { $ne: idWhatsAppReal },
-      }).lean();
-      if (emailJaUsado)
-        return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
-    }
-
     // ── Valida OTP ────────────────────────────────────────────────────────────
     const { otp } = req.body || {};
     if (!otp || typeof otp !== 'string' || otp.length !== 6)
@@ -1989,6 +1984,19 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
     if (!otpDoc || otpDoc.codigo !== otp)
       return res.status(401).json({ error: 'Código incorreto ou expirado.' });
 
+    // Pega o email salvo no OTP antes de marcar como usado
+    const emailSalvo = otpDoc.email || null;
+
+    // Verifica se o email já está em uso
+    if (emailSalvo) {
+      const emailJaUsado = await Usuario.findOne({
+        email: emailSalvo,
+        idWhatsApp: { $ne: idWhatsAppReal },
+      }).lean();
+      if (emailJaUsado)
+        return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
+    }
+
     await OtpCadastro.findOneAndUpdate(
       { idWhatsApp: idWhatsAppReal },
       { $set: { usado: true } }
@@ -1996,10 +2004,6 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
 
     // ── Hash e salva ──────────────────────────────────────────────────────────
     const passwordHash = await bcrypt.hash(passwordLimpa, 12);
-
-    // Pega o email salvo no OTP
-    const otpFinalDoc = await OtpCadastro.findOne({ idWhatsApp: idWhatsAppReal }).lean();
-    const emailSalvo  = otpFinalDoc?.email || null;
 
     await Usuario.findOneAndUpdate(
       { idWhatsApp: idWhatsAppReal },

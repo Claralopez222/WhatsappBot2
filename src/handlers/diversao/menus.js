@@ -81,7 +81,7 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
     ``,
     `💵 *Saldo & Inventário*`,
     `  💵 *${P}gold* — Ver saldo atual`,
-    `  📊 *${P}inventario* — Ver seus itens`,
+    `  📊 *${P}invmed* — Ver inventário medieval`,
     ``,
     `🛒 *Loja*`,
     `  🛒 *${P}loja* — Loja principal`,

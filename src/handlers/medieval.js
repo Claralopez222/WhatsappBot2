@@ -273,14 +273,25 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     { $set: { hp: novoHp } }
   );
 
-  const xpGanho = critico ? 15 : 10;
+  const xpGanho   = critico ? 15 : 10;
+  const vitoria   = novoHp <= 0;
+  const xpTotal   = vitoria ? xpGanho + 30 : xpGanho;
+
+  // Update único do atacante — xp do ataque + xp de vitória juntos
   await MedievalPersonagem.updateOne(
     { idWhatsApp: senderJid, idGrupo: jid },
     {
       $set: { ultimoAtaque: new Date() },
-      $inc: { xpMedieval: xpGanho },
+      $inc: { xpMedieval: xpTotal, ...(vitoria && { vitorias: 1 }) },
     }
   );
+
+  if (vitoria) {
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: targetJid, idGrupo: jid },
+      { $inc: { derrotas: 1 } }
+    );
+  }
 
   const narr      = narrarCombate(atacante, defensor, dano, critico);
   const multTexto = multElemento > 1
@@ -293,17 +304,14 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 
   let textoFinal = `${narr}${multTexto}${critTexto}${hpTexto}\n+${xpGanho} XP ⭐`;
 
-  if (novoHp <= 0) {
-    await MedievalPersonagem.updateOne(
-      { idWhatsApp: senderJid, idGrupo: jid },
-      { $inc: { vitorias: 1, xpMedieval: 30 } }
-    );
-    await MedievalPersonagem.updateOne(
-      { idWhatsApp: targetJid, idGrupo: jid },
-      { $inc: { derrotas: 1 } }
-    );
+  if (vitoria) {
     textoFinal += `\n\n💀 *@${targetJid.split('@')[0]} foi derrotado!*\n🏆 *${atacante.nome}* ganhou +30 XP de vitória!`;
   }
+
+  // Merge: XP do ataque + XP/vitória num único update quando possível
+  // Já feito acima — o $inc de xpMedieval inicial é separado por necessidade
+  // (precisa do resultado do dano para saber se houve vitória).
+  // O fix real é garantir que o update de vitória não seja pulado:
 
   await sock.sendMessage(jid, {
     text: textoFinal,
@@ -359,13 +367,24 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     { idWhatsApp: targetJid, idGrupo: jid },
     { $set: { hp: novoHp } }
   );
+  const vitoria = novoHp <= 0;
+  const xpTotal = vitoria ? 20 + 40 : 20;
+
+  // Update único do atacante
   await MedievalPersonagem.updateOne(
     { idWhatsApp: senderJid, idGrupo: jid },
     {
       $set: { ultimaMagia: new Date(), mana: novaMana },
-      $inc: { xpMedieval: 20 },
+      $inc: { xpMedieval: xpTotal, ...(vitoria && { vitorias: 1 }) },
     }
   );
+
+  if (vitoria) {
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: targetJid, idGrupo: jid },
+      { $inc: { derrotas: 1 } }
+    );
+  }
 
   const narr = narrarCombate(atacante, defensor, dano, false, habilidade);
   let textoFinal =
@@ -375,15 +394,7 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     `💧 Sua mana: ${novaMana}/${atacante.manaMax}\n` +
     `+20 XP ⭐`;
 
-  if (novoHp <= 0) {
-    await MedievalPersonagem.updateOne(
-      { idWhatsApp: senderJid, idGrupo: jid },
-      { $inc: { vitorias: 1, xpMedieval: 40 } }
-    );
-    await MedievalPersonagem.updateOne(
-      { idWhatsApp: targetJid, idGrupo: jid },
-      { $inc: { derrotas: 1 } }
-    );
+  if (vitoria) {
     textoFinal += `\n\n💀 *@${targetJid.split('@')[0]} foi aniquilado pela magia!*\n🏆 +40 XP de vitória!`;
   }
 

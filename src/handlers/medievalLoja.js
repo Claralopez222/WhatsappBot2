@@ -247,12 +247,12 @@ async function handleInvMed(sock, msg, jid, senderJid, nomeDisplay) {
     if (qtd <= 0) continue;
     const nomeReal = chave.replace(/_/g, ' ');
     const arma     = getArma(nomeReal);
-    const armadura = armadura => ARMADURAS.find(a => a.nome === nomeReal);
+    const armItem  = ARMADURAS.find(a => a.nome === nomeReal) || null;
     const pocao    = getPocao(nomeReal);
-    const itemData = arma || ARMADURAS.find(a => a.nome === nomeReal) || pocao;
+    const itemData = arma || armItem || pocao;
     const emoji    = itemData?.emoji || '📦';
-    const equipado = p.armaEquipada === nomeReal ? ' _(equipado)_'
-      : p.armaduraEquipada === nomeReal ? ' _(equipado)_' : '';
+    const equipado = p.armaEquipada === nomeReal || p.armaduraEquipada === nomeReal
+      ? ' _(equipado)_' : '';
     linhas.push(`${emoji} *${nomeReal}* x${qtd}${equipado}`);
   }
 
@@ -292,46 +292,54 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
     return sock.sendMessage(jid, { text: `❌ Poção *"${nomePocao}"* não encontrada!` }, { quoted: msg });
   }
 
-  const p        = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
   const chaveInv = pocao.nome.replace(/ /g, '_');
-  const qtdInv   = p.inventarioMedieval?.get(chaveInv) || 0;
+  const chaveMap = `inventarioMedieval.${chaveInv}`;
 
-  if (qtdInv <= 0) {
+  // Decrementa atomicamente apenas se qtd > 0 — previne race condition
+  const resultado = await MedievalPersonagem.findOneAndUpdate(
+    {
+      idWhatsApp: senderJid,
+      idGrupo:    jid,
+      [chaveMap]: { $gt: 0 },
+    },
+    { $inc: { [chaveMap]: -1 } },
+    { new: false } // retorna documento ANTES do update para calcular efeitos
+  );
+
+  if (!resultado) {
     return sock.sendMessage(jid, {
       text: `❌ Você não possui *${pocao.nome}*!\nUse *!comprar ${pocao.nome}* para comprar.`,
     }, { quoted: msg });
   }
 
-  const updateFields = {};
-  const linhasEfeito = [];
+  // Calcula efeitos com base no documento pré-update
+  const updateFields  = {};
+  const linhasEfeito  = [];
+  const qtdAntes      = resultado.inventarioMedieval?.get(chaveInv) || 0;
 
   if (pocao.tipo === 'hp' || pocao.tipo === 'ambos') {
-    const hpAntes       = p.hp;
-    const novoHp        = Math.min(p.hpMax, p.hp + pocao.valor);
-    updateFields.hp     = novoHp;
+    const hpAntes   = resultado.hp;
+    const novoHp    = Math.min(resultado.hpMax, hpAntes + pocao.valor);
+    updateFields.hp = novoHp;
     linhasEfeito.push(`❤️ HP: ${hpAntes} → ${novoHp} (+${novoHp - hpAntes})`);
   }
   if (pocao.tipo === 'mana' || pocao.tipo === 'ambos') {
-    const manaAntes      = p.mana;
-    const novaMana       = Math.min(p.manaMax, p.mana + pocao.valor);
-    updateFields.mana    = novaMana;
+    const manaAntes   = resultado.mana;
+    const novaMana    = Math.min(resultado.manaMax, manaAntes + pocao.valor);
+    updateFields.mana = novaMana;
     linhasEfeito.push(`💧 Mana: ${manaAntes} → ${novaMana} (+${novaMana - manaAntes})`);
   }
 
-  // Consome 1 unidade do inventário
   await MedievalPersonagem.updateOne(
     { idWhatsApp: senderJid, idGrupo: jid },
-    {
-      $set: updateFields,
-      $inc: { [`inventarioMedieval.${chaveInv}`]: -1 },
-    }
+    { $set: updateFields }
   );
 
   await sock.sendMessage(jid, {
     text:
       `${pocao.emoji} *${pocao.nome}* usada!\n\n` +
       linhasEfeito.join('\n') +
-      `\n\n_Restam: ${qtdInv - 1}x ${pocao.nome}_`,
+      `\n\n_Restam: ${qtdAntes - 1}x ${pocao.nome}_`,
   }, { quoted: msg });
 }
 

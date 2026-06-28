@@ -1,8 +1,22 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchBuffer, fetchJson } = require(path.join(__dirname, '..', '..', 'fetchurl'));
-const { handleMenu, handleMenuUtil, handleMenuJogos, handleMenuBaixar, handleMenuRelacionamento, handleAlteradores, handleMenuFilho } = require(path.join(__dirname, 'menu'));
-const { handleMenuWork } = require(path.join(__dirname, '..', 'diversao', 'emprego'));
+const {
+  handleMenu,
+  handleMenuUtil,
+  handleMenuJogos,
+  handleMenuBaixar,
+  handleMenuRelacionamento,
+  handleAlteradores,
+  handleMenuFilho,
+  handleMenuWork,
+  handleBrincadeiras,
+  handleMenuGold,
+  handleMenuPet,
+  handleSistemaGold,
+  handleSistemaPet,
+  handleSistemaMedieval,
+} = require(path.join(__dirname, 'menu'));
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { handleLevelOn, handleLevel, handleRankLevel } = require(path.join(__dirname, 'level'));
 const { handleSave, handleSaveRec, handleTiktok, handleAudioDownload, handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs, getFfmpegPath, getFfprobePath } = require(path.join(__dirname, '..', 'downloads'));
@@ -1122,6 +1136,12 @@ module.exports = {
   handleLetra,
   handlePerfil,
   handleBio,
+  handleBrincadeiras,
+  handleMenuGold,
+  handleMenuPet,
+  handleSistemaGold,
+  handleSistemaPet,
+  handleSistemaMedieval,
   handleSave,
   handleSaveRec,
   handleTiktok,

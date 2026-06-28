@@ -117,8 +117,25 @@ const carteiraGrupoSchema = new mongoose.Schema(
     itensSec:   { type: Map, of: { type: Number, min: 0 }, default: {} },
     equiparsec: { type: String, default: null },
 
-    // ── Pets (isolado por grupo) ─────────────────────────────────
+    // ── Pets (isolado por grupo) ─────────────────────────────
     itensPets: { type: Map, of: { type: Number, min: 0 }, default: {} },
+
+    // ── Pet ativo (isolado por grupo) ────────────────────────
+    pet: {
+      type: new mongoose.Schema({
+        type:            { type: String,  default: null },
+        name:            { type: String,  default: null, trim: true },
+        rarity:          { type: String,  default: null },
+        level:           { type: Number,  default: 1,    min: 1 },
+        xp:              { type: Number,  default: 0,    min: 0 },
+        happiness:       { type: Number,  default: 60,   min: 0, max: 100 },
+        energy:          { type: Number,  default: 80,   min: 0, max: 100 },
+        fullness:        { type: Number,  default: 80,   min: 0, max: 100 },
+        capturedAt:      { type: Date,    default: null },
+        lastInteraction: { type: Date,    default: null },
+      }, { _id: false }),
+      default: null,
+    },
 
     // ── Empréstimo ───────────────────────────────────────────────
     emprestimo: { type: emprestimoSchema, default: () => ({}) },

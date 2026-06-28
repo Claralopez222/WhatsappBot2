@@ -2238,39 +2238,45 @@ router.post('/admin/relacionamentos/encerrar', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/admin/pets', adminAuth, async (req, res) => {
   try {
-    const usuarios = await Usuario.find({
-      pet: { $exists: true, $ne: null }
-    }).select('idWhatsApp nome telefone pet').lean();
+    const carteirasComPet = await CarteiraGrupo.find({
+      'pet.name': { $exists: true, $nin: [null, ''] },
+    }).select('idWhatsApp idGrupo pet nomeCustom nome').lean();
 
-    const jids = usuarios.map(u => u.idWhatsApp);
+    if (!carteirasComPet.length) return res.json({ pets: [] });
 
-    // Busca grupo mais ativo de cada usuário (primeiro por xp desc)
-    const carteiras = jids.length
-      ? await CarteiraGrupo.aggregate([
-          { $match: { idWhatsApp: { $in: jids } } },
-          { $sort:  { xp: -1 } },
-          { $group: { _id: '$idWhatsApp', idGrupo: { $first: '$idGrupo' }, nomeGrupo: { $first: '$nome' }, nomeCustom: { $first: '$nomeCustom' } } }
-        ])
-      : [];
-    const grupoMap = Object.fromEntries(carteiras.map(c => [c._id, c]));
+    const jids = [...new Set(carteirasComPet.map(c => c.idWhatsApp))];
+    const usuarios = await Usuario.find({ idWhatsApp: { $in: jids } })
+      .select('idWhatsApp nome telefone')
+      .lean();
+    const usuariosMap = Object.fromEntries(usuarios.map(u => [u.idWhatsApp, u]));
 
-    const pets = usuarios
-      .filter(u => u.pet && (u.pet.nome || u.pet.tipo || u.pet.especie))
-      .map(u => {
-        const g = grupoMap[u.idWhatsApp] || {};
-        return {
-          idDono:   u.idWhatsApp,
-          nomeDono: u.nome || u.telefone || u.idWhatsApp.split('@')[0],
-          nome:     u.pet.nome,
-          tipo:     u.pet.tipo  || '?',
-          hp:       u.pet.hp    ?? 100,
-          maxHp:    u.pet.maxHp ?? 100,
-          fome:     u.pet.fome  ?? 0,
-          nivel:    u.pet.nivel ?? 1,
-          idGrupo:  g.idGrupo   || null,
-          nomeGrupo: g.nomeCustom || g.nomeGrupo || null,
-        };
-      });
+    const jidsGrupos = [...new Set(carteirasComPet.map(c => c.idGrupo))];
+    const nomesGrupos = await CarteiraGrupo.aggregate([
+      { $match: { idGrupo: { $in: jidsGrupos } } },
+      { $group: { _id: '$idGrupo', nomeCustom: { $first: '$nomeCustom' }, nomeReal: { $first: '$nome' } } },
+    ]);
+    const nomesGruposMap = Object.fromEntries(
+      nomesGrupos.map(g => [g._id, nomeGrupo(g, g._id)])
+    );
+
+    const pets = carteirasComPet.map(c => {
+      const u = usuariosMap[c.idWhatsApp] || {};
+      return {
+        idDono:    c.idWhatsApp,
+        nomeDono:  u.nome || u.telefone || c.idWhatsApp.split('@')[0],
+        nome:      c.pet.name,
+        tipo:      c.pet.type    || '?',
+        rarity:    c.pet.rarity  || '?',
+        hp:        c.pet.energy  ?? 100,
+        maxHp:     100,
+        fome:      c.pet.fullness ?? 0,
+        nivel:     c.pet.level   ?? 1,
+        xp:        c.pet.xp      ?? 0,
+        happiness: c.pet.happiness ?? 0,
+        idGrupo:   c.idGrupo,
+        nomeGrupo: nomesGruposMap[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
+      };
+    });
 
     return res.json({ pets });
   } catch (err) {
@@ -2286,16 +2292,18 @@ router.get('/admin/pets', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/admin/pets/curar', adminAuth, async (req, res) => {
   try {
-    const { idDono } = req.body || {};
-    if (!idDono) return res.status(400).json({ error: 'idDono é obrigatório.' });
+    const { idDono, idGrupo } = req.body || {};
+    if (!idDono)  return res.status(400).json({ error: 'idDono é obrigatório.' });
+    if (!idGrupo) return res.status(400).json({ error: 'idGrupo é obrigatório.' });
 
-    const usuario = await Usuario.findOne({ idWhatsApp: idDono });
-    if (!usuario || !usuario.pet) return res.status(404).json({ error: 'Pet não encontrado.' });
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: idDono, idGrupo });
+    if (!carteira?.pet?.name) return res.status(404).json({ error: 'Pet não encontrado.' });
 
-    usuario.pet.hp = usuario.pet.maxHp ?? 100;
-    await usuario.save();
+    carteira.pet.energy    = 100;
+    carteira.pet.happiness = Math.min(100, (carteira.pet.happiness ?? 0) + 20);
+    await carteira.save();
 
-    return res.json({ ok: true, hp: usuario.pet.hp });
+    return res.json({ ok: true, energy: carteira.pet.energy });
   } catch (err) {
     console.error('[API] POST /admin/pets/curar:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -2309,16 +2317,18 @@ router.post('/admin/pets/curar', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/admin/pets/alimentar', adminAuth, async (req, res) => {
   try {
-    const { idDono } = req.body || {};
-    if (!idDono) return res.status(400).json({ error: 'idDono é obrigatório.' });
+    const { idDono, idGrupo } = req.body || {};
+    if (!idDono)  return res.status(400).json({ error: 'idDono é obrigatório.' });
+    if (!idGrupo) return res.status(400).json({ error: 'idGrupo é obrigatório.' });
 
-    const usuario = await Usuario.findOne({ idWhatsApp: idDono });
-    if (!usuario || !usuario.pet) return res.status(404).json({ error: 'Pet não encontrado.' });
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: idDono, idGrupo });
+    if (!carteira?.pet?.name) return res.status(404).json({ error: 'Pet não encontrado.' });
 
-    usuario.pet.fome = 0;
-    await usuario.save();
+    carteira.pet.fullness  = 100;
+    carteira.pet.happiness = Math.min(100, (carteira.pet.happiness ?? 0) + 10);
+    await carteira.save();
 
-    return res.json({ ok: true, fome: 0 });
+    return res.json({ ok: true, fullness: carteira.pet.fullness });
   } catch (err) {
     console.error('[API] POST /admin/pets/alimentar:', err);
     return res.status(500).json({ error: 'Erro interno.' });

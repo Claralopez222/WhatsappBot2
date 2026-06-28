@@ -166,14 +166,15 @@ function getRankScore(pet) {
  * @param {string} userId
  * @returns {Promise<object|null>}
  */
-async function getPet(userId) {
-  const cached = petCache.get(userId);
+async function getPet(userId, idGrupo) {
+  const cacheKey = `${userId}:${idGrupo}`;
+  const cached = petCache.get(cacheKey);
   if (cached) return cached;
 
-  const user = await Usuario.findOne({ idWhatsApp: userId }).select('pet').lean();
-  const pet  = user?.pet ?? null;
+  const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).select('pet').lean();
+  const pet = carteira?.pet ?? null;
 
-  if (pet?.name) petCache.set(userId, pet);
+  if (pet?.name) petCache.set(cacheKey, pet);
   return pet;
 }
 
@@ -182,10 +183,11 @@ async function getPet(userId) {
  * @param {string} userId
  * @param {object} pet
  */
-async function savePet(userId, pet) {
-  petCache.set(userId, pet);
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId },
+async function savePet(userId, idGrupo, pet) {
+  const cacheKey = `${userId}:${idGrupo}`;
+  petCache.set(cacheKey, pet);
+  await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: userId, idGrupo },
     { $set: { pet } },
     { upsert: true }
   );
@@ -196,10 +198,11 @@ async function savePet(userId, pet) {
  * Use este em vez de fazer $unset manual espalhado pelo código.
  * @param {string} userId
  */
-async function clearPet(userId) {
-  petCache.delete(userId);
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId },
+async function clearPet(userId, idGrupo) {
+  const cacheKey = `${userId}:${idGrupo}`;
+  petCache.delete(cacheKey);
+  await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: userId, idGrupo },
     { $unset: { pet: '' } }
   );
 }
@@ -286,10 +289,10 @@ async function handleCapturarPet(sock, msg, jid) {
     return reply(sock, jid, msg, '❌ Erro interno: tipo de pet inválido.');
   }
 
-  // 1. Verifica se o usuário já possui um pet ativo
+  // 1. Verifica se o usuário já possui um pet ativo NESTE GRUPO
   let petExistente;
   try {
-    petExistente = await getPet(userId);
+    petExistente = await getPet(userId, jid);
   } catch (err) {
     console.error('[capturar] Erro ao buscar pet existente:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao verificar seu pet. Tente novamente!');
@@ -298,15 +301,14 @@ async function handleCapturarPet(sock, msg, jid) {
   if (petExistente?.name) {
     return reply(
       sock, jid, msg,
-      '⚠️ Você já tem um pet ativo! Use *!abrigo deixar* para liberá-lo antes de tentar capturar outro.',
+      '⚠️ Você já tem um pet ativo neste grupo! Use *!abrigo deixar* para liberá-lo antes de tentar capturar outro.',
     );
   }
 
-  // 2. Trava de concorrência: Remove o spawn IMEDIATAMENTE para evitar capturas duplas simultâneas
+  // 2. Trava de concorrência
   spawnedPets.delete(jid);
 
-  // 3. Sistema de taxa de captura com base na raridade
-  // Se não houver taxa definida no PET_SYSTEM, usa padrões de mercado equilibrados
+  // 3. Sistema de taxa de captura
   const taxasRaridade = { 'COMUM': 0.75, 'RARO': 0.50, 'ULTRA-RARO': 0.30, 'LENDÁRIO': 0.12 };
   const chanceSucesso = def.catchRate ?? taxasRaridade[spawn.rarity] ?? 0.50;
   
@@ -332,11 +334,9 @@ async function handleCapturarPet(sock, msg, jid) {
   };
 
   try {
-    // Salva o novo pet na conta do usuário
-    await savePet(userId, novoPet);
+    await savePet(userId, jid, novoPet);
   } catch (err) {
     console.error('[capturar] Erro ao salvar pet:', err);
-    // Caso dê um erro de banco de dados, devolve o spawn para o grupo não sair no prejuízo
     spawnedPets.set(jid, spawn); 
     return reply(sock, jid, msg, '❌ Erro de banco de dados ao guardar o pet na mochila. Tente novamente!');
   }
@@ -365,23 +365,21 @@ async function handleAlimentarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
 
-  // ── Cooldown ──────────────────────────────────────────────
-  const espera = checkCooldown(userId, 'alimentar', CONFIG.COOLDOWN_ALIMENTAR);
+  const espera = checkCooldown(`${userId}:${jid}`, 'alimentar', CONFIG.COOLDOWN_ALIMENTAR);
   if (espera > 0) {
     return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para alimentar novamente!`);
   }
 
-  // ── Buscar pet ────────────────────────────────────────────
   let pet;
   try {
-    pet = await getPet(userId);
+    pet = await getPet(userId, jid);
   } catch (err) {
     console.error('[alimentar] Erro ao buscar pet:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
   }
 
   if (!pet?.name) {
-    return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
+    return reply(sock, jid, msg, '⚠️ Você não tem um pet neste grupo. Use *!capturar* quando um aparecer!');
   }
 
   if (pet.fullness >= CONFIG.STAT_MAX) {
@@ -390,42 +388,41 @@ async function handleAlimentarPet(sock, msg, jid) {
     );
   }
 
-  // ── Calcular novo estado ──────────────────────────────────
   const petAtualizado = comTimestamp({
     ...pet,
     fullness:  clamp(pet.fullness  + 30),
     happiness: clamp(pet.happiness + 10),
   });
 
-  // ── Salvar no banco ───────────────────────────────────────
-  let userAtualizado;
+  let carteiraAtualizada;
   try {
     await prepareDailyMissionState(userId);
-    userAtualizado = await Usuario.findOneAndUpdate(
+    // Consome comida do inventário global (Usuario) e salva pet na CarteiraGrupo
+    const userComComida = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId, 'inventory.comida': { $gt: 0 } },
-      {
-        $set: { pet: petAtualizado },
-        $inc: { 'inventory.comida': -1, 'dailyMissions.progress.pet10': 1 },
-      },
-      { new: true, upsert: false },
+      { $inc: { 'inventory.comida': -1, 'dailyMissions.progress.pet10': 1 } },
+      { new: true, upsert: false }
     );
+    if (!userComComida) {
+      return reply(sock, jid, msg,
+        '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.'
+      );
+    }
+    carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: userId, idGrupo: jid },
+      { $set: { pet: petAtualizado } },
+      { new: true }
+    );
+    const qtdRestante = userComComida.inventory?.get?.('comida') ?? userComComida.inventory?.comida ?? 0;
   } catch (err) {
-    console.error('[alimentar] Erro ao atualizar usuário:', err);
+    console.error('[alimentar] Erro ao atualizar:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao alimentar o pet. Tente novamente!');
   }
 
-  // ── Sem comida no inventário ──────────────────────────────
-  if (!userAtualizado) {
-    return reply(sock, jid, msg,
-      '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.'
-    );
-  }
+  petCache.set(`${userId}:${jid}`, petAtualizado);
 
-  // ── Atualizar cache APÓS confirmação do banco ─────────────
-  petCache.set(userId, petAtualizado);
-
-  // ── Resposta ──────────────────────────────────────────────
-  const qtdRestante = userAtualizado.inventory?.get?.('comida') ?? userAtualizado.inventory?.comida ?? 0;
+  const userFinal = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
+  const qtdRestante = userFinal?.inventory?.get?.('comida') ?? userFinal?.inventory?.comida ?? 0;
   const aviso = qtdRestante === 0
     ? '\n\n⚠️ _Você ficou sem comida! Compre mais na *!loja*._'
     : qtdRestante <= 2
@@ -451,16 +448,14 @@ async function handleBrincarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
 
-  // ── Cooldown ──────────────────────────────────────────────
-  const espera = checkCooldown(userId, 'brincar', CONFIG.COOLDOWN_BRINCAR);
+  const espera = checkCooldown(`${userId}:${jid}`, 'brincar', CONFIG.COOLDOWN_BRINCAR);
   if (espera > 0) {
     return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para brincar novamente!`);
   }
 
-  // ── Buscar pet ────────────────────────────────────────────
   let pet;
   try {
-    pet = await getPet(userId);
+    pet = await getPet(userId, jid);
   } catch (err) {
     console.error('[brincar] Erro ao buscar pet:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
@@ -510,21 +505,24 @@ async function handleBrincarPet(sock, msg, jid) {
   // ── Salvar no banco ───────────────────────────────────────
   try {
     await prepareDailyMissionState(userId);
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      {
-        $set: { pet: petAtualizado },
-        $inc: { 'dailyMissions.progress.pet10': 1 },
-      },
-      { upsert: true },
-    );
+    await Promise.all([
+      CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: jid },
+        { $set: { pet: petAtualizado } },
+        { upsert: true }
+      ),
+      Usuario.findOneAndUpdate(
+        { idWhatsApp: userId },
+        { $inc: { 'dailyMissions.progress.pet10': 1 } },
+        { upsert: true }
+      ),
+    ]);
   } catch (err) {
-    console.error('[brincar] Erro ao atualizar usuário:', err);
+    console.error('[brincar] Erro ao atualizar:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao brincar com o pet. Tente novamente!');
   }
 
-  // ── Atualizar cache APÓS confirmação do banco ─────────────
-  petCache.set(userId, petAtualizado);
+  petCache.set(`${userId}:${jid}`, petAtualizado);
 
   // ── Montar resposta ───────────────────────────────────────
   const xpBar = buildXpBar(xpFinal, podeSubir ? novoNivel * 100 : xpParaSubir);
@@ -569,16 +567,14 @@ async function handleCurarPet(sock, msg, jid) {
   const userId = getUserId(msg);
   if (!userId) return;
 
-  // ── Cooldown ──────────────────────────────────────────────
-  const espera = checkCooldown(userId, 'curar', CONFIG.COOLDOWN_CURAR);
+  const espera = checkCooldown(`${userId}:${jid}`, 'curar', CONFIG.COOLDOWN_CURAR);
   if (espera > 0) {
     return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para curar novamente!`);
   }
 
-  // ── Buscar pet ────────────────────────────────────────────
   let pet;
   try {
-    pet = await getPet(userId);
+    pet = await getPet(userId, jid);
   } catch (err) {
     console.error('[curar] Erro ao buscar pet:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
@@ -616,10 +612,7 @@ async function handleCurarPet(sock, msg, jid) {
   try {
     userAtualizado = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId, 'inventory.remedio': { $gt: 0 } },
-      {
-        $set: { pet: petAtualizado },
-        $inc: { 'inventory.remedio': -1 },
-      },
+      { $inc: { 'inventory.remedio': -1 } },
       { new: true, upsert: false },
     );
   } catch (err) {
@@ -633,10 +626,14 @@ async function handleCurarPet(sock, msg, jid) {
     );
   }
 
-  // ── Atualizar cache APÓS confirmação do banco ─────────────
-  petCache.set(userId, petAtualizado);
+  await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: userId, idGrupo: jid },
+    { $set: { pet: petAtualizado } },
+    { upsert: true }
+  );
 
-  // ── Resposta ──────────────────────────────────────────────
+  petCache.set(`${userId}:${jid}`, petAtualizado);
+
   const qtdRestante = userAtualizado.inventory?.get?.('remedio') ?? userAtualizado.inventory?.remedio ?? 0;
   const aviso = qtdRestante === 0
     ? '\n\n⚠️ _Você ficou sem remédios! Compre mais na *!loja*._'
@@ -659,12 +656,10 @@ async function handleRenomearPet(sock, msg, jid, caption) {
   const userId = getUserId(msg);
   if (!userId) return;
 
-  // Aceita tanto !renomearpet quanto !nomearpet (com qualquer prefixo)
   const novoNome = caption
     .replace(/^[!.,/]?(?:renomearpet|nomearpet)\s*/i, '')
     .trim();
 
-  // ── Validações de entrada ─────────────────────────────────
   if (!novoNome) {
     return reply(sock, jid, msg,
       '⚠️ Informe o novo nome!\n\n*Exemplo:* !nomearpet Farofa'
@@ -677,10 +672,9 @@ async function handleRenomearPet(sock, msg, jid, caption) {
     );
   }
 
-  // ── Buscar pet ────────────────────────────────────────────
   let pet;
   try {
-    pet = await getPet(userId);
+    pet = await getPet(userId, jid);
   } catch (err) {
     console.error('[renomear] Erro ao buscar pet:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
@@ -692,27 +686,25 @@ async function handleRenomearPet(sock, msg, jid, caption) {
     );
   }
 
-  // ── Evita renomear para o mesmo nome ─────────────────────
   if (pet.name.toLowerCase() === novoNome.toLowerCase()) {
     return reply(sock, jid, msg, `⚠️ *${pet.name}* já tem esse nome!`);
   }
 
-  // ── Salvar ────────────────────────────────────────────────
   const nomeAntigo    = pet.name;
   const petAtualizado = comTimestamp({ ...pet, name: novoNome });
 
-  petCache.delete(userId);
+  petCache.delete(`${userId}:${jid}`);
 
   try {
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
+    await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: userId, idGrupo: jid },
       { $set: { pet: petAtualizado } },
       { upsert: true }
     );
-    petCache.set(userId, petAtualizado);
+    petCache.set(`${userId}:${jid}`, petAtualizado);
   } catch (err) {
     console.error('[renomear] Erro ao salvar pet:', err);
-    petCache.set(userId, pet);
+    petCache.set(`${userId}:${jid}`, pet);
     return reply(sock, jid, msg, '❌ Erro interno ao renomear. Tente novamente!');
   }
 
@@ -760,7 +752,8 @@ const membrosAtuais = new Set(
     }
 
     // ── Buscar usuários com pet ───────────────────────────────
-    const usuarios = await Usuario.find({
+    const carteiras = await CarteiraGrupo.find({
+      idGrupo:     jid,
       idWhatsApp:  { $in: [...membrosAtuais] },
       'pet.name':  { $exists: true, $nin: [null, ''] },
       'pet.level': { $exists: true },
@@ -768,24 +761,22 @@ const membrosAtuais = new Set(
       .select('idWhatsApp pet')
       .lean();
 
-    if (!usuarios.length) {
+    if (!carteiras.length) {
       return reply(sock, jid, msg,
         `🐾 *RANKING DE PETS — ESTE GRUPO*\n\nNenhum pet registrado ainda.\n\n_Use *!capturar* para conseguir o seu!_`
       );
     }
 
-    // ── Ordenar por score e pegar top 10 ─────────────────────
-    const ranks = usuarios
-      .map(u => ({ ...u, score: getRankScore(u.pet) }))
+    const ranks = carteiras
+      .map(c => ({ ...c, score: getRankScore(c.pet) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
-    // ── Montar linhas ─────────────────────────────────────────
     const mentions = [];
     const linhas   = ranks.map((entry, i) => {
       const fullJid = entry.idWhatsApp.toLowerCase();
-const numero  = fullJid.split('@')[0].split(':')[0];
-mentions.push(fullJid);
+      const numero  = fullJid.split('@')[0].split(':')[0];
+      mentions.push(fullJid);
 
       const def   = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
       const re    = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
@@ -865,7 +856,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
   if (args[0] === 'deixar') {
     let pet;
     try {
-      pet = await getPet(userId);
+      pet = await getPet(userId, jid);
     } catch (err) {
       console.error('[abrigo:deixar] Erro ao buscar pet:', err);
       return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
@@ -897,29 +888,33 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       console.error('[abrigo:deixar] Erro ao verificar abrigo:', err);
     }
 
-    petCache.delete(userId);
+    petCache.delete(`${userId}:${jid}`);
 
     try {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: jid },
+        { $unset: { pet: '' } }
+      );
       const resultado = await Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
         {
-          $unset: { pet: '' },
           $set: {
-            'petShelter.isSheltered':  true,
-            'petShelter.shelteredPet': pet,
-            'petShelter.leftAt':       new Date().toISOString(),
-            'petShelter.ownerId':      userId,
+            'petShelter.isSheltered':   true,
+            'petShelter.shelteredPet':  pet,
+            'petShelter.leftAt':        new Date().toISOString(),
+            'petShelter.ownerId':       userId,
+            'petShelter.idGrupoOrigem': jid,
           },
         },
         { new: true }
       );
 
       if (!resultado) {
-        petCache.set(userId, pet);
+        petCache.set(`${userId}:${jid}`, pet);
         return reply(sock, jid, msg, '⚠️ Usuário não encontrado no banco de dados.');
       }
     } catch (err) {
-      petCache.set(userId, pet);
+      petCache.set(`${userId}:${jid}`, pet);
       console.error('[abrigo:deixar] Erro ao salvar no banco:', err);
       return reply(sock, jid, msg, '❌ Erro interno ao enviar pet ao abrigo. Tente novamente!');
     }
@@ -991,7 +986,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     // Verifica se o usuário já tem um pet ativo
     let petAtual;
     try {
-      petAtual = await getPet(userId);
+      petAtual = await getPet(userId, jid);
     } catch (err) {
       console.error('[abrigo:pegar] Erro ao buscar pet atual:', err);
       return reply(sock, jid, msg, '❌ Erro interno. Tente novamente!');
@@ -1035,19 +1030,9 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     }
 
     try {
-      await savePet(userId, petAdotado);
+      await savePet(userId, jid, petAdotado);
     } catch (err) {
-      console.error('[abrigo:pegar] Erro ao salvar pet no adotante:', err);
-      // Reverte a liberação para não perder o pet
-      await Usuario.findOneAndUpdate(
-        { idWhatsApp: donoOriginal },
-        {
-          $set: {
-            'petShelter.isSheltered':  true,
-            'petShelter.shelteredPet': petAdotado,
-          },
-        }
-      ).catch(() => {});
+      // ...
       return reply(sock, jid, msg, '❌ Erro interno ao adotar o pet. Tente novamente!');
     }
 
@@ -1360,7 +1345,7 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
   // ── Buscar pet ────────────────────────────────────────────
   let pet;
   try {
-    pet = await getPet(userId);
+    pet = await getPet(userId, jid);
   } catch (err) {
     console.error('[statuspet] Erro ao buscar pet:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao buscar seu pet. Tente novamente!');
@@ -1394,7 +1379,7 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
 
   // ── Cooldowns ─────────────────────────────────────────────
   const tempoRestante = (cmd, cooldownMs) => {
-    const last  = _cooldownMap.get(`${userId}:${cmd}`);
+    const last  = _cooldownMap.get(`${userId}:${jid}:${cmd}`);
     if (!last) return '✅ Pronto';
     const resto = cooldownMs - (Date.now() - last);
     return resto > 0 ? `⏳ ${formatarTempo(resto)}` : '✅ Pronto';

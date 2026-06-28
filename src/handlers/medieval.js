@@ -17,12 +17,15 @@ const CD_RECARGA = 10 * 60 * 1000;
 
 // ── Anti-farm cache — limpa entradas expiradas a cada 10 minutos ──────────────
 if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
-setInterval(() => {
-  const agora = Date.now();
-  for (const [chave, timestamp] of global._medievalFarmCache.entries()) {
-    if (agora - timestamp > CD_MAGIA) global._medievalFarmCache.delete(chave);
-  }
-}, 10 * 60 * 1000);
+if (!global._medievalFarmCacheCleanup) {
+  global._medievalFarmCacheCleanup = true;
+  setInterval(() => {
+    const agora = Date.now();
+    for (const [chave, timestamp] of global._medievalFarmCache.entries()) {
+      if (agora - timestamp > CD_MAGIA) global._medievalFarmCache.delete(chave);
+    }
+  }, 10 * 60 * 1000);
+}
 
 // ── Regeneração passiva de HP e mana — roda a cada 1 hora ────────────────────
 // Recupera 10% do HP máx e 15% da mana máx para todos os personagens vivos
@@ -335,7 +338,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   }
 
   // Anti-farm: limita XP contra o mesmo alvo a 1 vez por cooldown de ataque
-  const chaveAntiFarm = `${senderJid}:${targetJid}`;
+  const chaveAntiFarm = `ataque:${senderJid}:${targetJid}`;
   if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
   const ultimoContraEsse = global._medievalFarmCache.get(chaveAntiFarm) || 0;
   const farmBloqueado    = (Date.now() - ultimoContraEsse) < CD_ATAQUE;
@@ -452,9 +455,9 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 
   // Anti-farm para magia — cache compartilhado com !atacar
   if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
-  const chaveAntiFarmMagia  = `${senderJid}:${targetJid}`;
-  const ultimoMagia         = global._medievalFarmCache.get(chaveAntiFarmMagia) || 0;
-  if ((Date.now() - ultimoMagia) < CD_MAGIA) {
+  const chaveAntiFarmMagia  = `magia:${senderJid}:${targetJid}`;
+const ultimoMagia         = global._medievalFarmCache.get(chaveAntiFarmMagia) || 0;
+if ((Date.now() - ultimoMagia) < CD_MAGIA) {
     return sock.sendMessage(jid, {
       text: `⚠️ Você usou magia em *@${targetJid.split('@')[0]}* recentemente!\n_Aguarde antes de atacar o mesmo alvo novamente._`,
       mentions: [targetJid],

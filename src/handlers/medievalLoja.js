@@ -9,7 +9,7 @@ const { getModoAtivo, getOuCriarPersonagem, somenteGrupo } = require('./medieval
 // ─── !lojamedieval ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay) {
+async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) {
     return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
@@ -19,45 +19,65 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay) {
     CarteiraGrupo.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean(),
     getOuCriarPersonagem(senderJid, jid, nomeDisplay),
   ]);
-  const gold       = carteira?.gold || 0;
-  const nivelJog   = p.nivel;
+  const gold            = carteira?.gold || 0;
+  const nivelJog        = p.nivel;
+  const mostrarTodas    = typeof args === 'string' && args.trim().toLowerCase() === 'todas';
+  const classeData      = getClasse(p.classe);
+  const armasPermitidas = classeData?.armasPermitidas || [];
+  const RARIDADE_EMOJI  = { comum: '⚪', incomum: '🟢', raro: '🔵', lendário: '🟣' };
 
-  const RARIDADE_EMOJI = { comum: '⚪', incomum: '🟢', raro: '🔵', lendário: '🟣' };
+  // ── Filtra por nível (ou mostra tudo se "todas") ──────────────────────────
+  const armasFiltradas     = mostrarTodas ? ARMAS     : ARMAS.filter(a => nivelJog >= a.nivelMinimo && armasPermitidas.includes(a.nome));
+  const armadurasFiltradas = mostrarTodas ? ARMADURAS : ARMADURAS.filter(a => nivelJog >= a.nivelMinimo);
 
-  const armasTexto = ARMAS.map(a => {
-    const chave     = a.nome.replace(/ /g, '_');
-    const bloqueado = nivelJog < a.nivelMinimo;
-    const nivelTag  = bloqueado
-      ? `   🔒 *BLOQUEADO* — Requer Nível ${a.nivelMinimo} (você: ${nivelJog})\n`
-      : a.nivelMinimo > 1 ? `   ✅ Nível ${a.nivelMinimo}+ _(disponível)_\n` : '';
-    const mana      = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
-    return (
-      `${bloqueado ? '🔒' : a.emoji} *${a.nome}*${bloqueado ? ' _(bloqueado)_' : ''}\n` +
-      `   🪙 Preço: *${a.preco} Gold*\n` +
-      `   ⚔️ Bônus de ataque: *+${a.bonusAtaque}*${mana}\n` +
-      `   ${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
-      nivelTag +
-      `   _!comprar ${chave}_`
-    );
-  }).join('\n\n');
+  // ── Monta texto das armas ─────────────────────────────────────────────────
+  const armasTexto = armasFiltradas.length === 0
+    ? '_Nenhuma arma disponível para o seu nível e classe._'
+    : armasFiltradas.map(a => {
+        const chave           = a.nome.replace(/ /g, '_');
+        const bloqueadoNivel  = nivelJog < a.nivelMinimo;
+        const bloqueadoClasse = !armasPermitidas.includes(a.nome);
+        const bloqueado       = bloqueadoNivel || bloqueadoClasse;
+        const mana            = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
 
-  const armadurasTexto = ARMADURAS.map(a => {
-    const chave     = a.nome.replace(/ /g, '_');
-    const bloqueado = nivelJog < a.nivelMinimo;
-    const nivelTag  = bloqueado
-      ? `   🔒 *BLOQUEADO* — Requer Nível ${a.nivelMinimo} (você: ${nivelJog})\n`
-      : a.nivelMinimo > 1 ? `   ✅ Nível ${a.nivelMinimo}+ _(disponível)_\n` : '';
-    const mana      = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
-    return (
-      `${bloqueado ? '🔒' : a.emoji} *${a.nome}*${bloqueado ? ' _(bloqueado)_' : ''}\n` +
-      `   🪙 Preço: *${a.preco} Gold*\n` +
-      `   🛡️ Bônus de defesa: *+${a.bonusDefesa}*${mana}\n` +
-      `   ${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
-      nivelTag +
-      `   _!comprar ${chave}_`
-    );
-  }).join('\n\n');
+        let statusTag = '';
+        if (mostrarTodas && bloqueadoClasse) {
+          statusTag = `   ⛔ *Classe incompatível*\n`;
+        } else if (mostrarTodas && bloqueadoNivel) {
+          statusTag = `   🔒 Requer Nível ${a.nivelMinimo}\n`;
+        }
 
+        return (
+          `${bloqueadoClasse && mostrarTodas ? '⛔' : bloqueadoNivel && mostrarTodas ? '🔒' : a.emoji} *${a.nome}*\n` +
+          `   🪙 Preço: *${a.preco} Gold*\n` +
+          `   ⚔️ Bônus de ataque: *+${a.bonusAtaque}*${mana}\n` +
+          `   ${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
+          statusTag +
+          `   _!comprar ${chave}_`
+        );
+      }).join('\n\n');
+
+  // ── Monta texto das armaduras ─────────────────────────────────────────────
+  const armadurasTexto = armadurasFiltradas.length === 0
+    ? '_Nenhuma armadura disponível para o seu nível._'
+    : armadurasFiltradas.map(a => {
+        const chave    = a.nome.replace(/ /g, '_');
+        const bloqueado = nivelJog < a.nivelMinimo;
+        const mana     = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
+        const statusTag = mostrarTodas && bloqueado
+          ? `   🔒 Requer Nível ${a.nivelMinimo}\n`
+          : '';
+        return (
+          `${bloqueado && mostrarTodas ? '🔒' : a.emoji} *${a.nome}*\n` +
+          `   🪙 Preço: *${a.preco} Gold*\n` +
+          `   🛡️ Bônus de defesa: *+${a.bonusDefesa}*${mana}\n` +
+          `   ${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
+          statusTag +
+          `   _!comprar ${chave}_`
+        );
+      }).join('\n\n');
+
+  // ── Poções não têm nível mínimo — aparecem sempre ─────────────────────────
   const pocoesTexto = POCOES.map(poc => {
     const chave  = poc.nome.replace(/ /g, '_');
     const tipoIc = poc.tipo === 'hp' ? '❤️' : poc.tipo === 'mana' ? '💧' : '❤️💧';
@@ -71,22 +91,27 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay) {
     );
   }).join('\n\n');
 
+  const rodape = mostrarTodas
+    ? `_Mostrando todos os itens. Use *!lojamedieval* para ver só os do seu nível._`
+    : `_Mostrando itens do Nível ${nivelJog}. Use *!lojamedieval todas* para ver tudo._`;
+
   await sock.sendMessage(jid, {
     text:
-      `🏪 *LOJA MEDIEVAL* 🏪\n` +
+      `🏪 *LOJA MEDIEVAL* — Nível ${nivelJog} 🏪\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
-      `🪙 Seu saldo: *${gold} Gold*\n\n` +
-      `⚔️ *ARMAS*\n` +
+      `🪙 Seu saldo: *${gold} Gold*\n` +
+      `🏅 Classe: *${p.classe}* ${classeData?.emoji || ''}\n\n` +
+      `⚔️ *ARMAS DISPONÍVEIS*\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
       `${armasTexto}\n\n` +
-      `🛡️ *ARMADURAS*\n` +
+      `🛡️ *ARMADURAS DISPONÍVEIS*\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
       `${armadurasTexto}\n\n` +
       `🧪 *POÇÕES*\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
       `${pocoesTexto}\n\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
-      `_Use o comando em itálico para comprar cada item!_`,
+      rodape,
   }, { quoted: msg });
 }
 
@@ -124,6 +149,19 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
         `❌ Você precisa ser *Nível ${item.nivelMinimo}* para comprar *${item.nome}*!\n` +
         `📊 Seu nível atual: *${p.nivel}*`,
     }, { quoted: msg });
+  }
+
+  // Valida classe para armas — avisa antes de desperdiçar gold
+  if (arma) {
+    const classeData = getClasse(p.classe);
+    if (classeData && !classeData.armasPermitidas.includes(item.nome)) {
+      return sock.sendMessage(jid, {
+        text:
+          `❌ *${p.classe}* não pode equipar *${item.nome}*!\n` +
+          `🗡️ Armas permitidas para sua classe: *${classeData.armasPermitidas.join(', ')}*\n\n` +
+          `_Você não pode comprar itens que sua classe não consegue usar._`,
+      }, { quoted: msg });
+    }
   }
 
   const chave = `inventarioMedieval.${item.nome.replace(/ /g, '_')}`;

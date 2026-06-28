@@ -2376,5 +2376,33 @@ router.post('/admin/pets/alimentar', adminAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/user/telefone/:idWhatsApp
+// Resolve @lid → telefone real via LidMapping.
+// Rota pública — não expõe dados sensíveis além do número formatado.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/user/telefone/:idWhatsApp', async (req, res) => {
+  try {
+    const idRaw = decodeURIComponent(req.params.idWhatsApp).trim().toLowerCase();
+
+    // Se já é um número normal, devolve direto
+    if (!idRaw.endsWith('@lid')) {
+      const numero = idRaw.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+      return res.json({ telefone: numero || null });
+    }
+
+    // Tenta resolver via LidMapping
+    const mapa = await LidMapping.findOne({ lid: idRaw }).lean();
+    if (!mapa?.pn) return res.json({ telefone: null });
+
+    const numero = mapa.pn.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+    return res.json({ telefone: numero || null });
+
+  } catch (err) {
+    console.error('[API] GET /user/telefone/:idWhatsApp:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

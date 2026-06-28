@@ -843,7 +843,9 @@ async function handleMessage(sock, msg) {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   // ── ACESSÓRIOS DE CASAL (equipar via .item) ──────────────────────────────────
-if (cmdWord.startsWith('.')) {
+// Comandos medievais com prefixo . — precisa vir ANTES do bloco de acessórios
+const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval'];
+if (!CMDS_MEDIEVAIS.includes(cmdWord.slice(1)) && cmdWord.startsWith('.')) {
   const itemKey = cmdWord.slice(1);
   const { handleEquiparAcessorio } = require(path.join(__dirname, 'handlers', 'diversao', 'acessoriosCasal'));
   const tratado = await handleEquiparAcessorio(sock, msg, jid, senderJid, itemKey);
@@ -977,6 +979,8 @@ if (matchCmd(cmdWord, 'desequipar') || matchCmdStart(cmd, 'desequipar '))
   { await medievalLojaHandler.handleDesequipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]desequipar\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'invmed'))
   { await medievalLojaHandler.handleInvMed(sock, msg, jid, senderJid, author); return; }
+if (matchCmd(cmdWord, 'sellmed') || matchCmdStart(cmd, 'sellmed '))
+  { await medievalLojaHandler.handleSellMed(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]sellmed\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'usarpocao') || matchCmdStart(cmd, 'usarpocao '))
   { await medievalLojaHandler.handleUsarPocao(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]usarpocao\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'historico'))

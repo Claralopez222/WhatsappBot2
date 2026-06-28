@@ -892,8 +892,6 @@ if (matchCmd(cmdWord, 'resetsenha'))  {
     { await diversaoHandler.handleSistemaGold(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'sistempet'))
   { await diversaoHandler.handleSistemaPet(sock, msg, jid, getPrefix); return; }
-if (matchCmd(cmdWord, 'sistemmedieval') || matchCmd(cmdWord, 'comomediev'))
-  { await diversaoHandler.handleSistemaMedieval(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menugold'))
     { await diversaoHandler.handleMenuGold(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menupet'))
@@ -960,8 +958,8 @@ if (matchCmd(cmdWord, 'missaomed'))
   { await medievalHandler.handleMissao(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'recargamana'))
   { await medievalHandler.handleRecargaMana(sock, msg, jid, senderJid, author); return; }
-if (matchCmd(cmdWord, 'lojamedieval'))
-  { await medievalLojaHandler.handleLojaMedieval(sock, msg, jid, senderJid); return; }
+if (matchCmd(cmdWord, 'lojamedieval') || matchCmdStart(cmd, 'lojamedieval '))
+  { await medievalLojaHandler.handleLojaMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]lojamedieval\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'comprar') || matchCmdStart(cmd, 'comprar '))
   { await medievalLojaHandler.handleComprarMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]comprar\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'equipar') || matchCmdStart(cmd, 'equipar '))
@@ -970,14 +968,16 @@ if (matchCmd(cmdWord, 'rankmedieval'))
   { await medievalLojaHandler.handleRankMedieval(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'menumediev'))
   { await medievalLojaHandler.handleMenuMedieval(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'historico'))
+  { await medievalHandler.handleHistorico(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'desequipar') || matchCmdStart(cmd, 'desequipar '))
   { await medievalLojaHandler.handleDesequipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]desequipar\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'invmed'))
   { await medievalLojaHandler.handleInvMed(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'usarpocao') || matchCmdStart(cmd, 'usarpocao '))
   { await medievalLojaHandler.handleUsarPocao(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]usarpocao\s*/i, '')); return; }
-if (matchCmd(cmdWord, 'sistemmedieval'))
-  { await menuHandler.handleSistemaMedieval(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'historico'))
+  { await medievalHandler.handleHistorico(sock, msg, jid, senderJid, author); return; }
 
   // ── PETS ──────────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'capturar'))

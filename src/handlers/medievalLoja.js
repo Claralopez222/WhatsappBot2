@@ -70,22 +70,25 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
     }, { quoted: msg });
   }
 
-  const carteira = await CarteiraGrupo.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
-  const gold     = carteira?.gold || 0;
+  await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  const chave = `inventarioMedieval.${item.nome.replace(/ /g, '_')}`;
 
-  if (gold < item.preco) {
+  // Atômico: só debita se gold >= preco — previne gold negativo por race condition
+  const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: senderJid, idGrupo: jid, gold: { $gte: item.preco } },
+    { $inc: { gold: -item.preco } },
+    { new: true, upsert: false }
+  );
+
+  if (!carteiraAtualizada) {
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
+    const gold     = carteira?.gold || 0;
     return sock.sendMessage(jid, {
       text: `❌ Gold insuficiente!\n🪙 Você tem: *${gold}* | Necessário: *${item.preco}*`,
     }, { quoted: msg });
   }
 
-  await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
-  const chave = `inventarioMedieval.${item.nome.replace(/ /g, '_')}`;
-
-  await CarteiraGrupo.updateOne(
-    { idWhatsApp: senderJid, idGrupo: jid },
-    { $inc: { gold: -item.preco } }
-  );
+  const gold = carteiraAtualizada.gold + item.preco; // gold antes do débito para exibir
   await MedievalPersonagem.updateOne(
     { idWhatsApp: senderJid, idGrupo: jid },
     { $inc: { [chave]: 1 } }
@@ -162,6 +165,16 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
     }
   } else {
     updateFields.armaduraEquipada = item.nome;
+    // Trata bonusMana de armaduras (ex: Manto Sombrio)
+    if (item.bonusMana) {
+      const armaduraAnt     = p.armaduraEquipada ? ARMADURAS.find(a => a.nome === p.armaduraEquipada) : null;
+      const bonusAnt        = armaduraAnt?.bonusMana || 0;
+      const bonusNovo       = item.bonusMana;
+      const deltaMana       = bonusNovo - bonusAnt;
+      const novoManaMax     = Math.max(1, p.manaMax + deltaMana);
+      updateFields.manaMax  = novoManaMax;
+      updateFields.mana     = Math.min(p.mana + deltaMana, novoManaMax);
+    }
   }
 
   await MedievalPersonagem.updateOne(
@@ -211,6 +224,13 @@ async function handleDesequipar(sock, msg, jid, senderJid, nomeDisplay, args) {
   } else {
     if (!p.armaduraEquipada) {
       return sock.sendMessage(jid, { text: '❌ Você não tem nenhuma armadura equipada.' }, { quoted: msg });
+    }
+    // Desconta bonusMana da armadura removida (ex: Manto Sombrio)
+    const armaduraAnt = ARMADURAS.find(a => a.nome === p.armaduraEquipada);
+    if (armaduraAnt?.bonusMana) {
+      const novoManaMax      = Math.max(1, p.manaMax - armaduraAnt.bonusMana);
+      updateFields.manaMax   = novoManaMax;
+      updateFields.mana      = Math.min(p.mana, novoManaMax);
     }
     updateFields.armaduraEquipada = null;
   }

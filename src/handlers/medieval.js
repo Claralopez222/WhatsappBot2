@@ -243,7 +243,10 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     return sock.sendMessage(jid, { text: '⚔️ Marque um inimigo para atacar!\nExemplo: *!atacar @fulano*' }, { quoted: msg });
   }
 
-  const atacante = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  // findOne fresco — garante HP e cooldown atualizados mesmo com requests simultâneos
+  const atacante = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+
   const { pode, tempoRestante } = verificarCooldown(atacante.ultimoAtaque, CD_ATAQUE);
   if (!pode) {
     return sock.sendMessage(jid, {
@@ -257,13 +260,28 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     }, { quoted: msg });
   }
 
-  const defensor = await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
+  const defensor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
+
   if (defensor.hp <= 0) {
     return sock.sendMessage(jid, {
       text: `💀 *@${targetJid.split('@')[0]}* já está derrotado!`,
       mentions: [targetJid],
     }, { quoted: msg });
   }
+
+  // Anti-farm: limita XP contra o mesmo alvo a 1 vez por cooldown de ataque
+  const chaveAntiFarm = `${senderJid}:${targetJid}`;
+  if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
+  const ultimoContraEsse = global._medievalFarmCache.get(chaveAntiFarm) || 0;
+  const farmBloqueado    = (Date.now() - ultimoContraEsse) < CD_ATAQUE;
+  if (farmBloqueado) {
+    return sock.sendMessage(jid, {
+      text: `⚠️ Você atacou *@${targetJid.split('@')[0]}* recentemente!\n_Aguarde antes de atacar o mesmo alvo novamente._`,
+      mentions: [targetJid],
+    }, { quoted: msg });
+  }
+  global._medievalFarmCache.set(chaveAntiFarm, Date.now());
 
   const { dano, critico, multElemento } = calcularDano(atacante, defensor);
   const novoHp = Math.max(0, defensor.hp - dano);
@@ -308,11 +326,6 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     textoFinal += `\n\n💀 *@${targetJid.split('@')[0]} foi derrotado!*\n🏆 *${atacante.nome}* ganhou +30 XP de vitória!`;
   }
 
-  // Merge: XP do ataque + XP/vitória num único update quando possível
-  // Já feito acima — o $inc de xpMedieval inicial é separado por necessidade
-  // (precisa do resultado do dano para saber se houve vitória).
-  // O fix real é garantir que o update de vitória não seja pulado:
-
   await sock.sendMessage(jid, {
     text: textoFinal,
     mentions: [senderJid, targetJid],
@@ -334,7 +347,10 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     return sock.sendMessage(jid, { text: '🔮 Marque um alvo para usar sua magia!\nExemplo: *!magia @fulano*' }, { quoted: msg });
   }
 
-  const atacante = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  // findOne fresco — garante mana e cooldown atualizados
+  const atacante = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+
   const { pode, tempoRestante } = verificarCooldown(atacante.ultimaMagia, CD_MAGIA);
   if (!pode) {
     return sock.sendMessage(jid, {
@@ -416,7 +432,8 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
     return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
   }
 
-  const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
   const { pode, tempoRestante } = verificarCooldown(p.ultimaMissao, CD_MISSAO);
   if (!pode) {
     return sock.sendMessage(jid, {
@@ -449,7 +466,8 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
       `⏳ _Aguarde o resultado..._`,
   }, { quoted: msg });
 
-  await new Promise(r => setTimeout(r, 3000));
+  // Delay reduzido: efeito narrativo sem travar o event loop por muito tempo
+  await new Promise(r => setTimeout(r, 1200));
 
   if (sucesso) {
     const xpBonus   = Math.floor(missao.xpReward   * (0.8 + Math.random() * 0.4));
@@ -509,7 +527,8 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
     return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
   }
 
-  const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
   const { pode, tempoRestante } = verificarCooldown(p.ultimaRecarga, CD_RECARGA);
   if (!pode) {
     return sock.sendMessage(jid, {

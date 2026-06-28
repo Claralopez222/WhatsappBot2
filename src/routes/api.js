@@ -1824,9 +1824,6 @@ const rateLimitCadastro = rateLimit({
 // POST /api/auth/otp/enviar
 // ─────────────────────────────────────────────────────────────────────────────
 const OtpCadastro = require('../models/OtpCadastro');
-const nodemailer  = require('nodemailer');
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 const rateLimitOtp = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -1838,12 +1835,10 @@ const rateLimitOtp = rateLimit({
 
 router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
   try {
-    const { idWhatsApp, email } = req.body || {};
+    const { idWhatsApp } = req.body || {};
 
     if (!idWhatsApp || typeof idWhatsApp !== 'string')
       return res.status(400).json({ error: 'idWhatsApp é obrigatório.' });
-    if (!email || typeof email !== 'string' || !email.includes('@'))
-      return res.status(400).json({ error: 'Email inválido.' });
 
     const digitosBase = idWhatsApp.split('@')[0].replace(/\D/g, '');
     if (!digitosBase || digitosBase.length < 8 || digitosBase.length > 15)
@@ -1863,25 +1858,15 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
     if (usuarioFinal.username && usuarioFinal.passwordHash)
       return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
 
-    // Verifica se o email já está em uso por outro usuário
-    const emailEmUso = await Usuario.findOne({
-      email: email.toLowerCase().trim(),
-      idWhatsApp: { $ne: usuarioFinal.idWhatsApp },
-    }).lean();
-    if (emailEmUso)
-      return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
-
     const codigo    = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Salva o email junto com o OTP
     await OtpCadastro.findOneAndUpdate(
       { idWhatsApp: usuarioFinal.idWhatsApp },
-      { codigo, expiresAt, usado: false, email: email.toLowerCase().trim() },
+      { codigo, expiresAt, usado: false },
       { upsert: true }
     );
 
-    // Salva telefone no usuário se ainda não tiver
     if (!usuarioFinal.telefone && digitosBase) {
       await Usuario.findOneAndUpdate(
         { idWhatsApp: usuarioFinal.idWhatsApp },
@@ -1889,24 +1874,17 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
       );
     }
 
-    // Envia email via Gmail
-    await resend.emails.send({
-  from:    'Horseman <onboarding@resend.dev>',
-  to:      email.toLowerCase().trim(),
-  subject: '🔐 Código de verificação — Piroquinhas Bot',
-  html: `
-    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07080d;color:#e8eaf0;padding:32px;border-radius:12px;border:1px solid #1f2230;">
-      <h2 style="margin:0 0 8px;color:#b855ff;">Piroquinhas Bot</h2>
-      <p style="color:#9298ad;margin:0 0 24px;">Código de verificação para criar sua conta no painel.</p>
-      <div style="background:#13141f;border:1px solid #b855ff33;border-radius:8px;padding:24px;text-align:center;margin-bottom:24px;">
-        <span style="font-size:36px;font-weight:700;letter-spacing:0.2em;color:#b855ff;font-family:monospace;">${codigo}</span>
-      </div>
-      <p style="color:#5a5f72;font-size:13px;margin:0;">Válido por <strong style="color:#9298ad;">10 minutos</strong>. Não compartilhe com ninguém.</p>
-    </div>
-  `,
-});
+    // Envia código via WhatsApp
+    const { sock: botSock } = require('../bot');
+    if (!botSock)
+      return res.status(503).json({ error: 'Bot não conectado. Tente novamente em instantes.' });
 
-    return res.json({ ok: true, message: 'Código enviado para o email.' });
+    const numeroDestino = `${digitosBase}@s.whatsapp.net`;
+    await botSock.sendMessage(numeroDestino, {
+      text: `🔐 *Piroquinhas Bot — Verificação de Conta*\n\nSeu código de verificação é:\n\n*${codigo}*\n\n⏰ Válido por 10 minutos. Não compartilhe com ninguém.`,
+    });
+
+    return res.json({ ok: true, message: 'Código enviado no seu WhatsApp!' });
   } catch (err) {
     console.error('[API] POST /auth/otp/enviar:', err);
     return res.status(500).json({ error: 'Erro interno ao enviar código.' });
@@ -1979,25 +1957,11 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
     if (!otpDoc || otpDoc.codigo !== otp)
       return res.status(401).json({ error: 'Código incorreto ou expirado.' });
 
-    // Pega o email salvo no OTP antes de marcar como usado
-    const emailSalvo = otpDoc.email || null;
-
-    // Verifica se o email já está em uso
-    if (emailSalvo) {
-      const emailJaUsado = await Usuario.findOne({
-        email: emailSalvo,
-        idWhatsApp: { $ne: idWhatsAppReal },
-      }).lean();
-      if (emailJaUsado)
-        return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
-    }
-
     await OtpCadastro.findOneAndUpdate(
       { idWhatsApp: idWhatsAppReal },
       { $set: { usado: true } }
     );
 
-    // ── Hash e salva ──────────────────────────────────────────────────────────
     const passwordHash = await bcrypt.hash(passwordLimpa, 12);
 
     await Usuario.findOneAndUpdate(
@@ -2006,16 +1970,9 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
           username:     usernameLimpo,
           passwordHash,
           ...(digitosBase && { telefone: digitosBase }),
-          ...(emailSalvo  && { email:    emailSalvo  }),
       }},
       { new: true }
     );
-
-    // Cria índice único no email se ainda não existir (best-effort)
-    Usuario.collection.createIndex(
-      { email: 1 },
-      { unique: true, sparse: true, background: true }
-    ).catch(() => {});
 
     return res.json({ ok: true, message: 'Conta criada com sucesso! Faça login para acessar o painel.' });
 

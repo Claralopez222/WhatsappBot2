@@ -10,6 +10,7 @@ const path          = require('path');
 const Usuario       = require(path.join(__dirname, '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
 const Filho         = require(path.join(__dirname, '..', 'models', 'Filho'));
+const LidMapping    = require(path.join(__dirname, '..', 'models', 'LidMapping'));
 
 const RESET    = '\x1b[0m';
 const VERDE    = '\x1b[32m';
@@ -34,22 +35,37 @@ async function main() {
 
   info('Buscando coleções...');
 
-  const [usuarios, carteiras, filhos] = await Promise.all([
+  const [usuarios, carteiras, filhos, lidMappings] = await Promise.all([
     Usuario.find({}).lean(),
     CarteiraGrupo.find({}).lean(),
     Filho.find({}).lean(),
+    LidMapping.find({}).lean(),
   ]);
+
+  // Monta mapa lid → telefone para enriquecer os dados
+  const lidParaTelefone = {};
+  for (const m of lidMappings) {
+    if (m.lid && m.pn) lidParaTelefone[m.lid] = m.pn;
+  }
+
+  // Enriquece usuários com o telefone real quando disponível
+  const usuariosEnriquecidos = usuarios.map(u => ({
+    ...u,
+    telefone: lidParaTelefone[u.idWhatsApp] ?? u.telefone ?? null,
+  }));
 
   const dados = {
     exportadoEm: new Date().toISOString(),
     totais: {
-      usuarios:  usuarios.length,
-      carteiras: carteiras.length,
-      filhos:    filhos.length,
+      usuarios:    usuarios.length,
+      carteiras:   carteiras.length,
+      filhos:      filhos.length,
+      lidMappings: lidMappings.length,
     },
-    usuarios,
+    usuarios: usuariosEnriquecidos,
     carteiras,
     filhos,
+    lidMappings,
   };
 
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(dados, null, 2), 'utf8');
@@ -57,9 +73,12 @@ async function main() {
   const tamanhoKb = (fs.statSync(OUTPUT_FILE).size / 1024).toFixed(1);
 
   titulo('📊  RESUMO DA EXPORTAÇÃO');
-  ok(`Usuários  : ${usuarios.length}`);
+  const comTelefone = usuariosEnriquecidos.filter(u => u.telefone).length;
+
+  ok(`Usuários  : ${usuarios.length} (${comTelefone} com telefone)`);
   ok(`Carteiras : ${carteiras.length}`);
   ok(`Filhos    : ${filhos.length}`);
+  ok(`LidMapping: ${lidMappings.length}`);
   info(`Arquivo   : ${OUTPUT_FILE}`);
   info(`Tamanho   : ${tamanhoKb} KB`);
 

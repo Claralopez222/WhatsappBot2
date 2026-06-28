@@ -2131,9 +2131,8 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
   try {
     const comRelacionamento = await Usuario.find({
       casadoCom: { $exists: true, $ne: null, $ne: '' }
-    }).select('idWhatsApp nome telefone casadoCom casadoTipo casadoDesde').lean();
+    }).select('idWhatsApp nome telefone casadoCom casadoTipo casadoDesde casadoGrupo').lean();
 
-    // Monta índice por JID para lookup rápido
     // Resolve @lid para pn via LidMapping
     const lids = comRelacionamento.map(u => u.idWhatsApp).filter(j => j?.endsWith('@lid'));
     const lidMaps = lids.length ? await LidMapping.find({ lid: { $in: lids } }).lean() : [];
@@ -2148,11 +2147,10 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
       if (pn) porJid.set(pn, u);
     }
 
-    // Detecta e limpa fantasmas (um lado zerado ou parceiro inexistente)
+    // Detecta e limpa fantasmas
     const fantasmas = comRelacionamento.filter(u => {
       const parceiro = porJid.get(u.casadoCom);
       if (!parceiro) return true;
-      // Verifica também equivalente @lid <-> pn
       const casadoComParceiro = parceiro.casadoCom;
       const lidEquivalente = pnParaLid[u.idWhatsApp] || lidParaPn[u.idWhatsApp];
       return casadoComParceiro !== u.idWhatsApp && casadoComParceiro !== lidEquivalente;
@@ -2167,7 +2165,7 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
       console.log(`[Admin] Limpou ${fantasmas.length} relacionamento(s) fantasma(s).`);
     }
 
-    // Só processa os válidos (ambos apontam um pro outro)
+    // Só processa os válidos
     const validos = comRelacionamento.filter(u => {
       const parceiro = porJid.get(u.casadoCom);
       if (!parceiro) return false;
@@ -2175,6 +2173,31 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
       const lidEquivalente = pnParaLid[u.idWhatsApp] || lidParaPn[u.idWhatsApp];
       return casadoComParceiro === u.idWhatsApp || casadoComParceiro === lidEquivalente;
     });
+
+    // Resolve nomes dos grupos
+    const jidsGruposRel = [...new Set(comRelacionamento.map(u => u.casadoGrupo).filter(Boolean))];
+    const nomesGruposRel = jidsGruposRel.length
+      ? await CarteiraGrupo.aggregate([
+          { $match: { idGrupo: { $in: jidsGruposRel } } },
+          { $group: { _id: '$idGrupo', nomeCustom: { $first: '$nomeCustom' }, nomeReal: { $first: '$nome' } } },
+        ])
+      : [];
+    const nomesGruposRelMap = Object.fromEntries(
+      nomesGruposRel.map(g => [g._id, nomeGrupo(g, g._id)])
+    );
+
+    // Resolve @lid → telefone real para todos os JIDs envolvidos
+    const todosLidsRel = [...comRelacionamento.map(u => u.idWhatsApp), ...comRelacionamento.map(u => u.casadoCom)]
+      .filter(j => j?.endsWith('@lid'));
+    const lidMapsRel = todosLidsRel.length
+      ? await LidMapping.find({ lid: { $in: todosLidsRel } }).lean()
+      : [];
+    const lidParaPnRel = Object.fromEntries(lidMapsRel.map(m => [m.lid, m.pn]));
+
+    function telefoneExibicao(jid) {
+      const pn = lidParaPnRel[jid] || jid;
+      return pn.split('@')[0].replace(/\D/g, '');
+    }
 
     // Deduplica pares (A-B e B-A viram um só)
     const vistos = new Set();
@@ -2191,17 +2214,22 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
       const nomeA = u.nome || u.telefone || jidA.split('@')[0];
       const nomeB = parceiro.nome || parceiro.telefone || jidB?.split('@')[0] || '—';
 
-relacionamentos.push({
+      relacionamentos.push({
         jidA,
         jidB,
         nomeA,
         nomeB,
+        telefoneA: telefoneExibicao(jidA),
+        telefoneB: telefoneExibicao(jidB),
         tipo:      u.casadoTipo  || 'namoro',
         desde:     u.casadoDesde || null,
         idGrupo:   u.casadoGrupo || null,
-        nomeGrupo: u.casadoGrupo ? nomeGrupoFallback(u.casadoGrupo) : null,
-        xp:        0,
-      });    }
+        nomeGrupo: u.casadoGrupo
+          ? (nomesGruposRelMap[u.casadoGrupo] || nomeGrupoFallback(u.casadoGrupo))
+          : null,
+        xp: 0,
+      });
+    }
 
     return res.json({ relacionamentos, fantasmasLimpos: fantasmas.length });
   } catch (err) {

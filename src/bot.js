@@ -958,9 +958,12 @@ if (matchCmd(cmdWord, 'missaomed'))
   { await medievalHandler.handleMissao(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'recargamana'))
   { await medievalHandler.handleRecargaMana(sock, msg, jid, senderJid, author); return; }
-if (matchCmd(cmdWord, 'lojamedieval') || matchCmdStart(cmd, 'lojamedieval '))
-  { await medievalLojaHandler.handleLojaMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]lojamedieval\s*/i, '')); return; }
-if (matchCmd(cmdWord, 'comprar') || matchCmdStart(cmd, 'comprar '))
+if (matchCmd(cmdWord, 'lojamedieval') || matchCmdStart(cmd, 'lojamedieval ') ||
+    matchCmd(cmdWord, 'lojamed')      || matchCmdStart(cmd, 'lojamed ')) {
+  const argsLoja = caption.replace(/^[!.,\/](lojamedieval|lojamed)\s*/i, '').trim();
+  await medievalLojaHandler.handleLojaMedieval(sock, msg, jid, senderJid, author, argsLoja);
+  return;
+}
   { await medievalLojaHandler.handleComprarMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]comprar\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'equipar') || matchCmdStart(cmd, 'equipar '))
   { await medievalLojaHandler.handleEquipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]equipar\s*/i, '')); return; }

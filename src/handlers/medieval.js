@@ -44,15 +44,19 @@ async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
     return await MedievalPersonagem.create({
       idWhatsApp,
       idGrupo,
-      nome:    nome || idWhatsApp.split('@')[0],
-      classe:  classe.nome,
+      nome:     nome || idWhatsApp.split('@')[0],
+      classe:   classe.nome,
       elemento: elemento.nome,
-      hp:      classe.hp,
-      hpMax:   classe.hp,
-      mana:    classe.mana,
-      manaMax: classe.mana,
-      ataque:  classe.ataque,
-      defesa:  classe.defesa,
+      nivel:    1,
+      xpMedieval: 0,
+      hp:       classe.hp,
+      hpMax:    classe.hp,
+      mana:     classe.mana,
+      manaMax:  classe.mana,
+      ataque:   classe.ataque,
+      defesa:   classe.defesa,
+      vitorias: 0,
+      derrotas: 0,
     });
   } catch (err) {
     // Erro 11000 = duplicate key — race condition, busca o que foi criado
@@ -76,8 +80,6 @@ function gerarBarra(atual, maximo, emoji = '❤️', tamanho = 8) {
 async function verificarLevelUp(sock, jid, senderJid) {
   let p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
   if (!p) return;
-
-  let subiu = false;
 
   while (p.xpMedieval >= xpParaNivel(p.nivel + 1)) {
     const novoNivel   = p.nivel + 1;
@@ -115,7 +117,6 @@ async function verificarLevelUp(sock, jid, senderJid) {
     p.mana   += manaBonus;
     p.ataque += ataqueBonus;
     p.defesa += defesaBonus;
-    subiu = true;
 
     await sock.sendMessage(jid, {
       text:
@@ -168,9 +169,13 @@ async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
         `▸ *!atacar @alguém* — Atacar um inimigo\n` +
         `▸ *!magia @alguém* — Usar habilidade elemental\n` +
         `▸ *!missaomed* — Embarcar em uma missão\n` +
-        `▸ *!lojamedieval* — Comprar armas e armaduras\n` +
-        `▸ *!equipar [item]* — Equipar um item\n` +
         `▸ *!recargamana* — Recuperar HP e mana\n` +
+        `▸ *!lojamedieval* — Ver loja de itens\n` +
+        `▸ *!comprar [item]* — Comprar um item\n` +
+        `▸ *!equipar [item]* — Equipar arma ou armadura\n` +
+        `▸ *!desequipar arma/armadura* — Remover item equipado\n` +
+        `▸ *!usarpocao [nome]* — Usar poção\n` +
+        `▸ *!invmed* — Ver seu inventário\n` +
         `▸ *!rankmedieval* — Ranking de guerreiros\n` +
         `▸ *!menumediev* — Ver todos os comandos\n` +
         `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
@@ -365,13 +370,26 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     }, { quoted: msg });
   }
 
-  const defensor = await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
+  const defensor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
   if (defensor.hp <= 0) {
     return sock.sendMessage(jid, {
       text: `💀 *@${targetJid.split('@')[0]}* já está derrotado!`,
       mentions: [targetJid],
     }, { quoted: msg });
   }
+
+  // Anti-farm para magia — cache compartilhado com !atacar
+  if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
+  const chaveAntiFarmMagia  = `${senderJid}:${targetJid}`;
+  const ultimoMagia         = global._medievalFarmCache.get(chaveAntiFarmMagia) || 0;
+  if ((Date.now() - ultimoMagia) < CD_MAGIA) {
+    return sock.sendMessage(jid, {
+      text: `⚠️ Você usou magia em *@${targetJid.split('@')[0]}* recentemente!\n_Aguarde antes de atacar o mesmo alvo novamente._`,
+      mentions: [targetJid],
+    }, { quoted: msg });
+  }
+  global._medievalFarmCache.set(chaveAntiFarmMagia, Date.now());
 
   const elemento   = getElemento(atacante.elemento);
   const habilidade = elemento?.habilidadeUltima || 'Magia Elemental';

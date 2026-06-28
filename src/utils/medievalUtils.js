@@ -221,7 +221,7 @@ function calcularMultElemento(elementoAtacante, elementoDefensor) {
  */
 function xpParaNivel(nivel) {
   if (nivel < 1) return 100;
-  return Math.floor(100 * Math.pow(nivel, 1.4));
+  return Math.floor(100 * Math.pow(Math.max(1, nivel), 1.4));
 }
 
 /**

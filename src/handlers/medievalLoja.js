@@ -388,7 +388,7 @@ async function handleRankMedieval(sock, msg, jid) {
   const linhas   = personagens.map((p, i) => {
     const classe   = getClasse(p.classe);
     const elemento = getElemento(p.elemento);
-    return `${MEDALHAS[i]} *${p.nome}*\n   ${classe?.emoji || '⚔️'} ${p.classe} | ${elemento?.emoji || '✨'} ${p.elemento}\n   🏆 ${p.vitorias} vitórias | ⭐ Nível ${p.nivel}`;
+    return `${MEDALHAS[i]} *${p.nome || p.idWhatsApp.split('@')[0]}*\n   ${classe?.emoji || '⚔️'} ${p.classe} | ${elemento?.emoji || '✨'} ${p.elemento}\n   🏆 ${p.vitorias} vitórias | ⭐ Nível ${p.nivel}`;
   }).join('\n\n');
 
   await sock.sendMessage(jid, {
@@ -416,7 +416,7 @@ async function handleMenuMedieval(sock, msg, jid) {
       `▸ *!atacar @alguém* — Atacar com arma (2min)\n` +
       `▸ *!magia @alguém* — Habilidade elemental (5min)\n\n` +
       `🗺️ *AVENTURA*\n` +
-      `▸ *!missao* — Embarcar em missão (30min)\n\n` +
+      `▸ *!missaomed* — Embarcar em missão (30min)\n\n` +
       `🏪 *LOJA E ITENS*\n` +
       `▸ *!lojamedieval* — Ver loja de armas, armaduras e poções\n` +
       `▸ *!comprar [item]* — Comprar um item\n` +

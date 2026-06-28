@@ -7,28 +7,28 @@ const CLASSES = [
     emoji: '⚔️',
     descricao: 'Mestre do combate corpo a corpo',
     ataque: 14, defesa: 10, hp: 130, mana: 50,
-    armasPermitidas: ['Espada', 'Machado', 'Lança'],
+    armasPermitidas: ['Espada', 'Machado', 'Lança', 'Lança Simples'],
   },
   {
     nome: 'Mago',
     emoji: '🧙',
     descricao: 'Conjurador de feitiços poderosos',
     ataque: 18, defesa: 4, hp: 80, mana: 120,
-    armasPermitidas: ['Cajado'],
+    armasPermitidas: ['Cajado', 'Cajado de Madeira'],
   },
   {
     nome: 'Arqueiro',
     emoji: '🏹',
     descricao: 'Preciso e veloz à distância',
     ataque: 13, defesa: 7, hp: 100, mana: 70,
-    armasPermitidas: ['Arco', 'Adaga'],
+    armasPermitidas: ['Arco', 'Arco Simples', 'Adaga'],
   },
   {
     nome: 'Paladino',
     emoji: '🛡️',
     descricao: 'Guerreiro sagrado com poderes divinos',
     ataque: 12, defesa: 14, hp: 120, mana: 80,
-    armasPermitidas: ['Espada', 'Lança'],
+    armasPermitidas: ['Espada', 'Lança', 'Lança Simples'],
   },
   {
     nome: 'Assassino',
@@ -42,14 +42,14 @@ const CLASSES = [
     emoji: '🌿',
     descricao: 'Em harmonia com a natureza e seus mistérios',
     ataque: 11, defesa: 8, hp: 100, mana: 110,
-    armasPermitidas: ['Cajado', 'Arco'],
+    armasPermitidas: ['Cajado', 'Cajado de Madeira', 'Arco', 'Arco Simples'],
   },
   {
     nome: 'Necromante',
     emoji: '💀',
     descricao: 'Domina a magia negra e os mortos',
     ataque: 20, defesa: 3, hp: 75, mana: 130,
-    armasPermitidas: ['Cajado'],
+    armasPermitidas: ['Cajado', 'Cajado de Madeira'],
   },
 ];
 
@@ -131,36 +131,100 @@ const ELEMENTOS = [
 
 // ── Armas ────────────────────────────────────────────────────────────────────
 const ARMAS = [
-  { nome: 'Espada',          emoji: '⚔️', bonusAtaque: 8,  preco: 300,  raridade: 'comum',    nivelMinimo: 1  },
-  { nome: 'Machado',         emoji: '🪓', bonusAtaque: 12, preco: 450,  raridade: 'comum',    nivelMinimo: 1  },
-  { nome: 'Adaga',           emoji: '🗡️', bonusAtaque: 6,  preco: 200,  raridade: 'comum',    nivelMinimo: 1  },
-  { nome: 'Lança',           emoji: '🔱', bonusAtaque: 10, preco: 350,  raridade: 'incomum',  nivelMinimo: 3  },
-  { nome: 'Cajado',          emoji: '🪄', bonusAtaque: 5,  preco: 400,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 30 },
-  { nome: 'Arco',            emoji: '🏹', bonusAtaque: 9,  preco: 380,  raridade: 'incomum',  nivelMinimo: 3  },
-  { nome: 'Espada Rúnica',   emoji: '🔮', bonusAtaque: 18, preco: 900,  raridade: 'raro',     nivelMinimo: 7  },
-  { nome: 'Machado Sombrio', emoji: '💀', bonusAtaque: 22, preco: 1200, raridade: 'raro',     nivelMinimo: 7  },
-  { nome: 'Cajado das Eras', emoji: '✨', bonusAtaque: 15, preco: 1100, raridade: 'raro',     nivelMinimo: 7,  bonusMana: 60 },
-  { nome: 'Lâmina do Vazio', emoji: '🌑', bonusAtaque: 25, preco: 1800, raridade: 'lendário', nivelMinimo: 12 },
+  // ── Nível 1 ───────────────────────────────────────────────────────────────
+  { nome: 'Espada',              emoji: '⚔️',  bonusAtaque: 8,  preco: 300,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Machado',             emoji: '🪓',  bonusAtaque: 12, preco: 450,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Adaga',               emoji: '🗡️',  bonusAtaque: 6,  preco: 200,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Cajado de Madeira',   emoji: '🪵',  bonusAtaque: 4,  preco: 150,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 15 },
+  { nome: 'Arco Simples',        emoji: '🏹',  bonusAtaque: 5,  preco: 180,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Lança Simples',       emoji: '🔱',  bonusAtaque: 7,  preco: 220,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Cetro Enferrujado',   emoji: '🔩',  bonusAtaque: 3,  preco: 130,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 20 },  // Mago / Necromante iniciante
+  { nome: 'Faca de Caça',        emoji: '🔪',  bonusAtaque: 8,  preco: 240,  raridade: 'comum',    nivelMinimo: 1  },                  // Assassino variante
+  { nome: 'Bordão Sagrado',      emoji: '✝️',   bonusAtaque: 6,  preco: 260,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 10 },  // Paladino
+  { nome: 'Ramo Druídico',       emoji: '🌿',  bonusAtaque: 4,  preco: 160,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 25 },  // Druida
+  // ── Nível 3 ───────────────────────────────────────────────────────────────
+  { nome: 'Lança',               emoji: '🔱',  bonusAtaque: 10, preco: 350,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Cajado',              emoji: '🪄',  bonusAtaque: 5,  preco: 400,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 30 },
+  { nome: 'Arco',                emoji: '🏹',  bonusAtaque: 9,  preco: 380,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Adaga Envenenada',    emoji: '💚',  bonusAtaque: 10, preco: 420,  raridade: 'incomum',  nivelMinimo: 3  },                  // Assassino
+  { nome: 'Cajado da Floresta',  emoji: '🌲',  bonusAtaque: 6,  preco: 430,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 40 },  // Druida
+  { nome: 'Martelo Sagrado',     emoji: '🔨',  bonusAtaque: 11, preco: 390,  raridade: 'incomum',  nivelMinimo: 3  },                  // Paladino / Guerreiro
+  { nome: 'Grimório Sombrio',    emoji: '📖',  bonusAtaque: 7,  preco: 460,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 45 },  // Necromante
+  { nome: 'Espada Longa',        emoji: '🗡️',  bonusAtaque: 13, preco: 500,  raridade: 'incomum',  nivelMinimo: 3  },                  // Guerreiro
+  // ── Nível 5 ───────────────────────────────────────────────────────────────
+  { nome: 'Arco Élfico',         emoji: '🌟',  bonusAtaque: 14, preco: 650,  raridade: 'incomum',  nivelMinimo: 5  },                  // Arqueiro / Druida
+  { nome: 'Espada do Amanhecer', emoji: '🌅',  bonusAtaque: 13, preco: 620,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 15 },  // Paladino
+  { nome: 'Cajado de Cristal',   emoji: '💎',  bonusAtaque: 9,  preco: 680,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 55 },  // Mago
+  { nome: 'Faca Gêmea',          emoji: '⚡',  bonusAtaque: 15, preco: 700,  raridade: 'incomum',  nivelMinimo: 5  },                  // Assassino
+  { nome: 'Machado de Guerra',   emoji: '🪓',  bonusAtaque: 16, preco: 720,  raridade: 'incomum',  nivelMinimo: 5  },                  // Guerreiro
+  // ── Nível 7 ───────────────────────────────────────────────────────────────
+  { nome: 'Espada Rúnica',       emoji: '🔮',  bonusAtaque: 18, preco: 900,  raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Machado Sombrio',     emoji: '💀',  bonusAtaque: 22, preco: 1200, raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Cajado das Eras',     emoji: '✨',  bonusAtaque: 15, preco: 1100, raridade: 'raro',     nivelMinimo: 7,  bonusMana: 60 },
+  { nome: 'Adaga da Sombra',     emoji: '🌑',  bonusAtaque: 20, preco: 1050, raridade: 'raro',     nivelMinimo: 7  },                  // Assassino
+  { nome: 'Arco da Tempestade',  emoji: '⛈️',  bonusAtaque: 19, preco: 980,  raridade: 'raro',     nivelMinimo: 7  },                  // Arqueiro / Druida
+  { nome: 'Lança Sagrada',       emoji: '⚜️',  bonusAtaque: 17, preco: 950,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 25 },  // Paladino
+  { nome: 'Cajado dos Mortos',   emoji: '💀',  bonusAtaque: 16, preco: 1000, raridade: 'raro',     nivelMinimo: 7,  bonusMana: 70 },  // Necromante
+  { nome: 'Cetro da Natureza',   emoji: '🌺',  bonusAtaque: 14, preco: 920,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 65 },  // Druida
+  // ── Nível 10 ──────────────────────────────────────────────────────────────
+  { nome: 'Espada dos Titãs',    emoji: '⚡',  bonusAtaque: 23, preco: 1500, raridade: 'raro',     nivelMinimo: 10 },                  // Guerreiro / Paladino
+  { nome: 'Adaga do Caos',       emoji: '🌀',  bonusAtaque: 24, preco: 1550, raridade: 'raro',     nivelMinimo: 10 },                  // Assassino
+  { nome: 'Grimório das Trevas', emoji: '🖤',  bonusAtaque: 20, preco: 1600, raridade: 'raro',     nivelMinimo: 10, bonusMana: 90 },  // Necromante
+  { nome: 'Cajado Ancestral',    emoji: '🌳',  bonusAtaque: 18, preco: 1480, raridade: 'raro',     nivelMinimo: 10, bonusMana: 85 },  // Druida
+  // ── Nível 12 ──────────────────────────────────────────────────────────────
+  { nome: 'Lâmina do Vazio',     emoji: '🌑',  bonusAtaque: 25, preco: 1800, raridade: 'lendário', nivelMinimo: 12 },
+  { nome: 'Cetro do Apocalipse', emoji: '☄️',  bonusAtaque: 22, preco: 1900, raridade: 'lendário', nivelMinimo: 12, bonusMana: 100 }, // Necromante / Mago
+  { nome: 'Arco do Julgamento',  emoji: '🏹',  bonusAtaque: 24, preco: 1850, raridade: 'lendário', nivelMinimo: 12 },                  // Arqueiro / Druida
+  { nome: 'Espada Celestial',    emoji: '✨',  bonusAtaque: 26, preco: 2000, raridade: 'lendário', nivelMinimo: 12, bonusMana: 30 },  // Paladino / Guerreiro
+  { nome: 'Punhal Eterno',       emoji: '🗡️',  bonusAtaque: 27, preco: 2100, raridade: 'lendário', nivelMinimo: 12 },                  // Assassino
 ];
 
 // ── Poções ───────────────────────────────────────────────────────────────────
 const POCOES = [
-  { nome: 'Poção de Cura',     emoji: '🧪', tipo: 'hp',   valor: 50,  preco: 80,  raridade: 'comum'   },
-  { nome: 'Poção Grande',      emoji: '💊', tipo: 'hp',   valor: 120, preco: 180, raridade: 'incomum' },
-  { nome: 'Elixir de Mana',    emoji: '🔷', tipo: 'mana', valor: 60,  preco: 100, raridade: 'comum'   },
-  { nome: 'Elixir Supremo',    emoji: '💎', tipo: 'mana', valor: 150, preco: 220, raridade: 'incomum' },
-  { nome: 'Poção de Batalha',  emoji: '⚗️', tipo: 'ambos', valor: 80,  preco: 250, raridade: 'raro'   },
+  { nome: 'Poção de Cura',        emoji: '🧪', tipo: 'hp',    valor: 50,  preco: 80,  raridade: 'comum'    },
+  { nome: 'Poção Grande',         emoji: '💊', tipo: 'hp',    valor: 120, preco: 180, raridade: 'incomum'  },
+  { nome: 'Poção Suprema de Vida', emoji: '❤️', tipo: 'hp',   valor: 250, preco: 400, raridade: 'raro'     },
+  { nome: 'Elixir de Mana',       emoji: '🔷', tipo: 'mana',  valor: 60,  preco: 100, raridade: 'comum'    },
+  { nome: 'Elixir Supremo',       emoji: '💎', tipo: 'mana',  valor: 150, preco: 220, raridade: 'incomum'  },
+  { nome: 'Elixir do Arcano',     emoji: '🌀', tipo: 'mana',  valor: 300, preco: 450, raridade: 'raro'     },
+  { nome: 'Poção de Batalha',     emoji: '⚗️', tipo: 'ambos', valor: 80,  preco: 250, raridade: 'raro'     },
+  { nome: 'Poção Lendária',       emoji: '🌟', tipo: 'ambos', valor: 200, preco: 600, raridade: 'lendário' },
 ];
 
 // ── Armaduras ────────────────────────────────────────────────────────────────
 const ARMADURAS = [
-  { nome: 'Armadura de Couro',  emoji: '🥋', bonusDefesa: 5,  preco: 200,  raridade: 'comum',    nivelMinimo: 1  },
-  { nome: 'Cota de Malha',      emoji: '🛡️', bonusDefesa: 10, preco: 400,  raridade: 'comum',    nivelMinimo: 1  },
-  { nome: 'Armadura de Placas', emoji: '🦾', bonusDefesa: 16, preco: 700,  raridade: 'incomum',  nivelMinimo: 3  },
-  { nome: 'Manto Sombrio',      emoji: '🌑', bonusDefesa: 8,  preco: 500,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 20 },
-  { nome: 'Veste Élfica',       emoji: '🌿', bonusDefesa: 12, preco: 650,  raridade: 'raro',     nivelMinimo: 7  },
-  { nome: 'Armadura Rúnica',    emoji: '🔮', bonusDefesa: 20, preco: 1000, raridade: 'raro',     nivelMinimo: 7  },
-  { nome: 'Placas do Abismo',   emoji: '💀', bonusDefesa: 25, preco: 1500, raridade: 'lendário', nivelMinimo: 12 },
+  // ── Nível 1 ───────────────────────────────────────────────────────────────
+  { nome: 'Armadura de Couro',    emoji: '🥋', bonusDefesa: 5,  preco: 200,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Cota de Malha',        emoji: '🛡️', bonusDefesa: 10, preco: 400,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Manto de Aprendiz',    emoji: '👘', bonusDefesa: 3,  preco: 150,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 20 }, // Mago / Necromante
+  { nome: 'Capuz de Couro',       emoji: '🪖', bonusDefesa: 4,  preco: 170,  raridade: 'comum',    nivelMinimo: 1  },                 // Assassino / Arqueiro
+  { nome: 'Veste de Druida',      emoji: '🍃', bonusDefesa: 4,  preco: 180,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 15 }, // Druida
+  // ── Nível 3 ───────────────────────────────────────────────────────────────
+  { nome: 'Armadura de Placas',   emoji: '🦾', bonusDefesa: 16, preco: 700,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Manto Sombrio',        emoji: '🌑', bonusDefesa: 8,  preco: 500,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 20 },
+  { nome: 'Gibão Reforçado',      emoji: '🧥', bonusDefesa: 11, preco: 560,  raridade: 'incomum',  nivelMinimo: 3  },                 // Guerreiro / Paladino
+  { nome: 'Manto dos Ossos',      emoji: '🦴', bonusDefesa: 6,  preco: 480,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 35 }, // Necromante
+  { nome: 'Colete de Escamas',    emoji: '🐍', bonusDefesa: 9,  preco: 520,  raridade: 'incomum',  nivelMinimo: 3  },                 // Arqueiro / Assassino
+  // ── Nível 5 ───────────────────────────────────────────────────────────────
+  { nome: 'Armadura Sagrada',     emoji: '✝️',  bonusDefesa: 14, preco: 750,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 10 }, // Paladino
+  { nome: 'Manto Arcano',         emoji: '🔵', bonusDefesa: 7,  preco: 720,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 45 }, // Mago
+  { nome: 'Couraça da Floresta',  emoji: '🌲', bonusDefesa: 10, preco: 700,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 30 }, // Druida
+  { nome: 'Sombra Entrelaçada',   emoji: '🌙', bonusDefesa: 12, preco: 780,  raridade: 'incomum',  nivelMinimo: 5  },                 // Assassino
+  // ── Nível 7 ───────────────────────────────────────────────────────────────
+  { nome: 'Veste Élfica',         emoji: '🌿', bonusDefesa: 12, preco: 650,  raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Armadura Rúnica',      emoji: '🔮', bonusDefesa: 20, preco: 1000, raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Manto das Trevas',     emoji: '🖤', bonusDefesa: 15, preco: 980,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 50 }, // Necromante
+  { nome: 'Armadura de Titânio',  emoji: '🤖', bonusDefesa: 22, preco: 1100, raridade: 'raro',     nivelMinimo: 7  },                 // Guerreiro
+  { nome: 'Veste da Lua Cheia',   emoji: '🌕', bonusDefesa: 13, preco: 900,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 40 }, // Druida
+  // ── Nível 10 ──────────────────────────────────────────────────────────────
+  { nome: 'Armadura do Crepúsculo', emoji: '🌇', bonusDefesa: 18, preco: 1350, raridade: 'raro',   nivelMinimo: 10, bonusMana: 20 }, // Paladino
+  { nome: 'Manto do Vazio',       emoji: '🌀', bonusDefesa: 14, preco: 1300, raridade: 'raro',     nivelMinimo: 10, bonusMana: 70 }, // Mago / Necromante
+  { nome: 'Colete Fantasma',      emoji: '👻', bonusDefesa: 16, preco: 1250, raridade: 'raro',     nivelMinimo: 10 },                 // Assassino
+  // ── Nível 12 ──────────────────────────────────────────────────────────────
+  { nome: 'Placas do Abismo',     emoji: '💀', bonusDefesa: 25, preco: 1500, raridade: 'lendário', nivelMinimo: 12 },
+  { nome: 'Manto Celestial',      emoji: '✨', bonusDefesa: 20, preco: 1700, raridade: 'lendário', nivelMinimo: 12, bonusMana: 80 }, // Mago / Druida / Paladino
+  { nome: 'Armadura do Caos',     emoji: '🌪️', bonusDefesa: 23, preco: 1800, raridade: 'lendário', nivelMinimo: 12 },                // Guerreiro / Assassino
+  { nome: 'Veste do Além',        emoji: '🌌', bonusDefesa: 18, preco: 1600, raridade: 'lendário', nivelMinimo: 12, bonusMana: 100 },// Necromante
 ];
 
 // ── Missões ──────────────────────────────────────────────────────────────────

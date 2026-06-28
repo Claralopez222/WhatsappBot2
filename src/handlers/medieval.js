@@ -86,15 +86,21 @@ async function verificarLevelUp(sock, jid, senderJid) {
     const ataqueBonus = 2;
     const defesaBonus = 1;
 
+    // Calcula novos valores respeitando o teto ANTES de salvar
+    const novoHpMax   = p.hpMax   + hpBonus;
+    const novoManaMax = p.manaMax + manaBonus;
+
     await MedievalPersonagem.updateOne(
       { idWhatsApp: senderJid, idGrupo: jid },
       {
-        $set: { nivel: novoNivel },
+        $set: {
+          nivel:   novoNivel,
+          hpMax:   novoHpMax,
+          manaMax: novoManaMax,
+          hp:      Math.min(p.hp   + hpBonus,   novoHpMax),
+          mana:    Math.min(p.mana + manaBonus,  novoManaMax),
+        },
         $inc: {
-          hpMax:  hpBonus,
-          hp:     hpBonus,
-          manaMax: manaBonus,
-          mana:   manaBonus,
           ataque: ataqueBonus,
           defesa: defesaBonus,
         },

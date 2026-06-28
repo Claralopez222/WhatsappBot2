@@ -2,7 +2,7 @@
 
 const MedievalPersonagem = require('../models/MedievalPersonagem');
 const CarteiraGrupo      = require('../models/CarteiraGrupo');
-const { ARMAS, ARMADURAS, getClasse, getElemento } = require('../utils/medievalUtils');
+const { ARMAS, ARMADURAS, POCOES, getClasse, getElemento, getArma, getArmadura, getPocao } = require('../utils/medievalUtils');
 const { getModoAtivo, getOuCriarPersonagem, somenteGrupo } = require('./medieval');
 
 // ═══════════════════════════════════════════════════════════════
@@ -17,6 +17,10 @@ async function handleLojaMedieval(sock, msg, jid, senderJid) {
 
   const carteira = await CarteiraGrupo.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
   const gold     = carteira?.gold || 0;
+
+  const pocoesTexto = POCOES.map(p =>
+    `${p.emoji} *${p.nome}* — 🪙 ${p.preco} gold\n   ${p.tipo === 'hp' ? '❤️' : p.tipo === 'mana' ? '💧' : '❤️💧'} +${p.valor} ${p.tipo === 'ambos' ? 'HP e Mana' : p.tipo.toUpperCase()} _(${p.raridade})_`
+  ).join('\n');
 
   const armasTexto = ARMAS.map(a =>
     `${a.emoji} *${a.nome}* — 🪙 ${a.preco} gold\n   ⚔️ +${a.bonusAtaque} ataque${a.bonusMana ? ` | 💧 +${a.bonusMana} mana` : ''} _(${a.raridade})_`
@@ -34,8 +38,11 @@ async function handleLojaMedieval(sock, msg, jid, senderJid) {
       `⚔️ *ARMAS:*\n${armasTexto}\n\n` +
       `🛡️ *ARMADURAS:*\n${armadurasTexto}\n\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
+      `🧪 *POÇÕES:*\n${pocoesTexto}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━\n` +
       `📦 Use *!comprar [nome do item]* para comprar\n` +
-      `🎽 Use *!equipar [nome do item]* para equipar`,
+      `🎽 Use *!equipar [nome do item]* para equipar\n` +
+      `🧪 Use *!usarpocao [nome]* para usar uma poção`,
   }, { quoted: msg });
 }
 
@@ -54,7 +61,8 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
 
   const arma     = ARMAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
   const armadura = ARMADURAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
-  const item     = arma || armadura;
+  const pocao    = getPocao(nomeItem);
+  const item     = arma || armadura || pocao;
 
   if (!item) {
     return sock.sendMessage(jid, {
@@ -83,13 +91,16 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
     { $inc: { [chave]: 1 } }
   );
 
+  const isPocao = !!pocao;
   await sock.sendMessage(jid, {
     text:
       `✅ *COMPRA REALIZADA!*\n\n` +
       `${item.emoji} *${item.nome}* adquirido!\n` +
       `🪙 Gasto: *${item.preco} gold*\n` +
       `🪙 Saldo restante: *${gold - item.preco} gold*\n\n` +
-      `_Use *!equipar ${item.nome}* para equipar!_`,
+      (isPocao
+        ? `_Use *!usarpocao ${item.nome}* para consumir!_`
+        : `_Use *!equipar ${item.nome}* para equipar!_`),
   }, { quoted: msg });
 }
 
@@ -124,13 +135,33 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
     }, { quoted: msg });
   }
 
-  const updateFields = arma
-    ? { armaEquipada: item.nome }
-    : { armaduraEquipada: item.nome };
+  // ── Validação de classe para armas ────────────────────────────────────────
+  if (arma) {
+    const classeData = getClasse(p.classe);
+    if (classeData && !classeData.armasPermitidas.includes(item.nome)) {
+      return sock.sendMessage(jid, {
+        text:
+          `❌ *${p.classe}* não pode equipar *${item.nome}*!\n` +
+          `🗡️ Armas permitidas: ${classeData.armasPermitidas.join(', ')}`,
+      }, { quoted: msg });
+    }
+  }
 
-  if (arma && item.bonusMana) {
-    updateFields.manaMax = p.manaMax + item.bonusMana;
-    updateFields.mana    = Math.min(p.mana + item.bonusMana, p.manaMax + item.bonusMana);
+  // ── Calcula ajuste de mana: desconta bônus da arma anterior antes de somar ─
+  const updateFields = {};
+  if (arma) {
+    updateFields.armaEquipada = item.nome;
+    if (item.bonusMana || p.armaEquipada) {
+      const armaAnterior    = p.armaEquipada ? getArma(p.armaEquipada) : null;
+      const bonusAnt        = armaAnterior?.bonusMana || 0;
+      const bonusNovo       = item.bonusMana           || 0;
+      const deltaMana       = bonusNovo - bonusAnt;
+      const novoManaMax     = Math.max(1, p.manaMax + deltaMana);
+      updateFields.manaMax  = novoManaMax;
+      updateFields.mana     = Math.min(p.mana + deltaMana, novoManaMax);
+    }
+  } else {
+    updateFields.armaduraEquipada = item.nome;
   }
 
   await MedievalPersonagem.updateOne(
@@ -144,6 +175,163 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
       (arma ? `⚔️ Bônus de ataque: +${item.bonusAtaque}` : `🛡️ Bônus de defesa: +${item.bonusDefesa}`) +
       (item.bonusMana ? `\n💧 Bônus de mana: +${item.bonusMana}` : '') +
       `\n\n_Use *!ficha* para ver seus status!_`,
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !desequipar ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleDesequipar(sock, msg, jid, senderJid, nomeDisplay, args) {
+  if (!somenteGrupo(jid)) return;
+  if (!await getModoAtivo(jid)) return;
+
+  const tipo = (args || '').trim().toLowerCase();
+  if (!['arma', 'armadura'].includes(tipo)) {
+    return sock.sendMessage(jid, {
+      text: '🎽 Use *!desequipar arma* ou *!desequipar armadura*',
+    }, { quoted: msg });
+  }
+
+  const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  const updateFields = {};
+
+  if (tipo === 'arma') {
+    if (!p.armaEquipada) {
+      return sock.sendMessage(jid, { text: '❌ Você não tem nenhuma arma equipada.' }, { quoted: msg });
+    }
+    // Desconta bônus de mana da arma removida
+    const armaAnt = getArma(p.armaEquipada);
+    if (armaAnt?.bonusMana) {
+      const novoManaMax      = Math.max(1, p.manaMax - armaAnt.bonusMana);
+      updateFields.manaMax   = novoManaMax;
+      updateFields.mana      = Math.min(p.mana, novoManaMax);
+    }
+    updateFields.armaEquipada = null;
+  } else {
+    if (!p.armaduraEquipada) {
+      return sock.sendMessage(jid, { text: '❌ Você não tem nenhuma armadura equipada.' }, { quoted: msg });
+    }
+    updateFields.armaduraEquipada = null;
+  }
+
+  await MedievalPersonagem.updateOne(
+    { idWhatsApp: senderJid, idGrupo: jid },
+    { $set: updateFields }
+  );
+
+  await sock.sendMessage(jid, {
+    text: `✅ ${tipo === 'arma' ? '⚔️ Arma' : '🛡️ Armadura'} desequipada com sucesso!\n_Use *!ficha* para ver seus status._`,
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !inventario ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleInvMed(sock, msg, jid, senderJid, nomeDisplay) {
+  if (!somenteGrupo(jid)) return;
+  if (!await getModoAtivo(jid)) return;
+
+  const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  const inv = p.inventarioMedieval;
+
+  if (!inv || inv.size === 0) {
+    return sock.sendMessage(jid, {
+      text: `🎒 Seu inventário está vazio!\nUse *!lojamedieval* para comprar itens.`,
+    }, { quoted: msg });
+  }
+
+  const linhas = [];
+  for (const [chave, qtd] of inv.entries()) {
+    if (qtd <= 0) continue;
+    const nomeReal = chave.replace(/_/g, ' ');
+    const arma     = getArma(nomeReal);
+    const armadura = armadura => ARMADURAS.find(a => a.nome === nomeReal);
+    const pocao    = getPocao(nomeReal);
+    const itemData = arma || ARMADURAS.find(a => a.nome === nomeReal) || pocao;
+    const emoji    = itemData?.emoji || '📦';
+    const equipado = p.armaEquipada === nomeReal ? ' _(equipado)_'
+      : p.armaduraEquipada === nomeReal ? ' _(equipado)_' : '';
+    linhas.push(`${emoji} *${nomeReal}* x${qtd}${equipado}`);
+  }
+
+  if (!linhas.length) {
+    return sock.sendMessage(jid, {
+      text: `🎒 Seu inventário está vazio!\nUse *!lojamedieval* para comprar itens.`,
+    }, { quoted: msg });
+  }
+
+  await sock.sendMessage(jid, {
+    text:
+      `🎒 *INVENTÁRIO DE ${p.nome.toUpperCase()}*\n` +
+      `━━━━━━━━━━━━━━━━━━━\n\n` +
+      linhas.join('\n') +
+      `\n\n━━━━━━━━━━━━━━━━━━━\n` +
+      `_Use *!equipar [item]* ou *!usarpocao [item]*_\n_Veja tudo com *!invmed*_`,
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !usarpocao ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
+  if (!somenteGrupo(jid)) return;
+  if (!await getModoAtivo(jid)) return;
+
+  const nomePocao = args.trim();
+  if (!nomePocao) {
+    return sock.sendMessage(jid, {
+      text: '🧪 Diga o nome da poção!\nExemplo: *!usarpocao Poção de Cura*',
+    }, { quoted: msg });
+  }
+
+  const pocao = getPocao(nomePocao);
+  if (!pocao) {
+    return sock.sendMessage(jid, { text: `❌ Poção *"${nomePocao}"* não encontrada!` }, { quoted: msg });
+  }
+
+  const p        = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  const chaveInv = pocao.nome.replace(/ /g, '_');
+  const qtdInv   = p.inventarioMedieval?.get(chaveInv) || 0;
+
+  if (qtdInv <= 0) {
+    return sock.sendMessage(jid, {
+      text: `❌ Você não possui *${pocao.nome}*!\nUse *!comprar ${pocao.nome}* para comprar.`,
+    }, { quoted: msg });
+  }
+
+  const updateFields = {};
+  const linhasEfeito = [];
+
+  if (pocao.tipo === 'hp' || pocao.tipo === 'ambos') {
+    const hpAntes       = p.hp;
+    const novoHp        = Math.min(p.hpMax, p.hp + pocao.valor);
+    updateFields.hp     = novoHp;
+    linhasEfeito.push(`❤️ HP: ${hpAntes} → ${novoHp} (+${novoHp - hpAntes})`);
+  }
+  if (pocao.tipo === 'mana' || pocao.tipo === 'ambos') {
+    const manaAntes      = p.mana;
+    const novaMana       = Math.min(p.manaMax, p.mana + pocao.valor);
+    updateFields.mana    = novaMana;
+    linhasEfeito.push(`💧 Mana: ${manaAntes} → ${novaMana} (+${novaMana - manaAntes})`);
+  }
+
+  // Consome 1 unidade do inventário
+  await MedievalPersonagem.updateOne(
+    { idWhatsApp: senderJid, idGrupo: jid },
+    {
+      $set: updateFields,
+      $inc: { [`inventarioMedieval.${chaveInv}`]: -1 },
+    }
+  );
+
+  await sock.sendMessage(jid, {
+    text:
+      `${pocao.emoji} *${pocao.nome}* usada!\n\n` +
+      linhasEfeito.join('\n') +
+      `\n\n_Restam: ${qtdInv - 1}x ${pocao.nome}_`,
   }, { quoted: msg });
 }
 
@@ -202,9 +390,13 @@ async function handleMenuMedieval(sock, msg, jid) {
       `🗺️ *AVENTURA*\n` +
       `▸ *!missao* — Embarcar em missão (30min)\n\n` +
       `🏪 *LOJA E ITENS*\n` +
-      `▸ *!lojamedieval* — Ver loja de armas e armaduras\n` +
+      `▸ *!lojamedieval* — Ver loja de armas, armaduras e poções\n` +
       `▸ *!comprar [item]* — Comprar um item\n` +
-      `▸ *!equipar [item]* — Equipar um item\n\n` +
+      `▸ *!equipar [item]* — Equipar arma ou armadura\n` +
+      `▸ *!desequipar arma/armadura* — Remover item equipado\n` +
+      `▸ *!usarpocao [nome]* — Usar poção do inventário\n` +
+      `▸ *!invmed* — Ver seus itens\n` +
+      `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
       `📊 *RANKING*\n` +
       `▸ *!rankmedieval* — Ranking de guerreiros\n\n` +
       `⚙️ *ADMIN*\n` +
@@ -219,6 +411,9 @@ module.exports = {
   handleLojaMedieval,
   handleComprarMedieval,
   handleEquipar,
+  handleDesequipar,
+  handleInvMed,
+  handleUsarPocao,
   handleRankMedieval,
   handleMenuMedieval,
 };

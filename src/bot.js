@@ -970,6 +970,14 @@ if (matchCmd(cmdWord, 'rankmedieval'))
   { await medievalLojaHandler.handleRankMedieval(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'menumediev'))
   { await medievalLojaHandler.handleMenuMedieval(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'desequipar') || matchCmdStart(cmd, 'desequipar '))
+  { await medievalLojaHandler.handleDesequipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]desequipar\s*/i, '')); return; }
+if (matchCmd(cmdWord, 'invmed'))
+  { await medievalLojaHandler.handleInvMed(sock, msg, jid, senderJid, author); return; }
+if (matchCmd(cmdWord, 'usarpocao') || matchCmdStart(cmd, 'usarpocao '))
+  { await medievalLojaHandler.handleUsarPocao(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]usarpocao\s*/i, '')); return; }
+if (matchCmd(cmdWord, 'sistemmedieval'))
+  { await menuHandler.handleSistemaMedieval(sock, msg, jid, getPrefix); return; }
 
   // ── PETS ──────────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'capturar'))

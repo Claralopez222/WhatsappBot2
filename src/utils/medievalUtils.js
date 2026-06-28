@@ -143,6 +143,15 @@ const ARMAS = [
   { nome: 'Lâmina do Vazio', emoji: '🌑', bonusAtaque: 25, preco: 1800, raridade: 'lendário' },
 ];
 
+// ── Poções ───────────────────────────────────────────────────────────────────
+const POCOES = [
+  { nome: 'Poção de Cura',     emoji: '🧪', tipo: 'hp',   valor: 50,  preco: 80,  raridade: 'comum'   },
+  { nome: 'Poção Grande',      emoji: '💊', tipo: 'hp',   valor: 120, preco: 180, raridade: 'incomum' },
+  { nome: 'Elixir de Mana',    emoji: '🔷', tipo: 'mana', valor: 60,  preco: 100, raridade: 'comum'   },
+  { nome: 'Elixir Supremo',    emoji: '💎', tipo: 'mana', valor: 150, preco: 220, raridade: 'incomum' },
+  { nome: 'Poção de Batalha',  emoji: '⚗️', tipo: 'ambos', valor: 80,  preco: 250, raridade: 'raro'   },
+];
+
 // ── Armaduras ────────────────────────────────────────────────────────────────
 const ARMADURAS = [
   { nome: 'Armadura de Couro',  emoji: '🥋', bonusDefesa: 5,  preco: 200,  raridade: 'comum'    },
@@ -189,6 +198,10 @@ function getArma(nome) {
 
 function getArmadura(nome) {
   return ARMADURAS.find(a => a.nome === nome) ?? null;
+}
+
+function getPocao(nome) {
+  return POCOES.find(p => p.nome.toLowerCase() === nome.toLowerCase()) ?? null;
 }
 
 /**
@@ -291,12 +304,14 @@ module.exports = {
   ELEMENTOS,
   ARMAS,
   ARMADURAS,
+  POCOES,
   MISSOES,
   sortearAleatorio,
   getClasse,
   getElemento,
   getArma,
   getArmadura,
+  getPocao,
   calcularMultElemento,
   calcularDano,
   narrarCombate,

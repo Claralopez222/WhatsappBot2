@@ -614,18 +614,28 @@ async function handleRankMedieval(sock, msg, jid) {
 
   const MEDALHAS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
   const linhas   = personagens.map((p, i) => {
-    const classe   = getClasse(p.classe);
-    const elemento = getElemento(p.elemento);
-    return `${MEDALHAS[i]} *${p.nome || p.idWhatsApp.split('@')[0]}*\n   ${classe?.emoji || '⚔️'} ${p.classe} | ${elemento?.emoji || '✨'} ${p.elemento}\n   🏆 ${p.vitorias} vitórias | ⭐ Nível ${p.nivel}`;
+    const classe    = getClasse(p.classe);
+    const elemento  = getElemento(p.elemento);
+    const nomeRaw   = (p.nome || '').trim();
+    const nomeExib  = nomeRaw && nomeRaw !== '.' ? nomeRaw : `Guerreiro #${i + 1}`;
+    const vitorias  = p.vitorias ?? 0;
+    const derrotas  = p.derrotas ?? 0;
+    const total     = vitorias + derrotas;
+    const winrate   = total > 0 ? Math.round((vitorias / total) * 100) : 0;
+    return (
+      `${MEDALHAS[i]} *${nomeExib}*\n` +
+      `   ${classe?.emoji || '⚔️'} ${p.classe || '?'} • ${elemento?.emoji || '✨'} ${p.elemento || '?'} • ⭐ Nível ${p.nivel}\n` +
+      `   🏆 ${vitorias}V / ${derrotas}D • Taxa: ${winrate}%`
+    );
   }).join('\n\n');
 
   await sock.sendMessage(jid, {
     text:
-      `⚔️ *RANKING DE GUERREIROS MEDIEVAIS* ⚔️\n` +
+      `⚔️ *RANKING MEDIEVAL* ⚔️\n` +
       `━━━━━━━━━━━━━━━━━━━\n\n` +
       `${linhas}\n\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
-      `_Conquiste vitórias para subir no ranking!_`,
+      `_Use *!ficha* para ver sua posição!_`,
   }, { quoted: msg });
 }
 

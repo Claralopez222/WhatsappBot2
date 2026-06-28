@@ -1817,6 +1817,8 @@ const rateLimitCadastro = rateLimit({
 // POST /api/auth/otp/enviar
 // ─────────────────────────────────────────────────────────────────────────────
 const OtpCadastro = require('../models/OtpCadastro');
+const { Resend }  = require('resend');
+const resend      = new Resend(process.env.RESEND_API_KEY);
 
 const rateLimitOtp = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -1828,9 +1830,12 @@ const rateLimitOtp = rateLimit({
 
 router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
   try {
-    const { idWhatsApp } = req.body || {};
+    const { idWhatsApp, email } = req.body || {};
+
     if (!idWhatsApp || typeof idWhatsApp !== 'string')
       return res.status(400).json({ error: 'idWhatsApp é obrigatório.' });
+    if (!email || typeof email !== 'string' || !email.includes('@'))
+      return res.status(400).json({ error: 'Email inválido.' });
 
     const digitosBase = idWhatsApp.split('@')[0].replace(/\D/g, '');
     if (!digitosBase || digitosBase.length < 8 || digitosBase.length > 15)
@@ -1853,19 +1858,39 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
     const codigo    = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+    // Salva o email junto com o OTP
     await OtpCadastro.findOneAndUpdate(
       { idWhatsApp: usuarioFinal.idWhatsApp },
-      { codigo, expiresAt, usado: false },
+      { codigo, expiresAt, usado: false, email: email.toLowerCase().trim() },
       { upsert: true }
     );
 
-    const { sendMessage } = require('../bot');
-    await sendMessage(
-      usuarioFinal.idWhatsApp,
-      `🔐 *Código de verificação Piroquinhas Bot*\n\nSeu código é: *${codigo}*\n\nVálido por 10 minutos. Não compartilhe com ninguém.`
-    );
+    // Salva telefone no usuário se ainda não tiver
+    if (!usuarioFinal.telefone && digitosBase) {
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: usuarioFinal.idWhatsApp },
+        { $set: { telefone: digitosBase } }
+      );
+    }
 
-    return res.json({ ok: true, message: 'Código enviado via WhatsApp.' });
+    // Envia email via Resend
+    await resend.emails.send({
+      from:    'Piroquinhas Bot <onboarding@resend.dev>',
+      to:      email.toLowerCase().trim(),
+      subject: '🔐 Código de verificação — Piroquinhas Bot',
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07080d;color:#e8eaf0;padding:32px;border-radius:12px;border:1px solid #1f2230;">
+          <h2 style="margin:0 0 8px;color:#b855ff;">Piroquinhas Bot</h2>
+          <p style="color:#9298ad;margin:0 0 24px;">Código de verificação para criar sua conta no painel.</p>
+          <div style="background:#13141f;border:1px solid #b855ff33;border-radius:8px;padding:24px;text-align:center;margin-bottom:24px;">
+            <span style="font-size:36px;font-weight:700;letter-spacing:0.2em;color:#b855ff;font-family:monospace;">${codigo}</span>
+          </div>
+          <p style="color:#5a5f72;font-size:13px;margin:0;">Válido por <strong style="color:#9298ad;">10 minutos</strong>. Não compartilhe com ninguém.</p>
+        </div>
+      `,
+    });
+
+    return res.json({ ok: true, message: 'Código enviado para o email.' });
   } catch (err) {
     console.error('[API] POST /auth/otp/enviar:', err);
     return res.status(500).json({ error: 'Erro interno ao enviar código.' });
@@ -1946,9 +1971,18 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
     // ── Hash e salva ──────────────────────────────────────────────────────────
     const passwordHash = await bcrypt.hash(passwordLimpa, 12);
 
+    // Pega o email salvo no OTP
+    const otpFinalDoc = await OtpCadastro.findOne({ idWhatsApp: idWhatsAppReal }).lean();
+    const emailSalvo  = otpFinalDoc?.email || null;
+
     await Usuario.findOneAndUpdate(
       { idWhatsApp: idWhatsAppReal },
-      { $set: { username: usernameLimpo, passwordHash } },
+      { $set: {
+          username:     usernameLimpo,
+          passwordHash,
+          ...(digitosBase && { telefone: digitosBase }),
+          ...(emailSalvo  && { email:    emailSalvo  }),
+      }},
       { new: true }
     );
 

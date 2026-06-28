@@ -947,12 +947,16 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
 
     await CarteiraGrupo.updateMany({ idGrupo: jid }, { $set: update });
 
-    // Sincroniza botAtivo com GrupoConfig (fonte lida pelo bot.js)
-    if ('config.botAtivo' in update) {
-      const GrupoConfig = require('../models/GrupoConfig');
+    // Sincroniza campos relevantes com GrupoConfig (fonte lida pelo bot.js)
+    const GrupoConfig = require('../models/GrupoConfig');
+    const syncCampos = {};
+    if ('config.botAtivo' in update)  syncCampos.botAtivo  = update['config.botAtivo'];
+    if ('config.antiLink' in update)  syncCampos.antiLink  = update['config.antiLink'];
+
+    if (Object.keys(syncCampos).length) {
       await GrupoConfig.findOneAndUpdate(
         { idGrupo: jid },
-        { $set: { botAtivo: update['config.botAtivo'] } },
+        { $set: syncCampos },
         { upsert: true }
       );
     }

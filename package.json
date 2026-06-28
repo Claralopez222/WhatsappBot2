@@ -29,6 +29,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "*",
     "node-webpmux": "^3.2.1",
+    "nodemailer": "^9.0.1",
     "openai": "^4.47.1",
     "pino": "^9.1.0",
     "qrcode": "^1.5.3",

@@ -74,8 +74,9 @@ const usuarioSchema = new mongoose.Schema({
   bio:          { type: String, default: null,  trim: true, maxlength: 150 },
 
   // ── Conta do painel (login com usuário e senha) ──────────────
-  username: { type: String, default: null, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
+  username:     { type: String, default: null, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
   passwordHash: { type: String, default: null },
+  email:        { type: String, default: null, trim: true, lowercase: true },
 
   // ── Banimento global ─────────────────────────────────────────
   // Necessário para PATCH /api/admin/usuario/:id/ban funcionar.
@@ -140,6 +141,8 @@ const usuarioSchema = new mongoose.Schema({
 usuarioSchema.index({ gold: -1 });
 usuarioSchema.index({ xp: -1 });
 usuarioSchema.index({ quizPoints: -1 });
+usuarioSchema.index({ email: 1 }, { unique: true, sparse: true });
+usuarioSchema.index({ username: 1 }, { unique: true, sparse: true });
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 module.exports = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);

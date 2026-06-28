@@ -24,6 +24,37 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+// ── Regeneração passiva de HP e mana — roda a cada 1 hora ────────────────────
+// Recupera 10% do HP máx e 15% da mana máx para todos os personagens vivos
+// $expr garante que só atualiza quem está abaixo do máximo
+if (!global._medievalRegenAtivo) {
+  global._medievalRegenAtivo = true;
+  setInterval(async () => {
+    try {
+      // Busca apenas grupos com medieval ativo
+      const gruposAtivos = await GrupoConfig.find({ medievalAtivo: true }, { idGrupo: 1 }).lean();
+      const idsAtivos    = gruposAtivos.map(g => g.idGrupo);
+      if (!idsAtivos.length) return;
+
+      await MedievalPersonagem.updateMany(
+        {
+          idGrupo: { $in: idsAtivos },
+          $expr: { $or: [
+            { $lt: ['$hp',   '$hpMax']   },
+            { $lt: ['$mana', '$manaMax'] },
+          ]},
+        },
+        [{ $set: {
+          hp:   { $min: ['$hpMax',   { $add: ['$hp',   { $floor: { $multiply: ['$hpMax',   0.10] } }] }] },
+          mana: { $min: ['$manaMax', { $add: ['$mana', { $floor: { $multiply: ['$manaMax', 0.15] } }] }] },
+        }}]
+      );
+    } catch (err) {
+      console.error('[Medieval] Erro na regeneração passiva:', err.message);
+    }
+  }, 60 * 60 * 1000);
+}
+
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
 function somenteGrupo(jid) {
@@ -179,13 +210,16 @@ async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
         `▸ *!magia @alguém* — Usar habilidade elemental\n` +
         `▸ *!missaomed* — Embarcar em uma missão\n` +
         `▸ *!recargamana* — Recuperar HP e mana\n` +
-        `▸ *!lojamedieval* — Ver loja de itens\n` +
-        `▸ *!comprar [item]* — Comprar um item\n` +
-        `▸ *!equipar [item]* — Equipar arma ou armadura\n` +
-        `▸ *!desequipar arma/armadura* — Remover item equipado\n` +
-        `▸ *!usarpocao [nome]* — Usar poção\n` +
-        `▸ *!invmed* — Ver seu inventário\n` +
-        `▸ *!rankmedieval* — Ranking de guerreiros\n` +
+        `▸ *!lojamedieval* — Ver loja de armas, armaduras e poções\n` +
+      `▸ *!comprar [item]* — Comprar um item\n` +
+      `▸ *!equipar [item]* — Equipar arma ou armadura\n` +
+      `▸ *!desequipar arma/armadura* — Remover item equipado\n` +
+      `▸ *!usarpocao [nome]* — Usar poção do inventário\n` +
+      `▸ *!invmed* — Ver seus itens\n` +
+      `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
+      `📊 *RANKING E HISTÓRICO*\n` +
+      `▸ *!rankmedieval* — Ranking de guerreiros\n` +
+        `▸ *!historico* — Suas últimas batalhas\n` +
         `▸ *!menumediev* — Ver todos os comandos\n` +
         `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
         `_Use *!ficha* para criar seu personagem!_ ⚔️`,
@@ -346,6 +380,18 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     mentions: [senderJid, targetJid],
   }, { quoted: msg });
 
+  // ── Grava histórico (últimas 5 entradas) ─────────────────────────────────
+  const entradaAtacante = { tipo: 'ataque', oponente: defensor.nome, dano, resultado: vitoria ? 'vitoria' : 'neutro', critico };
+  const entradaDefensor = { tipo: 'defesa', oponente: atacante.nome, dano, resultado: vitoria ? 'derrota' : 'neutro', critico };
+  await MedievalPersonagem.updateOne(
+    { idWhatsApp: senderJid, idGrupo: jid },
+    { $push: { historicoBatalhas: { $each: [entradaAtacante], $slice: -5 } } }
+  );
+  await MedievalPersonagem.updateOne(
+    { idWhatsApp: targetJid, idGrupo: jid },
+    { $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } } }
+  );
+
   await verificarLevelUp(sock, jid, senderJid);
 }
 
@@ -447,9 +493,20 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     mentions: [senderJid, targetJid],
   }, { quoted: msg });
 
+  // ── Grava histórico (últimas 5 entradas) ─────────────────────────────────
+  const entradaAtacante = { tipo: 'magia', oponente: defensor.nome, dano, resultado: vitoria ? 'vitoria' : 'neutro', critico: false };
+  const entradaDefensor = { tipo: 'defesa', oponente: atacante.nome, dano, resultado: vitoria ? 'derrota' : 'neutro', critico: false };
+  await MedievalPersonagem.updateOne(
+    { idWhatsApp: senderJid, idGrupo: jid },
+    { $push: { historicoBatalhas: { $each: [entradaAtacante], $slice: -5 } } }
+  );
+  await MedievalPersonagem.updateOne(
+    { idWhatsApp: targetJid, idGrupo: jid },
+    { $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } } }
+  );
+
   await verificarLevelUp(sock, jid, senderJid);
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !missaomed ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -475,14 +532,21 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
     }, { quoted: msg });
   }
 
-  const missao = sortearAleatorio(MISSOES);
-  // Guard — sortearAleatorio retorna null se MISSOES estiver vazia
+  // Filtra missões disponíveis para o nível do personagem
+  const missoesDisponiveis = MISSOES.filter(m => p.nivel >= m.nivelMinimo);
+  if (!missoesDisponiveis.length) {
+    return sock.sendMessage(jid, {
+      text: `⚠️ Nenhuma missão disponível para o seu nível!\n_Suba de nível para desbloquear missões._`,
+    }, { quoted: msg });
+  }
+  const missao = sortearAleatorio(missoesDisponiveis);
   if (!missao) {
     return sock.sendMessage(jid, { text: '⚠️ Nenhuma missão disponível no momento.' }, { quoted: msg });
   }
 
-  const taxaFracasso = missao.dificuldade === 'difícil' ? 0.45
-    : missao.dificuldade === 'médio' ? 0.3
+  const taxaFracasso = missao.dificuldade === 'lendário' ? 0.65
+    : missao.dificuldade === 'difícil' ? 0.45
+    : missao.dificuldade === 'médio'   ? 0.30
     : 0.15;
   const sucesso = Math.random() > taxaFracasso;
 
@@ -542,6 +606,8 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
         `+10 XP pela tentativa ⭐\n\n` +
         `_Recupere-se e tente novamente em 30 minutos._`,
     }, { quoted: msg });
+
+    await verificarLevelUp(sock, jid, senderJid);
   }
 }
 
@@ -590,6 +656,46 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
   }, { quoted: msg });
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ─── !historico ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleHistorico(sock, msg, jid, senderJid, nomeDisplay) {
+  if (!somenteGrupo(jid)) return;
+  if (!await getModoAtivo(jid)) {
+    return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
+  }
+
+  const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+
+  if (!p.historicoBatalhas || p.historicoBatalhas.length === 0) {
+    return sock.sendMessage(jid, {
+      text: `📜 Você ainda não tem batalhas registradas!\nUse *!atacar @alguém* para começar.`,
+    }, { quoted: msg });
+  }
+
+  const ICONES = { ataque: '⚔️', magia: '🔮', defesa: '🛡️' };
+  const RESULT  = { vitoria: '🏆 Vitória', derrota: '💀 Derrota', neutro: '⚡ Combate' };
+
+  const linhas = [...p.historicoBatalhas].reverse().map((b, i) => {
+    const icone  = ICONES[b.tipo]  || '⚔️';
+    const result = RESULT[b.resultado] || '⚡';
+    const crit   = b.critico ? ' _(crítico!)_' : '';
+    const data   = new Date(b.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `${i + 1}. ${icone} ${result} vs *${b.oponente}*\n   💥 ${b.dano} de dano${crit} — ${data}`;
+  });
+
+  await sock.sendMessage(jid, {
+    text:
+      `📜 *HISTÓRICO DE BATALHAS — ${p.nome.toUpperCase()}*\n` +
+      `━━━━━━━━━━━━━━━━━━━\n\n` +
+      linhas.join('\n\n') +
+      `\n\n━━━━━━━━━━━━━━━━━━━\n` +
+      `_Últimas ${p.historicoBatalhas.length} batalhas registradas._`,
+  }, { quoted: msg });
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   handleMedievalToggle,
@@ -598,6 +704,7 @@ module.exports = {
   handleMagia,
   handleMissao,
   handleRecargaMana,
+  handleHistorico,
   // helpers exportados para medievalLoja.js
   getModoAtivo,
   getOuCriarPersonagem,

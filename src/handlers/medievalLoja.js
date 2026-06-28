@@ -9,40 +9,84 @@ const { getModoAtivo, getOuCriarPersonagem, somenteGrupo } = require('./medieval
 // ─── !lojamedieval ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleLojaMedieval(sock, msg, jid, senderJid) {
+async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay) {
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) {
     return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
   }
 
-  const carteira = await CarteiraGrupo.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
-  const gold     = carteira?.gold || 0;
+  const [carteira, p] = await Promise.all([
+    CarteiraGrupo.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean(),
+    getOuCriarPersonagem(senderJid, jid, nomeDisplay),
+  ]);
+  const gold       = carteira?.gold || 0;
+  const nivelJog   = p.nivel;
 
-  const pocoesTexto = POCOES.map(p =>
-    `${p.emoji} *${p.nome}* — 🪙 ${p.preco} gold\n   ${p.tipo === 'hp' ? '❤️' : p.tipo === 'mana' ? '💧' : '❤️💧'} +${p.valor} ${p.tipo === 'ambos' ? 'HP e Mana' : p.tipo.toUpperCase()} _(${p.raridade})_`
-  ).join('\n');
+  const RARIDADE_EMOJI = { comum: '⚪', incomum: '🟢', raro: '🔵', lendário: '🟣' };
 
-  const armasTexto = ARMAS.map(a =>
-    `${a.emoji} *${a.nome}* — 🪙 ${a.preco} gold\n   ⚔️ +${a.bonusAtaque} ataque${a.bonusMana ? ` | 💧 +${a.bonusMana} mana` : ''} _(${a.raridade})_`
-  ).join('\n');
+  const armasTexto = ARMAS.map(a => {
+    const chave     = a.nome.replace(/ /g, '_');
+    const bloqueado = nivelJog < a.nivelMinimo;
+    const nivelTag  = bloqueado
+      ? `   🔒 *BLOQUEADO* — Requer Nível ${a.nivelMinimo} (você: ${nivelJog})\n`
+      : a.nivelMinimo > 1 ? `   ✅ Nível ${a.nivelMinimo}+ _(disponível)_\n` : '';
+    const mana      = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
+    return (
+      `${bloqueado ? '🔒' : a.emoji} *${a.nome}*${bloqueado ? ' _(bloqueado)_' : ''}\n` +
+      `   🪙 Preço: *${a.preco} Gold*\n` +
+      `   ⚔️ Bônus de ataque: *+${a.bonusAtaque}*${mana}\n` +
+      `   ${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
+      nivelTag +
+      `   _!comprar ${chave}_`
+    );
+  }).join('\n\n');
 
-  const armadurasTexto = ARMADURAS.map(a =>
-    `${a.emoji} *${a.nome}* — 🪙 ${a.preco} gold\n   🛡️ +${a.bonusDefesa} defesa${a.bonusMana ? ` | 💧 +${a.bonusMana} mana` : ''} _(${a.raridade})_`
-  ).join('\n');
+  const armadurasTexto = ARMADURAS.map(a => {
+    const chave     = a.nome.replace(/ /g, '_');
+    const bloqueado = nivelJog < a.nivelMinimo;
+    const nivelTag  = bloqueado
+      ? `   🔒 *BLOQUEADO* — Requer Nível ${a.nivelMinimo} (você: ${nivelJog})\n`
+      : a.nivelMinimo > 1 ? `   ✅ Nível ${a.nivelMinimo}+ _(disponível)_\n` : '';
+    const mana      = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
+    return (
+      `${bloqueado ? '🔒' : a.emoji} *${a.nome}*${bloqueado ? ' _(bloqueado)_' : ''}\n` +
+      `   🪙 Preço: *${a.preco} Gold*\n` +
+      `   🛡️ Bônus de defesa: *+${a.bonusDefesa}*${mana}\n` +
+      `   ${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
+      nivelTag +
+      `   _!comprar ${chave}_`
+    );
+  }).join('\n\n');
+
+  const pocoesTexto = POCOES.map(poc => {
+    const chave  = poc.nome.replace(/ /g, '_');
+    const tipoIc = poc.tipo === 'hp' ? '❤️' : poc.tipo === 'mana' ? '💧' : '❤️💧';
+    const tipoTx = poc.tipo === 'ambos' ? 'HP e Mana' : poc.tipo.toUpperCase();
+    return (
+      `${poc.emoji} *${poc.nome}*\n` +
+      `   🪙 Preço: *${poc.preco} Gold*\n` +
+      `   ${tipoIc} Restaura: *+${poc.valor} ${tipoTx}*\n` +
+      `   ${RARIDADE_EMOJI[poc.raridade] || '⚪'} Raridade: *${poc.raridade}*\n` +
+      `   _!comprar ${chave}_`
+    );
+  }).join('\n\n');
 
   await sock.sendMessage(jid, {
     text:
       `🏪 *LOJA MEDIEVAL* 🏪\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
-      `🪙 Seu saldo: *${gold} gold*\n\n` +
-      `⚔️ *ARMAS:*\n${armasTexto}\n\n` +
-      `🛡️ *ARMADURAS:*\n${armadurasTexto}\n\n` +
+      `🪙 Seu saldo: *${gold} Gold*\n\n` +
+      `⚔️ *ARMAS*\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
-      `🧪 *POÇÕES:*\n${pocoesTexto}\n\n` +
+      `${armasTexto}\n\n` +
+      `🛡️ *ARMADURAS*\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
-      `📦 Use *!comprar [nome do item]* para comprar\n` +
-      `🎽 Use *!equipar [nome do item]* para equipar\n` +
-      `🧪 Use *!usarpocao [nome]* para usar uma poção`,
+      `${armadurasTexto}\n\n` +
+      `🧪 *POÇÕES*\n` +
+      `━━━━━━━━━━━━━━━━━━━\n` +
+      `${pocoesTexto}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━\n` +
+      `_Use o comando em itálico para comprar cada item!_`,
   }, { quoted: msg });
 }
 
@@ -54,9 +98,10 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) return;
 
-  const nomeItem = args.trim();
+  // Normaliza: substitui _ por espaço — aceita tanto "Espada_Rúnica" quanto "Espada Rúnica"
+  const nomeItem = args.trim().replace(/_/g, ' ');
   if (!nomeItem) {
-    return sock.sendMessage(jid, { text: '🏪 Diga o nome do item!\nExemplo: *!comprar Espada*' }, { quoted: msg });
+    return sock.sendMessage(jid, { text: '🏪 Diga o nome do item!\nExemplo: *!comprar Espada* ou *!comprar Espada_Rúnica*' }, { quoted: msg });
   }
 
   const arma     = ARMAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
@@ -70,7 +115,17 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
     }, { quoted: msg });
   }
 
-  await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+
+  // Valida nível mínimo
+  if (item.nivelMinimo && p.nivel < item.nivelMinimo) {
+    return sock.sendMessage(jid, {
+      text:
+        `❌ Você precisa ser *Nível ${item.nivelMinimo}* para comprar *${item.nome}*!\n` +
+        `📊 Seu nível atual: *${p.nivel}*`,
+    }, { quoted: msg });
+  }
+
   const chave = `inventarioMedieval.${item.nome.replace(/ /g, '_')}`;
 
   // Atômico: só debita se gold >= preco — previne gold negativo por race condition
@@ -115,9 +170,9 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) return;
 
-  const nomeItem = args.trim();
+  const nomeItem = args.trim().replace(/_/g, ' ');
   if (!nomeItem) {
-    return sock.sendMessage(jid, { text: '🎽 Diga o nome do item!\nExemplo: *!equipar Espada*' }, { quoted: msg });
+    return sock.sendMessage(jid, { text: '🎽 Diga o nome do item!\nExemplo: *!equipar Espada* ou *!equipar Espada_Rúnica*' }, { quoted: msg });
   }
 
   const arma     = ARMAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
@@ -138,6 +193,15 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (qtdInv <= 0) {
     return sock.sendMessage(jid, {
       text: `❌ Você não possui *${item.nome}* no inventário!\nUse *!comprar ${item.nome}* para comprar.`,
+    }, { quoted: msg });
+  }
+
+  // ── Validação de nível mínimo ─────────────────────────────────────────────
+  if (item.nivelMinimo && p.nivel < item.nivelMinimo) {
+    return sock.sendMessage(jid, {
+      text:
+        `❌ Você precisa ser *Nível ${item.nivelMinimo}* para equipar *${item.nome}*!\n` +
+        `📊 Seu nível atual: *${p.nivel}*`,
     }, { quoted: msg });
   }
 
@@ -307,10 +371,10 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) return;
 
-  const nomePocao = args.trim();
+  const nomePocao = args.trim().replace(/_/g, ' ');
   if (!nomePocao) {
     return sock.sendMessage(jid, {
-      text: '🧪 Diga o nome da poção!\nExemplo: *!usarpocao Poção de Cura*',
+      text: '🧪 Diga o nome da poção!\nExemplo: *!usarpocao Poção_de_Cura* ou *!usarpocao Poção de Cura*',
     }, { quoted: msg });
   }
 
@@ -435,8 +499,9 @@ async function handleMenuMedieval(sock, msg, jid) {
       `▸ *!usarpocao [nome]* — Usar poção do inventário\n` +
       `▸ *!invmed* — Ver seus itens\n` +
       `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
-      `📊 *RANKING*\n` +
-      `▸ *!rankmedieval* — Ranking de guerreiros\n\n` +
+      `📊 *RANKING E HISTÓRICO*\n` +
+      `▸ *!rankmedieval* — Ranking de guerreiros\n` +
+      `▸ *!historico* — Suas últimas batalhas\n\n` +
       `⚙️ *ADMIN*\n` +
       `▸ *!medieval on/off* — Ativar/desativar modo\n\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +

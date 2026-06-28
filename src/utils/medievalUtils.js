@@ -131,16 +131,16 @@ const ELEMENTOS = [
 
 // ── Armas ────────────────────────────────────────────────────────────────────
 const ARMAS = [
-  { nome: 'Espada',          emoji: '⚔️', bonusAtaque: 8,  preco: 300,  raridade: 'comum'    },
-  { nome: 'Machado',         emoji: '🪓', bonusAtaque: 12, preco: 450,  raridade: 'comum'    },
-  { nome: 'Adaga',           emoji: '🗡️', bonusAtaque: 6,  preco: 200,  raridade: 'comum'    },
-  { nome: 'Lança',           emoji: '🔱', bonusAtaque: 10, preco: 350,  raridade: 'incomum'  },
-  { nome: 'Cajado',          emoji: '🪄', bonusAtaque: 5,  preco: 400,  raridade: 'incomum',  bonusMana: 30 },
-  { nome: 'Arco',            emoji: '🏹', bonusAtaque: 9,  preco: 380,  raridade: 'incomum'  },
-  { nome: 'Espada Rúnica',   emoji: '🔮', bonusAtaque: 18, preco: 900,  raridade: 'raro'     },
-  { nome: 'Machado Sombrio', emoji: '💀', bonusAtaque: 22, preco: 1200, raridade: 'raro'     },
-  { nome: 'Cajado das Eras', emoji: '✨', bonusAtaque: 15, preco: 1100, raridade: 'raro',     bonusMana: 60 },
-  { nome: 'Lâmina do Vazio', emoji: '🌑', bonusAtaque: 25, preco: 1800, raridade: 'lendário' },
+  { nome: 'Espada',          emoji: '⚔️', bonusAtaque: 8,  preco: 300,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Machado',         emoji: '🪓', bonusAtaque: 12, preco: 450,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Adaga',           emoji: '🗡️', bonusAtaque: 6,  preco: 200,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Lança',           emoji: '🔱', bonusAtaque: 10, preco: 350,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Cajado',          emoji: '🪄', bonusAtaque: 5,  preco: 400,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 30 },
+  { nome: 'Arco',            emoji: '🏹', bonusAtaque: 9,  preco: 380,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Espada Rúnica',   emoji: '🔮', bonusAtaque: 18, preco: 900,  raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Machado Sombrio', emoji: '💀', bonusAtaque: 22, preco: 1200, raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Cajado das Eras', emoji: '✨', bonusAtaque: 15, preco: 1100, raridade: 'raro',     nivelMinimo: 7,  bonusMana: 60 },
+  { nome: 'Lâmina do Vazio', emoji: '🌑', bonusAtaque: 25, preco: 1800, raridade: 'lendário', nivelMinimo: 12 },
 ];
 
 // ── Poções ───────────────────────────────────────────────────────────────────
@@ -154,27 +154,67 @@ const POCOES = [
 
 // ── Armaduras ────────────────────────────────────────────────────────────────
 const ARMADURAS = [
-  { nome: 'Armadura de Couro',  emoji: '🥋', bonusDefesa: 5,  preco: 200,  raridade: 'comum'    },
-  { nome: 'Cota de Malha',      emoji: '🛡️', bonusDefesa: 10, preco: 400,  raridade: 'comum'    },
-  { nome: 'Armadura de Placas', emoji: '🦾', bonusDefesa: 16, preco: 700,  raridade: 'incomum'  },
-  { nome: 'Manto Sombrio',      emoji: '🌑', bonusDefesa: 8,  preco: 500,  raridade: 'incomum',  bonusMana: 20 },
-  { nome: 'Veste Élfica',       emoji: '🌿', bonusDefesa: 12, preco: 650,  raridade: 'raro'     },
-  { nome: 'Armadura Rúnica',    emoji: '🔮', bonusDefesa: 20, preco: 1000, raridade: 'raro'     },
-  { nome: 'Placas do Abismo',   emoji: '💀', bonusDefesa: 25, preco: 1500, raridade: 'lendário' },
+  { nome: 'Armadura de Couro',  emoji: '🥋', bonusDefesa: 5,  preco: 200,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Cota de Malha',      emoji: '🛡️', bonusDefesa: 10, preco: 400,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Armadura de Placas', emoji: '🦾', bonusDefesa: 16, preco: 700,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Manto Sombrio',      emoji: '🌑', bonusDefesa: 8,  preco: 500,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 20 },
+  { nome: 'Veste Élfica',       emoji: '🌿', bonusDefesa: 12, preco: 650,  raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Armadura Rúnica',    emoji: '🔮', bonusDefesa: 20, preco: 1000, raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Placas do Abismo',   emoji: '💀', bonusDefesa: 25, preco: 1500, raridade: 'lendário', nivelMinimo: 12 },
 ];
 
 // ── Missões ──────────────────────────────────────────────────────────────────
 const MISSOES = [
-  { titulo: 'A Cripta dos Mortos Vivos',  dificuldade: 'fácil',   xpReward: 50,  goldReward: 100, emoji: '💀' },
-  { titulo: 'O Dragão das Montanhas',     dificuldade: 'difícil', xpReward: 200, goldReward: 500, emoji: '🐉' },
-  { titulo: 'A Floresta Amaldiçoada',     dificuldade: 'médio',   xpReward: 100, goldReward: 250, emoji: '🌲' },
-  { titulo: 'O Castelo do Rei Sombrio',   dificuldade: 'difícil', xpReward: 180, goldReward: 450, emoji: '🏰' },
-  { titulo: 'As Minas do Esquecimento',   dificuldade: 'médio',   xpReward: 120, goldReward: 300, emoji: '⛏️' },
-  { titulo: 'O Pântano das Almas',        dificuldade: 'fácil',   xpReward: 60,  goldReward: 150, emoji: '🌿' },
-  { titulo: 'A Torre do Mago Louco',      dificuldade: 'difícil', xpReward: 220, goldReward: 550, emoji: '🔮' },
-  { titulo: 'O Covil do Lobisomem',       dificuldade: 'médio',   xpReward: 130, goldReward: 320, emoji: '🐺' },
-  { titulo: 'O Templo da Magia Negra',    dificuldade: 'difícil', xpReward: 250, goldReward: 600, emoji: '🖤' },
-  { titulo: 'A Aldeia dos Espíritos',     dificuldade: 'fácil',   xpReward: 70,  goldReward: 180, emoji: '👻' },
+  // ── Nível 1+ (fácil) ──────────────────────────────────────────────────────
+  { titulo: 'A Cripta dos Mortos Vivos',    dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 50,  goldReward: 100, emoji: '💀' },
+  { titulo: 'O Pântano das Almas',          dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 60,  goldReward: 150, emoji: '🌿' },
+  { titulo: 'A Aldeia dos Espíritos',       dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 70,  goldReward: 180, emoji: '👻' },
+  { titulo: 'O Celeiro Amaldiçoado',        dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 55,  goldReward: 120, emoji: '🌾' },
+  { titulo: 'A Caverna dos Morcegos',       dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 65,  goldReward: 160, emoji: '🦇' },
+  { titulo: 'O Mercado Maldito',            dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 50,  goldReward: 130, emoji: '🏚️' },
+  { titulo: 'A Ponte dos Fantasmas',        dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 60,  goldReward: 140, emoji: '🌉' },
+  { titulo: 'O Poço Sem Fundo',             dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 75,  goldReward: 170, emoji: '🕳️' },
+
+  // ── Nível 2+ (fácil) ──────────────────────────────────────────────────────
+  { titulo: 'As Ruínas do Velho Reino',     dificuldade: 'fácil',   nivelMinimo: 2,  xpReward: 80,  goldReward: 190, emoji: '🏛️' },
+  { titulo: 'O Acampamento Goblin',         dificuldade: 'fácil',   nivelMinimo: 2,  xpReward: 85,  goldReward: 200, emoji: '👺' },
+  { titulo: 'A Estalagem Fantasma',         dificuldade: 'fácil',   nivelMinimo: 2,  xpReward: 80,  goldReward: 195, emoji: '🏠' },
+
+  // ── Nível 4+ (médio) ──────────────────────────────────────────────────────
+  { titulo: 'A Floresta Amaldiçoada',       dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 100, goldReward: 250, emoji: '🌲' },
+  { titulo: 'As Minas do Esquecimento',     dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 120, goldReward: 300, emoji: '⛏️' },
+  { titulo: 'O Covil do Lobisomem',         dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 130, goldReward: 320, emoji: '🐺' },
+  { titulo: 'A Necrópole Esquecida',        dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 110, goldReward: 270, emoji: '⚰️' },
+  { titulo: 'O Labirinto de Pedra',         dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 115, goldReward: 280, emoji: '🌀' },
+  { titulo: 'A Fortaleza dos Bandidos',     dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 125, goldReward: 310, emoji: '⚔️' },
+  { titulo: 'O Navio Fantasma',             dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 120, goldReward: 295, emoji: '🚢' },
+
+  // ── Nível 6+ (médio) ──────────────────────────────────────────────────────
+  { titulo: 'O Santuário Corrompido',       dificuldade: 'médio',   nivelMinimo: 6,  xpReward: 140, goldReward: 340, emoji: '⛩️' },
+  { titulo: 'A Arena dos Condenados',       dificuldade: 'médio',   nivelMinimo: 6,  xpReward: 150, goldReward: 360, emoji: '🏟️' },
+  { titulo: 'O Desfiladeiro das Sombras',   dificuldade: 'médio',   nivelMinimo: 6,  xpReward: 145, goldReward: 350, emoji: '🌑' },
+  { titulo: 'A Biblioteca Proibida',        dificuldade: 'médio',   nivelMinimo: 6,  xpReward: 135, goldReward: 330, emoji: '📚' },
+
+  // ── Nível 8+ (difícil) ────────────────────────────────────────────────────
+  { titulo: 'O Dragão das Montanhas',       dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 200, goldReward: 500, emoji: '🐉' },
+  { titulo: 'O Castelo do Rei Sombrio',     dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 180, goldReward: 450, emoji: '🏰' },
+  { titulo: 'O Golem de Ferro Ancestral',   dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 190, goldReward: 470, emoji: '🤖' },
+  { titulo: 'A Hidra dos Pântanos Negros',  dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 195, goldReward: 480, emoji: '🐍' },
+  { titulo: 'O Portal Dimensional',         dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 185, goldReward: 460, emoji: '🌌' },
+
+  // ── Nível 10+ (difícil) ───────────────────────────────────────────────────
+  { titulo: 'A Torre do Mago Louco',        dificuldade: 'difícil', nivelMinimo: 10, xpReward: 220, goldReward: 550, emoji: '🔮' },
+  { titulo: 'O Templo da Magia Negra',      dificuldade: 'difícil', nivelMinimo: 10, xpReward: 250, goldReward: 600, emoji: '🖤' },
+  { titulo: 'O Lich dos Tempos Antigos',    dificuldade: 'difícil', nivelMinimo: 10, xpReward: 240, goldReward: 580, emoji: '💀' },
+  { titulo: 'A Dimensão do Caos',           dificuldade: 'difícil', nivelMinimo: 10, xpReward: 235, goldReward: 570, emoji: '🌀' },
+  { titulo: 'O Trono do Deus Esquecido',    dificuldade: 'difícil', nivelMinimo: 10, xpReward: 260, goldReward: 620, emoji: '👑' },
+
+  // ── Nível 12+ (lendário) ──────────────────────────────────────────────────
+  { titulo: 'O Despertar do Titã',          dificuldade: 'lendário', nivelMinimo: 12, xpReward: 350, goldReward: 900,  emoji: '⚡' },
+  { titulo: 'A Forja dos Deuses',           dificuldade: 'lendário', nivelMinimo: 12, xpReward: 380, goldReward: 950,  emoji: '🔥' },
+  { titulo: 'O Fim do Mundo Conhecido',     dificuldade: 'lendário', nivelMinimo: 12, xpReward: 400, goldReward: 1000, emoji: '🌍' },
+  { titulo: 'A Ascensão do Rei Morto',      dificuldade: 'lendário', nivelMinimo: 12, xpReward: 370, goldReward: 930,  emoji: '👑' },
+  { titulo: 'O Coração das Trevas Eternas', dificuldade: 'lendário', nivelMinimo: 12, xpReward: 420, goldReward: 1050, emoji: '🖤' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -56,7 +56,22 @@ const medievalPersonagemSchema = new mongoose.Schema(
     // ── Habilidades desbloqueadas (reservado para expansão futura) ────────────
     habilidades: {
       type:    [String],
-      default: () => ([]), // factory function — mesmo motivo acima
+      default: () => ([]),
+    },
+
+    // ── Histórico de batalhas (últimas 5) ─────────────────────────────────────
+    historicoBatalhas: {
+      type:    [
+        {
+          tipo:       { type: String }, // 'ataque' | 'magia' | 'defesa'
+          oponente:   { type: String }, // nome do oponente
+          dano:       { type: Number },
+          resultado:  { type: String }, // 'vitoria' | 'derrota' | 'neutro'
+          critico:    { type: Boolean, default: false },
+          data:       { type: Date,    default: Date.now },
+        },
+      ],
+      default: () => ([]),
     },
 
     // ── Cooldowns — undefined por padrão (sem default: null) ─────────────────

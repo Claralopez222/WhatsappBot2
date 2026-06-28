@@ -1813,7 +1813,7 @@ const bcrypt = require('bcryptjs');
 
 // Rate limit específico pro cadastro — evita criação em massa
 const rateLimitCadastro = rateLimit({
-  windowMs:     60 * 60 * 1000, // 1 hora
+  windowMs:     60 * 60 * 1000,
   max:          5,
   keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
   handler: (req, res) =>
@@ -1823,11 +1823,11 @@ const rateLimitCadastro = rateLimit({
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/otp/enviar
 // ─────────────────────────────────────────────────────────────────────────────
-const OtpCadastro  = require('../models/OtpCadastro');
-const nodemailer   = require('nodemailer');
+const OtpCadastro = require('../models/OtpCadastro');
+const nodemailer  = require('nodemailer');
 const transporter = nodemailer.createTransport({
-  host: '74.125.133.108', // IP fixo IPv4 do smtp.gmail.com
-  port: 587,
+  host:   'smtp.gmail.com',
+  port:   587,
   secure: false,
   auth: {
     user: process.env.GMAIL_USER,
@@ -1835,8 +1835,9 @@ const transporter = nodemailer.createTransport({
   },
   tls: {
     rejectUnauthorized: false,
-    servername: 'smtp.gmail.com', // necessário ao usar IP fixo
+    servername: 'smtp.gmail.com',
   },
+  family: 4,
 });
 
 const rateLimitOtp = rateLimit({

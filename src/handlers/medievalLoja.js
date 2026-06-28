@@ -476,6 +476,122 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ─── !sellmed ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
+  if (!somenteGrupo(jid)) return;
+  if (!await getModoAtivo(jid)) return;
+
+  const partes      = (args || '').trim().split(/\s+/);
+  const ultimaParte = partes[partes.length - 1];
+  const temQtd      = /^\d+$/.test(ultimaParte) && partes.length > 1;
+  const quantidade  = temQtd ? Math.max(1, parseInt(ultimaParte, 10)) : 1;
+  const nomeItem    = (temQtd ? partes.slice(0, -1) : partes).join(' ').replace(/_/g, ' ').trim();
+
+  if (!nomeItem) {
+    return sock.sendMessage(jid, {
+      text:
+        `🏷️ *Como vender:*\n` +
+        `▸ *!sellmed Espada* — vende 1 unidade\n` +
+        `▸ *!sellmed Poção_de_Cura 3* — vende 3 unidades\n\n` +
+        `_Use *!invmed* para ver seus itens._`,
+    }, { quoted: msg });
+  }
+
+  // Resolve item em qualquer categoria (busca case-insensitive)
+  const arma     = ARMAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
+  const armadura = ARMADURAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
+  const pocao    = POCOES.find(p => p.nome.toLowerCase() === nomeItem.toLowerCase());
+  const item     = arma || armadura || pocao;
+
+  if (!item) {
+    return sock.sendMessage(jid, {
+      text: `❌ Item *"${nomeItem}"* não encontrado!\n_Use *!invmed* para ver seus itens._`,
+    }, { quoted: msg });
+  }
+
+  const chaveInv = item.nome.replace(/ /g, '_');
+  const chaveMap = `inventarioMedieval.${chaveInv}`;
+
+  // Busca personagem fresco para checar estoque e equipamentos
+  const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+
+  const invMap   = p.inventarioMedieval instanceof Map
+    ? p.inventarioMedieval
+    : new Map(Object.entries(p.inventarioMedieval || {}));
+  const qtdAtual = invMap.get(chaveInv) || 0;
+
+  if (qtdAtual <= 0) {
+    return sock.sendMessage(jid, {
+      text: `❌ Você não possui *${item.nome}* no inventário!\n_Use *!invmed* para ver seus itens._`,
+    }, { quoted: msg });
+  }
+
+  if (quantidade > qtdAtual) {
+    return sock.sendMessage(jid, {
+      text: `❌ Você só tem *${qtdAtual}x ${item.nome}* no inventário!`,
+    }, { quoted: msg });
+  }
+
+  // Impede vender item equipado no momento
+  if (p.armaEquipada === item.nome) {
+    return sock.sendMessage(jid, {
+      text: `❌ *${item.nome}* está equipado!\nUse *!desequipar arma* primeiro.`,
+    }, { quoted: msg });
+  }
+  if (p.armaduraEquipada === item.nome) {
+    return sock.sendMessage(jid, {
+      text: `❌ *${item.nome}* está equipado!\nUse *!desequipar armadura* primeiro.`,
+    }, { quoted: msg });
+  }
+
+  // Valor de venda = 50% do preço original por unidade
+  const valorUnit  = Math.floor(item.preco * 0.5);
+  const valorTotal = valorUnit * quantidade;
+
+  // Remove do inventário atomicamente — só executa se ainda tiver estoque suficiente
+  const resultado = await MedievalPersonagem.findOneAndUpdate(
+    {
+      idWhatsApp: senderJid,
+      idGrupo:    jid,
+      [chaveMap]: { $gte: quantidade },
+    },
+    { $inc: { [chaveMap]: -quantidade } },
+    { new: false }
+  );
+
+  // Se resultado for null, outro request consumiu o estoque entre a leitura e o update
+  if (!resultado) {
+    return sock.sendMessage(jid, {
+      text: `❌ Não foi possível vender *${item.nome}*.\n_Verifique seu inventário com *!invmed*._`,
+    }, { quoted: msg });
+  }
+
+  // Credita o gold na carteira (upsert garante que cria se não existir)
+  await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: senderJid, idGrupo: jid },
+    { $inc: { gold: valorTotal } },
+    { upsert: true }
+  );
+
+  const qtdRestante = qtdAtual - quantidade;
+
+  await sock.sendMessage(jid, {
+    text:
+      `💰 *VENDA REALIZADA!*\n\n` +
+      `${item.emoji} *${item.nome}* x${quantidade}\n\n` +
+      `🪙 Valor unitário: *${valorUnit} Gold*\n` +
+      `🪙 Total recebido: *+${valorTotal} Gold*\n\n` +
+      `━━━━━━━━━━━━━━━━━━━\n` +
+      (qtdRestante > 0
+        ? `_Restam *${qtdRestante}x ${item.nome}* no inventário._`
+        : `_Você não tem mais *${item.nome}* no inventário._`),
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ─── !rankmedieval ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
@@ -555,6 +671,7 @@ module.exports = {
   handleDesequipar,
   handleInvMed,
   handleUsarPocao,
+  handleSellMed,
   handleRankMedieval,
   handleMenuMedieval,
 };

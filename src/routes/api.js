@@ -1830,21 +1830,19 @@ dns.setDefaultResultOrder('ipv4first');
 
 const transporter = nodemailer.createTransport({
   host:   'smtp.gmail.com',
-  port:   587,
-  secure: false,
+  port:   465,
+  secure: true,        // SSL direto, sem STARTTLS
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_PASS,
   },
   tls: {
     rejectUnauthorized: false,
-    servername: 'smtp.gmail.com',
   },
   family: 4,
-  socketTimeout:     10000,
-  greetingTimeout:   10000,
-  connectionTimeout: 10000,
-  dnsOptions: { family: 4 },
+  socketTimeout:     15000,
+  greetingTimeout:   15000,
+  connectionTimeout: 15000,
 });
 
 const rateLimitOtp = rateLimit({

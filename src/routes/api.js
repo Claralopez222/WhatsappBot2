@@ -2463,5 +2463,25 @@ router.get('/user/telefone/:idWhatsApp', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/contas
+// Lista todos os usuários com conta cadastrada (username + email + telefone).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/admin/contas', adminAuth, async (req, res) => {
+  try {
+    const contas = await Usuario.find({
+      username: { $exists: true, $ne: null },
+    })
+      .select('idWhatsApp nome telefone username email createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({ contas });
+  } catch (err) {
+    console.error('[API] GET /admin/contas:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

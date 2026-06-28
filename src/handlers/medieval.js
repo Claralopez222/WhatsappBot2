@@ -192,7 +192,22 @@ async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
     }, { quoted: msg });
   }
 
-  const ativo = acao === 'on';
+  const ativo    = acao === 'on';
+  const cfgAtual = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+  const jaAtivo  = cfgAtual?.medievalAtivo === true;
+
+  if (ativo && jaAtivo) {
+    return sock.sendMessage(jid, {
+      text: `⚔️ O modo medieval *já está ativo* neste grupo!\n_Use *!medieval off* para desativar._`,
+    }, { quoted: msg });
+  }
+
+  if (!ativo && !jaAtivo) {
+    return sock.sendMessage(jid, {
+      text: `🏰 O modo medieval *já está desativado* neste grupo!\n_Use *!medieval on* para ativar._`,
+    }, { quoted: msg });
+  }
+
   await GrupoConfig.findOneAndUpdate(
     { idGrupo: jid },
     { $set: { medievalAtivo: ativo } },

@@ -149,12 +149,16 @@ async function main() {
   for (const u of usuariosEnriquecidos) {
     if (isGrupoOuBroadcast(u.idWhatsApp)) continue;
     if (!u.telefone) continue;
+    // Descarta se o número tem 15+ dígitos (padrão de JID de grupo)
+    if (u.telefone.length >= 15) continue;
     getOuCriar(u.telefone, u.idWhatsApp, u.nome, u.gold, u.xp, u.level ?? u.nivel ?? 0);
   }
 
   // 2. Carteiras — resolve número e agrupa grupos
   for (const c of carteiras) {
     if (isGrupoOuBroadcast(c.idWhatsApp)) continue;
+    // Carteiras cujo idWhatsApp é o mesmo que o idGrupo são registros de grupo, não usuário
+    if (c.idWhatsApp.replace(/@\S+/, '') === c.idGrupo.replace(/@\S+/, '')) continue;
 
     let numero = telefoneMap[c.idWhatsApp] ?? null;
     if (!numero) {
@@ -163,6 +167,7 @@ async function main() {
         : (limparNumero(c.idWhatsApp) || null);
     }
     if (!numero) continue;
+    if (numero.length >= 15) continue; // descarta JIDs de grupo disfarçados
 
     const entrada = getOuCriar(
       numero,

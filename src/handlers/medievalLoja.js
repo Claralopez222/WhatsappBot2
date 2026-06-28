@@ -49,11 +49,11 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
 
         return (
           `${bloqueadoClasse && mostrarTodas ? '⛔' : bloqueadoNivel && mostrarTodas ? '🔒' : a.emoji} *${a.nome}*\n` +
-          `   🪙 Preço: *${a.preco} Gold*\n` +
-          `   ⚔️ Bônus de ataque: *+${a.bonusAtaque}*${mana}\n` +
-          `   ${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
+          `📦 Preço: *${a.preco} Gold*\n` +
+          `⚔️ Bônus de ataque: *+${a.bonusAtaque}*${mana}\n` +
+          `${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
           statusTag +
-          `   _!comprar ${chave}_`
+          `🛒 \`!comprar ${chave}\``
         );
       }).join('\n\n');
 
@@ -69,11 +69,11 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
           : '';
         return (
           `${bloqueado && mostrarTodas ? '🔒' : a.emoji} *${a.nome}*\n` +
-          `   🪙 Preço: *${a.preco} Gold*\n` +
-          `   🛡️ Bônus de defesa: *+${a.bonusDefesa}*${mana}\n` +
-          `   ${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
+          `📦 Preço: *${a.preco} Gold*\n` +
+          `🛡️ Bônus de defesa: *+${a.bonusDefesa}*${mana}\n` +
+          `${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
           statusTag +
-          `   _!comprar ${chave}_`
+          `🛒 \`!comprar ${chave}\``
         );
       }).join('\n\n');
 
@@ -84,10 +84,10 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
     const tipoTx = poc.tipo === 'ambos' ? 'HP e Mana' : poc.tipo.toUpperCase();
     return (
       `${poc.emoji} *${poc.nome}*\n` +
-      `   🪙 Preço: *${poc.preco} Gold*\n` +
-      `   ${tipoIc} Restaura: *+${poc.valor} ${tipoTx}*\n` +
-      `   ${RARIDADE_EMOJI[poc.raridade] || '⚪'} Raridade: *${poc.raridade}*\n` +
-      `   _!comprar ${chave}_`
+      `📦 Preço: *${poc.preco} Gold*\n` +
+      `${tipoIc} Restaura: *+${poc.valor} ${tipoTx}*\n` +
+      `${RARIDADE_EMOJI[poc.raridade] || '⚪'} Raridade: *${poc.raridade}*\n` +
+      `🛒 \`!comprar ${chave}\``
     );
   }).join('\n\n');
 

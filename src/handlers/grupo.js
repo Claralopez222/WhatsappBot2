@@ -1858,6 +1858,51 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ─── !bot on/off ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleBotToggle(sock, msg, jid, args, isAdminUser) {
+  if (!isAdminUser) {
+    return sock.sendMessage(jid, { text: '❌ Apenas admins podem usar esse comando.' }, { quoted: msg });
+  }
+
+  const acao = (args || '').trim().toLowerCase();
+  if (!['on', 'off'].includes(acao)) {
+    return sock.sendMessage(jid, {
+      text: '🤖 Use *!bot on* para ligar ou *!bot off* para desligar o bot neste grupo.',
+    }, { quoted: msg });
+  }
+
+  const GrupoConfig = require('../models/GrupoConfig');
+  const ativo       = acao === 'on';
+  const cfgAtual    = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+  const jaAtivo     = cfgAtual?.botAtivo !== false;
+
+  if (ativo && jaAtivo) {
+    return sock.sendMessage(jid, { text: '🤖 O bot já está *ligado* neste grupo!' }, { quoted: msg });
+  }
+  if (!ativo && !jaAtivo) {
+    return sock.sendMessage(jid, { text: '🤖 O bot já está *desligado* neste grupo!' }, { quoted: msg });
+  }
+
+  await GrupoConfig.findOneAndUpdate(
+    { idGrupo: jid },
+    { $set: { botAtivo: ativo } },
+    { upsert: true }
+  );
+
+  if (ativo) {
+    return sock.sendMessage(jid, {
+      text: '✅ *Bot ligado!* Estou de volta, pode mandar comandos.',
+    }, { quoted: msg });
+  } else {
+    return sock.sendMessage(jid, {
+      text: '🔕 *Bot desligado!* Não responderei mais comandos neste grupo.\n_Use *!bot on* para reativar._',
+    }, { quoted: msg });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ─── EXPORTS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
@@ -1905,4 +1950,5 @@ module.exports = {
   handleRemoverReporte,
   handleAdvertencia,
   setBemVindo,
+  handleBotToggle,
 };

@@ -1825,6 +1825,9 @@ const rateLimitCadastro = rateLimit({
 // ─────────────────────────────────────────────────────────────────────────────
 const OtpCadastro = require('../models/OtpCadastro');
 const nodemailer  = require('nodemailer');
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 const transporter = nodemailer.createTransport({
   host:   'smtp.gmail.com',
   port:   587,
@@ -1838,6 +1841,10 @@ const transporter = nodemailer.createTransport({
     servername: 'smtp.gmail.com',
   },
   family: 4,
+  socketTimeout:     10000,
+  greetingTimeout:   10000,
+  connectionTimeout: 10000,
+  dnsOptions: { family: 4 },
 });
 
 const rateLimitOtp = rateLimit({

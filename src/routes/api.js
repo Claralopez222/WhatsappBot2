@@ -1826,7 +1826,7 @@ const rateLimitCadastro = rateLimit({
 const OtpCadastro  = require('../models/OtpCadastro');
 const nodemailer   = require('nodemailer');
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
+  host: '74.125.133.108', // IP fixo IPv4 do smtp.gmail.com
   port: 587,
   secure: false,
   auth: {
@@ -1835,8 +1835,8 @@ const transporter = nodemailer.createTransport({
   },
   tls: {
     rejectUnauthorized: false,
+    servername: 'smtp.gmail.com', // necessário ao usar IP fixo
   },
-  family: 4, // força IPv4 — necessário no Render
 });
 
 const rateLimitOtp = rateLimit({

@@ -104,7 +104,7 @@ async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
   } catch (err) {
     // Erro 11000 = duplicate key — race condition, busca o que foi criado
     if (err.code === 11000) {
-      return MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
+      return await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
     }
     throw err;
   }
@@ -120,8 +120,8 @@ function gerarBarra(atual, maximo, emoji = '❤️', tamanho = 8) {
  * Verifica e aplica level up em loop até não ter mais XP suficiente.
  * Garante que pulos de vários níveis de uma vez sejam aplicados corretamente.
  */
-async function verificarLevelUp(sock, jid, senderJid) {
-  let p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
+async function verificarLevelUp(sock, jid, senderJid, pAtual = null) {
+  let p = pAtual ?? await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
   if (!p) return;
 
   while (p.xpMedieval >= xpParaNivel(p.nivel + 1)) {
@@ -353,16 +353,11 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   const { dano, critico, multElemento } = calcularDano(atacante, defensor);
   const novoHp = Math.max(0, defensor.hp - dano);
 
-  await MedievalPersonagem.updateOne(
-    { idWhatsApp: targetJid, idGrupo: jid },
-    { $set: { hp: novoHp } }
-  );
-
   const xpGanho   = critico ? 15 : 10;
   const vitoria   = novoHp <= 0;
   const xpTotal   = vitoria ? xpGanho + 30 : xpGanho;
 
-  // Update único do atacante — xp do ataque + xp de vitória juntos
+  // Update único do atacante
   await MedievalPersonagem.updateOne(
     { idWhatsApp: senderJid, idGrupo: jid },
     {
@@ -370,13 +365,6 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       $inc: { xpMedieval: xpTotal, ...(vitoria && { vitorias: 1 }) },
     }
   );
-
-  if (vitoria) {
-    await MedievalPersonagem.updateOne(
-      { idWhatsApp: targetJid, idGrupo: jid },
-      { $inc: { derrotas: 1 } }
-    );
-  }
 
   const narr      = narrarCombate(atacante, defensor, dano, critico);
   const multTexto = multElemento > 1
@@ -398,7 +386,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     mentions: [senderJid, targetJid],
   }, { quoted: msg });
 
-  // ── Grava histórico (últimas 5 entradas) ─────────────────────────────────
+  // ── Grava histórico + atualiza defensor num write só ─────────────────────
   const entradaAtacante = { tipo: 'ataque', oponente: defensor.nome, dano, resultado: vitoria ? 'vitoria' : 'neutro', critico };
   const entradaDefensor = { tipo: 'defesa', oponente: atacante.nome, dano, resultado: vitoria ? 'derrota' : 'neutro', critico };
   await MedievalPersonagem.updateOne(
@@ -407,10 +395,14 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   );
   await MedievalPersonagem.updateOne(
     { idWhatsApp: targetJid, idGrupo: jid },
-    { $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } } }
+    {
+      $set:  { hp: novoHp },
+      $inc:  { ...(vitoria && { derrotas: 1 }) },
+      $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } },
+    }
   );
 
-  await verificarLevelUp(sock, jid, senderJid);
+  await verificarLevelUp(sock, jid, senderJid, atacante);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -471,10 +463,6 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
   const novoHp     = Math.max(0, defensor.hp - dano);
   const novaMana   = atacante.mana - custMana;
 
-  await MedievalPersonagem.updateOne(
-    { idWhatsApp: targetJid, idGrupo: jid },
-    { $set: { hp: novoHp } }
-  );
   const vitoria = novoHp <= 0;
   const xpTotal = vitoria ? 20 + 40 : 20;
 
@@ -486,13 +474,6 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
       $inc: { xpMedieval: xpTotal, ...(vitoria && { vitorias: 1 }) },
     }
   );
-
-  if (vitoria) {
-    await MedievalPersonagem.updateOne(
-      { idWhatsApp: targetJid, idGrupo: jid },
-      { $inc: { derrotas: 1 } }
-    );
-  }
 
   const narr = narrarCombate(atacante, defensor, dano, false, habilidade);
   let textoFinal =
@@ -511,7 +492,7 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
     mentions: [senderJid, targetJid],
   }, { quoted: msg });
 
-  // ── Grava histórico (últimas 5 entradas) ─────────────────────────────────
+  // ── Grava histórico + atualiza defensor num write só ─────────────────────
   const entradaAtacante = { tipo: 'magia', oponente: defensor.nome, dano, resultado: vitoria ? 'vitoria' : 'neutro', critico: false };
   const entradaDefensor = { tipo: 'defesa', oponente: atacante.nome, dano, resultado: vitoria ? 'derrota' : 'neutro', critico: false };
   await MedievalPersonagem.updateOne(
@@ -520,10 +501,14 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
   );
   await MedievalPersonagem.updateOne(
     { idWhatsApp: targetJid, idGrupo: jid },
-    { $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } } }
+    {
+      $set:  { hp: novoHp },
+      $inc:  { ...(vitoria && { derrotas: 1 }) },
+      $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } },
+    }
   );
 
-  await verificarLevelUp(sock, jid, senderJid);
+  await verificarLevelUp(sock, jid, senderJid, atacante);
 }
 // ═══════════════════════════════════════════════════════════════
 // ─── !missaomed ────────────────────────────────────────────────

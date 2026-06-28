@@ -79,8 +79,11 @@ async function main() {
   const lidParaNumero = {};
   for (const m of lidMappings) {
     if (!m.lid || !m.pn) continue;
+    if (isGrupoOuBroadcast(m.pn)) continue; // ignora pn que é grupo
     const num = limparNumero(m.pn);
-    if (num) lidParaNumero[m.lid] = num;
+    // número de grupo tem 15+ dígitos começando com 120363 — descarta
+    if (!num || num.startsWith('120363') || num.length > 14) continue;
+    lidParaNumero[m.lid] = num;
   }
 
   // ── Enriquece usuários com telefone real ──────────────────────────────────

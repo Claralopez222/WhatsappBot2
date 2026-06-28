@@ -12,6 +12,7 @@ const CarteiraGrupo = require(path.join(__dirname, '..', 'models', 'CarteiraGrup
 const Filho         = require(path.join(__dirname, '..', 'models', 'Filho'));
 const LidMapping    = require(path.join(__dirname, '..', 'models', 'LidMapping'));
 
+// ─── Cores ───────────────────────────────────────────────────────────────────
 const RESET    = '\x1b[0m';
 const VERDE    = '\x1b[32m';
 const AMARELO  = '\x1b[33m';
@@ -19,18 +20,50 @@ const VERMELHO = '\x1b[31m';
 const CYAN     = '\x1b[36m';
 const BRANCO   = '\x1b[37m';
 
-const OUTPUT_FILE = path.resolve(__dirname, '..', '..', 'dados.json');
+// ─── Caminhos de saída ───────────────────────────────────────────────────────
+const ROOT         = path.resolve(__dirname, '..', '..');
+const DADOS_FILE   = path.join(ROOT, 'dados.json');
+const NUMEROS_FILE = path.join(ROOT, 'numeros.json');
 
+// ─── Helpers de log ──────────────────────────────────────────────────────────
 function sep()     { console.log(`${BRANCO}${'─'.repeat(70)}${RESET}`); }
 function titulo(t) { sep(); console.log(`  ${AMARELO}${t}${RESET}`); sep(); }
 function ok(t)     { console.log(`  ${VERDE}✅ ${t}${RESET}`); }
 function info(t)   { console.log(`  ${CYAN}ℹ️  ${t}${RESET}`); }
+function warn(t)   { console.log(`  ${AMARELO}⚠️  ${t}${RESET}`); }
 function erro(t)   { console.log(`  ${VERMELHO}❌ ${t}${RESET}`); }
 
-async function main() {
-  titulo('💾  EXPORTAÇÃO LOCAL — dados.json');
+// ─── Helpers de JID / número ─────────────────────────────────────────────────
 
-  await mongoose.connect(process.env.MONGO_URI);
+/** Remove sufixo @xxx e :device, retorna só os dígitos. */
+function limparNumero(valor = '') {
+  return String(valor)
+    .replace(/@\S+/g, '')   // remove @s.whatsapp.net, @g.us, @lid, etc.
+    .replace(/:\d+$/, '')   // remove :83 (sufixo de dispositivo)
+    .replace(/\D/g, '')     // remove qualquer não-dígito (espaços, +, -)
+    .trim();
+}
+
+/** Retorna true se o JID é de grupo ou broadcast (não é usuário). */
+function isGrupoOuBroadcast(jid = '') {
+  return jid.endsWith('@g.us') || jid.endsWith('@broadcast');
+}
+
+/** Retorna true se o JID usa privacidade @lid (não tem número real). */
+function isLid(jid = '') {
+  return jid.endsWith('@lid');
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+async function main() {
+  titulo('💾  EXPORTAÇÃO + EXTRAÇÃO DE NÚMEROS');
+
+  if (!process.env.MONGO_URI) {
+    erro('MONGO_URI não definida no .env');
+    process.exit(1);
+  }
+
+  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10_000 });
   ok('MongoDB conectado\n');
 
   info('Buscando coleções...');
@@ -42,18 +75,30 @@ async function main() {
     LidMapping.find({}).lean(),
   ]);
 
-  // Monta mapa lid → telefone para enriquecer os dados
-  const lidParaTelefone = {};
+  // ── Mapa lid → número limpo ───────────────────────────────────────────────
+  const lidParaNumero = {};
   for (const m of lidMappings) {
-    if (m.lid && m.pn) lidParaTelefone[m.lid] = m.pn;
+    if (!m.lid || !m.pn) continue;
+    const num = limparNumero(m.pn);
+    if (num) lidParaNumero[m.lid] = num;
   }
 
-  // Enriquece usuários com o telefone real quando disponível
-  const usuariosEnriquecidos = usuarios.map(u => ({
-    ...u,
-    telefone: lidParaTelefone[u.idWhatsApp] ?? u.telefone ?? null,
-  }));
+  // ── Enriquece usuários com telefone real ──────────────────────────────────
+  const usuariosEnriquecidos = usuarios.map(u => {
+    let telefone = u.telefone ?? null;
 
+    if (!telefone) {
+      if (isLid(u.idWhatsApp)) {
+        telefone = lidParaNumero[u.idWhatsApp] ?? null;
+      } else if (!isGrupoOuBroadcast(u.idWhatsApp)) {
+        telefone = limparNumero(u.idWhatsApp) || null;
+      }
+    }
+
+    return { ...u, telefone };
+  });
+
+  // ── Salva dados.json ──────────────────────────────────────────────────────
   const dados = {
     exportadoEm: new Date().toISOString(),
     totais: {
@@ -68,21 +113,112 @@ async function main() {
     lidMappings,
   };
 
-  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(dados, null, 2), 'utf8');
+  fs.writeFileSync(DADOS_FILE, JSON.stringify(dados, null, 2), 'utf8');
 
-  const tamanhoKb = (fs.statSync(OUTPUT_FILE).size / 1024).toFixed(1);
+  // ── Mapas auxiliares ──────────────────────────────────────────────────────
+  const nomeMap     = {};
+  const telefoneMap = {};
+  for (const u of usuariosEnriquecidos) {
+    if (u.idWhatsApp && u.nome)     nomeMap[u.idWhatsApp]     = u.nome;
+    if (u.idWhatsApp && u.telefone) telefoneMap[u.idWhatsApp] = u.telefone;
+  }
+
+  // ── Agrupa por número único ───────────────────────────────────────────────
+  const mapaUsuarios = new Map();
+
+  function getOuCriar(numero, jid, nome, gold, xp, nivel) {
+    if (!mapaUsuarios.has(numero)) {
+      mapaUsuarios.set(numero, {
+        numero,
+        idWhatsApp: jid,
+        nome:       nome ?? null,
+        telefone:   numero,
+        gold:       gold  ?? 0,
+        xp:         xp    ?? 0,
+        nivel:      nivel ?? 0,
+        grupos:     [],
+      });
+    }
+    return mapaUsuarios.get(numero);
+  }
+
+  // 1. Usuários com telefone resolvido
+  for (const u of usuariosEnriquecidos) {
+    if (isGrupoOuBroadcast(u.idWhatsApp)) continue;
+    if (!u.telefone) continue;
+    getOuCriar(u.telefone, u.idWhatsApp, u.nome, u.gold, u.xp, u.level ?? u.nivel ?? 0);
+  }
+
+  // 2. Carteiras — resolve número e agrupa grupos
+  for (const c of carteiras) {
+    if (isGrupoOuBroadcast(c.idWhatsApp)) continue;
+
+    let numero = telefoneMap[c.idWhatsApp] ?? null;
+    if (!numero) {
+      numero = isLid(c.idWhatsApp)
+        ? (lidParaNumero[c.idWhatsApp] ?? null)
+        : (limparNumero(c.idWhatsApp) || null);
+    }
+    if (!numero) continue;
+
+    const entrada = getOuCriar(
+      numero,
+      c.idWhatsApp,
+      nomeMap[c.idWhatsApp] ?? c.nome ?? null,
+      0, 0, 0
+    );
+
+    if (!entrada.nome && c.nome) entrada.nome = c.nome;
+
+    const jaExiste = entrada.grupos.some(g => g.idGrupo === c.idGrupo);
+    if (!jaExiste) {
+      entrada.grupos.push({
+        idGrupo: c.idGrupo,
+        gold:    c.gold  ?? 0,
+        banco:   c.banco ?? {},
+        xp:      c.xp    ?? 0,
+        nivel:   c.nivel ?? c.level ?? 1,
+      });
+    }
+  }
+
+  // ── Ordena por número ─────────────────────────────────────────────────────
+  const lista = [...mapaUsuarios.values()].sort((a, b) => a.numero.localeCompare(b.numero));
+
+  // ── Estatísticas ──────────────────────────────────────────────────────────
+  const comTelefone = usuariosEnriquecidos.filter(u => u.telefone && !isGrupoOuBroadcast(u.idWhatsApp)).length;
+  const semNome     = lista.filter(u => !u.nome).length;
+  const semGrupo    = lista.filter(u => u.grupos.length === 0).length;
+  const comGrupo    = lista.filter(u => u.grupos.length  > 0).length;
+
+  const numeros = {
+    geradoEm:      new Date().toISOString(),
+    baseExportada: dados.exportadoEm,
+    total:         lista.length,
+    usuarios:      lista,
+  };
+
+  fs.writeFileSync(NUMEROS_FILE, JSON.stringify(numeros, null, 2), 'utf8');
+
+  // ── Resumo ────────────────────────────────────────────────────────────────
+  const kbDados   = (fs.statSync(DADOS_FILE).size   / 1024).toFixed(1);
+  const kbNumeros = (fs.statSync(NUMEROS_FILE).size / 1024).toFixed(1);
 
   titulo('📊  RESUMO DA EXPORTAÇÃO');
-  const comTelefone = usuariosEnriquecidos.filter(u => u.telefone).length;
+  ok(`Usuários     : ${usuarios.length} (${comTelefone} com telefone)`);
+  ok(`Carteiras    : ${carteiras.length}`);
+  ok(`Filhos       : ${filhos.length}`);
+  ok(`LidMappings  : ${lidMappings.length}`);
+  sep();
+  ok(`Números únicos : ${lista.length}`);
+  ok(`Com grupo(s)   : ${comGrupo}`);
+  if (semGrupo) warn(`Sem grupo      : ${semGrupo}`);
+  if (semNome)  warn(`Sem nome       : ${semNome}`);
+  sep();
+  info(`dados.json   : ${DADOS_FILE} (${kbDados} KB)`);
+  info(`numeros.json : ${NUMEROS_FILE} (${kbNumeros} KB)`);
 
-  ok(`Usuários  : ${usuarios.length} (${comTelefone} com telefone)`);
-  ok(`Carteiras : ${carteiras.length}`);
-  ok(`Filhos    : ${filhos.length}`);
-  ok(`LidMapping: ${lidMappings.length}`);
-  info(`Arquivo   : ${OUTPUT_FILE}`);
-  info(`Tamanho   : ${tamanhoKb} KB`);
-
-  console.log(`\n  ${VERDE}✅ dados.json salvo com sucesso!${RESET}\n`);
+  console.log(`\n  ${VERDE}✅ Exportação concluída com sucesso!${RESET}\n`);
 
   await mongoose.disconnect();
   process.exit(0);

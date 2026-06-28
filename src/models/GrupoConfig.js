@@ -24,6 +24,7 @@ const grupoConfigSchema = new mongoose.Schema(
     sistemaAniversario: { type: Boolean, default: false },
     sistemaPet:         { type: Boolean, default: false },
     sistemaGold:        { type: Boolean, default: false },
+    medievalAtivo:      { type: Boolean, default: false },
 
     // ── Bem-vindo ────────────────────────────────────────────────
     bemVindoAtivo:    { type: Boolean, default: false },

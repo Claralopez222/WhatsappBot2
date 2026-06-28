@@ -71,7 +71,9 @@ const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'd
 const figurinhaHandler      = require(path.join(__dirname, 'handlers', 'figurinha'));
 const diversaoHandler       = require(path.join(__dirname, 'handlers', 'diversao'));
 const relacionamentoHandler = require(path.join(__dirname, 'handlers', 'relacionamento'));
-const grupoHandler          = require(path.join(__dirname, 'handlers', 'grupo'));
+const grupoHandler        = require('./handlers/grupo');
+const medievalHandler     = require('./handlers/medieval');
+const medievalLojaHandler = require('./handlers/medievalLoja');
 const imagemHandler         = require(path.join(__dirname, 'handlers', 'imagem'));
 const textoHandler          = require(path.join(__dirname, 'handlers', 'texto'));
 const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js'));
@@ -938,6 +940,34 @@ if (matchCmd(cmdWord, 'divida'))
 // ── MISSÕES ───────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes'))
   { await diversaoHandler.handleMissao(sock, msg, jid, caption, getPrefix); return; }
+
+// ── MEDIEVAL ──────────────────────────────────────────────────────────────────
+if (matchCmd(cmdWord, 'medieval') || matchCmdStart(cmd, 'medieval '))
+  { await medievalHandler.handleMedievalToggle(sock, msg, jid, caption.replace(/^[!.,/]medieval\s*/i, ''), await grupoHandler.isAdmin(sock, jid, senderJid)); return; }
+if (matchCmd(cmdWord, 'ficha'))
+  { await medievalHandler.handleFicha(sock, msg, jid, senderJid, author); return; }
+if (matchCmd(cmdWord, 'atacar') || matchCmdStart(cmd, 'atacar ')) {
+  const targetAtacar = content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || null;
+  await medievalHandler.handleAtacar(sock, msg, jid, senderJid, author, targetAtacar); return;
+}
+if (matchCmd(cmdWord, 'magia') || matchCmdStart(cmd, 'magia ')) {
+  const targetMagia = content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || null;
+  await medievalHandler.handleMagia(sock, msg, jid, senderJid, author, targetMagia); return;
+}
+if (matchCmd(cmdWord, 'missaomed'))
+  { await medievalHandler.handleMissao(sock, msg, jid, senderJid, author); return; }
+if (matchCmd(cmdWord, 'recargamana'))
+  { await medievalHandler.handleRecargaMana(sock, msg, jid, senderJid, author); return; }
+if (matchCmd(cmdWord, 'lojamedieval'))
+  { await medievalLojaHandler.handleLojaMedieval(sock, msg, jid, senderJid); return; }
+if (matchCmd(cmdWord, 'comprar') || matchCmdStart(cmd, 'comprar '))
+  { await medievalLojaHandler.handleComprarMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]comprar\s*/i, '')); return; }
+if (matchCmd(cmdWord, 'equipar') || matchCmdStart(cmd, 'equipar '))
+  { await medievalLojaHandler.handleEquipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]equipar\s*/i, '')); return; }
+if (matchCmd(cmdWord, 'rankmedieval'))
+  { await medievalLojaHandler.handleRankMedieval(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'menumediev'))
+  { await medievalLojaHandler.handleMenuMedieval(sock, msg, jid); return; }
 
   // ── PETS ──────────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'capturar'))

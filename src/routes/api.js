@@ -2446,5 +2446,27 @@ router.get('/admin/contas', adminAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/auth/conta
+// Apaga os dados de conta do usuário (mantém dados do jogo).
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/auth/conta', auth, async (req, res) => {
+  try {
+    const idWhatsApp = req.user.idWhatsApp;
+
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp },
+      { $unset: { username: '', passwordHash: '', email: '' } }
+    );
+
+    await OtpCadastro.deleteMany({ idWhatsApp });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[API] DELETE /auth/conta:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // ─── OBRIGATÓRIO: Mantém a exportação do router como a última linha ───────────
 module.exports = router;

@@ -251,6 +251,85 @@ async function handleMenuAuxiliar(sock, msg, jid, getPrefix) {
   await enviar(sock, msg, jid, texto);
 }
 
+// ─── Sistema Medieval (Informativo) ──────────────────────────────────────────
+
+/**
+ * Exibe informações detalhadas sobre o sistema Medieval.
+ * @param {object} sock
+ * @param {object} msg
+ * @param {string} jid
+ * @param {Function} getPrefix
+ */
+async function handleSistemaMedieval(sock, msg, jid, getPrefix) {
+  const P = getPrefix(jid);
+
+  const texto = [
+    `⚔️🏰 *SISTEMA MEDIEVAL* 🏰⚔️`,
+    ``,
+    `O modo medieval é um RPG completo dentro do grupo!`,
+    `Crie seu personagem, batalhe, evolua e domine o reino.`,
+    ``,
+    `👤 *PERSONAGEM*`,
+    `  • Ao usar *${P}ficha* pela primeira vez, um personagem`,
+    `    é criado automaticamente com classe e elemento aleatórios`,
+    `  • Há 7 classes: Guerreiro, Mago, Arqueiro, Paladino,`,
+    `    Assassino, Druida e Necromante`,
+    `  • Cada classe tem ataque, defesa, HP e mana únicos`,
+    ``,
+    `🔥 *ELEMENTOS*`,
+    `  • Seu personagem recebe um elemento aleatório`,
+    `  • São 8 elementos: Fogo, Água, Terra, Ar, Trovão,`,
+    `    Sombra, Luz e Magia Negra`,
+    `  • Cada elemento tem vantagem (+50% dano) contra alguns`,
+    `    e fraqueza (-30% dano) contra outros`,
+    ``,
+    `⚔️ *COMBATE*`,
+    `  • *${P}atacar @alguém* — Ataque físico (cooldown 2min)`,
+    `    Ganha 10 XP (15 se crítico). Crítico tem 15% de chance`,
+    `    e multiplica o dano por 1.8x`,
+    `  • *${P}magia @alguém* — Habilidade elemental (cooldown 5min)`,
+    `    Consome 30 de mana. Dano 2.2x maior que ataque normal`,
+    `    Ganha 20 XP. Não pode críticar`,
+    `  • Derrotar um inimigo dá +30 XP (!atacar) ou +40 XP (!magia)`,
+    `  • Inimigo derrotado fica com HP 0 até usar *${P}recargamana*`,
+    ``,
+    `🗺️ *MISSÕES*`,
+    `  • *${P}missaomed* — Embarca em missão aleatória (cooldown 30min)`,
+    `  • Requer HP mínimo de 20 para participar`,
+    `  • 3 dificuldades: fácil, médio e difícil`,
+    `  • Sucesso: XP + Gold | Falha: dano + 10 XP de consolação`,
+    ``,
+    `❤️ *RECUPERAÇÃO*`,
+    `  • *${P}recargamana* — Recupera 60% do HP e 100% da mana`,
+    `    Cooldown de 10 minutos`,
+    ``,
+    `🏪 *LOJA E EQUIPAMENTOS*`,
+    `  • *${P}lojamedieval* — Ver armas e armaduras disponíveis`,
+    `  • *${P}comprar [item]* — Comprar com gold do grupo`,
+    `  • *${P}equipar [item]* — Equipar item do inventário`,
+    `  • Armas aumentam o ataque | Armaduras aumentam a defesa`,
+    `  • Alguns itens também aumentam a mana máxima`,
+    `  • Raridades: comum → incomum → raro → lendário`,
+    ``,
+    `⭐ *PROGRESSÃO*`,
+    `  • XP acumulado em batalhas e missões sobe seu nível`,
+    `  • Cada level up aumenta HP máx, mana máx, ataque e defesa`,
+    `  • *${P}rankmedieval* — Top 10 guerreiros por vitórias`,
+    ``,
+    `📜 *COMANDOS RÁPIDOS*`,
+    `  👤 *${P}ficha* — Ver/criar seu personagem`,
+    `  ⚔️ *${P}atacar @* — Atacar alguém`,
+    `  🔮 *${P}magia @* — Usar habilidade elemental`,
+    `  🗺️ *${P}missaomed* — Embarcar em missão`,
+    `  🌟 *${P}recargamana* — Recuperar HP e mana`,
+    `  🏪 *${P}lojamedieval* — Ver loja`,
+    `  🏆 *${P}rankmedieval* — Ranking`,
+    `  📖 *${P}menumediev* — Menu de comandos`,
+  ].join('\n');
+
+  await enviar(sock, msg, jid, texto);
+}
+
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -260,4 +339,5 @@ module.exports = {
   handleSistemaGold,
   handleSistemaPet,
   handleMenuAuxiliar,
+  handleSistemaMedieval,
 };

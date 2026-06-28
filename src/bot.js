@@ -891,7 +891,9 @@ if (matchCmd(cmdWord, 'resetsenha'))  {
   if (matchCmd(cmdWord, 'sistemgold'))
     { await diversaoHandler.handleSistemaGold(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'sistempet'))
-    { await diversaoHandler.handleSistemaPet(sock, msg, jid, getPrefix); return; }
+  { await diversaoHandler.handleSistemaPet(sock, msg, jid, getPrefix); return; }
+if (matchCmd(cmdWord, 'sistemmedieval') || matchCmd(cmdWord, 'comomediev'))
+  { await diversaoHandler.handleSistemaMedieval(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menugold'))
     { await diversaoHandler.handleMenuGold(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menupet'))

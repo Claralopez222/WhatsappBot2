@@ -1427,7 +1427,7 @@ router.get('/user/grupos/:idWhatsApp', auth, async (req, res) => {
     const idWhatsApp = decodeURIComponent(req.params.idWhatsApp).trim().toLowerCase();
 
     const carteiras = await CarteiraGrupo
-      .find({ idWhatsApp })
+      .find({ idWhatsApp, $or: [{ xp: { $gt: 0 } }, { mensagens: { $gt: 0 } }] })
       .sort({ xp: -1 })
       .lean();
 

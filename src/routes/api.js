@@ -1855,6 +1855,14 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
     if (usuarioFinal.username && usuarioFinal.passwordHash)
       return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
 
+    // Verifica se o email já está em uso por outro usuário
+    const emailEmUso = await Usuario.findOne({
+      email: email.toLowerCase().trim(),
+      idWhatsApp: { $ne: usuarioFinal.idWhatsApp },
+    }).lean();
+    if (emailEmUso)
+      return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
+
     const codigo    = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -1950,6 +1958,17 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
     if (usernameEmUso)
       return res.status(409).json({ error: 'Este nome de usuário já está em uso.' });
 
+    // Verifica se o email já está em uso
+    const emailFinal = otpDoc?.email || null;
+    if (emailFinal) {
+      const emailJaUsado = await Usuario.findOne({
+        email: emailFinal,
+        idWhatsApp: { $ne: idWhatsAppReal },
+      }).lean();
+      if (emailJaUsado)
+        return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
+    }
+
     // ── Valida OTP ────────────────────────────────────────────────────────────
     const { otp } = req.body || {};
     if (!otp || typeof otp !== 'string' || otp.length !== 6)
@@ -1985,6 +2004,12 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
       }},
       { new: true }
     );
+
+    // Cria índice único no email se ainda não existir (best-effort)
+    Usuario.collection.createIndex(
+      { email: 1 },
+      { unique: true, sparse: true, background: true }
+    ).catch(() => {});
 
     return res.json({ ok: true, message: 'Conta criada com sucesso! Faça login para acessar o painel.' });
 

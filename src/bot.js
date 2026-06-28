@@ -945,7 +945,7 @@ if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes'))
 
 // ── MEDIEVAL ──────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'medieval') || matchCmdStart(cmd, 'medieval '))
-  { await medievalHandler.handleMedievalToggle(sock, msg, jid, caption.replace(/^[!.,/]medieval\s*/i, ''), await grupoHandler.isAdmin(sock, jid, senderJid)); return; }
+  { await medievalHandler.handleMedievalToggle(sock, msg, jid, caption.replace(/^[!.,\/]medieval\s*/i, ''), await grupoHandler.isAdmin(sock, jid, senderJid)); return; }
 if (matchCmd(cmdWord, 'ficha'))
   { await medievalHandler.handleFicha(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'atacar') || matchCmdStart(cmd, 'atacar ')) {
@@ -960,31 +960,32 @@ if (matchCmd(cmdWord, 'missaomed'))
   { await medievalHandler.handleMissao(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'recargamana'))
   { await medievalHandler.handleRecargaMana(sock, msg, jid, senderJid, author); return; }
+if (matchCmd(cmdWord, 'historico'))
+  { await medievalHandler.handleHistorico(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'lojamedieval') || matchCmdStart(cmd, 'lojamedieval ') ||
     matchCmd(cmdWord, 'lojamed')      || matchCmdStart(cmd, 'lojamed ')) {
   const argsLoja = caption.replace(/^[!.,\/](lojamedieval|lojamed)\s*/i, '').trim();
   await medievalLojaHandler.handleLojaMedieval(sock, msg, jid, senderJid, author, argsLoja);
   return;
 }
-  { await medievalLojaHandler.handleComprarMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]comprar\s*/i, '')); return; }
+if (matchCmd(cmdWord, 'comprar') || matchCmdStart(cmd, 'comprar '))
+  { await medievalLojaHandler.handleComprarMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]comprar\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'equipar') || matchCmdStart(cmd, 'equipar '))
-  { await medievalLojaHandler.handleEquipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]equipar\s*/i, '')); return; }
-if (matchCmd(cmdWord, 'rankmedieval'))
-  { await medievalLojaHandler.handleRankMedieval(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'menumediev'))
-  { await medievalLojaHandler.handleMenuMedieval(sock, msg, jid); return; }
-if (matchCmd(cmdWord, 'historico'))
-  { await medievalHandler.handleHistorico(sock, msg, jid, senderJid, author); return; }
+  { await medievalLojaHandler.handleEquipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]equipar\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'desequipar') || matchCmdStart(cmd, 'desequipar '))
-  { await medievalLojaHandler.handleDesequipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]desequipar\s*/i, '')); return; }
+  { await medievalLojaHandler.handleDesequipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]desequipar\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'invmed'))
   { await medievalLojaHandler.handleInvMed(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'sellmed') || matchCmdStart(cmd, 'sellmed '))
   { await medievalLojaHandler.handleSellMed(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]sellmed\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'usarpocao') || matchCmdStart(cmd, 'usarpocao '))
-  { await medievalLojaHandler.handleUsarPocao(sock, msg, jid, senderJid, author, caption.replace(/^[!.,/]usarpocao\s*/i, '')); return; }
-if (matchCmd(cmdWord, 'historico'))
-  { await medievalHandler.handleHistorico(sock, msg, jid, senderJid, author); return; }
+  { await medievalLojaHandler.handleUsarPocao(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]usarpocao\s*/i, '')); return; }
+if (matchCmd(cmdWord, 'rankmedieval'))
+  { await medievalLojaHandler.handleRankMedieval(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'menumediev'))
+  { await medievalLojaHandler.handleMenuMedieval(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'sistemmedieval') || matchCmd(cmdWord, 'comomediev'))
+  { await diversaoHandler.handleSistemaMedieval(sock, msg, jid, getPrefix); return; }
 
   // ── PETS ──────────────────────────────────────────────────────────────────────
 if (matchCmd(cmdWord, 'capturar'))

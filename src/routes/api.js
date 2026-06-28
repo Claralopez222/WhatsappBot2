@@ -1825,25 +1825,8 @@ const rateLimitCadastro = rateLimit({
 // ─────────────────────────────────────────────────────────────────────────────
 const OtpCadastro = require('../models/OtpCadastro');
 const nodemailer  = require('nodemailer');
-const dns = require('dns');
-dns.setDefaultResultOrder('ipv4first');
-
-const transporter = nodemailer.createTransport({
-  host:   'smtp.gmail.com',
-  port:   465,
-  secure: true,        // SSL direto, sem STARTTLS
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-  family: 4,
-  socketTimeout:     15000,
-  greetingTimeout:   15000,
-  connectionTimeout: 15000,
-});
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const rateLimitOtp = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -1907,21 +1890,21 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
     }
 
     // Envia email via Gmail
-    await transporter.sendMail({
-      from:    `"Horseman" <${process.env.GMAIL_USER}>`,
-      to:      email.toLowerCase().trim(),
-      subject: '🔐 Código de verificação — Piroquinhas Bot',
-      html: `
-        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07080d;color:#e8eaf0;padding:32px;border-radius:12px;border:1px solid #1f2230;">
-          <h2 style="margin:0 0 8px;color:#b855ff;">Piroquinhas Bot</h2>
-          <p style="color:#9298ad;margin:0 0 24px;">Código de verificação para criar sua conta no painel.</p>
-          <div style="background:#13141f;border:1px solid #b855ff33;border-radius:8px;padding:24px;text-align:center;margin-bottom:24px;">
-            <span style="font-size:36px;font-weight:700;letter-spacing:0.2em;color:#b855ff;font-family:monospace;">${codigo}</span>
-          </div>
-          <p style="color:#5a5f72;font-size:13px;margin:0;">Válido por <strong style="color:#9298ad;">10 minutos</strong>. Não compartilhe com ninguém.</p>
-        </div>
-      `,
-    });
+    await resend.emails.send({
+  from:    'Horseman <onboarding@resend.dev>',
+  to:      email.toLowerCase().trim(),
+  subject: '🔐 Código de verificação — Piroquinhas Bot',
+  html: `
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07080d;color:#e8eaf0;padding:32px;border-radius:12px;border:1px solid #1f2230;">
+      <h2 style="margin:0 0 8px;color:#b855ff;">Piroquinhas Bot</h2>
+      <p style="color:#9298ad;margin:0 0 24px;">Código de verificação para criar sua conta no painel.</p>
+      <div style="background:#13141f;border:1px solid #b855ff33;border-radius:8px;padding:24px;text-align:center;margin-bottom:24px;">
+        <span style="font-size:36px;font-weight:700;letter-spacing:0.2em;color:#b855ff;font-family:monospace;">${codigo}</span>
+      </div>
+      <p style="color:#5a5f72;font-size:13px;margin:0;">Válido por <strong style="color:#9298ad;">10 minutos</strong>. Não compartilhe com ninguém.</p>
+    </div>
+  `,
+});
 
     return res.json({ ok: true, message: 'Código enviado para o email.' });
   } catch (err) {

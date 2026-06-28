@@ -918,7 +918,7 @@ router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/admin/grupo/:jid/config
 // ─────────────────────────────────────────────────────────────────────────────
-const CAMPOS_CONFIG_BOOL    = ['xpAtivo', 'antiLink', 'boasVindas'];
+const CAMPOS_CONFIG_BOOL    = ['xpAtivo', 'antiLink', 'boasVindas', 'botAtivo'];
 const PREFIXOS_VALIDOS      = ['!', '.', '/', ','];
 
 router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
@@ -946,6 +946,17 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
     }
 
     await CarteiraGrupo.updateMany({ idGrupo: jid }, { $set: update });
+
+    // Sincroniza botAtivo com GrupoConfig (fonte lida pelo bot.js)
+    if ('config.botAtivo' in update) {
+      const GrupoConfig = require('../models/GrupoConfig');
+      await GrupoConfig.findOneAndUpdate(
+        { idGrupo: jid },
+        { $set: { botAtivo: update['config.botAtivo'] } },
+        { upsert: true }
+      );
+    }
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('[API] PATCH /admin/grupo/config:', err);

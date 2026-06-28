@@ -118,6 +118,32 @@ async function main() {
 
   fs.writeFileSync(DADOS_FILE, JSON.stringify(dados, null, 2), 'utf8');
 
+  // ── Sincroniza telefone resolvido de volta no MongoDB ─────────────────────
+  info('Sincronizando telefones no MongoDB...');
+  const ops = [];
+  for (const u of usuariosEnriquecidos) {
+    if (!u.telefone) continue;
+    if (u.telefone === u._id?.toString()) continue; // segurança
+    if (isGrupoOuBroadcast(u.idWhatsApp)) continue;
+    if (u.telefone.length >= 15) continue;
+    // Só atualiza quem ainda não tem telefone salvo no banco
+    if (u.telefone && !usuarios.find(o => o.idWhatsApp === u.idWhatsApp)?.telefone) {
+      ops.push({
+        updateOne: {
+          filter: { idWhatsApp: u.idWhatsApp },
+          update: { $set: { telefone: u.telefone } },
+        },
+      });
+    }
+  }
+
+  if (ops.length > 0) {
+    await Usuario.bulkWrite(ops, { ordered: false });
+    ok(`Telefones sincronizados: ${ops.length} usuário(s) atualizados no MongoDB`);
+  } else {
+    info('Nenhum telefone novo para sincronizar.');
+  }
+
   // ── Mapas auxiliares ──────────────────────────────────────────────────────
   const nomeMap     = {};
   const telefoneMap = {};

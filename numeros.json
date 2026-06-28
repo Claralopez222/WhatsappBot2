@@ -1,0 +1,6232 @@
+{
+  "geradoEm": "2026-06-28T22:03:53.578Z",
+  "baseExportada": "2026-06-28T22:03:53.023Z",
+  "total": 280,
+  "usuarios": [
+    {
+      "numero": "13219789048",
+      "idWhatsApp": "74131202670700@lid",
+      "nome": "˖𐙚ᒪᗩᖇY°❀𓂃",
+      "telefone": "13219789048",
+      "gold": 0,
+      "xp": 6834,
+      "nivel": 17,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 665,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "18954076590190",
+      "idWhatsApp": "18954076590190@s.whatsapp.net",
+      "nome": "𝕾𝖚𝖗𝖙𝖔 𝖈𝖔𝖑𝖊𝖙𝖎𝖛𝖔💯",
+      "telefone": "18954076590190",
+      "gold": 115,
+      "xp": 0,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 15,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "19108773971",
+      "idWhatsApp": "5798910525456@lid",
+      "nome": "𝒔𝒕𝒐𝒊𝒆𝒗",
+      "telefone": "19108773971",
+      "gold": 15,
+      "xp": 4612,
+      "nivel": 13,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 1315,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 3134,
+          "nivel": 10
+        },
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 1526891,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1959,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "212770137512",
+      "idWhatsApp": "103767114543163@lid",
+      "nome": "jair gozonaro top de linha",
+      "telefone": "212770137512",
+      "gold": 0,
+      "xp": 168,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 6,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "22997122452",
+      "idWhatsApp": "22997122452@s.whatsapp.net",
+      "nome": "resenhudos",
+      "telefone": "22997122452",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "244936730849",
+      "idWhatsApp": "18954076590190@lid",
+      "nome": "𝙽𝚘𝚘𝚍𝚕𝚎𝚜",
+      "telefone": "244936730849",
+      "gold": 510,
+      "xp": 2137,
+      "nivel": 8,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 21005,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-23T19:32:54.443Z",
+                "investido": 100,
+                "resgate": 109,
+                "juros": 9,
+                "lucro": 9
+              },
+              {
+                "data": "2026-06-24T19:51:23.257Z",
+                "investido": 1466,
+                "resgate": 1554,
+                "juros": 6,
+                "lucro": 88
+              },
+              {
+                "data": "2026-06-25T08:22:40.654Z",
+                "investido": 5144,
+                "resgate": 5916,
+                "juros": 15,
+                "lucro": 772
+              },
+              {
+                "data": "2026-06-25T16:36:12.430Z",
+                "investido": 15284,
+                "resgate": 17424,
+                "juros": 14,
+                "lucro": 2140
+              },
+              {
+                "data": "2026-06-26T16:32:33.462Z",
+                "investido": 19554,
+                "resgate": 21314,
+                "juros": 9,
+                "lucro": 1760
+              },
+              {
+                "data": "2026-06-26T23:17:15.428Z",
+                "investido": 22178,
+                "resgate": 23730,
+                "juros": 7,
+                "lucro": 1552
+              }
+            ],
+            "amount": 7890,
+            "interest": 6,
+            "startDate": "2026-06-28T13:04:44.790Z",
+            "depositedToday": 7890,
+            "lastDepositDate": "2026-06-28"
+          },
+          "xp": 1563,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "244952438618",
+      "idWhatsApp": "259090378940500@lid",
+      "nome": "خوان يضرب والدته | +33",
+      "telefone": "244952438618",
+      "gold": 0,
+      "xp": 1556,
+      "nivel": 7,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 544,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5364,
+          "nivel": 15
+        },
+        {
+          "idGrupo": "status@broadcast",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11054,
+          "nivel": 24
+        },
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 210,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "258865671581",
+      "idWhatsApp": "132508716916921@lid",
+      "nome": "kaahilismael58",
+      "telefone": "258865671581",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 9,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "258872774293",
+      "idWhatsApp": "150144154656915@lid",
+      "nome": "🐍",
+      "telefone": "258872774293",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 19,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "28815757697263",
+      "idWhatsApp": "+28815757697263@s.whatsapp.net",
+      "nome": "resenhudos",
+      "telefone": "28815757697263",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "34632246818",
+      "idWhatsApp": "230696064942335@lid",
+      "nome": "اشعر بالألم.",
+      "telefone": "34632246818",
+      "gold": 0,
+      "xp": 22,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "351924305135",
+      "idWhatsApp": "214697529856029@lid",
+      "nome": "𝐓𝐚𝐭𝐚🍃",
+      "telefone": "351924305135",
+      "gold": 0,
+      "xp": 260,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 1209,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 77,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "351926098723",
+      "idWhatsApp": "54464950042707@lid",
+      "nome": "⋆. 𐙚 ˚Saturn˚₊·—̳͟͞͞♡",
+      "telefone": "351926098723",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 4,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "351928288669",
+      "idWhatsApp": "51196647706783@lid",
+      "nome": "dan!el ★",
+      "telefone": "351928288669",
+      "gold": 0,
+      "xp": 24,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 16,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "351964978815",
+      "idWhatsApp": "213525054136564@lid",
+      "nome": "尺卂千卂",
+      "telefone": "351964978815",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "35532985917566",
+      "idWhatsApp": "35532985917566@s.whatsapp.net",
+      "nome": "resenhudos",
+      "telefone": "35532985917566",
+      "gold": 235,
+      "xp": 0,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 75,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5465,
+          "nivel": 15
+        }
+      ]
+    },
+    {
+      "numero": "3780091330780",
+      "idWhatsApp": "3780091330780@s.whatsapp.net",
+      "nome": "Tropa do 7️⃣7️⃣7️⃣",
+      "telefone": "3780091330780",
+      "gold": 475,
+      "xp": 0,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363158061167558@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 9136,
+          "nivel": 21
+        }
+      ]
+    },
+    {
+      "numero": "45149333749949",
+      "idWhatsApp": "45149333749949@s.whatsapp.net",
+      "nome": "𝕾𝖚𝖗𝖙𝖔 𝖈𝖔𝖑𝖊𝖙𝖎𝖛𝖔💯",
+      "telefone": "45149333749949",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5493878582825",
+      "idWhatsApp": "68307965243647@lid",
+      "nome": "Ash''.       Pzk",
+      "telefone": "5493878582825",
+      "gold": 0,
+      "xp": 14,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5511914881230",
+      "idWhatsApp": "31435318669375@lid",
+      "nome": "Rafa 🫂",
+      "telefone": "5511914881230",
+      "gold": 0,
+      "xp": 176,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 88,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511914881634",
+      "idWhatsApp": "65764992254158@lid",
+      "nome": "viiccrv",
+      "telefone": "5511914881634",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 3,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511916780427",
+      "idWhatsApp": "116917834633414@lid",
+      "nome": ".",
+      "telefone": "5511916780427",
+      "gold": 0,
+      "xp": 26,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 13,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511917788412",
+      "idWhatsApp": "240763585720527@lid",
+      "nome": "💤",
+      "telefone": "5511917788412",
+      "gold": 0,
+      "xp": 714,
+      "nivel": 4,
+      "grupos": []
+    },
+    {
+      "numero": "5511930623418",
+      "idWhatsApp": "10136257056910@lid",
+      "nome": "Ash𓅓",
+      "telefone": "5511930623418",
+      "gold": 0,
+      "xp": 3872,
+      "nivel": 12,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 1380,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1302,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511931501241",
+      "idWhatsApp": "73431391408201@lid",
+      "nome": "Poãni🐟",
+      "telefone": "5511931501241",
+      "gold": 0,
+      "xp": 104,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "5511932218990",
+      "idWhatsApp": "35760300371972@lid",
+      "nome": "DG.alvzz⚡️",
+      "telefone": "5511932218990",
+      "gold": 0,
+      "xp": 20,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 300,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 8,
+          "nivel": 1
+        },
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511937137111",
+      "idWhatsApp": "66108237299788@lid",
+      "nome": "soares",
+      "telefone": "5511937137111",
+      "gold": 0,
+      "xp": 14,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5511948810328",
+      "idWhatsApp": "163153526665331@lid",
+      "nome": "kim taehyung🖤🔥",
+      "telefone": "5511948810328",
+      "gold": 0,
+      "xp": 16,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 8,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511953766431",
+      "idWhatsApp": "268393210998880@lid",
+      "nome": "D7",
+      "telefone": "5511953766431",
+      "gold": 0,
+      "xp": 288,
+      "nivel": 3,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 144,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511961723018",
+      "idWhatsApp": "135176243925211@lid",
+      "nome": "A Luísa🧑🏻‍🩰",
+      "telefone": "5511961723018",
+      "gold": 0,
+      "xp": 18,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511964043539",
+      "idWhatsApp": "46150178599148@lid",
+      "nome": "Ianzinho",
+      "telefone": "5511964043539",
+      "gold": 0,
+      "xp": 1521,
+      "nivel": 7,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 1234,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 768,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511965036901",
+      "idWhatsApp": "172078334484523@lid",
+      "nome": "Mateus.",
+      "telefone": "5511965036901",
+      "gold": 0,
+      "xp": 28,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 77,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511965069872",
+      "idWhatsApp": "67482928857228@lid",
+      "nome": "pradella",
+      "telefone": "5511965069872",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5511965630405",
+      "idWhatsApp": "127002300428325@lid",
+      "nome": "Isabella",
+      "telefone": "5511965630405",
+      "gold": 80,
+      "xp": 5812,
+      "nivel": 16,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 8520,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-22"
+          },
+          "xp": 3111,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511965642800",
+      "idWhatsApp": "249993436864638@lid",
+      "nome": "Carla",
+      "telefone": "5511965642800",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 12,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511968952583",
+      "idWhatsApp": "260434720497788@lid",
+      "nome": "WZ☘️",
+      "telefone": "5511968952583",
+      "gold": 0,
+      "xp": 81,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5511970162634",
+      "idWhatsApp": "17360710799515@lid",
+      "nome": "andrade",
+      "telefone": "5511970162634",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5511970182089",
+      "idWhatsApp": "139140414845093@lid",
+      "nome": "madu",
+      "telefone": "5511970182089",
+      "gold": 0,
+      "xp": 34,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511971703331",
+      "idWhatsApp": "122140850417845@lid",
+      "nome": "Jhon",
+      "telefone": "5511971703331",
+      "gold": 0,
+      "xp": 220,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 110,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511971721975",
+      "idWhatsApp": "33930711457898@lid",
+      "nome": "Vitinh👺",
+      "telefone": "5511971721975",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5511976734070",
+      "idWhatsApp": "215250993447024@lid",
+      "nome": ".",
+      "telefone": "5511976734070",
+      "gold": 0,
+      "xp": 154,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "5511978673326",
+      "idWhatsApp": "110144973213841@lid",
+      "nome": "Brito★",
+      "telefone": "5511978673326",
+      "gold": 0,
+      "xp": 1321,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 2710,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 133,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511980311317",
+      "idWhatsApp": "67040731783316@lid",
+      "nome": "Hello",
+      "telefone": "5511980311317",
+      "gold": 0,
+      "xp": 437,
+      "nivel": 3,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 4670,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-26"
+          },
+          "xp": 316,
+          "nivel": 1
+        },
+        {
+          "idGrupo": "status@broadcast",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511983422019",
+      "idWhatsApp": "3131198976145@lid",
+      "nome": "lari",
+      "telefone": "5511983422019",
+      "gold": 0,
+      "xp": 162,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 600,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11538,
+          "nivel": 24
+        }
+      ]
+    },
+    {
+      "numero": "5511984975445",
+      "idWhatsApp": "187175094214685@lid",
+      "nome": "sofi",
+      "telefone": "5511984975445",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 77,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511988779386",
+      "idWhatsApp": "219121413320860@lid",
+      "nome": "oxx🎸",
+      "telefone": "5511988779386",
+      "gold": 0,
+      "xp": 10,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511989961004",
+      "idWhatsApp": "59013354025058@lid",
+      "nome": "★",
+      "telefone": "5511989961004",
+      "gold": 0,
+      "xp": 634,
+      "nivel": 4,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 300,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 128,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5511990202370",
+      "idWhatsApp": "157088949006425@lid",
+      "nome": "Ju",
+      "telefone": "5511990202370",
+      "gold": 0,
+      "xp": 1205,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 1100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 4548,
+          "nivel": 13
+        }
+      ]
+    },
+    {
+      "numero": "5511996924917",
+      "idWhatsApp": "137027408392242@lid",
+      "nome": ".",
+      "telefone": "5511996924917",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5512987015531",
+      "idWhatsApp": "261242241421392@lid",
+      "nome": "Isac🩵",
+      "telefone": "5512987015531",
+      "gold": 0,
+      "xp": 1264,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 14058,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-28T16:43:51.011Z",
+                "investido": 6767,
+                "resgate": 7376,
+                "juros": 9,
+                "lucro": 609
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 6767,
+            "lastDepositDate": "2026-06-28"
+          },
+          "xp": 885,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5512988708398",
+      "idWhatsApp": "278657947938986@lid",
+      "nome": "𝐈𝓈𝒶𝒷ℯ𝓁𝓎",
+      "telefone": "5512988708398",
+      "gold": 0,
+      "xp": 26,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5512991760951",
+      "idWhatsApp": "113263136215104@lid",
+      "nome": "~Maria",
+      "telefone": "5512991760951",
+      "gold": 0,
+      "xp": 12,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 6,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5512992078200",
+      "idWhatsApp": "239277543800992@lid",
+      "nome": "Mnr Fantasma",
+      "telefone": "5512992078200",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 4,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5513981583849",
+      "idWhatsApp": "215878561955873@lid",
+      "nome": "🌷",
+      "telefone": "5513981583849",
+      "gold": 280,
+      "xp": 2069,
+      "nivel": 8,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 471295,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-26T20:14:29.774Z",
+                "investido": 640,
+                "resgate": 698,
+                "juros": 9,
+                "lucro": 58
+              },
+              {
+                "data": "2026-06-27T00:14:04.932Z",
+                "investido": 890,
+                "resgate": 952,
+                "juros": 7,
+                "lucro": 62
+              },
+              {
+                "data": "2026-06-28T14:36:30.977Z",
+                "investido": 300,
+                "resgate": 330,
+                "juros": 10,
+                "lucro": 30
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 300,
+            "lastDepositDate": "2026-06-28"
+          },
+          "xp": 1659,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5513981775547",
+      "idWhatsApp": "277717098483845@lid",
+      "nome": "Lavinya",
+      "telefone": "5513981775547",
+      "gold": 0,
+      "xp": 22,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5513991695513",
+      "idWhatsApp": "51307813535812@lid",
+      "nome": "ㅤ",
+      "telefone": "5513991695513",
+      "gold": 0,
+      "xp": 2200,
+      "nivel": 8,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 300,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 674,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5514982194785",
+      "idWhatsApp": "244619912720390@lid",
+      "nome": "𝐓𝐚𝐯𝐚𝐫𝐞𝐬𝐳_𝐳𝐤",
+      "telefone": "5514982194785",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363375492929978@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5514982241274",
+      "idWhatsApp": "201731090681928@lid",
+      "nome": "kn",
+      "telefone": "5514982241274",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 70,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5514991202872",
+      "idWhatsApp": "200592605622292@lid",
+      "nome": "nicole",
+      "telefone": "5514991202872",
+      "gold": 0,
+      "xp": 60,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 38,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5514991720838",
+      "idWhatsApp": "4935554965610@lid",
+      "nome": "𝑳𝒑🎭",
+      "telefone": "5514991720838",
+      "gold": 0,
+      "xp": 28,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 17,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5514991846790",
+      "idWhatsApp": "33123022700583@lid",
+      "nome": "Nunes🕷️",
+      "telefone": "5514991846790",
+      "gold": 0,
+      "xp": 21,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5514996037825",
+      "idWhatsApp": "102061760852070@lid",
+      "nome": "😇",
+      "telefone": "5514996037825",
+      "gold": 0,
+      "xp": 12,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5514996193368",
+      "idWhatsApp": "241905896001573@lid",
+      "nome": "...",
+      "telefone": "5514996193368",
+      "gold": 0,
+      "xp": 30,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5515996314109",
+      "idWhatsApp": "71748166897828@lid",
+      "nome": "tavin🌝",
+      "telefone": "5515996314109",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5515998174272",
+      "idWhatsApp": "197602905739338@lid",
+      "nome": "lily✨",
+      "telefone": "5515998174272",
+      "gold": 0,
+      "xp": 3981,
+      "nivel": 12,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 5060,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2154,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5516993446505",
+      "idWhatsApp": "197255097233498@lid",
+      "nome": "Mariana",
+      "telefone": "5516993446505",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5516997050762",
+      "idWhatsApp": "213910846197853@lid",
+      "nome": "🪄",
+      "telefone": "5516997050762",
+      "gold": 0,
+      "xp": 120,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 82,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5516997099635",
+      "idWhatsApp": "100747668639821@lid",
+      "nome": "ガブリエル。🇧🇷",
+      "telefone": "5516997099635",
+      "gold": 0,
+      "xp": 140,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 70,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5517976028829",
+      "idWhatsApp": "116978400403680@lid",
+      "nome": "isa",
+      "telefone": "5517976028829",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5517997566779",
+      "idWhatsApp": "234252465647660@lid",
+      "nome": "a umbanda me pegou",
+      "telefone": "5517997566779",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5519971374955",
+      "idWhatsApp": "180084455547018@lid",
+      "nome": "lorrayni",
+      "telefone": "5519971374955",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5519984392962",
+      "idWhatsApp": "258111092879537@lid",
+      "nome": "matias",
+      "telefone": "5519984392962",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 9,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5519989055115",
+      "idWhatsApp": "279903303921765@lid",
+      "nome": "Lilo",
+      "telefone": "5519989055115",
+      "gold": 0,
+      "xp": 48,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5519991613011",
+      "idWhatsApp": "258746697695282@lid",
+      "nome": "Tatyy🎀",
+      "telefone": "5519991613011",
+      "gold": 0,
+      "xp": 16,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 14,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5519995571166",
+      "idWhatsApp": "162578068177087@lid",
+      "nome": "(-.-)Zzz・・・・",
+      "telefone": "5519995571166",
+      "gold": 0,
+      "xp": 18,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5521920183429",
+      "idWhatsApp": "121990644019211@lid",
+      "nome": "nina legal",
+      "telefone": "5521920183429",
+      "gold": 0,
+      "xp": 199,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "5521959457881",
+      "idWhatsApp": "159571674968166@lid",
+      "nome": "Matheus Silva",
+      "telefone": "5521959457881",
+      "gold": 0,
+      "xp": 26,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5521966514279",
+      "idWhatsApp": "90637466611930@lid",
+      "nome": "Isabels",
+      "telefone": "5521966514279",
+      "gold": 0,
+      "xp": 26,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5521966535799",
+      "idWhatsApp": "84650299003053@lid",
+      "nome": "vitória 💗",
+      "telefone": "5521966535799",
+      "gold": 0,
+      "xp": 46,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 46,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521966613517",
+      "idWhatsApp": "23253640839301@lid",
+      "nome": "FANTASMA 👻",
+      "telefone": "5521966613517",
+      "gold": 0,
+      "xp": 36,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 18,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521966737198",
+      "idWhatsApp": "70021489389793@lid",
+      "nome": "𝕬𝖑𝖎𝖈𝖊🪐🎶",
+      "telefone": "5521966737198",
+      "gold": 0,
+      "xp": 52,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5521972385299",
+      "idWhatsApp": "274908307292284@lid",
+      "nome": "schmitz",
+      "telefone": "5521972385299",
+      "gold": 0,
+      "xp": 188,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 18,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521972398926",
+      "idWhatsApp": "200244562264135@lid",
+      "nome": "ᴍ...ツ",
+      "telefone": "5521972398926",
+      "gold": 0,
+      "xp": 802,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 910,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 48,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521973059497",
+      "idWhatsApp": "113027030450374@lid",
+      "nome": "gigicao",
+      "telefone": "5521973059497",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 26,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521975215533",
+      "idWhatsApp": "49620344426549@lid",
+      "nome": "~°∆•🦋jenni🦋•∆°~",
+      "telefone": "5521975215533",
+      "gold": 0,
+      "xp": 18,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 9,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521975843871",
+      "idWhatsApp": "261714134192357@lid",
+      "nome": "jr",
+      "telefone": "5521975843871",
+      "gold": 0,
+      "xp": 10,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521977412410",
+      "idWhatsApp": "163814532219097@lid",
+      "nome": "~",
+      "telefone": "5521977412410",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5521979343229",
+      "idWhatsApp": "187085235466489@lid",
+      "nome": ".",
+      "telefone": "5521979343229",
+      "gold": 2880,
+      "xp": 52437,
+      "nivel": 66,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521981591884",
+      "idWhatsApp": "194575457063100@lid",
+      "nome": "jotta",
+      "telefone": "5521981591884",
+      "gold": 0,
+      "xp": 356,
+      "nivel": 3,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 181,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521985796777",
+      "idWhatsApp": "165356828106993@lid",
+      "nome": "Dimico",
+      "telefone": "5521985796777",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521986640535",
+      "idWhatsApp": "156564996501690@lid",
+      "nome": "neves 🔝",
+      "telefone": "5521986640535",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521990044742",
+      "idWhatsApp": "274483491397883@lid",
+      "nome": "Joao!",
+      "telefone": "5521990044742",
+      "gold": 0,
+      "xp": 34,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521990646684",
+      "idWhatsApp": "102791519432759@lid",
+      "nome": "Maria 🫶🏼",
+      "telefone": "5521990646684",
+      "gold": 0,
+      "xp": 10,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5521991991194",
+      "idWhatsApp": "109767133507601@lid",
+      "nome": "Lucas",
+      "telefone": "5521991991194",
+      "gold": 0,
+      "xp": 861,
+      "nivel": 5,
+      "grupos": []
+    },
+    {
+      "numero": "5521992498160",
+      "idWhatsApp": "205398942462091@lid",
+      "nome": "𝟕𝟕𝟕",
+      "telefone": "5521992498160",
+      "gold": 0,
+      "xp": 60,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5521993744629",
+      "idWhatsApp": "4669317337226@lid",
+      "nome": "padin sem aura",
+      "telefone": "5521993744629",
+      "gold": 0,
+      "xp": 1120,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 1200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 4469,
+          "nivel": 13
+        }
+      ]
+    },
+    {
+      "numero": "5521999423815",
+      "idWhatsApp": "92234506616885@lid",
+      "nome": "Davi",
+      "telefone": "5521999423815",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363375492929978@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5522981032177",
+      "idWhatsApp": "79113935151165@lid",
+      "nome": "×_×",
+      "telefone": "5522981032177",
+      "gold": 0,
+      "xp": 38,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 49,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5522988218253",
+      "idWhatsApp": "83211417862355@lid",
+      "nome": "Ray",
+      "telefone": "5522988218253",
+      "gold": 605,
+      "xp": 6002,
+      "nivel": 16,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 792,
+          "banco": {
+            "historico": [],
+            "amount": 100,
+            "interest": 12,
+            "startDate": "2026-06-18T19:35:37.527Z",
+            "depositedToday": 100,
+            "lastDepositDate": "2026-06-18"
+          },
+          "xp": 3011,
+          "nivel": 10
+        },
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 676768029644,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-21T23:56:36.829Z",
+                "investido": 50,
+                "resgate": 53,
+                "juros": 6,
+                "lucro": 3
+              },
+              {
+                "data": "2026-06-24T20:07:39.339Z",
+                "investido": 100000,
+                "resgate": 114000,
+                "juros": 14,
+                "lucro": 14000
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 100000,
+            "lastDepositDate": "2026-06-24"
+          },
+          "xp": 2300,
+          "nivel": 1
+        },
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 30,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5522992731443",
+      "idWhatsApp": "121041472999432@lid",
+      "nome": "Malu",
+      "telefone": "5522992731443",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5522997122452",
+      "idWhatsApp": "271579455975666@lid",
+      "nome": "Seixas",
+      "telefone": "5522997122452",
+      "gold": 3419,
+      "xp": 1878,
+      "nivel": 8,
+      "grupos": [
+        {
+          "idGrupo": "120363158061167558@g.us",
+          "gold": 400,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-22"
+          },
+          "xp": 3807,
+          "nivel": 12
+        }
+      ]
+    },
+    {
+      "numero": "5522998691667",
+      "idWhatsApp": "57617758048333@lid",
+      "nome": "Gabriel Paixão (paixão)",
+      "telefone": "5522998691667",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5524992206155",
+      "idWhatsApp": "52695289327764@lid",
+      "nome": "𝒜𝓃ℴ𝓃𝒾𝓂𝒶",
+      "telefone": "5524992206155",
+      "gold": 130,
+      "xp": 1584,
+      "nivel": 7,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-26T21:14:44.883Z",
+                "investido": 1100,
+                "resgate": 1166,
+                "juros": 6,
+                "lucro": 66
+              },
+              {
+                "data": "2026-06-28T03:13:38.903Z",
+                "investido": 3718,
+                "resgate": 4015,
+                "juros": 8,
+                "lucro": 297
+              }
+            ],
+            "amount": 35542,
+            "interest": 15,
+            "startDate": "2026-06-28T03:17:03.927Z",
+            "depositedToday": 35542,
+            "lastDepositDate": "2026-06-28"
+          },
+          "xp": 1071,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5524999044489",
+      "idWhatsApp": "162376288579806@lid",
+      "nome": "ian",
+      "telefone": "5524999044489",
+      "gold": 0,
+      "xp": 5039,
+      "nivel": 14,
+      "grupos": []
+    },
+    {
+      "numero": "5527996149307",
+      "idWhatsApp": "88812055199848@lid",
+      "nome": "🍅",
+      "telefone": "5527996149307",
+      "gold": 0,
+      "xp": 13,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 9,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5527996690730",
+      "idWhatsApp": "75961563394072@lid",
+      "nome": "Ayla 🤍",
+      "telefone": "5527996690730",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5527997016850",
+      "idWhatsApp": "137718696792135@lid",
+      "nome": "Maria",
+      "telefone": "5527997016850",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "553184409726",
+      "idWhatsApp": "243546825175232@lid",
+      "nome": "hit.🦈",
+      "telefone": "553184409726",
+      "gold": 0,
+      "xp": 244,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 126,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553190786052",
+      "idWhatsApp": "51621513928723@lid",
+      "nome": "lucas",
+      "telefone": "553190786052",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 40,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553191149407",
+      "idWhatsApp": "117631084408851@lid",
+      "nome": "tatah",
+      "telefone": "553191149407",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553197812863",
+      "idWhatsApp": "31237985013927@lid",
+      "nome": "🧐",
+      "telefone": "553197812863",
+      "gold": 0,
+      "xp": 110,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "553199497390",
+      "idWhatsApp": "216139967758554@lid",
+      "nome": "Manel",
+      "telefone": "553199497390",
+      "gold": 0,
+      "xp": 390,
+      "nivel": 3,
+      "grupos": []
+    },
+    {
+      "numero": "553285092928",
+      "idWhatsApp": "155757794299961@lid",
+      "nome": "🚩🚂🐻",
+      "telefone": "553285092928",
+      "gold": 0,
+      "xp": 22,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5424,
+          "nivel": 15
+        }
+      ]
+    },
+    {
+      "numero": "553298614468",
+      "idWhatsApp": "43881915777232@lid",
+      "nome": "nicoly",
+      "telefone": "553298614468",
+      "gold": 0,
+      "xp": 230,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 3222,
+          "nivel": 11
+        }
+      ]
+    },
+    {
+      "numero": "553299529802",
+      "idWhatsApp": "34549438398678@lid",
+      "nome": "Lucas Alves ",
+      "telefone": "553299529802",
+      "gold": 0,
+      "xp": 607,
+      "nivel": 4,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 9020,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 546,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553391689966",
+      "idWhatsApp": "164867168329818@lid",
+      "nome": "Pedro Dias",
+      "telefone": "553391689966",
+      "gold": 0,
+      "xp": 162,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 81,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553398082074",
+      "idWhatsApp": "164003829547019@lid",
+      "nome": "ꪀɑׁׅ݊ꪀɑׁׅ ᥫ᭡",
+      "telefone": "553398082074",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "553399186378",
+      "idWhatsApp": "63613146521783@lid",
+      "nome": "Gabriel",
+      "telefone": "553399186378",
+      "gold": 0,
+      "xp": 22,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 52,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553399457903",
+      "idWhatsApp": "211192182214757@lid",
+      "nome": "♡°•",
+      "telefone": "553399457903",
+      "gold": 0,
+      "xp": 302,
+      "nivel": 3,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 900,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 151,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553484244683",
+      "idWhatsApp": "121023773016287@lid",
+      "nome": "☆ Dumont ☆",
+      "telefone": "553484244683",
+      "gold": 0,
+      "xp": 109,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 232,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 61,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553492515664",
+      "idWhatsApp": "267860215599174@lid",
+      "nome": "menor",
+      "telefone": "553492515664",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "553496401474",
+      "idWhatsApp": "82149889802428@lid",
+      "nome": "Daniel",
+      "telefone": "553496401474",
+      "gold": 0,
+      "xp": 26,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "553497808310",
+      "idWhatsApp": "9196212875470@lid",
+      "nome": "~ ℰ𝓂𝒾𝓁𝓁𝓎 ~",
+      "telefone": "553497808310",
+      "gold": 0,
+      "xp": 20,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "553598344302",
+      "idWhatsApp": "263264869068912@lid",
+      "nome": "𝐋",
+      "telefone": "553598344302",
+      "gold": 0,
+      "xp": 72,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 36,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553598727556",
+      "idWhatsApp": "116767879860463@lid",
+      "nome": "ㅤ",
+      "telefone": "553598727556",
+      "gold": 0,
+      "xp": 46,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "553798210634",
+      "idWhatsApp": "32874350821560@lid",
+      "nome": "Ana Laura",
+      "telefone": "553798210634",
+      "gold": 0,
+      "xp": 1318,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 1300,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5324,
+          "nivel": 14
+        }
+      ]
+    },
+    {
+      "numero": "553888360856",
+      "idWhatsApp": "258205263347815@lid",
+      "nome": "'Emy",
+      "telefone": "553888360856",
+      "gold": 0,
+      "xp": 16,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 8,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "553898133362",
+      "idWhatsApp": "243984811221011@lid",
+      "nome": "Emanuelly Vitoria",
+      "telefone": "553898133362",
+      "gold": 0,
+      "xp": 58,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554195495346",
+      "idWhatsApp": "76030182174880@lid",
+      "nome": "manuh",
+      "telefone": "554195495346",
+      "gold": 0,
+      "xp": 9148,
+      "nivel": 21,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 230,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 13,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "554195675352",
+      "idWhatsApp": "122626282418321@lid",
+      "nome": "Gustavo veiga",
+      "telefone": "554195675352",
+      "gold": 0,
+      "xp": 12,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554195702298",
+      "idWhatsApp": "40085600878797@lid",
+      "nome": "ⓟⓤⓣⓢ ⓔ́ ⓐ ⓘⓐⓡⓐ 😒",
+      "telefone": "554195702298",
+      "gold": 0,
+      "xp": 1000,
+      "nivel": 5,
+      "grupos": []
+    },
+    {
+      "numero": "554299554429",
+      "idWhatsApp": "264213721276670@lid",
+      "nome": "Maria Eduarda",
+      "telefone": "554299554429",
+      "gold": 0,
+      "xp": 112,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "554299765833",
+      "idWhatsApp": "201537464877297@lid",
+      "nome": "luy",
+      "telefone": "554299765833",
+      "gold": 0,
+      "xp": 94,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554384794902",
+      "idWhatsApp": "83954380075167@lid",
+      "nome": "Rocha",
+      "telefone": "554384794902",
+      "gold": 0,
+      "xp": 3768,
+      "nivel": 12,
+      "grupos": []
+    },
+    {
+      "numero": "554391894976",
+      "idWhatsApp": "1812677558345@lid",
+      "nome": "kᥲr᥆ᥣ ˚⊱🪷⊰˚",
+      "telefone": "554391894976",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554497027277",
+      "idWhatsApp": "45703535579252@lid",
+      "nome": "yasmim",
+      "telefone": "554497027277",
+      "gold": 0,
+      "xp": 16,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554789169395",
+      "idWhatsApp": "57364354969741@lid",
+      "nome": "Larissa",
+      "telefone": "554789169395",
+      "gold": 0,
+      "xp": 14,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 7,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "554791506494",
+      "idWhatsApp": "44496515543054@lid",
+      "nome": "ㅤ",
+      "telefone": "554791506494",
+      "gold": 0,
+      "xp": 224,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 400,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 112,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "554796409379",
+      "idWhatsApp": "231765713121520@lid",
+      "nome": "Emilli",
+      "telefone": "554796409379",
+      "gold": 0,
+      "xp": 14,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554884170338",
+      "idWhatsApp": "35532985917566@lid",
+      "nome": "Kevin",
+      "telefone": "554884170338",
+      "gold": 1605,
+      "xp": 20441,
+      "nivel": 35,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 960,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 32,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "554888152853",
+      "idWhatsApp": "150985313890431@lid",
+      "nome": "Ian Mazzotti",
+      "telefone": "554888152853",
+      "gold": 0,
+      "xp": 43,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554888749734",
+      "idWhatsApp": "213022576537799@lid",
+      "nome": "𝕸𝖌.𝖋𝖝𝖕7 ♱",
+      "telefone": "554888749734",
+      "gold": 0,
+      "xp": 1465,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 3,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "554891295690",
+      "idWhatsApp": "269453396824168@lid",
+      "nome": "˙ . ꒷ 🍰 . 𖦹𝐊yo˙—",
+      "telefone": "554891295690",
+      "gold": 0,
+      "xp": 717,
+      "nivel": 4,
+      "grupos": []
+    },
+    {
+      "numero": "554891557658",
+      "idWhatsApp": "173740755275901@lid",
+      "nome": "Gabriel⚡🥶👑😮‍💨",
+      "telefone": "554891557658",
+      "gold": 0,
+      "xp": 86,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554891569001",
+      "idWhatsApp": "9736825118963@lid",
+      "nome": "Arthur Frederico Biff De",
+      "telefone": "554891569001",
+      "gold": 0,
+      "xp": 12,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554891968915",
+      "idWhatsApp": "72735925477608@lid",
+      "nome": "Ethan 🤙",
+      "telefone": "554891968915",
+      "gold": 0,
+      "xp": 46,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554891993863",
+      "idWhatsApp": "118108094222358@lid",
+      "nome": "pedro",
+      "telefone": "554891993863",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554892193482",
+      "idWhatsApp": "188506685108270@lid",
+      "nome": "Lorenzo Guimarães Corrêa",
+      "telefone": "554892193482",
+      "gold": 0,
+      "xp": 78,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554896130007",
+      "idWhatsApp": "157415534260459@lid",
+      "nome": "hysek",
+      "telefone": "554896130007",
+      "gold": 280,
+      "xp": 6585,
+      "nivel": 17,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 450,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 22,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "554896139476",
+      "idWhatsApp": "122063406801013@lid",
+      "nome": "Carlinhos",
+      "telefone": "554896139476",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554896826509",
+      "idWhatsApp": "179805047791754@lid",
+      "nome": "Jiviti",
+      "telefone": "554896826509",
+      "gold": 0,
+      "xp": 334,
+      "nivel": 3,
+      "grupos": []
+    },
+    {
+      "numero": "554898474549",
+      "idWhatsApp": "36219543101593@lid",
+      "nome": "jose Cesar",
+      "telefone": "554898474549",
+      "gold": 0,
+      "xp": 70,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "554899050635",
+      "idWhatsApp": "248128934555696@lid",
+      "nome": "Thomaspipok",
+      "telefone": "554899050635",
+      "gold": 0,
+      "xp": 63,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "555181723817",
+      "idWhatsApp": "96289593229498@lid",
+      "nome": "Felipe",
+      "telefone": "555181723817",
+      "gold": 0,
+      "xp": 180,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "555192220416",
+      "idWhatsApp": "59275464458465@lid",
+      "nome": "Rivaldo Jesus",
+      "telefone": "555192220416",
+      "gold": 0,
+      "xp": 56,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 500,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 28,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "555192469565",
+      "idWhatsApp": "191229644042272@lid",
+      "nome": "Ellias 🕷️",
+      "telefone": "555192469565",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 4,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "555197051140",
+      "idWhatsApp": "3316436193377@lid",
+      "nome": "Eloá 🩵",
+      "telefone": "555197051140",
+      "gold": 0,
+      "xp": 3484,
+      "nivel": 11,
+      "grupos": []
+    },
+    {
+      "numero": "555197923363",
+      "idWhatsApp": "142245374214345@lid",
+      "nome": "Amanda",
+      "telefone": "555197923363",
+      "gold": 0,
+      "xp": 54,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 27,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "555391067073",
+      "idWhatsApp": "193857744564369@lid",
+      "nome": "manu",
+      "telefone": "555391067073",
+      "gold": 0,
+      "xp": 1074,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 963,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-19T22:36:06.654Z",
+                "investido": 4736,
+                "resgate": 5020,
+                "juros": 6,
+                "lucro": 284
+              }
+            ],
+            "amount": 6660,
+            "interest": 8,
+            "startDate": "2026-06-19T22:38:31.331Z",
+            "depositedToday": 2000,
+            "lastDepositDate": "2026-06-26"
+          },
+          "xp": 6959,
+          "nivel": 17
+        }
+      ]
+    },
+    {
+      "numero": "555391085009",
+      "idWhatsApp": "93849632415821@lid",
+      "nome": "agatha",
+      "telefone": "555391085009",
+      "gold": 0,
+      "xp": 154,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 128,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556181363993",
+      "idWhatsApp": "100309766553814@lid",
+      "nome": "𝐚𝐥𝐳𝐚𝐫𝐲𝐚",
+      "telefone": "556181363993",
+      "gold": 0,
+      "xp": 90,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 41,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556192627463",
+      "idWhatsApp": "178499193200895@lid",
+      "nome": "mirelly",
+      "telefone": "556192627463",
+      "gold": 0,
+      "xp": 1520,
+      "nivel": 7,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 190,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556193725635",
+      "idWhatsApp": "167551740973145@lid",
+      "nome": "美𝓟𝒊𝒆𝒕𝒓𝒂雪ッ彡",
+      "telefone": "556193725635",
+      "gold": 130,
+      "xp": 660,
+      "nivel": 4,
+      "grupos": []
+    },
+    {
+      "numero": "556194567438",
+      "idWhatsApp": "234874682273902@lid",
+      "nome": "•⩊•",
+      "telefone": "556194567438",
+      "gold": 0,
+      "xp": 120,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 500,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 60,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556281804410",
+      "idWhatsApp": "100043092697172@lid",
+      "nome": "𖣂",
+      "telefone": "556281804410",
+      "gold": 0,
+      "xp": 80,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 40,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556286604755",
+      "idWhatsApp": "108534494683287@lid",
+      "nome": "J.geovani🏄🏻‍♂️🃏",
+      "telefone": "556286604755",
+      "gold": 0,
+      "xp": 844,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 132,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556295578524",
+      "idWhatsApp": "83644907573488@lid",
+      "nome": "￴￴ ￴￴ ￴￴ ￴￴￴ ￴￴ ￴￴ ￴￴ ￴",
+      "telefone": "556295578524",
+      "gold": 0,
+      "xp": 10,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "556481235336",
+      "idWhatsApp": "186650940420109@lid",
+      "nome": "anna",
+      "telefone": "556481235336",
+      "gold": 0,
+      "xp": 52,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 46,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556492793645",
+      "idWhatsApp": "103105437896716@lid",
+      "nome": "ana",
+      "telefone": "556492793645",
+      "gold": 0,
+      "xp": 1450,
+      "nivel": 6,
+      "grupos": []
+    },
+    {
+      "numero": "556492857499",
+      "idWhatsApp": "41678765330567@lid",
+      "nome": "🌤️🚬valen🪽",
+      "telefone": "556492857499",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 19,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556492931240",
+      "idWhatsApp": "154078395031746@lid",
+      "nome": "Paulo Ricardoᵃⁿⁱᵐᵘˢ⋆⁰⁸²⁰",
+      "telefone": "556492931240",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556499742019",
+      "idWhatsApp": "119000742781094@lid",
+      "nome": "gusta mathers",
+      "telefone": "556499742019",
+      "gold": 0,
+      "xp": 48,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 400,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 8138,
+          "nivel": 19
+        }
+      ]
+    },
+    {
+      "numero": "556499753874",
+      "idWhatsApp": "168608185458847@lid",
+      "nome": "루크",
+      "telefone": "556499753874",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 15,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556592042882",
+      "idWhatsApp": "187020106289215@lid",
+      "nome": "Adriano",
+      "telefone": "556592042882",
+      "gold": 0,
+      "xp": 228,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 9171,
+          "nivel": 21
+        }
+      ]
+    },
+    {
+      "numero": "556592322758",
+      "idWhatsApp": "36284420616434@lid",
+      "nome": "💯Gabriel Henrique ❤️",
+      "telefone": "556592322758",
+      "gold": 0,
+      "xp": 100,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "556592969222",
+      "idWhatsApp": "228286823178401@lid",
+      "nome": "neguin",
+      "telefone": "556592969222",
+      "gold": 0,
+      "xp": 64,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363158061167558@g.us",
+          "gold": 428071,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 9010,
+          "nivel": 21
+        }
+      ]
+    },
+    {
+      "numero": "556593319867",
+      "idWhatsApp": "125031447290070@lid",
+      "nome": "Murillo🫶🏽",
+      "telefone": "556593319867",
+      "gold": 0,
+      "xp": 1320,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363158061167558@g.us",
+          "gold": 300500,
+          "banco": {
+            "historico": [],
+            "amount": 3920,
+            "interest": 6,
+            "startDate": "2026-06-18T21:53:36.492Z",
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-22"
+          },
+          "xp": 3380,
+          "nivel": 10
+        }
+      ]
+    },
+    {
+      "numero": "556593354137",
+      "idWhatsApp": "173396520337564@lid",
+      "nome": "Felipe",
+      "telefone": "556593354137",
+      "gold": 3478,
+      "xp": 5646,
+      "nivel": 15,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-17T17:46:09.796Z",
+                "investido": 15000,
+                "resgate": 16350,
+                "juros": 9,
+                "lucro": 1350
+              }
+            ],
+            "amount": 15000,
+            "interest": 13,
+            "startDate": "2026-06-18T00:53:48.039Z",
+            "depositedToday": 15000,
+            "lastDepositDate": "2026-06-18"
+          },
+          "xp": 3788,
+          "nivel": 12
+        },
+        {
+          "idGrupo": "120363427659468314@g.us",
+          "gold": 6613,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 10870,
+          "nivel": 23
+        },
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 138,
+          "banco": {
+            "historico": [],
+            "amount": 337,
+            "interest": 13,
+            "startDate": "2026-06-17T01:57:46.201Z",
+            "depositedToday": 212,
+            "lastDepositDate": "2026-06-18"
+          },
+          "xp": 4922,
+          "nivel": 14
+        },
+        {
+          "idGrupo": "120363158061167558@g.us",
+          "gold": 14889200,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-22T00:12:36.814Z",
+                "investido": 15250,
+                "resgate": 16165,
+                "juros": 6,
+                "lucro": 915
+              }
+            ],
+            "amount": 600000,
+            "interest": 14,
+            "startDate": "2026-06-22T00:12:48.384Z",
+            "depositedToday": 500000,
+            "lastDepositDate": "2026-06-23"
+          },
+          "xp": 4838,
+          "nivel": 12
+        },
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 1950,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11203,
+          "nivel": 23
+        },
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 53630,
+          "nivel": 67
+        }
+      ]
+    },
+    {
+      "numero": "556596007068",
+      "idWhatsApp": "205510427078685@lid",
+      "nome": "Ryan",
+      "telefone": "556596007068",
+      "gold": 45,
+      "xp": 981,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363158061167558@g.us",
+          "gold": 52800,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-17T13:37:50.143Z",
+                "investido": 400,
+                "resgate": 420,
+                "juros": 5,
+                "lucro": 20
+              },
+              {
+                "data": "2026-06-18T12:50:00.127Z",
+                "investido": 600,
+                "resgate": 636,
+                "juros": 6,
+                "lucro": 36
+              },
+              {
+                "data": "2026-06-21T18:28:17.103Z",
+                "investido": 750,
+                "resgate": 833,
+                "juros": 11,
+                "lucro": 83
+              },
+              {
+                "data": "2026-06-22T15:37:13.621Z",
+                "investido": 4400,
+                "resgate": 4884,
+                "juros": 11,
+                "lucro": 484
+              },
+              {
+                "data": "2026-06-23T02:19:34.565Z",
+                "investido": 5126,
+                "resgate": 5895,
+                "juros": 15,
+                "lucro": 769
+              },
+              {
+                "data": "2026-06-23T17:59:05.655Z",
+                "investido": 24740,
+                "resgate": 27461,
+                "juros": 11,
+                "lucro": 2721
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 24740,
+            "lastDepositDate": "2026-06-23"
+          },
+          "xp": 4819,
+          "nivel": 13
+        },
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 10058,
+          "nivel": 22
+        }
+      ]
+    },
+    {
+      "numero": "556596229461",
+      "idWhatsApp": "280359073796139@lid",
+      "nome": "Gabriel Henrique",
+      "telefone": "556596229461",
+      "gold": 0,
+      "xp": 35,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "5565993354137",
+      "idWhatsApp": "556593354137@s.whatsapp.net",
+      "nome": null,
+      "telefone": "5565993354137",
+      "gold": 100,
+      "xp": 9,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "556692620239",
+      "idWhatsApp": "27411001425985@lid",
+      "nome": "neguinha ✌️",
+      "telefone": "556692620239",
+      "gold": 0,
+      "xp": 24,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "556692820062",
+      "idWhatsApp": "3780091330780@lid",
+      "nome": "Araújo",
+      "telefone": "556692820062",
+      "gold": 5180,
+      "xp": 5134,
+      "nivel": 14,
+      "grupos": [
+        {
+          "idGrupo": "120363158061167558@g.us",
+          "gold": 1400012970,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-18T21:46:25.739Z",
+                "investido": 3500,
+                "resgate": 3815,
+                "juros": 9,
+                "lucro": 315
+              },
+              {
+                "data": "2026-06-19T23:44:19.436Z",
+                "investido": 4700,
+                "resgate": 5217,
+                "juros": 11,
+                "lucro": 517
+              },
+              {
+                "data": "2026-06-21T11:28:41.409Z",
+                "investido": 4110,
+                "resgate": 4439,
+                "juros": 8,
+                "lucro": 329
+              },
+              {
+                "data": "2026-06-21T15:42:39.445Z",
+                "investido": 9640,
+                "resgate": 11086,
+                "juros": 15,
+                "lucro": 1446
+              }
+            ],
+            "amount": 203800,
+            "interest": 11,
+            "startDate": "2026-06-21T15:43:40.941Z",
+            "depositedToday": 100000,
+            "lastDepositDate": "2026-06-23"
+          },
+          "xp": 54138,
+          "nivel": 67
+        },
+        {
+          "idGrupo": "status@broadcast",
+          "gold": 520,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 53620,
+          "nivel": 67
+        }
+      ]
+    },
+    {
+      "numero": "556781252881",
+      "idWhatsApp": "21896330498094@lid",
+      "nome": "biel",
+      "telefone": "556781252881",
+      "gold": 0,
+      "xp": 10,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "556791496265",
+      "idWhatsApp": "70253384073404@lid",
+      "nome": "🪽",
+      "telefone": "556791496265",
+      "gold": 0,
+      "xp": 58,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 73,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556791923919",
+      "idWhatsApp": "226095769075854@lid",
+      "nome": "mel 𖣂",
+      "telefone": "556791923919",
+      "gold": 0,
+      "xp": 2858,
+      "nivel": 10,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 300,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 4098,
+          "nivel": 12
+        },
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 307528,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-23"
+          },
+          "xp": 1380,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556798763543",
+      "idWhatsApp": "186810290417848@lid",
+      "nome": "Lz",
+      "telefone": "556798763543",
+      "gold": 80,
+      "xp": 4853,
+      "nivel": 14,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 45,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556892108590",
+      "idWhatsApp": "61534751461508@lid",
+      "nome": "João Victor",
+      "telefone": "556892108590",
+      "gold": 0,
+      "xp": 186,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 367,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 257,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556892172351",
+      "idWhatsApp": "92939569111194@lid",
+      "nome": "Lw!zz",
+      "telefone": "556892172351",
+      "gold": 0,
+      "xp": 892,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 2677,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 246,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "556992385584",
+      "idWhatsApp": "188910512672782@lid",
+      "nome": "~valentina~",
+      "telefone": "556992385584",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "556999833205",
+      "idWhatsApp": "137426504777883@lid",
+      "nome": "fernando díaz",
+      "telefone": "556999833205",
+      "gold": 0,
+      "xp": 2500,
+      "nivel": 9,
+      "grupos": []
+    },
+    {
+      "numero": "556999902441",
+      "idWhatsApp": "84620251025586@lid",
+      "nome": "ㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤMz",
+      "telefone": "556999902441",
+      "gold": 0,
+      "xp": 192,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 249,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557181231006",
+      "idWhatsApp": "5790303789228@lid",
+      "nome": "😴",
+      "telefone": "557181231006",
+      "gold": 0,
+      "xp": 160,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "557181984282",
+      "idWhatsApp": "76146129518689@lid",
+      "nome": "ジェームズ",
+      "telefone": "557181984282",
+      "gold": 0,
+      "xp": 32,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557183033591",
+      "idWhatsApp": "277455508136089@lid",
+      "nome": "✨SCruz💚",
+      "telefone": "557183033591",
+      "gold": 0,
+      "xp": 28,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 14,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557191999339",
+      "idWhatsApp": "10720624251122@lid",
+      "nome": "ᎶᏗᏰᏒᎥᏋᏝᏋ",
+      "telefone": "557191999339",
+      "gold": 0,
+      "xp": 980,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 452,
+          "banco": {
+            "historico": [],
+            "amount": 13900,
+            "interest": 10,
+            "startDate": "2026-06-24T18:07:16.801Z",
+            "depositedToday": 3900,
+            "lastDepositDate": "2026-06-26"
+          },
+          "xp": 768,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557192861878",
+      "idWhatsApp": "199106446286965@lid",
+      "nome": "o͞n͞a͞l͞Ǝ",
+      "telefone": "557192861878",
+      "gold": 0,
+      "xp": 38,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557196300885",
+      "idWhatsApp": "165442576502966@lid",
+      "nome": "Neymar",
+      "telefone": "557196300885",
+      "gold": 0,
+      "xp": 368,
+      "nivel": 3,
+      "grupos": []
+    },
+    {
+      "numero": "557197155030",
+      "idWhatsApp": "54018508329099@lid",
+      "nome": "كلاراclara",
+      "telefone": "557197155030",
+      "gold": 0,
+      "xp": 64,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 50000,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 32,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557199146569",
+      "idWhatsApp": "199793859137781@lid",
+      "nome": ".",
+      "telefone": "557199146569",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557199811963",
+      "idWhatsApp": "129184663892115@lid",
+      "nome": "roberta",
+      "telefone": "557199811963",
+      "gold": 30,
+      "xp": 4176,
+      "nivel": 13,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 992,
+          "banco": {
+            "historico": [],
+            "amount": 2500,
+            "interest": 11,
+            "startDate": "2026-06-18T17:18:12.330Z",
+            "depositedToday": 2500,
+            "lastDepositDate": "2026-06-18"
+          },
+          "xp": 7963,
+          "nivel": 19
+        },
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 205785,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-21T22:51:09.682Z",
+                "investido": 8938,
+                "resgate": 9742,
+                "juros": 9,
+                "lucro": 804
+              },
+              {
+                "data": "2026-06-22T11:40:28.164Z",
+                "investido": 7962,
+                "resgate": 8758,
+                "juros": 10,
+                "lucro": 796
+              },
+              {
+                "data": "2026-06-22T18:20:44.068Z",
+                "investido": 16714,
+                "resgate": 17717,
+                "juros": 6,
+                "lucro": 1003
+              },
+              {
+                "data": "2026-06-23T09:57:35.572Z",
+                "investido": 12000,
+                "resgate": 13800,
+                "juros": 15,
+                "lucro": 1800
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-23"
+          },
+          "xp": 2067,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557399031126",
+      "idWhatsApp": "62775493689595@lid",
+      "nome": "Jhonney Borges",
+      "telefone": "557399031126",
+      "gold": 0,
+      "xp": 137,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 1500,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 96,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557499860234",
+      "idWhatsApp": "278911468494873@lid",
+      "nome": "🌙",
+      "telefone": "557499860234",
+      "gold": 4363,
+      "xp": 7978,
+      "nivel": 19,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-25T02:02:12.722Z",
+                "investido": 500000,
+                "resgate": 545000,
+                "juros": 9,
+                "lucro": 45000
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-25"
+          },
+          "xp": 8944,
+          "nivel": 17
+        }
+      ]
+    },
+    {
+      "numero": "557581372338",
+      "idWhatsApp": "17678118969524@lid",
+      "nome": "🅱️ryan",
+      "telefone": "557581372338",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "557582158795",
+      "idWhatsApp": "96185893281827@lid",
+      "nome": ".",
+      "telefone": "557582158795",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557582244707",
+      "idWhatsApp": "46596653871215@lid",
+      "nome": "Naua",
+      "telefone": "557582244707",
+      "gold": 100,
+      "xp": 1375,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 611,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557599372127",
+      "idWhatsApp": "280590649688278@lid",
+      "nome": "archived : zzk",
+      "telefone": "557599372127",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "557599966525",
+      "idWhatsApp": "83692554842188@lid",
+      "nome": "💕",
+      "telefone": "557599966525",
+      "gold": 0,
+      "xp": 20,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557791599243",
+      "idWhatsApp": "79320110371018@lid",
+      "nome": "Jhonny",
+      "telefone": "557791599243",
+      "gold": 0,
+      "xp": 36,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 18,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "557798152156",
+      "idWhatsApp": "123137366716576@lid",
+      "nome": "Gilberto",
+      "telefone": "557798152156",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363375492929978@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558120117057",
+      "idWhatsApp": "109264655933640@lid",
+      "nome": "loyal’",
+      "telefone": "558120117057",
+      "gold": 0,
+      "xp": 26,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558185253222",
+      "idWhatsApp": "171936768340107@lid",
+      "nome": "ㅤ",
+      "telefone": "558185253222",
+      "gold": 0,
+      "xp": 22,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558186628768",
+      "idWhatsApp": "42903116242996@lid",
+      "nome": "Deivison Jr",
+      "telefone": "558186628768",
+      "gold": 0,
+      "xp": 215,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "558189023720",
+      "idWhatsApp": "226281073459424@lid",
+      "nome": "Jhon",
+      "telefone": "558189023720",
+      "gold": 0,
+      "xp": 108,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 1563,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 98,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558189737268",
+      "idWhatsApp": "23077480063128@lid",
+      "nome": "alicia",
+      "telefone": "558189737268",
+      "gold": 0,
+      "xp": 40,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558191552031",
+      "idWhatsApp": "201039466737782@lid",
+      "nome": "Renan Silva",
+      "telefone": "558191552031",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558193838901",
+      "idWhatsApp": "100321862906072@lid",
+      "nome": "marceloxrtz",
+      "telefone": "558193838901",
+      "gold": 0,
+      "xp": 478,
+      "nivel": 3,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 500,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 148,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558193896928",
+      "idWhatsApp": "88704362238168@lid",
+      "nome": "Karolinna🤍",
+      "telefone": "558193896928",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558194484019",
+      "idWhatsApp": "126732103319699@lid",
+      "nome": "Emy",
+      "telefone": "558194484019",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558195476812",
+      "idWhatsApp": "279882214957233@lid",
+      "nome": "Gabrielly❄️",
+      "telefone": "558195476812",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558195828158",
+      "idWhatsApp": "263080353239114@lid",
+      "nome": ".",
+      "telefone": "558195828158",
+      "gold": 0,
+      "xp": 2262,
+      "nivel": 8,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 243,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-17"
+          },
+          "xp": 6529,
+          "nivel": 17
+        },
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 257,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558197307053",
+      "idWhatsApp": "108388449009893@lid",
+      "nome": "Dayane",
+      "telefone": "558197307053",
+      "gold": 0,
+      "xp": 267,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "558199140748",
+      "idWhatsApp": "59863707173116@lid",
+      "nome": "Jean",
+      "telefone": "558199140748",
+      "gold": 0,
+      "xp": 20,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558296726425",
+      "idWhatsApp": "235944699535501@lid",
+      "nome": "victor",
+      "telefone": "558296726425",
+      "gold": 0,
+      "xp": 28,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558296945787",
+      "idWhatsApp": "141794855678130@lid",
+      "nome": "~ 愛",
+      "telefone": "558296945787",
+      "gold": 0,
+      "xp": 1012,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 1500,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 404,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558299315849",
+      "idWhatsApp": "215539075035276@lid",
+      "nome": "maria",
+      "telefone": "558299315849",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558391176830",
+      "idWhatsApp": "92505559306299@lid",
+      "nome": "SK",
+      "telefone": "558391176830",
+      "gold": 0,
+      "xp": 10,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558399023984",
+      "idWhatsApp": "11640015696068@lid",
+      "nome": "_almeidaa",
+      "telefone": "558399023984",
+      "gold": 0,
+      "xp": 92,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 46,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558399326196",
+      "idWhatsApp": "203796416348207@lid",
+      "nome": "🦇",
+      "telefone": "558399326196",
+      "gold": 0,
+      "xp": 18,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558399723810",
+      "idWhatsApp": "143005281443942@lid",
+      "nome": "Alves.pprt",
+      "telefone": "558399723810",
+      "gold": 0,
+      "xp": 7946,
+      "nivel": 19,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 1,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-22T16:21:42.958Z",
+                "investido": 1200,
+                "resgate": 1368,
+                "juros": 14,
+                "lucro": 168
+              },
+              {
+                "data": "2026-06-26T02:12:14.270Z",
+                "investido": 100000,
+                "resgate": 106000,
+                "juros": 6,
+                "lucro": 6000
+              },
+              {
+                "data": "2026-06-26T19:37:34.025Z",
+                "investido": 100000,
+                "resgate": 114000,
+                "juros": 14,
+                "lucro": 14000
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 100000,
+            "lastDepositDate": "2026-06-26"
+          },
+          "xp": 4388,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558487547199",
+      "idWhatsApp": "258952604467211@lid",
+      "nome": "Mirella",
+      "telefone": "558487547199",
+      "gold": 0,
+      "xp": 12,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558487728697",
+      "idWhatsApp": "26835425468603@lid",
+      "nome": "𝕮𝖊𝖈í𝖑𝖎𝖆",
+      "telefone": "558487728697",
+      "gold": 0,
+      "xp": 10,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558498087867",
+      "idWhatsApp": "55624859672718@lid",
+      "nome": "𝒟𝓊𝒹𝒶.",
+      "telefone": "558498087867",
+      "gold": 0,
+      "xp": 44,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558581942943",
+      "idWhatsApp": "269153067905231@lid",
+      "nome": "Addy",
+      "telefone": "558581942943",
+      "gold": 0,
+      "xp": 30,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558581962583",
+      "idWhatsApp": "106846471897227@lid",
+      "nome": "Quem é o\n\n\nA\n      N\nT\n      Y \nD\n      O\nM\n        I\nN\n       A \n\n\nØﾠØﾠØﾠØ",
+      "telefone": "558581962583",
+      "gold": 0,
+      "xp": 10,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558589153329",
+      "idWhatsApp": "2779280105718@lid",
+      "nome": "winchester🛡💤",
+      "telefone": "558589153329",
+      "gold": 90,
+      "xp": 3147,
+      "nivel": 10,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11800,
+          "nivel": 25
+        }
+      ]
+    },
+    {
+      "numero": "558694986576",
+      "idWhatsApp": "99532343926910@lid",
+      "nome": "Lului",
+      "telefone": "558694986576",
+      "gold": 0,
+      "xp": 18,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 18,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558695490923",
+      "idWhatsApp": "14753430810740@lid",
+      "nome": "🤍",
+      "telefone": "558695490923",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558781523575",
+      "idWhatsApp": "218550115520672@lid",
+      "nome": "Yas",
+      "telefone": "558781523575",
+      "gold": 0,
+      "xp": 30,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        },
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 13,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558791392401",
+      "idWhatsApp": "271403832078496@lid",
+      "nome": "Agatha",
+      "telefone": "558791392401",
+      "gold": 0,
+      "xp": 36,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "558888127934",
+      "idWhatsApp": "209564658053332@lid",
+      "nome": "𝑘𝑒𝑡𝑜𝑙𝑙Ꮍ𓆩☠︎︎𓆪",
+      "telefone": "558888127934",
+      "gold": 0,
+      "xp": 1126,
+      "nivel": 6,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 1200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 563,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558888607611",
+      "idWhatsApp": "274376133972031@lid",
+      "nome": "dpoot satan",
+      "telefone": "558888607611",
+      "gold": 0,
+      "xp": 1798,
+      "nivel": 7,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 1452,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 8976,
+          "nivel": 21
+        },
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 178,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558897110963",
+      "idWhatsApp": "9608143831248@lid",
+      "nome": "ㅤㅤㅤ𝐀𝐍𝐆𝐄𝐄𝐋 \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n                              \n\n\n#𝟕𝟔𝟑",
+      "telefone": "558897110963",
+      "gold": 0,
+      "xp": 932,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 5074,
+          "nivel": 14
+        },
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 600,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 126,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "558994460801",
+      "idWhatsApp": "50466436153560@lid",
+      "nome": "Angela",
+      "telefone": "558994460801",
+      "gold": 0,
+      "xp": 206,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "559180677062",
+      "idWhatsApp": "77627960344753@lid",
+      "nome": "d᥆ᥙbt ᥒᥱᥙr᥆᥉ι᥉ 𑣲",
+      "telefone": "559180677062",
+      "gold": 30,
+      "xp": 544,
+      "nivel": 4,
+      "grupos": [
+        {
+          "idGrupo": "120363410082198252@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 4371,
+          "nivel": 13
+        }
+      ]
+    },
+    {
+      "numero": "559181344008",
+      "idWhatsApp": "264630584799419@lid",
+      "nome": ".",
+      "telefone": "559181344008",
+      "gold": 0,
+      "xp": 66,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 400,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 33,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559182692163",
+      "idWhatsApp": "276596430766248@lid",
+      "nome": "Pikachu",
+      "telefone": "559182692163",
+      "gold": 0,
+      "xp": 24,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 32,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559182980281",
+      "idWhatsApp": "91178447982712@lid",
+      "nome": "Rafaelle Leal",
+      "telefone": "559182980281",
+      "gold": 0,
+      "xp": 16,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 8,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559184184409",
+      "idWhatsApp": "202078999842850@lid",
+      "nome": ".",
+      "telefone": "559184184409",
+      "gold": 0,
+      "xp": 22,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "559184264110",
+      "idWhatsApp": "46197456785521@lid",
+      "nome": "𝖗𝖆𝖋𝖊𝖒",
+      "telefone": "559184264110",
+      "gold": 0,
+      "xp": 102,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 139,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559186034434",
+      "idWhatsApp": "37289610735727@lid",
+      "nome": "Ryan",
+      "telefone": "559186034434",
+      "gold": 100,
+      "xp": 4221,
+      "nivel": 13,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 40222,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-25T19:04:25.683Z",
+                "investido": 7000,
+                "resgate": 7350,
+                "juros": 5,
+                "lucro": 350
+              },
+              {
+                "data": "2026-06-26T00:27:29.300Z",
+                "investido": 10000,
+                "resgate": 11300,
+                "juros": 13,
+                "lucro": 1300
+              },
+              {
+                "data": "2026-06-26T05:02:46.936Z",
+                "investido": 8717,
+                "resgate": 9763,
+                "juros": 12,
+                "lucro": 1046
+              },
+              {
+                "data": "2026-06-26T11:26:10.697Z",
+                "investido": 14500,
+                "resgate": 15660,
+                "juros": 8,
+                "lucro": 1160
+              },
+              {
+                "data": "2026-06-26T23:43:36.284Z",
+                "investido": 15000,
+                "resgate": 16800,
+                "juros": 12,
+                "lucro": 1800
+              },
+              {
+                "data": "2026-06-28T02:23:14.849Z",
+                "investido": 16000,
+                "resgate": 17600,
+                "juros": 10,
+                "lucro": 1600
+              },
+              {
+                "data": "2026-06-28T10:44:48.017Z",
+                "investido": 20000,
+                "resgate": 21800,
+                "juros": 9,
+                "lucro": 1800
+              },
+              {
+                "data": "2026-06-28T16:30:22.064Z",
+                "investido": 25850,
+                "resgate": 29210,
+                "juros": 13,
+                "lucro": 3360
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 45850,
+            "lastDepositDate": "2026-06-28"
+          },
+          "xp": 2771,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559284299027",
+      "idWhatsApp": "73654947831861@lid",
+      "nome": "Bruna",
+      "telefone": "559284299027",
+      "gold": 0,
+      "xp": 342,
+      "nivel": 3,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 5032,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 127,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559285115835",
+      "idWhatsApp": "119490805293107@lid",
+      "nome": "monteiro 🪽",
+      "telefone": "559285115835",
+      "gold": 0,
+      "xp": 22,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 11,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559286290041",
+      "idWhatsApp": "267813189083315@lid",
+      "nome": "isabela",
+      "telefone": "559286290041",
+      "gold": 0,
+      "xp": 102,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 30,
+          "nivel": 1
+        },
+        {
+          "idGrupo": "status@broadcast",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 21,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559294350052",
+      "idWhatsApp": "213799395151958@lid",
+      "nome": "😖",
+      "telefone": "559294350052",
+      "gold": 0,
+      "xp": 14,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 7,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559294815116",
+      "idWhatsApp": "43121924665356@lid",
+      "nome": "lynberpoggers",
+      "telefone": "559294815116",
+      "gold": 0,
+      "xp": 32,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "559484294647",
+      "idWhatsApp": "191015147278534@lid",
+      "nome": "Ane ⭐️",
+      "telefone": "559484294647",
+      "gold": 0,
+      "xp": 28,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 14,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559492524354",
+      "idWhatsApp": "149817149943831@lid",
+      "nome": "Ruan",
+      "telefone": "559492524354",
+      "gold": 100,
+      "xp": 2804,
+      "nivel": 10,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 28358,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-26T11:20:23.594Z",
+                "investido": 4000,
+                "resgate": 4440,
+                "juros": 11,
+                "lucro": 440
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-26"
+          },
+          "xp": 1654,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559591272182",
+      "idWhatsApp": "53244944498852@lid",
+      "nome": "lil_ˡᶜ⋆⁰⁴¹⁴",
+      "telefone": "559591272182",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "559591400685",
+      "idWhatsApp": "281260949770330@lid",
+      "nome": "Vivi❤️‍🩹",
+      "telefone": "559591400685",
+      "gold": 0,
+      "xp": 50,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 400,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 16,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559691336176",
+      "idWhatsApp": "208010249036002@lid",
+      "nome": "˖ ݁𖥔 ݁˖ 𝐀rᴛʜuʀ ˖ ݁𖥔 ݁˖",
+      "telefone": "559691336176",
+      "gold": 0,
+      "xp": 36,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "559881602595",
+      "idWhatsApp": "45149333749949@lid",
+      "nome": "eduarda",
+      "telefone": "559881602595",
+      "gold": 360,
+      "xp": 5086,
+      "nivel": 14,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 320,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-23T09:59:34.149Z",
+                "investido": 75000,
+                "resgate": 81750,
+                "juros": 9,
+                "lucro": 6750
+              },
+              {
+                "data": "2026-06-23T22:22:01.996Z",
+                "investido": 20000,
+                "resgate": 21000,
+                "juros": 5,
+                "lucro": 1000
+              },
+              {
+                "data": "2026-06-24T16:20:38.739Z",
+                "investido": 2000,
+                "resgate": 2260,
+                "juros": 13,
+                "lucro": 260
+              },
+              {
+                "data": "2026-06-25T04:30:35.687Z",
+                "investido": 10000,
+                "resgate": 11200,
+                "juros": 12,
+                "lucro": 1200
+              },
+              {
+                "data": "2026-06-25T12:37:17.128Z",
+                "investido": 100000,
+                "resgate": 108000,
+                "juros": 8,
+                "lucro": 8000
+              },
+              {
+                "data": "2026-06-26T23:38:33.499Z",
+                "investido": 100000,
+                "resgate": 110000,
+                "juros": 10,
+                "lucro": 10000
+              }
+            ],
+            "amount": 1646,
+            "interest": 6,
+            "startDate": "2026-06-27T00:14:28.630Z",
+            "depositedToday": 1646,
+            "lastDepositDate": "2026-06-27"
+          },
+          "xp": 3649,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559884123355",
+      "idWhatsApp": "205952875786458@lid",
+      "nome": "🚶🏻‍♂️💭...🪫",
+      "telefone": "559884123355",
+      "gold": 0,
+      "xp": 42,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 500,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 21,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559885034073",
+      "idWhatsApp": "270390270157003@lid",
+      "nome": "Giovanna'",
+      "telefone": "559885034073",
+      "gold": 0,
+      "xp": 8,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 8,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559981268831",
+      "idWhatsApp": "253012899565765@lid",
+      "nome": "𝑽𝒂𝒎𝒑 𝑰𝒏𝒇𝒊𝒏𝒊𝒕𝒚 ⁰²¹",
+      "telefone": "559981268831",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 3,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559984255950",
+      "idWhatsApp": "95275326672938@lid",
+      "nome": "Mishzz",
+      "telefone": "559984255950",
+      "gold": 0,
+      "xp": 242,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 121,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "559984855451",
+      "idWhatsApp": "18408699609190@lid",
+      "nome": "Cristine",
+      "telefone": "559984855451",
+      "gold": 0,
+      "xp": 6,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "559985359283",
+      "idWhatsApp": "149267528298749@lid",
+      "nome": "Eder",
+      "telefone": "559985359283",
+      "gold": 230,
+      "xp": 850,
+      "nivel": 5,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 12504,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-25T15:59:29.373Z",
+                "investido": 500,
+                "resgate": 560,
+                "juros": 12,
+                "lucro": 60
+              },
+              {
+                "data": "2026-06-26T18:58:15.420Z",
+                "investido": 3000,
+                "resgate": 3450,
+                "juros": 15,
+                "lucro": 450
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-28"
+          },
+          "xp": 681,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "573025598351",
+      "idWhatsApp": "232130852478995@lid",
+      "nome": "𝘿𝙚𝙥𝙧𝙚𝙨𝙨𝙖̃𝙤",
+      "telefone": "573025598351",
+      "gold": 0,
+      "xp": 1909,
+      "nivel": 8,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [
+              {
+                "data": "2026-06-23T20:16:52.308Z",
+                "investido": 11020,
+                "resgate": 11681,
+                "juros": 6,
+                "lucro": 661
+              }
+            ],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 11020,
+            "lastDepositDate": "2026-06-23"
+          },
+          "xp": 259,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "573044028587",
+      "idWhatsApp": "174771513864299@lid",
+      "nome": "انتصار vivi'ㅤ",
+      "telefone": "573044028587",
+      "gold": 0,
+      "xp": 536,
+      "nivel": 4,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 200,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 10527,
+          "nivel": 23
+        }
+      ]
+    },
+    {
+      "numero": "573166658978",
+      "idWhatsApp": "99424936132642@lid",
+      "nome": "delrey’s",
+      "telefone": "573166658978",
+      "gold": 0,
+      "xp": 16,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 100,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 8,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "573170677749",
+      "idWhatsApp": "215522314604632@lid",
+      "nome": "f",
+      "telefone": "573170677749",
+      "gold": 0,
+      "xp": 4,
+      "nivel": 1,
+      "grupos": []
+    },
+    {
+      "numero": "573183448131",
+      "idWhatsApp": "91015339851982@lid",
+      "nome": "Belzoca '",
+      "telefone": "573183448131",
+      "gold": 0,
+      "xp": 0,
+      "nivel": 0,
+      "grupos": [
+        {
+          "idGrupo": "120363412790153880@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 2,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "573186343773",
+      "idWhatsApp": "28815757697263@lid",
+      "nome": "Santiago",
+      "telefone": "573186343773",
+      "gold": 0,
+      "xp": 180,
+      "nivel": 2,
+      "grupos": []
+    },
+    {
+      "numero": "573187394883",
+      "idWhatsApp": "131607092535484@lid",
+      "nome": "Joker",
+      "telefone": "573187394883",
+      "gold": 0,
+      "xp": 3257,
+      "nivel": 11,
+      "grupos": [
+        {
+          "idGrupo": "120363427354900690@g.us",
+          "gold": 1717,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": "2026-06-23"
+          },
+          "xp": 1056,
+          "nivel": 1
+        },
+        {
+          "idGrupo": "120363158061167558@g.us",
+          "gold": 9274,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 139,
+          "nivel": 1
+        },
+        {
+          "idGrupo": "120363427659468314@g.us",
+          "gold": 6567,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 116,
+          "nivel": 1
+        },
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 230,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 13,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "573248476646",
+      "idWhatsApp": "137014523519196@lid",
+      "nome": "𝒕𝒚𝒘𝒚𝒍𝒍𝒘𝒄𝒉 𝒄𝒂𝒑𝒆𝒕𝒊𝒏𝒉𝒂",
+      "telefone": "573248476646",
+      "gold": 0,
+      "xp": 2,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 1,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "5798910525456",
+      "idWhatsApp": "5798910525456@s.whatsapp.net",
+      "nome": "𝕾𝖚𝖗𝖙𝖔 𝖈𝖔𝖑𝖊𝖙𝖎𝖛𝖔💯",
+      "telefone": "5798910525456",
+      "gold": 160,
+      "xp": 0,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 60,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "593983671855",
+      "idWhatsApp": "250947087429791@lid",
+      "nome": "Nat",
+      "telefone": "593983671855",
+      "gold": 0,
+      "xp": 122,
+      "nivel": 2,
+      "grupos": [
+        {
+          "idGrupo": "120363423411886184@g.us",
+          "gold": 0,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 98,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "83211417862355",
+      "idWhatsApp": "83211417862355@s.whatsapp.net",
+      "nome": "𝕾𝖚𝖗𝖙𝖔 𝖈𝖔𝖑𝖊𝖙𝖎𝖛𝖔💯",
+      "telefone": "83211417862355",
+      "gold": 205,
+      "xp": 0,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 105,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    },
+    {
+      "numero": "83954380075167",
+      "idWhatsApp": "83954380075167@s.whatsapp.net",
+      "nome": "𝕾𝖚𝖗𝖙𝖔 𝖈𝖔𝖑𝖊𝖙𝖎𝖛𝖔💯",
+      "telefone": "83954380075167",
+      "gold": 190,
+      "xp": 0,
+      "nivel": 1,
+      "grupos": [
+        {
+          "idGrupo": "120363409232913193@g.us",
+          "gold": 90,
+          "banco": {
+            "historico": [],
+            "amount": 0,
+            "interest": 0,
+            "startDate": null,
+            "depositedToday": 0,
+            "lastDepositDate": null
+          },
+          "xp": 0,
+          "nivel": 1
+        }
+      ]
+    }
+  ]
+}

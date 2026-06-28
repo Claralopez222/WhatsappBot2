@@ -88,6 +88,9 @@ const carteiraGrupoSchema = new mongoose.Schema(
     // ── Bônus diário de mensagem ──────────────────────────────────
     ultimoBonusDiario: { type: Date, default: null },
 
+    // ── Histórico diário de XP (chave: "YYYY-MM-DD", valor: XP ganho no dia) ──
+    xpHistory: { type: Map, of: Number, default: {} },
+
     // ── Banco (isolado por grupo) ────────────────────────────────
     banco: { type: bancoSchema, default: () => ({}) },
 

@@ -447,14 +447,27 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
       if (uParceiro && uParceiro.nome) nomeParceiro = uParceiro.nome;
     }
 
-    // xpHistory: garante que é um objeto plano com chaves "YYYY-MM-DD"
-    const xpHistoryRaw  = mapParaObjeto(usuario.xpHistory);
-    const xpHistoryLimpo = {};
-    for (const [k, v] of Object.entries(xpHistoryRaw)) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) {
-        xpHistoryLimpo[k] = Number(v);
+    // xpHistory: soma o xpHistory de todas as carteiras do usuário
+    const xpHistoryMerge = {};
+    for (const c of carteiras) {
+      const raw = mapParaObjeto(c.xpHistory ?? {});
+      for (const [k, v] of Object.entries(raw)) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) {
+          xpHistoryMerge[k] = (xpHistoryMerge[k] ?? 0) + Number(v);
+        }
       }
     }
+    // Fallback: se carteiras não tiverem xpHistory, usa o do Usuario
+    const xpHistoryLimpo = Object.keys(xpHistoryMerge).length > 0
+      ? xpHistoryMerge
+      : (() => {
+          const raw = mapParaObjeto(usuario.xpHistory);
+          const obj = {};
+          for (const [k, v] of Object.entries(raw)) {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) obj[k] = Number(v);
+          }
+          return obj;
+        })();
 
     // Resolve nome e telefone — prioriza Usuario, fallback pra CarteiraGrupo
     const nomeResolvido     = usuario.nome     || carteiras[0]?.nome || null;

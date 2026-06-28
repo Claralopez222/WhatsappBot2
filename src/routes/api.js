@@ -21,7 +21,8 @@ const getJwtSecret = () => {
   return secret;
 };
 
-const ADMIN_KEY = process.env.ADMIN_KEY;
+const ADMIN_KEY       = process.env.ADMIN_KEY;
+const CONTAS_KEY      = process.env.CONTAS_KEY || ADMIN_KEY;
 if (!ADMIN_KEY) console.warn('⚠️  ADMIN_KEY não definida — rotas /admin/* vão recusar acesso.');
 
 const FRONTEND = 'https://piroquinhasbot.github.io';
@@ -568,6 +569,12 @@ router.get('/user/grupos', auth, async (req, res) => {
 
 // GET /api/admin/verify
 router.get('/admin/verify', rateLimitAdmin, adminAuth, (req, res) => {
+  return res.json({ ok: true });
+});
+
+router.get('/admin/verify-contas', rateLimitAdmin, (req, res) => {
+  const chave = req.headers['x-admin-key'];
+  if (!chave || chave !== CONTAS_KEY) return res.status(401).json({ error: 'Chave inválida.' });
   return res.json({ ok: true });
 });
 

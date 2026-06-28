@@ -43,7 +43,10 @@ const medievalPersonagemSchema = new mongoose.Schema(
     armaduraEquipada: { type: String, default: null },
 
     // ── Inventário de itens medievais ─────────────────────────────────────────
-    // Map<nomeItem, quantidade> — chaves com espaços substituídos por "_"
+    // Map<nomeItem, quantidade>
+    // IMPORTANTE: espaços no nome do item são substituídos por "_" em TODAS as operações
+    // Exemplo: "Espada Rúnica" → chave "Espada_Rúnica"
+    // Usar sempre: item.nome.replace(/ /g, '_') para escrever e .replace(/_/g, ' ') para ler
     inventarioMedieval: {
       type:    Map,
       of:      Number,
@@ -73,8 +76,8 @@ const medievalPersonagemSchema = new mongoose.Schema(
 // ── Índices ───────────────────────────────────────────────────────────────────
 // Único por (usuário + grupo) — impede personagem duplicado
 medievalPersonagemSchema.index({ idWhatsApp: 1, idGrupo: 1 }, { unique: true });
-// Ranking por vitórias dentro do grupo
-medievalPersonagemSchema.index({ idGrupo: 1, vitorias: -1 });
+// Índice composto cobre a query de rank: sort({ vitorias: -1, nivel: -1 })
+medievalPersonagemSchema.index({ idGrupo: 1, vitorias: -1, nivel: -1 });
 // Ranking por nível dentro do grupo
 medievalPersonagemSchema.index({ idGrupo: 1, nivel: -1 });
 

@@ -130,7 +130,10 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
 
   const p        = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
   const chaveInv = item.nome.replace(/ /g, '_');
-  const qtdInv   = p.inventarioMedieval?.get(chaveInv) || 0;
+  const invMap   = p.inventarioMedieval instanceof Map
+    ? p.inventarioMedieval
+    : new Map(Object.entries(p.inventarioMedieval || {}));
+  const qtdInv   = invMap.get(chaveInv) || 0;
 
   if (qtdInv <= 0) {
     return sock.sendMessage(jid, {
@@ -254,7 +257,11 @@ async function handleInvMed(sock, msg, jid, senderJid, nomeDisplay) {
   if (!await getModoAtivo(jid)) return;
 
   const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
-  const inv = p.inventarioMedieval;
+  // Normaliza para Map independente de ser documento Mongoose ou objeto puro
+  const invRaw = p.inventarioMedieval;
+  const inv    = invRaw instanceof Map
+    ? invRaw
+    : new Map(Object.entries(invRaw || {}));
 
   if (!inv || inv.size === 0) {
     return sock.sendMessage(jid, {
@@ -335,7 +342,10 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
   // Calcula efeitos com base no documento pré-update
   const updateFields  = {};
   const linhasEfeito  = [];
-  const qtdAntes      = resultado.inventarioMedieval?.get(chaveInv) || 0;
+  const invResultado = resultado.inventarioMedieval instanceof Map
+    ? resultado.inventarioMedieval
+    : new Map(Object.entries(resultado.inventarioMedieval || {}));
+  const qtdAntes = invResultado.get(chaveInv) || 0;
 
   if (pocao.tipo === 'hp' || pocao.tipo === 'ambos') {
     const hpAntes   = resultado.hp;

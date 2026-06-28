@@ -15,6 +15,15 @@ const CD_MAGIA   = 5  * 60 * 1000;
 const CD_MISSAO  = 30 * 60 * 1000;
 const CD_RECARGA = 10 * 60 * 1000;
 
+// ── Anti-farm cache — limpa entradas expiradas a cada 10 minutos ──────────────
+if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
+setInterval(() => {
+  const agora = Date.now();
+  for (const [chave, timestamp] of global._medievalFarmCache.entries()) {
+    if (agora - timestamp > CD_MAGIA) global._medievalFarmCache.delete(chave);
+  }
+}, 10 * 60 * 1000);
+
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
 function somenteGrupo(jid) {
@@ -198,7 +207,8 @@ async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
     return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo! Use *!medieval on*.' }, { quoted: msg });
   }
 
-  const p        = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  const p        = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
   const classe   = getClasse(p.classe);
   const elemento = getElemento(p.elemento);
   const arma     = p.armaEquipada     ? getArma(p.armaEquipada)         : null;
@@ -223,8 +233,8 @@ async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
       `${barraHP}\n` +
       `💧 *Mana:* ${p.mana}/${p.manaMax}\n` +
       `${barraMana}\n\n` +
-      `⚔️ *Ataque:* ${p.ataque}${arma     ? ` (+${arma.bonusAtaque} ${arma.emoji})`         : ''}\n` +
-      `🛡️ *Defesa:* ${p.defesa}${armadura ? ` (+${armadura.bonusDefesa} ${armadura.emoji})` : ''}\n\n` +
+      `⚔️ *Ataque:* ${p.ataque}${arma     ? ` (+${arma.bonusAtaque} ${arma.emoji}) = *${p.ataque + arma.bonusAtaque}*`         : ''}\n` +
+      `🛡️ *Defesa:* ${p.defesa}${armadura ? ` (+${armadura.bonusDefesa} ${armadura.emoji}) = *${p.defesa + armadura.bonusDefesa}*` : ''}\n\n` +
       `🗡️ *Arma:* ${arma     ? `${arma.emoji} ${arma.nome}`         : '_Nenhuma equipada_'}\n` +
       `🛡️ *Armadura:* ${armadura ? `${armadura.emoji} ${armadura.nome}` : '_Nenhuma equipada_'}\n\n` +
       `🏆 *Vitórias:* ${p.vitorias} | 💀 *Derrotas:* ${p.derrotas}\n` +
@@ -514,9 +524,9 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
 
     await verificarLevelUp(sock, jid, senderJid);
   } else {
-    const danoTomado = Math.floor(Math.random() * 30) + 10;
-    // hp nunca vai abaixo de 5 — evita personagem preso sem conseguir missão
-    const novoHp = Math.max(5, p.hp - danoTomado);
+    const danoTomado  = Math.floor(Math.random() * 30) + 10;
+    const novoHp      = Math.max(5, p.hp - danoTomado);
+    const danoReal    = p.hp - novoHp; // dano efetivo considerando o teto mínimo de 5
 
     await MedievalPersonagem.updateOne(
       { idWhatsApp: senderJid, idGrupo: jid },
@@ -528,7 +538,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
         `❌ *MISSÃO FRACASSADA!*\n\n` +
         `${missao.emoji} *${missao.titulo}*\n\n` +
         `💀 *${p.nome}* foi derrotado e recuou!\n` +
-        `❤️ HP: ${novoHp}/${p.hpMax} (-${p.hp - novoHp})\n` +
+        `❤️ HP: ${novoHp}/${p.hpMax} (-${danoReal})\n` +
         `+10 XP pela tentativa ⭐\n\n` +
         `_Recupere-se e tente novamente em 30 minutos._`,
     }, { quoted: msg });

@@ -192,7 +192,6 @@ function saveData() {
       cmdCount:       Object.fromEntries([...cmdCount.entries()]),
       warnings:       warningsObj,
       groupConfig: {
-        antiLink:    [...antiLinkGroups],
         autoSticker: [...autoStickerGroups],
         prefixos:    Object.fromEntries([...prefixMap.entries()]),
       },
@@ -213,8 +212,8 @@ process.on('SIGTERM', () => { saveData(); process.exit(); });
 
 // ── Configuração de grupo salva ───────────────────────────────────────────────
 const _cfg = _savedData.groupConfig || {};
-const antiLinkGroups    = new Set(_cfg.antiLink    || []);
 const autoStickerGroups = new Set(_cfg.autoSticker || []);
+// antiLinkGroups removido — agora persiste no MongoDB via GrupoConfig
 const prefixMap         = new Map();
 if (_cfg.prefixos) {
   for (const [k, v] of Object.entries(_cfg.prefixos)) prefixMap.set(k, v);
@@ -718,16 +717,49 @@ async function handleMessage(sock, msg) {
   const isPrivate = jid && !jid.endsWith('@g.us') && !jid.endsWith('@broadcast');
   const isGroup   = jid && jid.endsWith('@g.us');
 
+  // ── Guard !bot on/off — sempre processado antes de tudo ──────
+  if (isGroup && (matchCmd(cmdWord, 'bot') || matchCmdStart(cmd, 'bot '))) {
+    const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
+    const args  = caption.replace(/^[!.,\/]bot\s*/i, '').trim();
+    await grupoHandler.handleBotToggle(sock, msg, jid, args, isAdm);
+    return;
+  }
+
+  // ── Guard bot ativo no grupo ──────────────────────────────────
+  if (isGroup) {
+    const GrupoConfig = require('./models/GrupoConfig');
+    const cfgGrupo    = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (cfgGrupo?.botAtivo === false) return;
+  }
+
   // ── Mute check ───────────────────────────────────────────────
   if (isGroup && senderJid) {
     const senderNorm = normalizarJid(senderJid);
     if (senderNorm && isMuted(jid, senderNorm)) {
-      try {
-        await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
-      } catch (e) {
-        console.error('❌ Erro ao remover mutado:', e.message);
+      const chaveTimer = `mute:${jid}:${senderNorm}`;
+
+      if (!global._muteTimers) global._muteTimers = new Map();
+
+      // Só agenda o ban uma vez — ignora mensagens seguintes no cooldown
+      if (!global._muteTimers.has(chaveTimer)) {
+        await sock.sendMessage(jid, {
+          text: `🔇 *@${senderNorm.split('@')[0]}* está mutado! Será removido em *20 segundos* se falar novamente.`,
+          mentions: [senderJid],
+        }).catch(() => {});
+
+        const timer = setTimeout(async () => {
+          try {
+            await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
+          } catch (e) {
+            console.error('❌ Erro ao remover mutado após cooldown:', e.message);
+          }
+          unmuteUser(jid, senderNorm);
+          global._muteTimers.delete(chaveTimer);
+        }, 20 * 1000);
+
+        global._muteTimers.set(chaveTimer, timer);
       }
-      unmuteUser(jid, senderNorm);
+
       return;
     }
   }
@@ -739,7 +771,7 @@ async function handleMessage(sock, msg) {
 
   // ── Slow Mode ────────────────────────────────────────────────
   if (isGroup && !isAnyCmd(raw)) {
-    const permitido = grupoHandler.verificarSlowMode(jid, senderJid);
+    const permitido = await grupoHandler.verificarSlowMode(jid, senderJid);
     if (!permitido) return;
   }
 
@@ -788,19 +820,23 @@ async function handleMessage(sock, msg) {
   if (isPrivate && textMsg && !isAnyCmd(raw)) lastTexts.set(jid, textMsg);
 
   // ── Anti-Link ────────────────────────────────────────────────
-  if (isGroup && antiLinkGroups.has(jid) && !isAnyCmd(raw)) {
+  if (isGroup && !isAnyCmd(raw)) {
     const hasLink = /(https?:\/\/|wa\.me\/|chat\.whatsapp\.com)/i.test(caption);
     if (hasLink) {
-      const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
-      if (!isAdm) {
-        try {
-          await sock.sendMessage(jid, {
-            text: `🚫 *${getSenderName(msg)}*, links não são permitidos neste grupo!`,
-            mentions: [senderJid],
-          });
-          await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
-        } catch {}
-        return;
+      const GrupoConfig = require('./models/GrupoConfig');
+      const cfgLink = await GrupoConfig.findOne({ idGrupo: jid }, { antiLink: 1 }).lean();
+      if (cfgLink?.antiLink) {
+        const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
+        if (!isAdm) {
+          try {
+            await sock.sendMessage(jid, {
+              text: `🚫 *${getSenderName(msg)}*, links não são permitidos neste grupo!`,
+              mentions: [senderJid],
+            });
+            await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
+          } catch {}
+          return;
+        }
       }
     }
   }
@@ -1303,7 +1339,7 @@ if (matchCmd(cmdWord, 'worldcup'))       { await diversaoHandler.handleWorldCup(
   if (matchCmdStart(cmd, 'promover'))      { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'promote', botJid, contactNames); return; }
   if (matchCmdStart(cmd, 'rebaixar'))      { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'demote', botJid, contactNames); return; }
   if (matchCmdStart(cmd, 'tempo'))         { await grupoHandler.handleTempo(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'antilink'))      { await grupoHandler.handleAntiLink(sock, msg, content, jid, antiLinkGroups, saveData); return; }
+  if (matchCmdStart(cmd, 'antilink'))      { await grupoHandler.handleAntiLink(sock, msg, content, jid); return; }
   if (matchCmdStart(cmd, 'autosticker'))   { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
   if (matchCmdStart(cmd, 'reportar'))      { await grupoHandler.handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid); return; }
   if (matchCmdStart(cmd, 'removerreporte')){ await grupoHandler.handleRemoverReporte(sock, msg, content, jid, contactNames, botJid); return; }

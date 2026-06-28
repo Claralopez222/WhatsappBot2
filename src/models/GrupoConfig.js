@@ -14,11 +14,13 @@ const grupoConfigSchema = new mongoose.Schema(
     },
 
     // ── Moderação ────────────────────────────────────────────────
-    antiLink:    { type: Boolean, default: false },
-    autoSticker: { type: Boolean, default: false },
-    slowMode:    { type: Boolean, default: false },
-    slowModeMs:  { type: Number,  default: 5000, min: 1000 }, // intervalo em ms
-    antiFlood:   { type: Boolean, default: false },
+    antiLink:          { type: Boolean, default: false },
+    autoSticker:       { type: Boolean, default: false },
+    slowModeAtivo:     { type: Boolean, default: false },
+    slowModeSegundos:  { type: Number,  default: 30,  min: 1  },
+    antiFloodAtivo:    { type: Boolean, default: false },
+    antiFloodLimite:   { type: Number,  default: 5,   min: 2  },
+    antiFloodJanelaMs: { type: Number,  default: 10000, min: 2000 },
 
     // ── Sistemas ─────────────────────────────────────────────────
     sistemaAniversario: { type: Boolean, default: false },

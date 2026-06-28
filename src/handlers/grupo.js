@@ -527,6 +527,16 @@ async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
+  // Cancela o timer de ban automático se existir
+  if (global._muteTimers) {
+    const chaveTimer = `mute:${jid}:${normalizarJid(targetJid)}`;
+    const timer = global._muteTimers.get(chaveTimer);
+    if (timer) {
+      clearTimeout(timer);
+      global._muteTimers.delete(chaveTimer);
+    }
+  }
+
   await sock.sendMessage(jid, {
     text: `🔊 *${nome}* foi desmutado(a)! Pode falar! 🎤`,
     mentions: [targetJid],
@@ -890,23 +900,28 @@ async function handleTempo(sock, msg, content, jid, author, contactNames) {
 // ─── !antilink ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleAntiLink(sock, msg, content, jid, antiLinkGroups, saveData) {
+async function handleAntiLink(sock, msg, content, jid) {
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
     return;
   }
   if (!await checkAdmin(sock, msg, jid, 'antilink')) return;
 
+  const GrupoConfig = require('../models/GrupoConfig');
   const textMsg = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
-  const ativo = antiLinkGroups.has(jid);
+  const cfg     = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+  const ativo   = cfg?.antiLink === true;
 
   if (textMsg.includes('on') || textMsg.includes('ativ')) {
     if (ativo) {
       await sock.sendMessage(jid, { text: 'O anti-link já tá ativado aqui 😅' }, { quoted: msg });
       return;
     }
-    antiLinkGroups.add(jid);
-    saveData();
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { antiLink: true } },
+      { upsert: true }
+    );
     await sock.sendMessage(jid, {
       text: '🔗 Anti-link ativado! Quem mandar link leva ban.',
     }, { quoted: msg });
@@ -916,8 +931,11 @@ async function handleAntiLink(sock, msg, content, jid, antiLinkGroups, saveData)
       await sock.sendMessage(jid, { text: 'O anti-link já tá desativado 😅' }, { quoted: msg });
       return;
     }
-    antiLinkGroups.delete(jid);
-    saveData();
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { antiLink: false } },
+      { upsert: true }
+    );
     await sock.sendMessage(jid, { text: '🔗 Anti-link desativado.' }, { quoted: msg });
 
   } else {
@@ -1169,11 +1187,14 @@ async function handleGrupInfo(sock, msg, jid) {
   const desc    = meta.desc ? meta.desc.slice(0, 200) : '_Sem descrição_';
   const fechado = meta.announce ? '🔒 Fechado' : '🔓 Aberto';
 
-  const slowCfg  = slowModeGroups.has(jid)
-    ? `✅ *${slowModeGroups.get(jid).segundos}s por msg*`
+  const GrupoConfig = require('../models/GrupoConfig');
+  const cfgGrupo = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+
+  const slowCfg  = cfgGrupo?.slowModeAtivo
+    ? `✅ *${cfgGrupo.slowModeSegundos}s por msg*`
     : '❌ Inativo';
-  const floodCfg = antiFloodGroups.has(jid)
-    ? `✅ *${antiFloodGroups.get(jid).limite} msgs/${antiFloodGroups.get(jid).janela_ms / 1000}s*`
+  const floodCfg = cfgGrupo?.antiFloodAtivo
+    ? `✅ *${cfgGrupo.antiFloodLimite} msgs/${cfgGrupo.antiFloodJanelaMs / 1000}s*`
     : '❌ Inativo';
   const bvCfg    = bemVindoGroups.has(jid) && bemVindoGroups.get(jid).ativo
     ? '✅ Ativo'
@@ -1470,6 +1491,9 @@ async function handleApagarMsg(sock, msg, content, jid) {
 // ─── !slowmode ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+// Cache em memória só para os timestamps das últimas mensagens — não precisa persistir
+if (!global._slowModeLastMsg) global._slowModeLastMsg = new Map();
+
 async function handleSlowMode(sock, msg, jid, caption) {
   if (!jid.endsWith('@g.us')) {
     await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
@@ -1477,25 +1501,32 @@ async function handleSlowMode(sock, msg, jid, caption) {
   }
   if (!await checkAdmin(sock, msg, jid, 'slowmode')) return;
 
+  const GrupoConfig = require('../models/GrupoConfig');
   const arg = caption.replace(/^[!.,\/]slowmode\s*/i, '').trim().toLowerCase();
 
   if (arg === 'off' || arg === '0') {
-    if (!slowModeGroups.has(jid)) {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (!cfg?.slowModeAtivo) {
       await sock.sendMessage(jid, { text: '⏱️ O Slow Mode já está desativado.' }, { quoted: msg });
       return;
     }
-    slowModeGroups.delete(jid);
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { slowModeAtivo: false } },
+      { upsert: true }
+    );
+    global._slowModeLastMsg.delete(jid);
     await sock.sendMessage(jid, { text: '⏱️❌ *Slow Mode desativado!*' }, { quoted: msg });
     return;
   }
 
   if (arg === 'status') {
-    const cfg = slowModeGroups.get(jid);
-    if (!cfg) {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (!cfg?.slowModeAtivo) {
       await sock.sendMessage(jid, { text: 'ℹ️ Slow Mode está *desativado* neste grupo.' }, { quoted: msg });
     } else {
       await sock.sendMessage(jid, {
-        text: `ℹ️ Slow Mode está *ativo*!\n_Intervalo: 1 mensagem a cada *${cfg.segundos}s* por usuário._`,
+        text: `ℹ️ Slow Mode está *ativo*!\n_Intervalo: 1 mensagem a cada *${cfg.slowModeSegundos}s* por usuário._`,
       }, { quoted: msg });
     }
     return;
@@ -1514,7 +1545,13 @@ async function handleSlowMode(sock, msg, jid, caption) {
     return;
   }
 
-  slowModeGroups.set(jid, { segundos: seg, lastMsg: new Map() });
+  await GrupoConfig.findOneAndUpdate(
+    { idGrupo: jid },
+    { $set: { slowModeAtivo: true, slowModeSegundos: seg } },
+    { upsert: true }
+  );
+  // Limpa cache de timestamps ao mudar configuração
+  global._slowModeLastMsg.delete(jid);
   await sock.sendMessage(jid, {
     text: `⏱️✅ *Slow Mode ativado!*\n_Intervalo: 1 mensagem a cada *${seg}s* por usuário._`,
   }, { quoted: msg });
@@ -1522,22 +1559,46 @@ async function handleSlowMode(sock, msg, jid, caption) {
 
 // ─── Verificação de slow mode ─────────────────────────────────
 
-function verificarSlowMode(jid, userJid) {
-  const cfg = slowModeGroups.get(jid);
-  if (!cfg) return true;
+// Cache de configs de slowmode para evitar query no banco a cada mensagem
+// Atualizado quando admin usa !slowmode — TTL de 60s para auto-refresh
+if (!global._slowModeCache) global._slowModeCache = new Map();
 
-  const agora    = Date.now();
-  const ultimo   = cfg.lastMsg.get(userJid) || 0;
-  const intervalo = cfg.segundos * 1000;
+async function verificarSlowMode(jid, userJid) {
+  const GrupoConfig = require('../models/GrupoConfig');
 
-  if (agora - ultimo < intervalo) return false;
-  cfg.lastMsg.set(userJid, agora);
+  // Verifica cache local antes de ir ao banco
+  const agora = Date.now();
+  let cfgCache = global._slowModeCache.get(jid);
+
+  if (!cfgCache || agora - cfgCache.fetchedAt > 60_000) {
+    const doc = await GrupoConfig.findOne({ idGrupo: jid }, { slowModeAtivo: 1, slowModeSegundos: 1 }).lean();
+    cfgCache = {
+      ativo:     doc?.slowModeAtivo    ?? false,
+      segundos:  doc?.slowModeSegundos ?? 30,
+      fetchedAt: agora,
+    };
+    global._slowModeCache.set(jid, cfgCache);
+  }
+
+  if (!cfgCache.ativo) return true;
+
+  if (!global._slowModeLastMsg) global._slowModeLastMsg = new Map();
+  const chave  = `${jid}:${userJid}`;
+  const ultimo = global._slowModeLastMsg.get(chave) || 0;
+
+  if (agora - ultimo < cfgCache.segundos * 1000) return false;
+  global._slowModeLastMsg.set(chave, agora);
   return true;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !antiflood ───────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
+
+// Timestamps de mensagens por grupo/usuário — só em memória, não precisa persistir
+if (!global._antiFloodMsgs)        global._antiFloodMsgs        = new Map();
+if (!global._antiFloodUltimaLimp)  global._antiFloodUltimaLimp  = new Map();
+if (!global._antiFloodCache)       global._antiFloodCache        = new Map();
 
 async function handleAntiFlood(sock, msg, jid, caption) {
   if (!jid.endsWith('@g.us')) {
@@ -1546,27 +1607,35 @@ async function handleAntiFlood(sock, msg, jid, caption) {
   }
   if (!await checkAdmin(sock, msg, jid, 'antiflood')) return;
 
+  const GrupoConfig = require('../models/GrupoConfig');
   const arg = caption.replace(/^[!.,\/]antiflood\s*/i, '').trim().toLowerCase();
 
   if (arg === 'off') {
-    if (!antiFloodGroups.has(jid)) {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (!cfg?.antiFloodAtivo) {
       await sock.sendMessage(jid, { text: '🛡️ O Anti-Flood já está desativado.' }, { quoted: msg });
       return;
     }
-    antiFloodGroups.delete(jid);
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { antiFloodAtivo: false } },
+      { upsert: true }
+    );
+    global._antiFloodMsgs.delete(jid);
+    global._antiFloodCache.delete(jid);
     await sock.sendMessage(jid, { text: '🛡️❌ *Anti-Flood desativado!*' }, { quoted: msg });
     return;
   }
 
   if (arg === 'status') {
-    const cfg = antiFloodGroups.get(jid);
-    if (!cfg) {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (!cfg?.antiFloodAtivo) {
       await sock.sendMessage(jid, { text: 'ℹ️ Anti-Flood está *desativado* neste grupo.' }, { quoted: msg });
     } else {
       await sock.sendMessage(jid, {
         text:
           `ℹ️ Anti-Flood está *ativo*!\n` +
-          `_Limite: *${cfg.limite} msgs* a cada *${cfg.janela_ms / 1000}s*._`,
+          `_Limite: *${cfg.antiFloodLimite} msgs* a cada *${cfg.antiFloodJanelaMs / 1000}s*._`,
       }, { quoted: msg });
     }
     return;
@@ -1589,13 +1658,13 @@ async function handleAntiFlood(sock, msg, jid, caption) {
     return;
   }
 
-  antiFloodGroups.set(jid, {
-    limite,
-    janela_ms:     janela,
-    msgs:          new Map(),
-    ultimaLimpeza: Date.now(),
-  });
-
+  await GrupoConfig.findOneAndUpdate(
+    { idGrupo: jid },
+    { $set: { antiFloodAtivo: true, antiFloodLimite: limite, antiFloodJanelaMs: janela } },
+    { upsert: true }
+  );
+  global._antiFloodMsgs.delete(jid);
+  global._antiFloodCache.delete(jid);
   await sock.sendMessage(jid, {
     text:
       `🛡️✅ *Anti-Flood ativado!*\n` +
@@ -1607,28 +1676,52 @@ async function handleAntiFlood(sock, msg, jid, caption) {
 // ─── Verificação de anti-flood ────────────────────────────────
 
 async function verificarAntiFlood(sock, jid, userJid, botJid) {
-  const cfg = antiFloodGroups.get(jid);
-  if (!cfg) return false;
+  const GrupoConfig = require('../models/GrupoConfig');
+
   if (isBotJid(userJid, botJid)) return false;
   if (await isAdmin(sock, jid, userJid).catch(() => false)) return false;
 
+  // Cache de config com TTL de 60s
   const agora = Date.now();
+  let cfgCache = global._antiFloodCache.get(jid);
 
-  // Limpeza periódica a cada 5 minutos para evitar vazamento de memória
-  if (agora - cfg.ultimaLimpeza > 5 * 60 * 1000) {
-    for (const [uid, timestamps] of cfg.msgs.entries()) {
-      const filtrado = timestamps.filter(t => agora - t < cfg.janela_ms);
-      if (filtrado.length === 0) cfg.msgs.delete(uid);
-      else cfg.msgs.set(uid, filtrado);
-    }
-    cfg.ultimaLimpeza = agora;
+  if (!cfgCache || agora - cfgCache.fetchedAt > 60_000) {
+    const doc = await GrupoConfig.findOne(
+      { idGrupo: jid },
+      { antiFloodAtivo: 1, antiFloodLimite: 1, antiFloodJanelaMs: 1 }
+    ).lean();
+    cfgCache = {
+      ativo:     doc?.antiFloodAtivo    ?? false,
+      limite:    doc?.antiFloodLimite   ?? 5,
+      janelaMs:  doc?.antiFloodJanelaMs ?? 10000,
+      fetchedAt: agora,
+    };
+    global._antiFloodCache.set(jid, cfgCache);
   }
 
-  const lista = (cfg.msgs.get(userJid) || []).filter(t => agora - t < cfg.janela_ms);
-  lista.push(agora);
-  cfg.msgs.set(userJid, lista);
+  if (!cfgCache.ativo) return false;
 
-  return lista.length > cfg.limite;
+  // Limpeza periódica a cada 5 minutos
+  const ultimaLimp = global._antiFloodUltimaLimp.get(jid) || 0;
+  if (agora - ultimaLimp > 5 * 60 * 1000) {
+    const msgsGrupo = global._antiFloodMsgs.get(jid);
+    if (msgsGrupo) {
+      for (const [uid, timestamps] of msgsGrupo.entries()) {
+        const filtrado = timestamps.filter(t => agora - t < cfgCache.janelaMs);
+        if (filtrado.length === 0) msgsGrupo.delete(uid);
+        else msgsGrupo.set(uid, filtrado);
+      }
+    }
+    global._antiFloodUltimaLimp.set(jid, agora);
+  }
+
+  if (!global._antiFloodMsgs.has(jid)) global._antiFloodMsgs.set(jid, new Map());
+  const msgsGrupo = global._antiFloodMsgs.get(jid);
+  const lista = (msgsGrupo.get(userJid) || []).filter(t => agora - t < cfgCache.janelaMs);
+  lista.push(agora);
+  msgsGrupo.set(userJid, lista);
+
+  return lista.length > cfgCache.limite;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1862,6 +1955,11 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
 // ═══════════════════════════════════════════════════════════════
 
 async function handleBotToggle(sock, msg, jid, args, isAdminUser) {
+  // Só funciona em grupos
+  if (!somenteGrupo(jid)) {
+    return sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
+  }
+
   if (!isAdminUser) {
     return sock.sendMessage(jid, { text: '❌ Apenas admins podem usar esse comando.' }, { quoted: msg });
   }
@@ -1869,35 +1967,56 @@ async function handleBotToggle(sock, msg, jid, args, isAdminUser) {
   const acao = (args || '').trim().toLowerCase();
   if (!['on', 'off'].includes(acao)) {
     return sock.sendMessage(jid, {
-      text: '🤖 Use *!bot on* para ligar ou *!bot off* para desligar o bot neste grupo.',
+      text:
+        '🤖 *Bot on/off*\n\n' +
+        '▸ *!bot on* — ligar o bot neste grupo\n' +
+        '▸ *!bot off* — desligar o bot neste grupo\n\n' +
+        '_Apenas admins podem usar este comando._',
     }, { quoted: msg });
   }
 
   const GrupoConfig = require('../models/GrupoConfig');
-  const ativo       = acao === 'on';
-  const cfgAtual    = await GrupoConfig.findOne({ idGrupo: jid }).lean();
-  const jaAtivo     = cfgAtual?.botAtivo !== false;
+  const ativo    = acao === 'on';
+  const cfgAtual = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+
+  // Se o documento não existe ainda, considera botAtivo = true (padrão)
+  const jaAtivo = cfgAtual ? cfgAtual.botAtivo !== false : true;
 
   if (ativo && jaAtivo) {
-    return sock.sendMessage(jid, { text: '🤖 O bot já está *ligado* neste grupo!' }, { quoted: msg });
-  }
-  if (!ativo && !jaAtivo) {
-    return sock.sendMessage(jid, { text: '🤖 O bot já está *desligado* neste grupo!' }, { quoted: msg });
+    return sock.sendMessage(jid, {
+      text: '🤖 O bot já está *ligado* neste grupo!\n_Use *!bot off* para desligar._',
+    }, { quoted: msg });
   }
 
-  await GrupoConfig.findOneAndUpdate(
-    { idGrupo: jid },
-    { $set: { botAtivo: ativo } },
-    { upsert: true }
-  );
+  if (!ativo && !jaAtivo) {
+    return sock.sendMessage(jid, {
+      text: '🔕 O bot já está *desligado* neste grupo!\n_Use *!bot on* para ligar._',
+    }, { quoted: msg });
+  }
+
+  try {
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { botAtivo: ativo } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error('[handleBotToggle] Erro ao atualizar GrupoConfig:', err.message);
+    return sock.sendMessage(jid, {
+      text: '❌ Erro ao salvar configuração. Tente novamente.',
+    }, { quoted: msg });
+  }
 
   if (ativo) {
     return sock.sendMessage(jid, {
-      text: '✅ *Bot ligado!* Estou de volta, pode mandar comandos.',
+      text: '✅ *Bot ligado!* Estou de volta, pode mandar comandos. 🤖',
     }, { quoted: msg });
   } else {
     return sock.sendMessage(jid, {
-      text: '🔕 *Bot desligado!* Não responderei mais comandos neste grupo.\n_Use *!bot on* para reativar._',
+      text:
+        '🔕 *Bot desligado!*\n\n' +
+        'Não responderei mais comandos neste grupo.\n' +
+        '_Use *!bot on* para reativar._',
     }, { quoted: msg });
   }
 }

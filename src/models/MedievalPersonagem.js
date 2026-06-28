@@ -1,57 +1,84 @@
 'use strict';
+
 const mongoose = require('mongoose');
 
 const medievalPersonagemSchema = new mongoose.Schema(
   {
-    idWhatsApp: { type: String, required: true, trim: true, lowercase: true },
-    idGrupo:    { type: String, required: true, trim: true, lowercase: true },
+    // ── Identificação ─────────────────────────────────────────────────────────
+    idWhatsApp: {
+      type:      String,
+      required:  true,
+      trim:      true,
+      lowercase: true,
+    },
+    idGrupo: {
+      type:      String,
+      required:  true,
+      trim:      true,
+      lowercase: true,
+    },
 
-    // ── Identidade ───────────────────────────────────────────────
-    nome:    { type: String, default: null },
-    classe:  { type: String, default: null },
-    elemento:{ type: String, default: null },
+    // ── Identidade ────────────────────────────────────────────────────────────
+    nome:     { type: String,  default: null },
+    classe:   { type: String,  default: null },
+    elemento: { type: String,  default: null },
 
-    // ── Status base ──────────────────────────────────────────────
+    // ── Status base ───────────────────────────────────────────────────────────
+    // min: 0 em todos os stats — evita valores negativos por $inc errado
     hp:      { type: Number, default: 100, min: 0 },
-    hpMax:   { type: Number, default: 100 },
+    hpMax:   { type: Number, default: 100, min: 1 },
     mana:    { type: Number, default: 80,  min: 0 },
-    manaMax: { type: Number, default: 80 },
-    ataque:  { type: Number, default: 10 },
-    defesa:  { type: Number, default: 5  },
+    manaMax: { type: Number, default: 80,  min: 1 },
+    ataque:  { type: Number, default: 10,  min: 0 },
+    defesa:  { type: Number, default: 5,   min: 0 },
 
-    // ── Progressão ───────────────────────────────────────────────
+    // ── Progressão ────────────────────────────────────────────────────────────
     nivel:      { type: Number, default: 1, min: 1 },
     xpMedieval: { type: Number, default: 0, min: 0 },
     vitorias:   { type: Number, default: 0, min: 0 },
     derrotas:   { type: Number, default: 0, min: 0 },
 
-    // ── Equipamentos ─────────────────────────────────────────────
-    armaEquipada:    { type: String, default: null },
-    armaduraEquipada:{ type: String, default: null },
+    // ── Equipamentos ──────────────────────────────────────────────────────────
+    armaEquipada:     { type: String, default: null },
+    armaduraEquipada: { type: String, default: null },
 
-    // ── Inventário de itens medievais ────────────────────────────
+    // ── Inventário de itens medievais ─────────────────────────────────────────
+    // Map<nomeItem, quantidade> — chaves com espaços substituídos por "_"
     inventarioMedieval: {
-      type: Map,
-      of:   Number,
-      default: {},
+      type:    Map,
+      of:      Number,
+      default: () => ({}),   // factory function evita compartilhamento de referência
     },
 
-    // ── Habilidades desbloqueadas ────────────────────────────────
-    habilidades: { type: [String], default: [] },
+    // ── Habilidades desbloqueadas (reservado para expansão futura) ────────────
+    habilidades: {
+      type:    [String],
+      default: () => ([]), // factory function — mesmo motivo acima
+    },
 
-    // ── Cooldowns ────────────────────────────────────────────────
-    ultimoAtaque:  { type: Date, default: null },
-    ultimaMagia:   { type: Date, default: null },
-    ultimaMissao:  { type: Date, default: null },
-    ultimaRecarga: { type: Date, default: null },
+    // ── Cooldowns — undefined por padrão (sem default: null) ─────────────────
+    // Usar undefined ao invés de null evita que queries como
+    // { ultimoAtaque: { $lte: X } } retornem documentos novos inesperadamente
+    ultimoAtaque:  { type: Date },
+    ultimaMagia:   { type: Date },
+    ultimaMissao:  { type: Date },
+    ultimaRecarga: { type: Date },
   },
-  { timestamps: true }
+  {
+    timestamps: true,  // createdAt + updatedAt automáticos
+    versionKey: false, // remove o campo __v desnecessário
+  }
 );
 
+// ── Índices ───────────────────────────────────────────────────────────────────
+// Único por (usuário + grupo) — impede personagem duplicado
 medievalPersonagemSchema.index({ idWhatsApp: 1, idGrupo: 1 }, { unique: true });
+// Ranking por vitórias dentro do grupo
 medievalPersonagemSchema.index({ idGrupo: 1, vitorias: -1 });
+// Ranking por nível dentro do grupo
 medievalPersonagemSchema.index({ idGrupo: 1, nivel: -1 });
 
+// ── Export com proteção contra re-compilação (hot reload / Render) ────────────
 module.exports =
   mongoose.models.MedievalPersonagem ||
   mongoose.model('MedievalPersonagem', medievalPersonagemSchema);

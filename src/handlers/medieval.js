@@ -4,15 +4,18 @@ const MedievalPersonagem = require('../models/MedievalPersonagem');
 const CarteiraGrupo      = require('../models/CarteiraGrupo');
 const GrupoConfig        = require('../models/GrupoConfig');
 const {
-  CLASSES, ELEMENTOS, ARMAS, ARMADURAS, MISSOES,
+  CLASSES, ELEMENTOS, MISSOES,
   sortearAleatorio, getClasse, getElemento, getArma, getArmadura,
   calcularDano, narrarCombate, xpParaNivel, verificarCooldown,
 } = require('../utils/medievalUtils');
 
-const CD_ATAQUE  = 2 * 60 * 1000;
-const CD_MAGIA   = 5 * 60 * 1000;
+// ── Cooldowns (ms) ────────────────────────────────────────────────────────────
+const CD_ATAQUE  = 2  * 60 * 1000;
+const CD_MAGIA   = 5  * 60 * 1000;
 const CD_MISSAO  = 30 * 60 * 1000;
 const CD_RECARGA = 10 * 60 * 1000;
+
+// ── Helpers internos ──────────────────────────────────────────────────────────
 
 function somenteGrupo(jid) {
   return typeof jid === 'string' && jid.endsWith('@g.us');
@@ -23,28 +26,41 @@ async function getModoAtivo(idGrupo) {
   return cfg?.medievalAtivo === true;
 }
 
+/**
+ * Busca ou cria personagem com proteção contra race condition.
+ * Se dois !ficha chegarem ao mesmo tempo, o segundo findOne pega o criado pelo primeiro.
+ */
 async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
-  let p = await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
-  if (p) return p;
+  const existente = await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
+  if (existente) return existente;
 
   const classe   = sortearAleatorio(CLASSES);
   const elemento = sortearAleatorio(ELEMENTOS);
 
-  p = await MedievalPersonagem.create({
-    idWhatsApp,
-    idGrupo,
-    nome:     nome || idWhatsApp.split('@')[0],
-    classe:   classe.nome,
-    elemento: elemento.nome,
-    hp:       classe.hp,
-    hpMax:    classe.hp,
-    mana:     classe.mana,
-    manaMax:  classe.mana,
-    ataque:   classe.ataque,
-    defesa:   classe.defesa,
-  });
+  // Guard defensivo — sortearAleatorio retorna null se lista vazia
+  if (!classe || !elemento) throw new Error('Falha ao sortear classe/elemento medieval.');
 
-  return p;
+  try {
+    return await MedievalPersonagem.create({
+      idWhatsApp,
+      idGrupo,
+      nome:    nome || idWhatsApp.split('@')[0],
+      classe:  classe.nome,
+      elemento: elemento.nome,
+      hp:      classe.hp,
+      hpMax:   classe.hp,
+      mana:    classe.mana,
+      manaMax: classe.mana,
+      ataque:  classe.ataque,
+      defesa:  classe.defesa,
+    });
+  } catch (err) {
+    // Erro 11000 = duplicate key — race condition, busca o que foi criado
+    if (err.code === 11000) {
+      return MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
+    }
+    throw err;
+  }
 }
 
 function gerarBarra(atual, maximo, emoji = '❤️', tamanho = 8) {
@@ -53,46 +69,61 @@ function gerarBarra(atual, maximo, emoji = '❤️', tamanho = 8) {
   return emoji.repeat(filled) + '░'.repeat(tamanho - filled);
 }
 
+/**
+ * Verifica e aplica level up em loop até não ter mais XP suficiente.
+ * Garante que pulos de vários níveis de uma vez sejam aplicados corretamente.
+ */
 async function verificarLevelUp(sock, jid, senderJid) {
-  const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
+  let p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
   if (!p) return;
 
-  const xpNecessario = xpParaNivel(p.nivel + 1);
-  if (p.xpMedieval < xpNecessario) return;
+  let subiu = false;
 
-  const novoNivel   = p.nivel + 1;
-  const hpBonus     = 15;
-  const manaBonus   = 10;
-  const ataqueBonus = 2;
-  const defesaBonus = 1;
+  while (p.xpMedieval >= xpParaNivel(p.nivel + 1)) {
+    const novoNivel   = p.nivel + 1;
+    const hpBonus     = 15;
+    const manaBonus   = 10;
+    const ataqueBonus = 2;
+    const defesaBonus = 1;
 
-  await MedievalPersonagem.updateOne(
-    { idWhatsApp: senderJid, idGrupo: jid },
-    {
-      $set: { nivel: novoNivel },
-      $inc: {
-        hpMax:   hpBonus,
-        hp:      hpBonus,
-        manaMax: manaBonus,
-        mana:    manaBonus,
-        ataque:  ataqueBonus,
-        defesa:  defesaBonus,
-      },
-    }
-  );
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: senderJid, idGrupo: jid },
+      {
+        $set: { nivel: novoNivel },
+        $inc: {
+          hpMax:  hpBonus,
+          hp:     hpBonus,
+          manaMax: manaBonus,
+          mana:   manaBonus,
+          ataque: ataqueBonus,
+          defesa: defesaBonus,
+        },
+      }
+    );
 
-  await sock.sendMessage(jid, {
-    text:
-      `⭐🎉 *LEVEL UP!* 🎉⭐\n\n` +
-      `*${p.nome}* subiu para o *Nível ${novoNivel}*!\n\n` +
-      `📈 *Melhorias:*\n` +
-      `❤️ +${hpBonus} HP Máximo\n` +
-      `💧 +${manaBonus} Mana Máxima\n` +
-      `⚔️ +${ataqueBonus} Ataque\n` +
-      `🛡️ +${defesaBonus} Defesa\n\n` +
-      `_Continue batalhando para ficar mais forte!_`,
-    mentions: [senderJid],
-  });
+    // Atualiza p localmente para o próximo loop
+    p.nivel  += 1;
+    p.hpMax  += hpBonus;
+    p.hp     += hpBonus;
+    p.manaMax += manaBonus;
+    p.mana   += manaBonus;
+    p.ataque += ataqueBonus;
+    p.defesa += defesaBonus;
+    subiu = true;
+
+    await sock.sendMessage(jid, {
+      text:
+        `⭐🎉 *LEVEL UP!* 🎉⭐\n\n` +
+        `*${p.nome}* subiu para o *Nível ${novoNivel}*!\n\n` +
+        `📈 *Melhorias:*\n` +
+        `❤️ +${hpBonus} HP Máximo\n` +
+        `💧 +${manaBonus} Mana Máxima\n` +
+        `⚔️ +${ataqueBonus} Ataque\n` +
+        `🛡️ +${defesaBonus} Defesa\n\n` +
+        `_Continue batalhando para ficar mais forte!_`,
+      mentions: [senderJid],
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -107,7 +138,7 @@ async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
     return sock.sendMessage(jid, { text: '❌ Apenas admins podem ativar o modo medieval!' }, { quoted: msg });
   }
 
-  const acao = args.trim().toLowerCase();
+  const acao = (args || '').trim().toLowerCase();
   if (!['on', 'off'].includes(acao)) {
     return sock.sendMessage(jid, {
       text: '⚔️ Use *!medieval on* para ativar ou *!medieval off* para desativar.',
@@ -130,12 +161,13 @@ async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
         `▸ *!ficha* — Ver sua ficha de personagem\n` +
         `▸ *!atacar @alguém* — Atacar um inimigo\n` +
         `▸ *!magia @alguém* — Usar habilidade elemental\n` +
-        `▸ *!missao* — Embarcar em uma missão\n` +
+        `▸ *!missaomed* — Embarcar em uma missão\n` +
         `▸ *!lojamedieval* — Comprar armas e armaduras\n` +
         `▸ *!equipar [item]* — Equipar um item\n` +
-        `▸ *!recargamana* — Recuperar mana\n` +
+        `▸ *!recargamana* — Recuperar HP e mana\n` +
         `▸ *!rankmedieval* — Ranking de guerreiros\n` +
-        `▸ *!menumediev* — Ver todos os comandos\n\n` +
+        `▸ *!menumediev* — Ver todos os comandos\n` +
+        `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
         `_Use *!ficha* para criar seu personagem!_ ⚔️`,
     }, { quoted: msg });
   } else {
@@ -158,7 +190,7 @@ async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
   const p        = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
   const classe   = getClasse(p.classe);
   const elemento = getElemento(p.elemento);
-  const arma     = p.armaEquipada ? getArma(p.armaEquipada) : null;
+  const arma     = p.armaEquipada     ? getArma(p.armaEquipada)         : null;
   const armadura = p.armaduraEquipada ? getArmadura(p.armaduraEquipada) : null;
 
   const xpAtual   = p.xpMedieval;
@@ -180,9 +212,9 @@ async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
       `${barraHP}\n` +
       `💧 *Mana:* ${p.mana}/${p.manaMax}\n` +
       `${barraMana}\n\n` +
-      `⚔️ *Ataque:* ${p.ataque}${arma ? ` (+${arma.bonusAtaque} ${arma.emoji})` : ''}\n` +
+      `⚔️ *Ataque:* ${p.ataque}${arma     ? ` (+${arma.bonusAtaque} ${arma.emoji})`         : ''}\n` +
       `🛡️ *Defesa:* ${p.defesa}${armadura ? ` (+${armadura.bonusDefesa} ${armadura.emoji})` : ''}\n\n` +
-      `🗡️ *Arma:* ${arma ? `${arma.emoji} ${arma.nome}` : '_Nenhuma equipada_'}\n` +
+      `🗡️ *Arma:* ${arma     ? `${arma.emoji} ${arma.nome}`         : '_Nenhuma equipada_'}\n` +
       `🛡️ *Armadura:* ${armadura ? `${armadura.emoji} ${armadura.nome}` : '_Nenhuma equipada_'}\n\n` +
       `🏆 *Vitórias:* ${p.vitorias} | 💀 *Derrotas:* ${p.derrotas}\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
@@ -245,7 +277,11 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   );
 
   const narr      = narrarCombate(atacante, defensor, dano, critico);
-  const multTexto = multElemento > 1 ? '\n🔥 *Vantagem elemental!* +50% de dano!' : multElemento < 1 ? '\n💧 *Desvantagem elemental.* -30% de dano.' : '';
+  const multTexto = multElemento > 1
+    ? '\n🔥 *Vantagem elemental!* +50% de dano!'
+    : multElemento < 1
+      ? '\n💧 *Desvantagem elemental.* -30% de dano.'
+      : '';
   const critTexto = critico ? '\n💥 *CRÍTICO!*' : '';
   const hpTexto   = `\n\n❤️ HP de *@${targetJid.split('@')[0]}*: ${novoHp}/${defensor.hpMax}`;
 
@@ -334,8 +370,14 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     `+20 XP ⭐`;
 
   if (novoHp <= 0) {
-    await MedievalPersonagem.updateOne({ idWhatsApp: senderJid, idGrupo: jid }, { $inc: { vitorias: 1, xpMedieval: 40 } });
-    await MedievalPersonagem.updateOne({ idWhatsApp: targetJid, idGrupo: jid }, { $inc: { derrotas: 1 } });
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: senderJid, idGrupo: jid },
+      { $inc: { vitorias: 1, xpMedieval: 40 } }
+    );
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: targetJid, idGrupo: jid },
+      { $inc: { derrotas: 1 } }
+    );
     textoFinal += `\n\n💀 *@${targetJid.split('@')[0]} foi aniquilado pela magia!*\n🏆 +40 XP de vitória!`;
   }
 
@@ -348,7 +390,7 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ─── !missao ───────────────────────────────────────────────────
+// ─── !missaomed ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
 async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
@@ -371,8 +413,16 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
     }, { quoted: msg });
   }
 
-  const missao  = sortearAleatorio(MISSOES);
-  const sucesso = Math.random() > (missao.dificuldade === 'difícil' ? 0.45 : missao.dificuldade === 'médio' ? 0.3 : 0.15);
+  const missao = sortearAleatorio(MISSOES);
+  // Guard — sortearAleatorio retorna null se MISSOES estiver vazia
+  if (!missao) {
+    return sock.sendMessage(jid, { text: '⚠️ Nenhuma missão disponível no momento.' }, { quoted: msg });
+  }
+
+  const taxaFracasso = missao.dificuldade === 'difícil' ? 0.45
+    : missao.dificuldade === 'médio' ? 0.3
+    : 0.15;
+  const sucesso = Math.random() > taxaFracasso;
 
   await sock.sendMessage(jid, {
     text:
@@ -385,8 +435,8 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
   await new Promise(r => setTimeout(r, 3000));
 
   if (sucesso) {
-    const xpBonus   = Math.floor(missao.xpReward  * (0.8 + Math.random() * 0.4));
-    const goldBonus = Math.floor(missao.goldReward * (0.8 + Math.random() * 0.4));
+    const xpBonus   = Math.floor(missao.xpReward   * (0.8 + Math.random() * 0.4));
+    const goldBonus = Math.floor(missao.goldReward  * (0.8 + Math.random() * 0.4));
 
     await MedievalPersonagem.updateOne(
       { idWhatsApp: senderJid, idGrupo: jid },
@@ -412,7 +462,8 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
     await verificarLevelUp(sock, jid, senderJid);
   } else {
     const danoTomado = Math.floor(Math.random() * 30) + 10;
-    const novoHp     = Math.max(5, p.hp - danoTomado);
+    // hp nunca vai abaixo de 5 — evita personagem preso sem conseguir missão
+    const novoHp = Math.max(5, p.hp - danoTomado);
 
     await MedievalPersonagem.updateOne(
       { idWhatsApp: senderJid, idGrupo: jid },
@@ -424,7 +475,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
         `❌ *MISSÃO FRACASSADA!*\n\n` +
         `${missao.emoji} *${missao.titulo}*\n\n` +
         `💀 *${p.nome}* foi derrotado e recuou!\n` +
-        `❤️ HP: ${novoHp}/${p.hpMax} (-${danoTomado})\n` +
+        `❤️ HP: ${novoHp}/${p.hpMax} (-${p.hp - novoHp})\n` +
         `+10 XP pela tentativa ⭐\n\n` +
         `_Recupere-se e tente novamente em 30 minutos._`,
     }, { quoted: msg });
@@ -449,25 +500,33 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
     }, { quoted: msg });
   }
 
-  const hpRecupera = Math.floor(p.hpMax * 0.6);
-  const novoHp     = Math.min(p.hpMax, p.hp + hpRecupera);
-  const novaMana   = p.manaMax;
+  const hpRecupera  = Math.floor(p.hpMax * 0.6);
+  const hpAntes     = p.hp;
+  const novoHp      = Math.min(p.hpMax, p.hp + hpRecupera);
+  const hpGanho     = novoHp - hpAntes;
+  const novaMana    = p.manaMax;
 
   await MedievalPersonagem.updateOne(
     { idWhatsApp: senderJid, idGrupo: jid },
     { $set: { ultimaRecarga: new Date(), hp: novoHp, mana: novaMana } }
   );
 
+  // Mensagem diferente se já estava com HP cheio
+  const hpTexto = hpGanho > 0
+    ? `❤️ HP: ${novoHp}/${p.hpMax} (+${hpGanho})`
+    : `❤️ HP: ${novoHp}/${p.hpMax} _(já estava cheio)_`;
+
   await sock.sendMessage(jid, {
     text:
       `🌟 *RECARGA COMPLETA!*\n\n` +
       `✨ *${p.nome}* medita e recupera suas forças!\n\n` +
-      `❤️ HP: ${novoHp}/${p.hpMax} (+${novoHp - p.hp})\n` +
-      `💧 Mana: ${novaMana}/${p.manaMax} (Completa!)\n\n` +
+      `${hpTexto}\n` +
+      `💧 Mana: ${novaMana}/${p.manaMax} _(Completa!)_\n\n` +
       `_Próxima recarga em 10 minutos._`,
   }, { quoted: msg });
 }
 
+// ── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   handleMedievalToggle,
   handleFicha,
@@ -475,7 +534,7 @@ module.exports = {
   handleMagia,
   handleMissao,
   handleRecargaMana,
-  // exporta helpers para medievalLoja.js usar
+  // helpers exportados para medievalLoja.js
   getModoAtivo,
   getOuCriarPersonagem,
   somenteGrupo,

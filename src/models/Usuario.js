@@ -88,7 +88,7 @@ const usuarioSchema = new mongoose.Schema({
   // ── Progressão global ────────────────────────────────────────
   xp:         { type: Number, default: 0,   min: 0 },
   level:      { type: Number, default: 1,   min: 1 },
-  gold:       { type: Number, default: 100, min: 0 },
+  gold:       { type: Number, default: 0, min: 0 },
   quizPoints: { type: Number, default: 0,   min: 0 },
   mensagens:  { type: Number, default: 0,   min: 0 },
 
@@ -141,8 +141,10 @@ const usuarioSchema = new mongoose.Schema({
 usuarioSchema.index({ gold: -1 });
 usuarioSchema.index({ xp: -1 });
 usuarioSchema.index({ quizPoints: -1 });
-usuarioSchema.index({ email: 1 }, { unique: true, sparse: true });
+usuarioSchema.index({ email: 1 },    { unique: true, sparse: true });
 usuarioSchema.index({ username: 1 }, { unique: true, sparse: true });
+usuarioSchema.index({ casadoCom: 1 }, { sparse: true }); // GET /admin/relacionamentos
+usuarioSchema.index({ banido: 1 },    { sparse: true }); // GET /admin/usuarios
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 module.exports = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);

@@ -234,22 +234,34 @@ router.get('/grupos', async (req, res) => {
           nomeCustom: { $first: '$nomeCustom' },
           nomeReal:   { $first: '$nome' },
           mensagens:  { $first: '$mensagens' },
-          config:     { $first: '$config' },
         },
       },
       { $sort: { xpTotal: -1 } },
     ]);
 
-    const resultado = grupos.map(g => ({
-      jid:        g._id,
-      idGrupo:    g._id,
-      nome:       nomeGrupo(g, g._id),
-      nomeCustom: g.nomeCustom || null,
-      membros:    g.membros,
-      xpTotal:    g.xpTotal,
-      mensagens:  g.mensagens || {},
-      config:     g.config || {},
-    }));
+    const GrupoConfig = require('../models/GrupoConfig');
+    const jids    = grupos.map(g => g._id);
+    const configs = await GrupoConfig.find({ idGrupo: { $in: jids } }).lean();
+    const configMap = Object.fromEntries(configs.map(c => [c.idGrupo, c]));
+
+    const resultado = grupos.map(g => {
+      const cfg = configMap[g._id] || {};
+      return {
+        jid:        g._id,
+        idGrupo:    g._id,
+        nome:       nomeGrupo(g, g._id),
+        nomeCustom: g.nomeCustom || null,
+        membros:    g.membros,
+        xpTotal:    g.xpTotal,
+        mensagens:  g.mensagens || {},
+        config: {
+          botAtivo:    cfg.botAtivo    ?? true,
+          antiLink:    cfg.antiLink    ?? false,
+          boasVindas:  cfg.boasVindas  ?? true,
+          xpAtivo:     cfg.xpAtivo     ?? true,
+        },
+      };
+    });
 
     return res.json({ grupos: resultado });
   } catch (err) {
@@ -964,8 +976,10 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
     // Sincroniza campos relevantes com GrupoConfig (fonte lida pelo bot.js)
     const GrupoConfig = require('../models/GrupoConfig');
     const syncCampos = {};
-    if ('config.botAtivo' in update)  syncCampos.botAtivo  = update['config.botAtivo'];
-    if ('config.antiLink' in update)  syncCampos.antiLink  = update['config.antiLink'];
+    if ('config.botAtivo'   in update) syncCampos.botAtivo   = update['config.botAtivo'];
+    if ('config.antiLink'   in update) syncCampos.antiLink   = update['config.antiLink'];
+    if ('config.xpAtivo'    in update) syncCampos.xpAtivo    = update['config.xpAtivo'];
+    if ('config.boasVindas' in update) syncCampos.boasVindas = update['config.boasVindas'];
 
     if (Object.keys(syncCampos).length) {
       await GrupoConfig.findOneAndUpdate(

@@ -92,7 +92,14 @@ const carteiraGrupoSchema = new mongoose.Schema(
     xpHistory: { type: Map, of: Number, default: {} },
 
     // ── Banco (isolado por grupo) ────────────────────────────────
-    banco: { type: bancoSchema, default: () => ({}) },
+    banco: {
+      type: bancoSchema,
+      default: () => ({}),
+      validate: {
+        validator: function(b) { return !b?.historico || b.historico.length <= 200; },
+        message: 'Histórico do banco não pode exceder 200 registros.',
+      },
+    },
 
     // ── Pesca (isolada por grupo) ────────────────────────────────
     ultimaPesca:  { type: Date,   default: null },
@@ -145,6 +152,24 @@ const carteiraGrupoSchema = new mongoose.Schema(
 
     // ── Histórico de gold ────────────────────────────────────────
     goldHistory: { type: [goldHistorySchema], default: [] },
+  // ── Inventário (usado pelo painel admin e pelos handlers) ─────
+    inventario: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+
+    // ── Config do grupo (gerenciada pelo painel admin) ────────────
+    config: {
+      type: new mongoose.Schema({
+        botAtivo:   { type: Boolean, default: true  },
+        xpAtivo:    { type: Boolean, default: true  },
+        antiLink:   { type: Boolean, default: false },
+        boasVindas: { type: Boolean, default: false },
+        prefixo:    { type: String,  default: '!', enum: ['!', '.', '/', ','] },
+      }, { _id: false }),
+      default: () => ({}),
+    },
+
   },
   {
     timestamps: true,

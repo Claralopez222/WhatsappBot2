@@ -28,10 +28,12 @@ const grupoConfigSchema = new mongoose.Schema(
     sistemaGold:        { type: Boolean, default: false },
     medievalAtivo:      { type: Boolean, default: false },
     botAtivo:           { type: Boolean, default: true  },
+    xpAtivo:            { type: Boolean, default: true  },
 
     // ── Bem-vindo ────────────────────────────────────────────────
     bemVindoAtivo:    { type: Boolean, default: false },
     bemVindoMensagem: { type: String,  default: null,  trim: true },
+    boasVindas:       { type: Boolean, default: true  },
   },
   {
     timestamps: true,

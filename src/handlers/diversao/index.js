@@ -48,7 +48,8 @@ const {
 // Menus
 const {
   handleBrincadeiras, handleMenuGold, handleMenuPet,
-  handleSistemaGold, handleSistemaPet, handleMenuAuxiliar
+  handleSistemaGold, handleSistemaPet, handleMenuAuxiliar,
+  handleSistemaMedieval, handleMenuMarket,
 } = require('./menus');
 
 // Marketplace (v3.1 — sem dependência de handlePescar no require direto)
@@ -182,6 +183,8 @@ module.exports = {
   handleSistemaGold,
   handleSistemaPet,
   handleMenuAuxiliar,
+  handleSistemaMedieval,
+  handleMenuMarket,
 
   // ── Marketplace v3.1 (11 itens) ────────────────────────────────────────────
   handleAvenda,

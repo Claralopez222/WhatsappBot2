@@ -522,8 +522,17 @@ const carteiraAtual = await CarteiraGrupo.findOne(
 
             // ── Usuario global: XP global, level e missões ────────────────────
             const hojeISO = new Date().toISOString().slice(0, 10);
+
+            // Resolve qual idWhatsApp o Usuario está salvo (pode ser @lid ou @s.whatsapp.net)
+            const lidMapUsuario = remetenteNorm.endsWith('@lid')
+              ? null
+              : await LidMapping.findOne({ pn: remetenteNorm }).lean();
+            const idWhatsAppUsuario = lidMapUsuario?.lid
+              ? (await Usuario.exists({ idWhatsApp: lidMapUsuario.lid }) ? lidMapUsuario.lid : remetenteNorm)
+              : remetenteNorm;
+
             const usuarioAtualizado = await Usuario.findOneAndUpdate(
-              { idWhatsApp: remetenteNorm },
+              { idWhatsApp: idWhatsAppUsuario },
               {
                 $inc: {
                   mensagens: 1,

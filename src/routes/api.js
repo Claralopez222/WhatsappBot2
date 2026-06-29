@@ -422,9 +422,23 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
     ]);
     const posicaoRanking = (posicaoResult[0]?.acima ?? 0) + 1;
 
+    const jidsGruposMe = carteiras.map(c => c.idGrupo);
+    const nomesGruposMe = {};
+    if (jidsGruposMe.length) {
+      const docsNomes = await CarteiraGrupo.aggregate([
+        { $match: { idGrupo: { $in: jidsGruposMe } } },
+        { $group: {
+          _id:        '$idGrupo',
+          nomeCustom: { $first: { $ifNull: ['$nomeCustom', null] } },
+          nomeReal:   { $first: { $ifNull: ['$nome', null] } },
+        }},
+      ]);
+      for (const d of docsNomes) nomesGruposMe[d._id] = nomeGrupo(d, d._id);
+    }
+
     const grupos = carteiras.map(c => ({
       jid:          c.idGrupo,
-      nome:         nomeGrupo(c, c.idGrupo),
+      nome:         nomesGruposMe[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
       xp:           c.xp           ?? 0,
       level:        c.level        ?? 1,
       gold:         c.gold         ?? 0,

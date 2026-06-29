@@ -1959,23 +1959,14 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
     if (usernameEmUso)
       return res.status(409).json({ error: 'Este nome de usuário já está em uso.' });
 
-    // ── Valida OTP ────────────────────────────────────────────────────────────
-    const { otp } = req.body || {};
-    if (!otp || typeof otp !== 'string' || otp.length !== 6)
-      return res.status(400).json({ error: 'Código de verificação inválido.' });
-
-    const otpDoc = await OtpCadastro.findOne({
-      idWhatsApp: idWhatsAppReal,
-      usado: false,
-      expiresAt: { $gt: new Date() },
-    });
-    if (!otpDoc || otpDoc.codigo !== otp)
-      return res.status(401).json({ error: 'Código incorreto ou expirado.' });
-
-    await OtpCadastro.findOneAndUpdate(
-      { idWhatsApp: idWhatsAppReal },
-      { $set: { usado: true } }
-    );
+    // ── Salva email se fornecido ──────────────────────────────────────────────
+    const { email } = req.body || {};
+    const emailLimpo = typeof email === 'string' ? email.trim().toLowerCase() : null;
+    if (emailLimpo) {
+      const emailEmUso = await Usuario.exists({ email: emailLimpo });
+      if (emailEmUso)
+        return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
+    }
 
     const passwordHash = await bcrypt.hash(passwordLimpa, 12);
 
@@ -1985,6 +1976,7 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
           username:     usernameLimpo,
           passwordHash,
           ...(digitosBase && { telefone: digitosBase }),
+          ...(emailLimpo  && { email: emailLimpo }),
       }},
       { new: true }
     );

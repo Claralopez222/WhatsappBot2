@@ -50,9 +50,36 @@ const BAN_AUDIO_PATH = path.join(__dirname, '..', '..', 'Audio-Image', 'audioban
  * @param {string} userJid
  * @returns {Promise<boolean>}
  */
+// Cache de groupMetadata — evita rate-limit do WhatsApp em grupos movimentados.
+// TTL de 5 minutos; invalidado automaticamente por tempo (sem necessidade de
+// limpeza manual em ações como promover/rebaixar/ban, que são raras).
+if (!global._groupMetadataCache) global._groupMetadataCache = new Map();
+const GROUP_METADATA_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Busca groupMetadata com cache (TTL 5min) para evitar estourar o
+ * rate-limit do WhatsApp em grupos com muitas mensagens.
+ * @param {object} sock
+ * @param {string} groupJid
+ * @param {boolean} [forceRefresh] força ignorar o cache
+ * @returns {Promise<object>}
+ */
+async function getGroupMetadataCached(sock, groupJid, forceRefresh = false) {
+  const agora = Date.now();
+  const cached = global._groupMetadataCache.get(groupJid);
+
+  if (!forceRefresh && cached && (agora - cached.fetchedAt) < GROUP_METADATA_TTL_MS) {
+    return cached.meta;
+  }
+
+  const meta = await sock.groupMetadata(groupJid);
+  global._groupMetadataCache.set(groupJid, { meta, fetchedAt: agora });
+  return meta;
+}
+
 async function isAdmin(sock, groupJid, userJid) {
   try {
-    const meta = await sock.groupMetadata(groupJid);
+    const meta = await getGroupMetadataCached(sock, groupJid);
     const part = meta.participants?.find(
       p => p.id === userJid || p.lid === userJid
     );

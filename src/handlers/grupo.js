@@ -154,7 +154,7 @@ async function resolveTargetJid(sock, msg, content, jid) {
   // Resolve @lid → @s.whatsapp.net quando o grupo fornece o mapeamento
   if (rawJid.endsWith('@lid') && jid.endsWith('@g.us')) {
     try {
-      const meta = await sock.groupMetadata(jid);
+      const meta = await getGroupMetadataCached(sock, jid);
       const part = meta.participants?.find(
         p => p.id === rawJid || p.lid === rawJid
       );
@@ -888,7 +888,7 @@ async function handleTempo(sock, msg, content, jid, author, contactNames) {
   let isFallback   = false;
 
   try {
-    const meta = await sock.groupMetadata(jid);
+    const meta = await getGroupMetadataCached(sock, jid);
     const part = meta.participants?.find(p => p.id === alvoJid || p.lid === alvoJid);
 
     const entradaMs = part?.joinedAt
@@ -1197,7 +1197,7 @@ async function handleGrupInfo(sock, msg, jid) {
 
   let meta;
   try {
-    meta = await sock.groupMetadata(jid);
+    meta = await getGroupMetadataCached(sock, jid);
   } catch (err) {
     console.error('[handleGrupInfo] Erro:', err.message);
     await sock.sendMessage(jid, {
@@ -1255,7 +1255,7 @@ async function handleListaAdm(sock, msg, jid, contactNames) {
 
   let meta;
   try {
-    meta = await sock.groupMetadata(jid);
+    meta = await getGroupMetadataCached(sock, jid);
   } catch (err) {
     console.error('[handleListaAdm] Erro ao buscar metadados:', err.message);
     await sock.sendMessage(jid, { text: '❌ Não consegui buscar os membros do grupo.' }, { quoted: msg });
@@ -1294,7 +1294,7 @@ async function handleListaMembros(sock, msg, jid, contactNames) {
 
   let meta;
   try {
-    meta = await sock.groupMetadata(jid);
+    meta = await getGroupMetadataCached(sock, jid);
   } catch (err) {
     console.error('[handleListaMembros] Erro ao buscar metadados:', err.message);
     await sock.sendMessage(jid, { text: '❌ Não consegui buscar os membros do grupo.' }, { quoted: msg });

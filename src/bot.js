@@ -123,6 +123,17 @@ console.error = (...a) => { if (!isNoise(...a)) _err(...a); };
 const SESSION_DIR = path.resolve(__dirname, '../session');
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
 
+// ─── Guarda-chuva contra crashes fatais ────────────────────────────────────────
+// Erros do tipo "Connection Closed" jogados dentro de Promises internas do
+// Baileys (retry/relay de mensagens) não tinham .catch() e derrubavam o
+// processo inteiro. Isso captura e apenas loga, sem matar o bot.
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ unhandledRejection capturado:', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ uncaughtException capturado:', err?.message || err);
+});
+
 // ─── Persistência ─────────────────────────────────────────────────────────────
 const DATA_FILE = path.resolve(__dirname, '../data.json');
 
@@ -659,7 +670,18 @@ const carteiraAtual = await CarteiraGrupo.findOne(
       console.warn(`🔌 Desconectado. Código: ${code} | Motivo: ${motivo}`);
 
       if (logado) {
-        const delay = code === DisconnectReason.connectionReplaced ? 5_000 : 30_000;
+        let delay;
+        if (code === DisconnectReason.connectionReplaced) {
+          delay = 5_000;
+        } else if (code === 440) {
+          // Conflito de sessão (outra instância conectada com o mesmo número).
+          // Damos um backoff bem maior pra evitar loop infinito de reconexão
+          // brigando por conexão com outra instância ainda ativa.
+          delay = 60_000;
+          console.warn('⚠️ Conflito de sessão (440): verifique se há outra instância do bot rodando (local ou outro deploy) usando o mesmo número.');
+        } else {
+          delay = 30_000;
+        }
         console.log(`🔄 Reconectando em ${delay / 1000}s...`);
         setTimeout(() => startBot(), delay);
       } else {

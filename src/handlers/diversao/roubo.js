@@ -17,6 +17,7 @@ const {
   alterarGoldSeguro,
 } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { incrementMission } = require('./missoes');
+const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 
 // ─── CONFIGURAÇÕES ────────────────────────────────────────────────────────────
 
@@ -60,9 +61,10 @@ const ITENS_SEGURANCA = {
 
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 
-/** JID do remetente da mensagem (funciona em grupo e privado) */
+/** JID do remetente da mensagem (funciona em grupo e privado) — normalizado */
 function getUserId(msg) {
-  return msg.key.participant || msg.key.remoteJid;
+  const raw = msg.key.participant || msg.key.remoteJid;
+  return normalizarJid(raw) || raw;
 }
 
 /** JID do grupo (ou privado) onde a mensagem foi enviada */
@@ -569,9 +571,10 @@ async function handleMeioSec(sock, msg, jid) {
 // ─── !roubar @pessoa ──────────────────────────────────────────────────────────
 
 async function handleRoubar(sock, msg, jid) {
-  const atacanteId = getUserId(msg);
-  const vitimaId   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-  const idGrupo    = getGroupId(msg, jid);
+  const atacanteId  = getUserId(msg);
+  const vitimaIdRaw = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const vitimaId    = vitimaIdRaw ? (normalizarJid(vitimaIdRaw) || vitimaIdRaw) : null;
+  const idGrupo     = getGroupId(msg, jid);
 
   // ── Validações básicas ───────────────────────────────────────────────────────
   if (!vitimaId) {
@@ -803,10 +806,11 @@ function _buildTextoCaptura(numeroLadrao, debitavel = 0) {
 // ─── !policia @ladrão ─────────────────────────────────────────────────────────
 
 async function handlePolicia(sock, msg, jid) {
-  const vitimaId = getUserId(msg);
-  const ladrao   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-  const idGrupo  = getGroupId(msg, jid);
-  const agora    = Date.now();
+  const vitimaId  = getUserId(msg);
+  const ladraoRaw = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const ladrao    = ladraoRaw ? (normalizarJid(ladraoRaw) || ladraoRaw) : null;
+  const idGrupo   = getGroupId(msg, jid);
+  const agora     = Date.now();
 
   // ── Validações rápidas ────────────────────────────────────────────────────
   if (!ladrao) {
@@ -931,10 +935,11 @@ function calcularPctBanco(bonusItem) {
 // ─── !roubarbanco @pessoa ─────────────────────────────────────────────────────
 
 async function handleRoubarBanco(sock, msg, jid) {
-  const atacanteId = getUserId(msg);
-  const vitimaId   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-  const idGrupo    = getGroupId(msg, jid);
-  const agora      = Date.now();
+  const atacanteId  = getUserId(msg);
+  const vitimaIdRaw = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const vitimaId    = vitimaIdRaw ? (normalizarJid(vitimaIdRaw) || vitimaIdRaw) : null;
+  const idGrupo     = getGroupId(msg, jid);
+  const agora       = Date.now();
 
   // ── Validações básicas ────────────────────────────────────────────────────
   if (!vitimaId) {

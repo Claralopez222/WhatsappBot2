@@ -672,13 +672,12 @@ const carteiraAtual = await CarteiraGrupo.findOne(
       if (logado) {
         let delay;
         if (code === DisconnectReason.connectionReplaced) {
-          delay = 5_000;
-        } else if (code === 440) {
-          // Conflito de sessão (outra instância conectada com o mesmo número).
-          // Damos um backoff bem maior pra evitar loop infinito de reconexão
-          // brigando por conexão com outra instância ainda ativa.
+          // Outra sessão conectou com o mesmo número e substituiu esta.
+          // Backoff maior pra evitar loop de reconexão brigando com a outra
+          // instância ainda ativa — verifique se não há bot local ou outro
+          // deploy usando a mesma sessão salva no MongoDB.
           delay = 60_000;
-          console.warn('⚠️ Conflito de sessão (440): verifique se há outra instância do bot rodando (local ou outro deploy) usando o mesmo número.');
+          console.warn('⚠️ Conexão substituída (440): outra instância do bot conectou com o mesmo número. Verifique se há bot local ou outro deploy ativo usando a mesma sessão.');
         } else {
           delay = 30_000;
         }

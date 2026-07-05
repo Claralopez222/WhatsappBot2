@@ -2619,19 +2619,22 @@ async function handleSexo(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// !worldcup
-async function handleWorldCup(sock, msg, jid) {
+// !worldcup [mata-mata]
+async function handleWorldCup(sock, msg, jid, args = []) {
+  const querMataMata = args[0] && ['mata-mata', 'matamata', 'eliminatorias', 'mata'].includes(args[0].toLowerCase());
+  if (querMataMata) return handleWorldCupKnockout(sock, msg, jid);
+
   await sock.sendMessage(jid, {
     text: '⏳ Buscando dados da Copa 2026...',
   }, { quoted: msg });
 
   try {
     const res = await fetch('https://api.football-data.org/v4/competitions/WC/standings', {
-      headers: {
-        'X-Auth-Token': 'cf81a64d606848a68787d279ecba7826',
-        'Accept': 'application/json',
-      },
-    });
+  headers: {
+    'X-Auth-Token': process.env.FOOTBALL_API_KEY,
+    'Accept': 'application/json',
+  },
+});
 
     const data = await res.json();
 
@@ -2665,6 +2668,121 @@ async function handleWorldCup(sock, msg, jid) {
     console.error('[worldcup] Erro ao buscar dados:', err.message);
     await sock.sendMessage(jid, {
       text: '❌ Não foi possível buscar os dados da Copa agora. Tente novamente em instantes!',
+    }, { quoted: msg });
+  }
+}
+
+const STAGE_PRIORITY = {
+  LAST_32: 0, ROUND_OF_32: 0,
+  LAST_16: 1, ROUND_OF_16: 1,
+  QUARTER_FINALS: 2,
+  SEMI_FINALS: 3,
+  THIRD_PLACE: 4,
+  FINAL: 5,
+};
+const STAGE_LABELS = {
+  LAST_32: '🔥 *DEZESSEIS-AVOS DE FINAL*',
+  ROUND_OF_32: '🔥 *DEZESSEIS-AVOS DE FINAL*',
+  LAST_16: '🔥 *OITAVAS DE FINAL*',
+  ROUND_OF_16: '🔥 *OITAVAS DE FINAL*',
+  QUARTER_FINALS: '⚡ *QUARTAS DE FINAL*',
+  SEMI_FINALS: '🔥 *SEMIFINAIS*',
+  THIRD_PLACE: '🥉 *DISPUTA DE 3º LUGAR*',
+  FINAL: '🏆 *FINAL*',
+};
+
+function labelFor(stage) {
+  return STAGE_LABELS[stage] || `🔥 *${stage.replace(/_/g, ' ')}*`;
+}
+
+function formatMatchLine(match) {
+  const home = match.homeTeam?.name || 'A definir';
+  const away = match.awayTeam?.name || 'A definir';
+  const status = match.status;
+
+  if (status === 'FINISHED') {
+    const ft = match.score.fullTime;
+    const golsCasa = ft.home ?? ft.homeTeam ?? 0;
+    const golsFora = ft.away ?? ft.awayTeam ?? 0;
+    let linha = `${home} *${golsCasa}-${golsFora}* ${away}`;
+
+    if (match.score.duration === 'PENALTY_SHOOTOUT' && match.score.penalties) {
+      const p = match.score.penalties;
+      const penCasa = p.home ?? p.homeTeam;
+      const penFora = p.away ?? p.awayTeam;
+      linha += ` _(pên. ${penCasa}-${penFora})_`;
+    } else if (match.score.duration === 'EXTRA_TIME') {
+      linha += ` _(prorrogação)_`;
+    }
+
+    if (match.score.winner === 'HOME_TEAM' || match.score.winner === 'AWAY_TEAM') linha += ' ✅';
+    return linha;
+  }
+
+  if (status === 'IN_PLAY' || status === 'PAUSED') {
+    const ft = match.score.fullTime || {};
+    return `🔴 *AO VIVO* — ${home} ${ft.home ?? 0}-${ft.away ?? 0} ${away}`;
+  }
+
+  const data = new Date(match.utcDate).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+  return `${home} 🆚 ${away}  _(🗓️ ${data})_`;
+}
+
+async function handleWorldCupKnockout(sock, msg, jid) {
+  await sock.sendMessage(jid, {
+    text: '⏳ Buscando a fase eliminatória da Copa 2026...',
+  }, { quoted: msg });
+
+  try {
+    const res = await fetch('https://api.football-data.org/v4/competitions/WC/matches', {
+      headers: {
+        'X-Auth-Token': process.env.FOOTBALL_API_KEY,
+        'Accept': 'application/json',
+      },
+    });
+
+    const data = await res.json();
+    if (!data?.matches) throw new Error('Sem dados');
+
+    const jogosMataMata = data.matches.filter(m => m.stage && m.stage !== 'GROUP_STAGE');
+
+    if (jogosMataMata.length === 0) {
+      await sock.sendMessage(jid, {
+        text: '⚽ O mata-mata ainda não começou — ainda estamos na fase de grupos! Use *!worldcup* pra ver a classificação.',
+      }, { quoted: msg });
+      return;
+    }
+
+    const porFase = {};
+    for (const m of jogosMataMata) {
+      (porFase[m.stage] ??= []).push(m);
+    }
+
+    const stagesEncontrados = Object.keys(porFase).sort(
+      (a, b) => (STAGE_PRIORITY[a] ?? 99) - (STAGE_PRIORITY[b] ?? 99)
+    );
+
+    let texto = `⚽ *COPA DO MUNDO 2026 — MATA-MATA* ⚽\n\n`;
+
+    for (const stage of stagesEncontrados) {
+      const jogos = porFase[stage];
+      texto += `━━━━━━━━━━━━━━━━━━━━\n${labelFor(stage)}\n━━━━━━━━━━━━━━━━━━━━\n`;
+      for (const jogo of jogos) {
+        texto += `${formatMatchLine(jogo)}\n`;
+      }
+      texto += `\n`;
+    }
+
+    texto += `🔄 _${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}_`;
+
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+
+  } catch (err) {
+    console.error('[worldcup-knockout] Erro ao buscar dados:', err.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Não foi possível buscar os dados do mata-mata agora. Tente novamente em instantes!',
     }, { quoted: msg });
   }
 }
@@ -2713,4 +2831,5 @@ module.exports = {
   handleSexo,
   handleBucetudo,
   handleWorldCup,
+  handleWorldCupKnockout,
 };

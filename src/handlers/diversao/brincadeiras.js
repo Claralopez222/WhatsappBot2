@@ -2619,22 +2619,27 @@ async function handleSexo(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// !worldcup [mata-mata]
+// !worldcup           → mata-mata (padrão novo)
+// !worldcup grupos    → fase de grupos (comportamento antigo, ainda acessível)
 async function handleWorldCup(sock, msg, jid, args = []) {
-  const querMataMata = args[0] && ['mata-mata', 'matamata', 'eliminatorias', 'mata'].includes(args[0].toLowerCase());
-  if (querMataMata) return handleWorldCupKnockout(sock, msg, jid);
+  const querGrupos = args[0] && ['grupos', 'grupo', 'fase-de-grupos', 'classificacao', 'classificação'].includes(args[0].toLowerCase());
+  if (querGrupos) return handleWorldCupGroups(sock, msg, jid);
 
+  return handleWorldCupKnockout(sock, msg, jid);
+}
+
+async function handleWorldCupGroups(sock, msg, jid) {
   await sock.sendMessage(jid, {
     text: '⏳ Buscando dados da Copa 2026...',
   }, { quoted: msg });
 
   try {
     const res = await fetch('https://api.football-data.org/v4/competitions/WC/standings', {
-  headers: {
-    'X-Auth-Token': process.env.FOOTBALL_API_KEY,
-    'Accept': 'application/json',
-  },
-});
+      headers: {
+        'X-Auth-Token': process.env.FOOTBALL_API_KEY,
+        'Accept': 'application/json',
+      },
+    });
 
     const data = await res.json();
 
@@ -2665,7 +2670,7 @@ async function handleWorldCup(sock, msg, jid, args = []) {
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 
   } catch (err) {
-    console.error('[worldcup] Erro ao buscar dados:', err.message);
+    console.error('[worldcup-groups] Erro ao buscar dados:', err.message);
     await sock.sendMessage(jid, {
       text: '❌ Não foi possível buscar os dados da Copa agora. Tente novamente em instantes!',
     }, { quoted: msg });
@@ -2831,5 +2836,6 @@ module.exports = {
   handleSexo,
   handleBucetudo,
   handleWorldCup,
+  handleWorldCupGroups,
   handleWorldCupKnockout,
 };

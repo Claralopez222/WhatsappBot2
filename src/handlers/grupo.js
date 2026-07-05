@@ -688,32 +688,149 @@ async function handleSorteio(sock, msg, content, jid, contactNames) {
 // ═══════════════════════════════════════════════════════════════
 // ─── !enquete ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
+//
+// Usage:
+//   !enquete Pizza ou hambúrguer?
+//   !enquete Pizza ou hambúrguer? | Pizza | Hambúrguer | Sushi
+//   !enquete Quais dias você pode? | Seg | Ter | Qua | multi
+//
+// - No options  -> generic Sim / Não / Talvez poll (still a native poll now,
+//                  not emoji reactions).
+// - "multi" as the last option token turns on multiple-choice voting.
+// - Duplicate options (case-insensitive) are removed, user is told which.
+// - WhatsApp's real limit is 12 selectable options (not 6) — enforced below
+//   with a named constant so it's a one-line change if that ever shifts.
+
+const { getAggregateVotesInPollMessage } = require('@whiskeysockets/baileys');
+
+const MAX_POLL_OPTIONS = 12;
+
+// In-memory store mapping poll message key -> { question, options, jid }
+// so incoming vote updates can be matched back to the poll that spawned them.
+// Swap this Map for persistent storage if the bot restarts often and you
+// need tallies to survive that.
+const activePolls = new Map();
 
 async function handleEnquete(sock, msg, jid, caption) {
   const texto = caption.replace(/^[!.,\/]enquete\s*/i, '').trim();
   if (!texto) {
     await sock.sendMessage(jid, {
       text: '⚠️ Digite a pergunta!\nExemplo: *!enquete Pizza ou hambúrguer?*',
-    }, { quoted: msg }); return;
+    }, { quoted: msg });
+    return;
   }
 
-  const partes   = texto.split('|').map(p => p.trim()).filter(Boolean);
+  const partes = texto.split('|').map(p => p.trim()).filter(Boolean);
   const pergunta = partes[0];
-  const opcoes   = partes.slice(1);
+  let opcoesBrutas = partes.slice(1);
 
-  let mensagem = `📊 *ENQUETE*\n\n❓ *${pergunta}*\n\n`;
-
-  if (opcoes.length >= 2) {
-    const emojisOpcoes = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣'];
-    opcoes.slice(0, 6).forEach((op, i) => {
-      mensagem += `${emojisOpcoes[i]} ${op}\n`;
-    });
-    mensagem += `\n_Reaja com os números acima para votar!_`;
-  } else {
-    mensagem += `Reaja com:\n👍 *Sim / A favor*\n👎 *Não / Contra*\n🤔 *Talvez / Neutro*\n\n_Todos podem votar!_`;
+  // Detect and strip the "multi" flag (case-insensitive, last token)
+  let isMulti = false;
+  if (opcoesBrutas.length && /^multi(pla)?$/i.test(opcoesBrutas[opcoesBrutas.length - 1])) {
+    isMulti = true;
+    opcoesBrutas = opcoesBrutas.slice(0, -1);
   }
 
-  await sock.sendMessage(jid, { text: mensagem }, { quoted: msg });
+  const avisos = [];
+  let opcoesFinais;
+
+  if (opcoesBrutas.length === 0) {
+    // No custom options: fall back to a generic native poll, not reactions
+    opcoesFinais = ['Sim', 'Não', 'Talvez'];
+  } else {
+    if (opcoesBrutas.length === 1) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Enquete precisa de pelo menos 2 opções (ou nenhuma, para Sim/Não/Talvez).',
+      }, { quoted: msg });
+      return;
+    }
+
+    // Remove duplicates, case-insensitive, keep first occurrence
+    const vistos = new Set();
+    const semDuplicatas = [];
+    const duplicatasRemovidas = [];
+    for (const op of opcoesBrutas) {
+      const chave = op.toLowerCase();
+      if (vistos.has(chave)) {
+        duplicatasRemovidas.push(op);
+      } else {
+        vistos.add(chave);
+        semDuplicatas.push(op);
+      }
+    }
+    if (duplicatasRemovidas.length) {
+      avisos.push(`🔁 Opções duplicadas removidas: ${duplicatasRemovidas.join(', ')}`);
+    }
+
+    // Enforce the real WhatsApp cap, tell the user if we trimmed anything
+    if (semDuplicatas.length > MAX_POLL_OPTIONS) {
+      avisos.push(
+        `✂️ WhatsApp permite no máximo ${MAX_POLL_OPTIONS} opções. ` +
+        `Removidas: ${semDuplicatas.slice(MAX_POLL_OPTIONS).join(', ')}`
+      );
+    }
+    opcoesFinais = semDuplicatas.slice(0, MAX_POLL_OPTIONS);
+
+    if (opcoesFinais.length < 2) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Depois de remover duplicatas, sobrou menos de 2 opções válidas.',
+      }, { quoted: msg });
+      return;
+    }
+  }
+
+  if (avisos.length) {
+    await sock.sendMessage(jid, { text: avisos.join('\n') }, { quoted: msg });
+  }
+
+  const sent = await sock.sendMessage(jid, {
+    poll: {
+      name: pergunta,
+      values: opcoesFinais,
+      selectableCount: isMulti ? opcoesFinais.length : 1,
+    },
+  }, { quoted: msg });
+
+  // Remember this poll so we can decrypt/tally votes as they come in
+  activePolls.set(sent.key.id, {
+    message: sent,          // guarda a mensagem completa (tem o messageSecret)
+    question: pergunta,
+    options: opcoesFinais,
+    jid,
+    tallies: new Map(opcoesFinais.map(o => [o, 0])),
+  });
+}
+
+// ─── Vote tallying ────────────────────────────────────────────
+// Register this once, alongside your other sock.ev listeners.
+// Poll votes arrive as encrypted "pollUpdateMessage" entries inside
+// messages.upsert; getAggregateVotesInPollMessage decrypts them against
+// the original poll message + your auth state.
+// Baileys entrega votos via "messages.update" com update.pollUpdates —
+// não via "messages.upsert". E a decriptação exige o objeto de mensagem
+// REAL que o sendMessage devolveu (contém messageContextInfo.messageSecret),
+// não uma reconstrução manual — sem isso, getAggregateVotesInPollMessage
+// não retorna nada.
+function registerPollVoteHandler(sock) {
+  sock.ev.on('messages.update', (updates) => {
+    for (const { key, update } of updates) {
+      if (!update.pollUpdates) continue;
+
+      const poll = activePolls.get(key.id);
+      if (!poll) continue; // voto em enquete que não criamos/rastreamos
+
+      const aggregated = getAggregateVotesInPollMessage({
+        message: poll.message, // objeto original completo retornado por sendMessage
+        pollUpdates: update.pollUpdates,
+      });
+
+      for (const result of aggregated) {
+        poll.tallies.set(result.name, result.voters.length);
+      }
+
+      // console.log(poll.question, Object.fromEntries(poll.tallies));
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2070,6 +2187,8 @@ module.exports = {
   // Interação com o grupo
   handleSorteio,
   handleEnquete,
+  registerPollVoteHandler, // chame 1x no bot.js: registerPollVoteHandler(sock)
+  activePolls,             // opcional: útil pra um !resultado mostrar a apuração
   handleTodos,
   handleFecharAbrir,
   handleLinkGrupo,

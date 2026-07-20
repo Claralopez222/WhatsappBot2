@@ -648,23 +648,34 @@ async function handleRanking(sock, msg, jid, msgCount = new Map()) {
 // ─── !sorteio ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleSorteio(sock, msg, content, jid, contactNames) {
+async function handleSorteio(sock, msg, content, jid, botJid, contactNames) {
   const mentions = content.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  let participantes = [...mentions];
+
+  // Dedupe by base number (handles device-suffix duplicates too)
+  const seen = new Set();
+  let participantes = mentions.filter(p => {
+    const base = normalizeJidBase(p);
+    if (seen.has(base)) return false;
+    seen.add(base);
+    return true;
+  });
 
   if (participantes.length === 0 && somenteGrupo(jid)) {
     try {
-      const meta  = await sock.groupMetadata(jid);
-      participantes = meta.participants.map(p => p.id);
+      const meta = await getGroupMetadataCached(sock, jid);
+      participantes = meta.participants
+        .map(p => p.id)
+        .filter(id => !isBotJid(id, botJid)); // bot can't win its own raffle
     } catch (err) {
       console.error('[handleSorteio] Erro ao buscar metadata:', err.message);
     }
   }
 
-  if (participantes.length === 0) {
+  if (participantes.length < 2) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Marque os participantes ou use em grupo!',
-    }, { quoted: msg }); return;
+      text: '⚠️ Preciso de pelo menos *2 participantes*!\nMarque quem vai concorrer ou use em um grupo com mais gente.',
+    }, { quoted: msg });
+    return;
   }
 
   await sock.sendMessage(jid, {
@@ -673,18 +684,17 @@ async function handleSorteio(sock, msg, content, jid, contactNames) {
   await new Promise(r => setTimeout(r, 1500));
 
   const vencedor = participantes[Math.floor(Math.random() * participantes.length)];
-  const nome     = contactNames[vencedor] || vencedor.split('@')[0];
+  const nome     = contactNames[vencedor] || `@${normalizeJidBase(vencedor)}`;
 
   await sock.sendMessage(jid, {
     text:
       `🎉🏆 *RESULTADO DO SORTEIO* 🏆🎉\n\n` +
-      `👑 Vencedor: *@${vencedor.split('@')[0]}*\n\n` +
+      `👑 Vencedor: *@${normalizeJidBase(vencedor)}*\n\n` +
       `🎊 Parabéns, *${nome}*! Você foi sorteado(a) entre *${participantes.length}* participante(s)!\n\n` +
       `_Boa sorte foi você que teve!_ 🍀`,
     mentions: [vencedor],
   }, { quoted: msg });
 }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── !enquete ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════

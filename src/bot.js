@@ -74,6 +74,7 @@ const relacionamentoHandler = require(path.join(__dirname, 'handlers', 'relacion
 const grupoHandler        = require('./handlers/grupo');
 const medievalHandler     = require('./handlers/medieval');
 const medievalLojaHandler = require('./handlers/medievalLoja');
+const medievalSaqueHandler = require('./handlers/medievalSaque');
 const imagemHandler         = require(path.join(__dirname, 'handlers', 'imagem'));
 const textoHandler          = require(path.join(__dirname, 'handlers', 'texto'));
 const utilidadeHandler      = require(path.join(__dirname, 'handlers', 'utilidade', 'index.js'));
@@ -892,6 +893,15 @@ async function handleMessage(sock, msg) {
   if (diversaoHandler.quizState?.has(senderJid)) {
     await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption);
     return;
+  }
+
+  // ── Resposta pendente de !saquear (números) ───────────────────
+  // Só entra aqui se o remetente tiver um saque em aberto — handleRespostaSaque
+  // retorna false se o texto não parecer resposta de saque, liberando o fluxo
+  // normal (comandos com prefixo continuam funcionando).
+  if (isGroup && medievalSaqueHandler.saqueState.has(senderJid)) {
+    const tratado = await medievalSaqueHandler.handleRespostaSaque(sock, msg, jid, senderJid, caption);
+    if (tratado) return;
   }
 
   // ── Anagrama ativo ───────────────────────────────────────────

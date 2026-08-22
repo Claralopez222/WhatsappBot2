@@ -11,6 +11,7 @@
 
 const path = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const LidMapping    = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
 const {
   getCarteira,
   alterarGold,
@@ -791,6 +792,29 @@ function _tsOuZero(valor) {
   return isNaN(ts) ? 0 : ts;
 }
 
+/**
+ * Retorna todas as "formas" conhecidas de um JID (ele mesmo + o par @lid/@pn
+ * cadastrado no LidMapping). Sem isso, comparar lastRobbedBy === mentionedJid
+ * falha sempre que o WhatsApp entrega a menção num formato diferente do que
+ * foi salvo no momento do roubo.
+ */
+async function resolverVariantesJid(jid) {
+  if (!jid) return [];
+  const variantes = new Set([jid]);
+  try {
+    if (jid.endsWith('@lid')) {
+      const map = await LidMapping.findOne({ lid: jid }).lean();
+      if (map?.pn) variantes.add(map.pn);
+    } else {
+      const map = await LidMapping.findOne({ pn: jid }).lean();
+      if (map?.lid) variantes.add(map.lid);
+    }
+  } catch (e) {
+    console.error('⚠️ Erro ao resolver variantes de JID (roubo):', e.message);
+  }
+  return [...variantes];
+}
+
 function _buildTextoCaptura(numeroLadrao, debitavel = 0) {
   const cabecalho =
     `✅ *LADRÃO PRESO!*\n\n` +
@@ -836,7 +860,12 @@ async function handlePolicia(sock, msg, jid) {
   // ── Verificar janela de roubo (imunidade) ─────────────────────────────────
   const imunidadeAte = _tsOuZero(carteiraVitima.imunidadeRouboAte);
 
-  if (carteiraVitima.lastRobbedBy !== ladrao || agora > imunidadeAte) {
+  // Compara contra todas as variantes conhecidas do ladrão (@lid ↔ número real)
+  // — o mentionedJid da menção pode vir num formato diferente do que foi
+  // gravado em lastRobbedBy no momento do !roubar.
+  const variantesLadrao = await resolverVariantesJid(ladrao);
+
+  if (!variantesLadrao.includes(carteiraVitima.lastRobbedBy) || agora > imunidadeAte) {
     await sock.sendMessage(jid, {
       text:
         `❌ *NÃO É POSSÍVEL CHAMAR A POLÍCIA!*\n\n` +

@@ -54,9 +54,11 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
 
     await verificarRecuperacaoDerrota(perdedor);
 
-    if (!perdedor.derrotadoEm || perdedor.derrotadoPor !== senderJid) {
+    // Qualquer pessoa do grupo pode saquear alguém derrotado, não só quem
+    // aplicou o golpe final — a única trava é a janela de 3 minutos.
+    if (!perdedor.derrotadoEm) {
       return sock.sendMessage(jid, {
-        text: `❌ Você não derrotou *@${targetJid.split('@')[0]}* recentemente (ou a janela já passou).`,
+        text: `❌ *@${targetJid.split('@')[0]}* não está derrotado no momento (ou a janela já passou).`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -180,7 +182,6 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
     // ── Revalida a janela de 3min no momento exato da execução ────────────────
     const perdedorAtual = await MedievalPersonagem.findOne({ idWhatsApp: estado.perdedorJid, idGrupo: jid });
     const aindaValido = perdedorAtual?.derrotadoEm
-      && perdedorAtual.derrotadoPor === senderJid
       && (Date.now() - new Date(perdedorAtual.derrotadoEm).getTime()) < JANELA_SAQUE_MS;
 
     if (!aindaValido) {

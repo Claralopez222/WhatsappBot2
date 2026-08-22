@@ -592,6 +592,131 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ─── !givemed ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, args) {
+  if (!somenteGrupo(jid)) return;
+  if (!await getModoAtivo(jid)) return;
+
+  if (!targetJid) {
+    return sock.sendMessage(jid, {
+      text: '🎁 Marque quem vai receber o item!\nExemplo: *!givemed @fulano Espada* ou *!givemed @fulano Poção_de_Cura 3*',
+    }, { quoted: msg });
+  }
+  if (targetJid === senderJid) {
+    return sock.sendMessage(jid, { text: '😂 Você não pode enviar um item para si mesmo!' }, { quoted: msg });
+  }
+
+  const partes      = (args || '').trim().split(/\s+/).filter(Boolean);
+  const ultimaParte = partes[partes.length - 1];
+  const temQtd      = /^\d+$/.test(ultimaParte) && partes.length > 1;
+  const quantidade  = temQtd ? Math.max(1, parseInt(ultimaParte, 10)) : 1;
+  const nomeItem    = (temQtd ? partes.slice(0, -1) : partes).join(' ').replace(/_/g, ' ').trim();
+
+  if (!nomeItem) {
+    return sock.sendMessage(jid, {
+      text:
+        `🎁 *Como enviar um item:*\n` +
+        `▸ *!givemed @pessoa Espada* — envia 1 unidade\n` +
+        `▸ *!givemed @pessoa Poção_de_Cura 3* — envia 3 unidades\n\n` +
+        `_Use *!invmed* para ver seus itens._`,
+    }, { quoted: msg });
+  }
+
+  const arma     = ARMAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
+  const armadura = ARMADURAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
+  const pocao    = POCOES.find(p => p.nome.toLowerCase() === nomeItem.toLowerCase());
+  const item     = arma || armadura || pocao;
+
+  if (!item) {
+    return sock.sendMessage(jid, {
+      text: `❌ Item *"${nomeItem}"* não encontrado!\n_Use *!invmed* para ver seus itens._`,
+    }, { quoted: msg });
+  }
+
+  const chaveInv = item.nome.replace(/ /g, '_');
+  const chaveMap = `inventarioMedieval.${chaveInv}`;
+
+  const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
+    ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+
+  const invMap   = p.inventarioMedieval instanceof Map
+    ? p.inventarioMedieval
+    : new Map(Object.entries(p.inventarioMedieval || {}));
+  const qtdAtual = invMap.get(chaveInv) || 0;
+
+  if (qtdAtual <= 0) {
+    return sock.sendMessage(jid, {
+      text: `❌ Você não possui *${item.nome}* no inventário!\n_Use *!invmed* para ver seus itens._`,
+    }, { quoted: msg });
+  }
+  if (quantidade > qtdAtual) {
+    return sock.sendMessage(jid, {
+      text: `❌ Você só tem *${qtdAtual}x ${item.nome}* no inventário!`,
+    }, { quoted: msg });
+  }
+
+  // Impede enviar item equipado no momento — mesma regra do !sellmed
+  if (p.armaEquipada === item.nome) {
+    return sock.sendMessage(jid, {
+      text: `❌ *${item.nome}* está equipado!\nUse *!desequipar arma* primeiro.`,
+    }, { quoted: msg });
+  }
+  if (p.armaduraEquipada === item.nome) {
+    return sock.sendMessage(jid, {
+      text: `❌ *${item.nome}* está equipado!\nUse *!desequipar armadura* primeiro.`,
+    }, { quoted: msg });
+  }
+
+  // Remove do inventário atomicamente — só executa se ainda tiver estoque suficiente
+  const resultado = await MedievalPersonagem.findOneAndUpdate(
+    { idWhatsApp: senderJid, idGrupo: jid, [chaveMap]: { $gte: quantidade } },
+    { $inc: { [chaveMap]: -quantidade } },
+    { new: false }
+  );
+
+  if (!resultado) {
+    return sock.sendMessage(jid, {
+      text: `❌ Não foi possível enviar *${item.nome}*.\n_Verifique seu inventário com *!invmed*._`,
+    }, { quoted: msg });
+  }
+
+  // Garante que o destinatário tem personagem, e credita o item
+  await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
+  try {
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: targetJid, idGrupo: jid },
+      { $inc: { [chaveMap]: quantidade } }
+    );
+  } catch (errCredito) {
+    // Estorna se o crédito falhar, pra não sumir com o item
+    console.error('⚠️ Erro ao creditar item em !givemed, estornando:', errCredito.message);
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: senderJid, idGrupo: jid },
+      { $inc: { [chaveMap]: quantidade } }
+    ).catch(() => {});
+    return sock.sendMessage(jid, {
+      text: `⚠️ Erro ao enviar o item. Foi estornado para seu inventário.`,
+    }, { quoted: msg });
+  }
+
+  const qtdRestante = qtdAtual - quantidade;
+
+  await sock.sendMessage(jid, {
+    text:
+      `🎁 *ITEM ENVIADO!*\n\n` +
+      `${item.emoji} *${item.nome}* x${quantidade}\n` +
+      `👤 Para: *@${targetJid.split('@')[0]}*\n\n` +
+      `━━━━━━━━━━━━━━━━━━━\n` +
+      (qtdRestante > 0
+        ? `_Restam *${qtdRestante}x ${item.nome}* no seu inventário._`
+        : `_Você não tem mais *${item.nome}* no inventário._`),
+    mentions: [senderJid, targetJid],
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ─── !rankmedieval ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
@@ -682,6 +807,7 @@ module.exports = {
   handleInvMed,
   handleUsarPocao,
   handleSellMed,
+  handleGiveMed,
   handleRankMedieval,
   handleMenuMedieval,
 };

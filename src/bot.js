@@ -920,7 +920,7 @@ async function handleMessage(sock, msg) {
 
   // ── ACESSÓRIOS DE CASAL (equipar via .item) ──────────────────────────────────
 // Comandos medievais com prefixo . — precisa vir ANTES do bloco de acessórios
-const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval'];
+const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'givemed', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval'];
 if (!CMDS_MEDIEVAIS.includes(cmdWord.slice(1)) && cmdWord.startsWith('.')) {
   const itemKey = cmdWord.slice(1);
   const { handleEquiparAcessorio } = require(path.join(__dirname, 'handlers', 'diversao', 'acessoriosCasal'));

@@ -77,10 +77,16 @@ const medievalPersonagemSchema = new mongoose.Schema(
     // ── Cooldowns — undefined por padrão (sem default: null) ─────────────────
     // Usar undefined ao invés de null evita que queries como
     // { ultimoAtaque: { $lte: X } } retornem documentos novos inesperadamente
-    ultimoAtaque:  { type: Date },
+        ultimoAtaque:  { type: Date },
     ultimaMagia:   { type: Date },
     ultimaMissao:  { type: Date },
     ultimaRecarga: { type: Date },
+
+    // ── Estado de derrota (sistema de saque) ──────────────────────────────────
+    // Preenchido quando o hp chega a 0 em !atacar/!magia. Define quem pode
+    // usar !saquear e até quando (janela de vulnerabilidade de 3 minutos).
+    derrotadoEm:  { type: Date },
+    derrotadoPor: { type: String, default: null },
   },
   {
     timestamps: true,  // createdAt + updatedAt automáticos

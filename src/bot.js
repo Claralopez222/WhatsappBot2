@@ -1024,6 +1024,11 @@ if (matchCmd(cmdWord, 'magia') || matchCmdStart(cmd, 'magia ')) {
 }
 if (matchCmd(cmdWord, 'missaomed'))
   { await medievalHandler.handleMissao(sock, msg, jid, senderJid, author); return; }
+if (matchCmd(cmdWord, 'saquear') || matchCmdStart(cmd, 'saquear ')) {
+  const targetSaque = content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || null;
+  await medievalSaqueHandler.handleSaquear(sock, msg, jid, senderJid, targetSaque);
+  return;
+}
 if (matchCmd(cmdWord, 'recargamana'))
   { await medievalHandler.handleRecargaMana(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'historico'))

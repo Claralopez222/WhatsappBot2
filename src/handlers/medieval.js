@@ -14,6 +14,7 @@ const CD_ATAQUE  = 2  * 60 * 1000;
 const CD_MAGIA   = 5  * 60 * 1000;
 const CD_MISSAO  = 30 * 60 * 1000;
 const CD_RECARGA = 10 * 60 * 1000;
+const JANELA_SAQUE_MS = 3 * 60 * 1000; // tempo que o derrotado fica vulnerável a saque
 
 // ── Anti-farm cache — limpa entradas expiradas a cada 10 minutos ──────────────
 if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
@@ -114,6 +115,40 @@ function gerarBarra(atual, maximo, emoji = '❤️', tamanho = 8) {
   if (!maximo || maximo <= 0) return '░'.repeat(tamanho);
   const filled = Math.min(Math.round((atual / maximo) * tamanho), tamanho);
   return emoji.repeat(filled) + '░'.repeat(tamanho - filled);
+}
+
+/**
+ * Se o personagem está marcado como derrotado e a janela de saque (3min) já
+ * expirou, devolve um HP mínimo (30% do máximo) e limpa o estado de derrota.
+ * Se ele já foi curado por outro meio (poção/recarga) antes da janela acabar,
+ * só limpa o estado sem mexer no HP.
+ *
+ * Deve ser chamada sempre que um personagem é buscado do banco antes de ser
+ * usado (ataque, magia, ficha, saque) — mesma lógica "lazy" já usada em
+ * verificarCooldown, só que pra revivência.
+ */
+async function verificarRecuperacaoDerrota(p) {
+  if (!p?.derrotadoEm) return p;
+
+  const passouMs = Date.now() - new Date(p.derrotadoEm).getTime();
+  if (passouMs < JANELA_SAQUE_MS) return p; // ainda dentro da janela de saque
+
+  if (p.hp > 0) {
+    await MedievalPersonagem.updateOne(
+      { _id: p._id },
+      { $unset: { derrotadoEm: '', derrotadoPor: '' } }
+    );
+  } else {
+    const hpMinimo = Math.max(1, Math.floor(p.hpMax * 0.3));
+    await MedievalPersonagem.updateOne(
+      { _id: p._id },
+      { $set: { hp: hpMinimo }, $unset: { derrotadoEm: '', derrotadoPor: '' } }
+    );
+    p.hp = hpMinimo;
+  }
+  p.derrotadoEm  = undefined;
+  p.derrotadoPor = undefined;
+  return p;
 }
 
 /**
@@ -261,6 +296,7 @@ async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
 
   const p        = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
     ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  await verificarRecuperacaoDerrota(p);
   const classe   = getClasse(p.classe);
   const elemento = getElemento(p.elemento);
   const arma     = p.armaEquipada     ? getArma(p.armaEquipada)         : null;
@@ -313,6 +349,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   // findOne fresco — garante HP e cooldown atualizados mesmo com requests simultâneos
   const atacante = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
     ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  await verificarRecuperacaoDerrota(atacante);
 
   const { pode, tempoRestante } = verificarCooldown(atacante.ultimoAtaque, CD_ATAQUE);
   if (!pode) {
@@ -329,6 +366,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 
   const defensor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid })
     ?? await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
+  await verificarRecuperacaoDerrota(defensor);
 
   if (defensor.hp <= 0) {
     return sock.sendMessage(jid, {
@@ -378,7 +416,9 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   let textoFinal = `${narr}${multTexto}${critTexto}${hpTexto}\n+${xpGanho} XP ⭐`;
 
   if (vitoria) {
-    textoFinal += `\n\n💀 *@${targetJid.split('@')[0]} foi derrotado!*\n🏆 *${atacante.nome}* ganhou +30 XP de vitória!`;
+    textoFinal +=
+      `\n\n💀 *@${targetJid.split('@')[0]} foi derrotado!*\n🏆 *${atacante.nome}* ganhou +30 XP de vitória!` +
+      `\n\n💰 Você tem *3 minutos* para saquear os pertences dele!\n_Use *!saquear @${targetJid.split('@')[0]}*._`;
   }
 
   await sock.sendMessage(jid, {
@@ -396,7 +436,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   await MedievalPersonagem.updateOne(
     { idWhatsApp: targetJid, idGrupo: jid },
     {
-      $set:  { hp: novoHp },
+      $set:  { hp: novoHp, ...(vitoria && { derrotadoEm: new Date(), derrotadoPor: senderJid }) },
       $inc:  { ...(vitoria && { derrotas: 1 }) },
       $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } },
     }
@@ -421,6 +461,7 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   // findOne fresco — garante mana e cooldown atualizados
   const atacante = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
     ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+  await verificarRecuperacaoDerrota(atacante);
 
   const { pode, tempoRestante } = verificarCooldown(atacante.ultimaMagia, CD_MAGIA);
   if (!pode) {
@@ -438,6 +479,7 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 
   const defensor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid })
     ?? await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
+  await verificarRecuperacaoDerrota(defensor);
   if (defensor.hp <= 0) {
     return sock.sendMessage(jid, {
       text: `💀 *@${targetJid.split('@')[0]}* já está derrotado!`,
@@ -484,7 +526,9 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
     `+20 XP ⭐`;
 
   if (vitoria) {
-    textoFinal += `\n\n💀 *@${targetJid.split('@')[0]} foi aniquilado pela magia!*\n🏆 +40 XP de vitória!`;
+    textoFinal +=
+      `\n\n💀 *@${targetJid.split('@')[0]} foi aniquilado pela magia!*\n🏆 +40 XP de vitória!` +
+      `\n\n💰 Você tem *3 minutos* para saquear os pertences dele!\n_Use *!saquear @${targetJid.split('@')[0]}*._`;
   }
 
   await sock.sendMessage(jid, {
@@ -502,7 +546,7 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
   await MedievalPersonagem.updateOne(
     { idWhatsApp: targetJid, idGrupo: jid },
     {
-      $set:  { hp: novoHp },
+      $set:  { hp: novoHp, ...(vitoria && { derrotadoEm: new Date(), derrotadoPor: senderJid }) },
       $inc:  { ...(vitoria && { derrotas: 1 }) },
       $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } },
     }
@@ -712,4 +756,7 @@ module.exports = {
   getModoAtivo,
   getOuCriarPersonagem,
   somenteGrupo,
+  // helpers exportados para medievalSaque.js
+  verificarRecuperacaoDerrota,
+  JANELA_SAQUE_MS,
 };

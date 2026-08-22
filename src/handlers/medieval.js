@@ -389,7 +389,15 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   global._medievalFarmCache.set(chaveAntiFarm, Date.now());
 
   const { dano, critico, multElemento } = calcularDano(atacante, defensor);
-  const novoHp = Math.max(0, defensor.hp - dano);
+
+  // ── Aplica o dano atomicamente no banco — evita que !atacar e !magia
+  // simultâneos no mesmo alvo se sobrescrevam (um "comendo" o dano do outro).
+  const defensorAtualizado = await MedievalPersonagem.findOneAndUpdate(
+    { idWhatsApp: targetJid, idGrupo: jid },
+    [{ $set: { hp: { $max: [0, { $subtract: ['$hp', dano] }] } } }],
+    { new: true }
+  );
+  const novoHp = defensorAtualizado.hp;
 
   const xpGanho   = critico ? 15 : 10;
   const vitoria   = novoHp <= 0;
@@ -436,7 +444,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   await MedievalPersonagem.updateOne(
     { idWhatsApp: targetJid, idGrupo: jid },
     {
-      $set:  { hp: novoHp, ...(vitoria && { derrotadoEm: new Date(), derrotadoPor: senderJid }) },
+      $set:  { ...(vitoria && { derrotadoEm: new Date(), derrotadoPor: senderJid }) },
       $inc:  { ...(vitoria && { derrotas: 1 }) },
       $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } },
     }
@@ -502,8 +510,15 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
   const elemento   = getElemento(atacante.elemento);
   const habilidade = elemento?.habilidadeUltima || 'Magia Elemental';
   const { dano }   = calcularDano(atacante, defensor, true);
-  const novoHp     = Math.max(0, defensor.hp - dano);
-  const novaMana   = atacante.mana - custMana;
+
+  // ── Mesma correção de !atacar: aplica o dano atomicamente no banco
+  const defensorAtualizado = await MedievalPersonagem.findOneAndUpdate(
+    { idWhatsApp: targetJid, idGrupo: jid },
+    [{ $set: { hp: { $max: [0, { $subtract: ['$hp', dano] }] } } }],
+    { new: true }
+  );
+  const novoHp   = defensorAtualizado.hp;
+  const novaMana = atacante.mana - custMana;
 
   const vitoria = novoHp <= 0;
   const xpTotal = vitoria ? 20 + 40 : 20;

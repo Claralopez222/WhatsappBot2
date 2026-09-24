@@ -1,5 +1,6 @@
 'use strict';
 
+const mongoose            = require('mongoose');
 const MedievalPersonagem = require('../models/MedievalPersonagem');
 const CarteiraGrupo      = require('../models/CarteiraGrupo');
 const { ARMADURAS, getArma } = require('../utils/medievalUtils');
@@ -10,11 +11,15 @@ const {
 // Tempo que o vencedor tem pra responder com os números depois de abrir a lista.
 const RESPOSTA_TIMEOUT_MS = 60 * 1000;
 
-// Map<vencedorJid, { idGrupo, perdedorJid, opcoes, criadoEm, emProcessamento }>
+// Map<"idGrupo:vencedorJid", { idGrupo, perdedorJid, opcoes, criadoEm, emProcessamento }>
 const saqueState = new Map();
 
-function limparEstado(vencedorJid) {
-  saqueState.delete(vencedorJid);
+function chaveSaque(idGrupo, vencedorJid) {
+  return `${idGrupo}:${vencedorJid}`;
+}
+
+function limparEstado(idGrupo, vencedorJid) {
+  saqueState.delete(chaveSaque(idGrupo, vencedorJid));
 }
 
 // ── Limpeza periódica de estados esquecidos (vencedor nunca respondeu) ───────
@@ -23,8 +28,8 @@ if (!global._saqueCleanupAtivo) {
   global._saqueCleanupAtivo = true;
   setInterval(() => {
     const agora = Date.now();
-    for (const [vencedorJid, estado] of saqueState.entries()) {
-      if (agora - estado.criadoEm > RESPOSTA_TIMEOUT_MS) saqueState.delete(vencedorJid);
+    for (const [chave, estado] of saqueState.entries()) {
+      if (agora - estado.criadoEm > RESPOSTA_TIMEOUT_MS) saqueState.delete(chave);
     }
   }, 5 * 60 * 1000);
 }
@@ -114,7 +119,10 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
       }, { quoted: msg });
     }
 
-    saqueState.set(senderJid, { idGrupo: jid, perdedorJid: targetJid, opcoes, criadoEm: Date.now(), emProcessamento: false });
+    // em handleSaquear
+    saqueState.set(chaveSaque(jid, senderJid), {
+      idGrupo: jid, perdedorJid: targetJid, opcoes, criadoEm: Date.now(), emProcessamento: false,
+    });
 
     const listaTexto = opcoes.map((o, i) => `*${i}* — ${o.label}`).join('\n');
 
@@ -141,9 +149,9 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
 // ═══════════════════════════════════════════════════════════════
 
 async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
-  const estado = saqueState.get(senderJid);
-  if (!estado) return false; // nada pendente — outros handlers tratam a mensagem
-  if (estado.idGrupo !== jid) return false;
+  // Não precisa mais checar idGrupo separadamente — já está embutido na chave
+  const estado = saqueState.get(chaveSaque(jid, senderJid));
+  if (!estado) return false;
 
   const limpo = textoResposta.trim();
   if (!/^[\d\s,]+$/.test(limpo)) return false; // não parece resposta de saque — libera pra outros handlers
@@ -159,7 +167,7 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
 
   try {
     if (Date.now() - estado.criadoEm > RESPOSTA_TIMEOUT_MS) {
-      limparEstado(senderJid);
+      limparEstado(jid, senderJid);
       await sock.sendMessage(jid, { text: '⏳ Tempo pra escolher o saque esgotado. Use *!saquear @alvo* novamente.' }, { quoted: msg });
       return true;
     }
@@ -174,7 +182,7 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
     }
 
     if (!await getModoAtivo(jid)) {
-      limparEstado(senderJid);
+      limparEstado(jid, senderJid);
       await sock.sendMessage(jid, { text: '⚔️ O modo medieval foi desativado neste grupo — saque cancelado.' }, { quoted: msg });
       return true;
     }
@@ -185,7 +193,7 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
       && (Date.now() - new Date(perdedorAtual.derrotadoEm).getTime()) < JANELA_SAQUE_MS;
 
     if (!aindaValido) {
-      limparEstado(senderJid);
+      limparEstado(jid, senderJid);
       await sock.sendMessage(jid, { text: '⏳ A janela de saque expirou antes da sua confirmação. Nada foi levado.' }, { quoted: msg });
       return true;
     }
@@ -197,57 +205,74 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
     let removeuArmadura = false;
 
     for (const op of selecionados) {
+      // ── Cada item do saque agora é uma transação: débito do perdedor +
+      // crédito do vencedor acontecem juntos ou não acontecem — elimina o
+      // padrão manual de "debita → credita → estorna se falhar".
+      const session = await mongoose.startSession();
       try {
         if (op.tipo === 'gold') {
-          const debitado = await CarteiraGrupo.findOneAndUpdate(
-            { idWhatsApp: estado.perdedorJid, idGrupo: jid, gold: { $gte: op.valor } },
-            { $inc: { gold: -op.valor } }
-          );
-          if (!debitado) { resumo.push(`⚠️ Gold — não estava mais disponível`); continue; }
-
-          // ── CORREÇÃO: estorno se o crédito no vencedor falhar ────────────
+          let debitadoOk = false;
           try {
-            await CarteiraGrupo.findOneAndUpdate(
-              { idWhatsApp: senderJid, idGrupo: jid },
-              { $inc: { gold: op.valor } },
-              { upsert: true }
-            );
+            await session.withTransaction(async () => {
+              const debitado = await CarteiraGrupo.findOneAndUpdate(
+                { idWhatsApp: estado.perdedorJid, idGrupo: jid, gold: { $gte: op.valor } },
+                { $inc: { gold: -op.valor } },
+                { session }
+              );
+              if (!debitado) throw new Error('INDISPONIVEL');
+              debitadoOk = true;
+              await CarteiraGrupo.findOneAndUpdate(
+                { idWhatsApp: senderJid, idGrupo: jid },
+                { $inc: { gold: op.valor } },
+                { upsert: true, session }
+              );
+            });
             resumo.push(`💰 ${op.valor} gold`);
-          } catch (errCredito) {
-            console.error('⚠️ Erro ao creditar gold saqueado, estornando:', errCredito.message);
-            await CarteiraGrupo.findOneAndUpdate(
-              { idWhatsApp: estado.perdedorJid, idGrupo: jid },
-              { $inc: { gold: op.valor } },
-              { upsert: true }
-            ).catch(() => {});
-            resumo.push(`⚠️ Gold — erro ao transferir, estornado`);
+          } catch (errTx) {
+            if (errTx.message === 'INDISPONIVEL') {
+              resumo.push(`⚠️ Gold — não estava mais disponível`);
+            } else {
+              console.error('⚠️ Erro na transação de gold saqueado:', errTx.message);
+              resumo.push(debitadoOk
+                ? `⚠️ Gold — erro ao transferir, nada foi alterado`
+                : `⚠️ Gold — erro ao processar`);
+            }
+          } finally {
+            await session.endSession();
           }
           continue;
         }
 
         if (op.tipo === 'item') {
           const chaveMap = `inventarioMedieval.${op.chave}`;
-          const preDoc = await MedievalPersonagem.findOneAndUpdate(
-            { idWhatsApp: estado.perdedorJid, idGrupo: jid, [chaveMap]: { $gte: op.qtd } },
-            { $inc: { [chaveMap]: -op.qtd } }
-          );
-          if (!preDoc) { resumo.push(`⚠️ ${op.nome} — não estava mais disponível`); continue; }
+          let preDoc = null;
 
           try {
-            await MedievalPersonagem.updateOne(
-              { idWhatsApp: senderJid, idGrupo: jid },
-              { $inc: { [chaveMap]: op.qtd } }
-            );
+            await session.withTransaction(async () => {
+              preDoc = await MedievalPersonagem.findOneAndUpdate(
+                { idWhatsApp: estado.perdedorJid, idGrupo: jid, [chaveMap]: { $gte: op.qtd } },
+                { $inc: { [chaveMap]: -op.qtd } },
+                { session }
+              );
+              if (!preDoc) throw new Error('INDISPONIVEL');
+              await MedievalPersonagem.updateOne(
+                { idWhatsApp: senderJid, idGrupo: jid },
+                { $inc: { [chaveMap]: op.qtd } },
+                { session }
+              );
+            });
             resumo.push(`📦 ${op.nome} x${op.qtd}`);
-          } catch (errCredito) {
-            console.error('⚠️ Erro ao creditar item saqueado, estornando:', errCredito.message);
-            await MedievalPersonagem.updateOne(
-              { idWhatsApp: estado.perdedorJid, idGrupo: jid },
-              { $inc: { [chaveMap]: op.qtd } }
-            ).catch(() => {});
-            resumo.push(`⚠️ ${op.nome} — erro ao transferir, estornado`);
+          } catch (errTx) {
+            await session.endSession();
+            if (errTx.message === 'INDISPONIVEL') {
+              resumo.push(`⚠️ ${op.nome} — não estava mais disponível`);
+            } else {
+              console.error('⚠️ Erro na transação de item saqueado:', errTx.message);
+              resumo.push(`⚠️ ${op.nome} — erro ao transferir, nada foi alterado`);
+            }
             continue;
           }
+          await session.endSession();
 
           // Se o item levado era o equipado e não sobrou nenhuma unidade,
           // desequipa e ajusta a mana máxima do derrotado.
@@ -277,6 +302,10 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
         }
 
         // ── Fallback: equipado sem entrada no inventário (dado inconsistente)
+        // Só escreve no vencedor — não há débito de outra coleção envolvido,
+        // então não precisa de transação aqui.
+        await session.endSession();
+
         if (op.tipo === 'arma' && perdedorAtual.armaEquipada === op.nome) {
           const armaData = getArma(op.nome);
           if (armaData?.bonusMana) manaMaxDelta -= armaData.bonusMana;
@@ -299,6 +328,7 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
           resumo.push(`🛡️ ${op.nome} (equipada)`);
         }
       } catch (errItem) {
+        await session.endSession().catch(() => {});
         console.error('⚠️ Erro ao processar item de saque:', errItem.message);
         resumo.push(`⚠️ Erro ao processar um dos itens selecionados.`);
       }
@@ -326,7 +356,7 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
       { $unset: { derrotadoEm: '', derrotadoPor: '' } }
     ).catch(err => console.error('⚠️ Erro ao limpar estado de derrota:', err.message));
 
-    limparEstado(senderJid);
+    limparEstado(jid, senderJid);
 
     // ── CORREÇÃO: evita mensagem "Você levou:" com lista vazia ───────────────
     const houveSucesso = resumo.some(r => !r.startsWith('⚠️'));
@@ -349,7 +379,7 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
 
   } catch (err) {
     console.error('⚠️ Erro em handleRespostaSaque:', err.message);
-    limparEstado(senderJid);
+    limparEstado(jid, senderJid);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao processar o saque. Tente novamente.' }, { quoted: msg }).catch(() => {});
     return true;
   }

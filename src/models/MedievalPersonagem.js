@@ -82,6 +82,12 @@ const medievalPersonagemSchema = new mongoose.Schema(
     ultimaMissao:  { type: Date },
     ultimaRecarga: { type: Date },
 
+    // ── Anti-farm persistente (sobrevive a restart e funciona multi-instância) ──
+    ultimoAlvoAtaque:    { type: String, default: null },
+    quandoAtacouAlvo:    { type: Date,   default: null },
+    ultimoAlvoMagia:     { type: String, default: null },
+    quandoUsouMagiaAlvo: { type: Date,   default: null },
+
     // ── Estado de derrota (sistema de saque) ──────────────────────────────────
     // Preenchido quando o hp chega a 0 em !atacar/!magia. Define quem pode
     // usar !saquear e até quando (janela de vulnerabilidade de 3 minutos).

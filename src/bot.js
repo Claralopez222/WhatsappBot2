@@ -1292,6 +1292,11 @@ if (matchCmd(cmdWord, 'tentarfilho'))  { await diversaoHandler.handleTentarFilho
 if (matchCmd(cmdWord, 'filho'))        { await diversaoHandler.handleVerFilho(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'cuidarfilho'))  { await diversaoHandler.handleCuidarFilho(sock, msg, jid); return; }
 if (matchCmd(cmdWord, 'remediofil'))   { await diversaoHandler.handleRemedioFilho(sock, msg, jid); return; }
+if (matchCmd(cmdWord, 'renomearfilho') || matchCmdStart(cmd, 'renomearfilho ')) {
+  const argsRenomear = caption.replace(/^[!.,\/]renomearfilho\s*/i, '');
+  await diversaoHandler.handleRenomearFilho(sock, msg, jid, argsRenomear);
+  return;
+}
 
 // ── PINNED ────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'fixar'))

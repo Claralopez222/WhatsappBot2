@@ -12,6 +12,7 @@ const DIAS_POR_ANO       = 7;     // 7 dias reais = 1 ano
 const COOLDOWN_CUIDAR    = 20 * 60 * 60 * 1000; // 20h
 const COOLDOWN_TENTAR = 20 * 60 * 1000; // 20 minutos
 const CUSTO_REMEDIO      = 300;   // gold
+const RENOMEAR_MAX_LEN   = 20;    // tamanho máximo do nome do filho
 
 const PERSONALIDADES = [
   'curioso 🔍', 'agitado ⚡', 'tímido 🌸', 'corajoso 🦁',
@@ -243,7 +244,10 @@ async function handleVerFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
   try {
-    const filhos = await Filho.find(filtroFilhosPorPai(jid, userId));
+    // .sort() garante que o número exibido aqui seja o MESMO número que
+    // !renomearfilho vai usar — sem isso a ordem do MongoDB não é garantida
+    // entre consultas diferentes.
+    const filhos = await Filho.find(filtroFilhosPorPai(jid, userId)).sort({ nascidoEm: 1 });
 
     if (filhos.length === 0) {
       return sock.sendMessage(jid, {
@@ -253,7 +257,8 @@ async function handleVerFilho(sock, msg, jid) {
 
     let texto = `👨‍👩‍👧‍👦 *SEUS FILHOS* (${filhos.length}/${MAX_FILHOS})\n\n`;
 
-    for (const filho of filhos) {
+    for (let i = 0; i < filhos.length; i++) {
+      const filho   = filhos[i];
       const idade   = calcularIdade(filho.nascidoEm);
       const emoji   = filho.sexo === 'menino' ? '👦' : '👧';
       const guarda  = await atualizarGuarda(filho);
@@ -270,7 +275,7 @@ async function handleVerFilho(sock, msg, jid) {
       const doente = filho.doente ? '\n⚠️ *DOENTE!* Use *!remediofil* para curar.' : '';
 
       texto +=
-        `${emoji} *${filho.nome}* — ${idade} ano(s)\n` +
+        `*${i + 1}.* ${emoji} *${filho.nome}* — ${idade} ano(s)\n` +
         `✨ ${filho.personalidade}\n` +
         `😊 Felicidade : ${statusBar(filho.felicidade)}\n` +
         `🍽️ Fome       : ${statusBar(filho.fome)}\n` +
@@ -280,6 +285,8 @@ async function handleVerFilho(sock, msg, jid) {
         doente +
         `\n\n`;
     }
+
+    texto += `_Use *!renomearfilho* para dar um novo nome a um deles._`;
 
     return sock.sendMessage(jid, { text: texto.trim() }, { quoted: msg });
   } catch (e) {
@@ -296,7 +303,7 @@ async function handleCuidarFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
   try {
-    const filhos = await Filho.find(filtroFilhosPorPai(jid, userId));
+    const filhos = await Filho.find(filtroFilhosPorPai(jid, userId)).sort({ nascidoEm: 1 });
 
     if (filhos.length === 0) {
       return sock.sendMessage(jid, { text: '👶 Você não tem filhos ainda!' }, { quoted: msg });
@@ -420,6 +427,87 @@ async function handleRemedioFilho(sock, msg, jid) {
   }
 }
 
+// ─── !renomearfilho ───────────────────────────────────────────────────────────
+// Funciona independente de relacionamento ativo e independente de guarda —
+// dar nome não é uma ação de cuidado diário, então qualquer um dos pais pode.
+
+async function _aplicarRenome(sock, msg, jid, filho, novoNomeRaw) {
+  const novoNome = novoNomeRaw.trim();
+
+  if (!novoNome) {
+    return sock.sendMessage(jid, { text: '⚠️ O novo nome não pode ser vazio.' }, { quoted: msg });
+  }
+  if (novoNome.length > RENOMEAR_MAX_LEN) {
+    return sock.sendMessage(jid, {
+      text: `⚠️ O nome deve ter no máximo *${RENOMEAR_MAX_LEN} caracteres*.`,
+    }, { quoted: msg });
+  }
+  if (/[\n@]/.test(novoNome)) {
+    return sock.sendMessage(jid, {
+      text: '⚠️ O nome não pode conter quebra de linha nem "@".',
+    }, { quoted: msg });
+  }
+
+  const nomeAntigo = filho.nome;
+  filho.nome = novoNome;
+  await filho.save();
+
+  const emoji = filho.sexo === 'menino' ? '👦' : '👧';
+  return sock.sendMessage(jid, {
+    text: `✅ ${emoji} *${nomeAntigo}* agora se chama *${novoNome}*!`,
+  }, { quoted: msg });
+}
+
+async function handleRenomearFilho(sock, msg, jid, args) {
+  const userId = msg.key.participant || msg.key.remoteJid;
+
+  try {
+    const filhos = await Filho.find(filtroFilhosPorPai(jid, userId)).sort({ nascidoEm: 1 });
+
+    if (filhos.length === 0) {
+      return sock.sendMessage(jid, { text: '👶 Você não tem filhos ainda!' }, { quoted: msg });
+    }
+
+    const texto = (args || '').trim();
+
+    // ── Um único filho: !renomearfilho <novo nome> ────────────────────────────
+    if (filhos.length === 1) {
+      if (!texto) {
+        return sock.sendMessage(jid, {
+          text: `✏️ Use: *!renomearfilho <novo nome>*\nExemplo: *!renomearfilho Enzo*`,
+        }, { quoted: msg });
+      }
+      return _aplicarRenome(sock, msg, jid, filhos[0], texto);
+    }
+
+    // ── Vários filhos: !renomearfilho <número> <novo nome> ────────────────────
+    const match = texto.match(/^(\d+)\s+(.+)$/);
+    if (!match) {
+      const lista = filhos.map((f, i) => `  *${i + 1}.* ${f.nome}`).join('\n');
+      return sock.sendMessage(jid, {
+        text:
+          `✏️ Você tem mais de um filho! Use:\n*!renomearfilho <número> <novo nome>*\n\n` +
+          `Seus filhos:\n${lista}`,
+      }, { quoted: msg });
+    }
+
+    const indice    = parseInt(match[1], 10) - 1;
+    const filhoAlvo = filhos[indice];
+
+    if (!filhoAlvo) {
+      return sock.sendMessage(jid, {
+        text: `❌ Número inválido! Use *!filho* para ver a lista numerada de novo.`,
+      }, { quoted: msg });
+    }
+
+    return _aplicarRenome(sock, msg, jid, filhoAlvo, match[2]);
+
+  } catch (e) {
+    console.error('[handleRenomearFilho] Erro:', e.message);
+    return sock.sendMessage(jid, { text: '⚠️ Erro ao renomear o filho. Tente novamente.' }, { quoted: msg }).catch(() => {});
+  }
+}
+
 // ─── DECAY DIÁRIO (rodar via scheduler) ──────────────────────────────────────
 async function decayFilhos() {
   try {
@@ -458,5 +546,6 @@ module.exports = {
   handleVerFilho,
   handleCuidarFilho,
   handleRemedioFilho,
+  handleRenomearFilho,
   initFilhosScheduler,
 };

@@ -449,7 +449,11 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     }
   );
 
-  await verificarLevelUp(sock, jid, senderJid, atacante);
+  // Sem passar "atacante": ele é o mesmo objeto buscado no início da função,
+  // então xpMedieval ainda está no valor de ANTES do $inc de agora — passar
+  // ele faria o level-up ficar sempre um ataque atrasado (mesma correção já
+  // aplicada em !magia e !missaomed).
+  await verificarLevelUp(sock, jid, senderJid);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -560,7 +564,12 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
   await MedievalPersonagem.updateOne(
     { idWhatsApp: targetJid, idGrupo: jid },
     {
-      $set:  { hp: novoHp, ...(vitoria && { derrotadoEm: new Date(), derrotadoPor: senderJid }) },
+      // Sem "hp: novoHp" aqui — o hp já foi gravado atomicamente lá em cima
+      // (findOneAndUpdate com $subtract). Reescrevê-lo agora reabre a mesma
+      // race condition que aquele update atômico existe pra evitar: se algo
+      // mudou o hp do alvo entre as duas escritas (outro ataque, cura,
+      // poção), esse $set apagaria essa mudança.
+      $set:  { ...(vitoria && { derrotadoEm: new Date(), derrotadoPor: senderJid }) },
       $inc:  { ...(vitoria && { derrotas: 1 }) },
       $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } },
     }

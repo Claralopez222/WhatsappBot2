@@ -500,11 +500,17 @@ async function handleVender(sock, msg, jid, caption) {
     return;
   }
 
-  // Remove os itens do inventário
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId },
+  // Remove do inventário — atômico, só se ainda houver estoque suficiente
+  const removido = await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId, [`inventory.${itemKey}`]: { $gte: quantidade } },
     { $inc: { [`inventory.${itemKey}`]: -quantidade } }
   );
+  if (!removido) {
+    await sock.sendMessage(jid, {
+      text: `⚠️ Estoque de *${itemInfo.nome}* mudou antes da venda ser concluída. Tente novamente.`,
+    }, { quoted: msg });
+    return;
+  }
 
   // Credita o gold
   const totalRecebido = preco * quantidade;
@@ -1013,6 +1019,18 @@ const userId = userIdRaw?.includes('@')
   ? userIdRaw
   : userIdRaw + '@s.whatsapp.net';
 
+  // ── Trava contra corrida: dois !garimpar quase simultâneos do mesmo
+  // usuário passavam os dois pela checagem de cooldown antes que qualquer
+  // um gravasse o timestamp (há awaits no meio) — rendia garimpo em dobro.
+  if (!global._garimpoInFlight) global._garimpoInFlight = new Set();
+  if (global._garimpoInFlight.has(userId)) {
+    await sock.sendMessage(jid, { text: '⏳ Já estou processando seu garimpo, aguarde um instante...' }, { quoted: msg });
+    return;
+  }
+  global._garimpoInFlight.add(userId);
+
+  try {
+
   // ── 1. Checar cache local (chave = userId normalizado) ────────────────────
   const tsCache = garimpoCache.get(userId) ?? 0;
   if (tsCache > 0) {
@@ -1122,6 +1140,10 @@ const userId = userIdRaw?.includes('@')
 
     console.error('⚠️ Erro handleGarimpar:', e.message);
     await sock.sendMessage(jid, { text: '⚠️ Erro ao garimpar! Tente novamente.' }, { quoted: msg });
+  }
+  } finally {
+    // Libera a trava independente do caminho (sucesso, cooldown ou erro)
+    global._garimpoInFlight.delete(userId);
   }
 }
 
@@ -1631,11 +1653,18 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Remover do remetente ──
-  await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId },
+  // ── Remover do remetente — guarda atômica contra estoque negativo em
+  // caso de dois !give quase simultâneos do mesmo item ──
+  const remetenteAtualizado = await Usuario.findOneAndUpdate(
+    { idWhatsApp: userId, [`inventory.${itemKey}`]: { $gte: 1 } },
     { $inc: { [`inventory.${itemKey}`]: -1 } }
   );
+  if (!remetenteAtualizado) {
+    await sock.sendMessage(jid, {
+      text: `⚠️ *${itemInfo.nome}* não estava mais disponível no seu inventário. Tente novamente.`,
+    }, { quoted: msg });
+    return;
+  }
 
   // ── Adicionar ao destinatário ──
   const mentionedNorm = mentionedJid?.endsWith('@lid')

@@ -182,10 +182,25 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
   }
 
   const gold = carteiraAtualizada.gold + item.preco; // gold antes do débito para exibir
-  await MedievalPersonagem.updateOne(
-    { idWhatsApp: senderJid, idGrupo: jid },
-    { $inc: { [chave]: 1 } }
-  );
+
+  try {
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: senderJid, idGrupo: jid },
+      { $inc: { [chave]: 1 } }
+    );
+  } catch (errCredito) {
+    // Se falhar ao creditar o item, estorna o gold pra não sumir com ele
+    // (mesmo padrão já usado em buyroubo/buysec).
+    console.error('⚠️ Erro ao creditar item em !comprar (medieval), estornando:', errCredito.message);
+    await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: senderJid, idGrupo: jid },
+      { $inc: { gold: item.preco } },
+      { upsert: true }
+    ).catch(() => {});
+    return sock.sendMessage(jid, {
+      text: `⚠️ Erro ao registrar o item. Seu gold foi estornado.`,
+    }, { quoted: msg });
+  }
 
   const isPocao = !!pocao;
   await sock.sendMessage(jid, {

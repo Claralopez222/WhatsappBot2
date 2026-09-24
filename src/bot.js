@@ -394,7 +394,10 @@ function formatarNumeroBR(jid) {
 }
 
 function getSenderName(msg) {
-  return msg.pushName || msg.key.remoteJid?.split('@')[0] || 'Usuário';
+  // Em grupos, remoteJid é o JID do GRUPO — usar como fallback de nome
+  // mostrava o número/ID do grupo em vez do usuário quando pushName faltava.
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  return msg.pushName || senderJid?.split('@')[0] || 'Usuário';
 }
 
 // ── Iniciar bot ───────────────────────────────────────────────────────────────
@@ -920,7 +923,7 @@ async function handleMessage(sock, msg) {
 
   // ── ACESSÓRIOS DE CASAL (equipar via .item) ──────────────────────────────────
 // Comandos medievais com prefixo . — precisa vir ANTES do bloco de acessórios
-const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'givemed', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval'];
+const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'givemed', 'saquear', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval'];
 if (!CMDS_MEDIEVAIS.includes(cmdWord.slice(1)) && cmdWord.startsWith('.')) {
   const itemKey = cmdWord.slice(1);
   const { handleEquiparAcessorio } = require(path.join(__dirname, 'handlers', 'diversao', 'acessoriosCasal'));
@@ -938,7 +941,7 @@ if (matchCmd(cmdWord, 'resetsenha'))  {
   await sock.sendMessage(jid, {
     text:
       `🔑 Para resetar sua senha, acesse o painel e use a opção *"Alterar senha"* após fazer login.\n\n` +
-      `🌐 ${PAINEL_URL ?? 'https://piroquinhasbot.github.io/painel-piroquinhas/perfil.html'}`,
+      `🌐 https://piroquinhasbot.github.io/painel-piroquinhas/perfil.html`,
   }, { quoted: msg });
   return;
 }
@@ -961,7 +964,7 @@ if (matchCmd(cmdWord, 'resetsenha'))  {
   if (matchCmd(cmdWord, 'menufig'))
     { await figurinhaHandler.handleMenuFig(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menuefeitos'))
-    { await imagemHandler.handleMenuEfeitos(sock, msg, jid, getPrefix); return; }
+    { await imagemHandler.handleMenuEfeitos(sock, msg, jid, getPrefix(jid)); return; }
   if (matchCmd(cmdWord, 'menuaniversario'))
     { await aniversarioHandler.handleMenuAniversario(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'brincadeiras'))
@@ -1059,6 +1062,12 @@ if (matchCmd(cmdWord, 'invmed'))
   { await medievalLojaHandler.handleInvMed(sock, msg, jid, senderJid, author); return; }
 if (matchCmd(cmdWord, 'sellmed') || matchCmdStart(cmd, 'sellmed '))
   { await medievalLojaHandler.handleSellMed(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]sellmed\s*/i, '')); return; }
+if (matchCmd(cmdWord, 'givemed') || matchCmdStart(cmd, 'givemed ')) {
+  const targetGive = content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || null;
+  const argsGive    = caption.replace(/^[!.,\/]givemed\s*/i, '').replace(/@\d+/g, '').trim();
+  await medievalLojaHandler.handleGiveMed(sock, msg, jid, senderJid, author, targetGive, argsGive);
+  return;
+}
 if (matchCmd(cmdWord, 'usarpocao') || matchCmdStart(cmd, 'usarpocao '))
   { await medievalLojaHandler.handleUsarPocao(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]usarpocao\s*/i, '')); return; }
 if (matchCmd(cmdWord, 'rankmedieval'))
@@ -1286,11 +1295,11 @@ if (matchCmd(cmdWord, 'remediofil'))   { await diversaoHandler.handleRemedioFilh
 
 // ── PINNED ────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'fixar'))
-    { await pinnedHandler.handleFixar(sock, msg, jid); return; }
+    { await pinnedHandler.handleFixar(sock, msg, jid, pinnedMessages); return; }
   if (matchCmd(cmdWord, 'desfixar'))
-    { await pinnedHandler.handleDesfixar(sock, msg, jid); return; }
+    { await pinnedHandler.handleDesfixar(sock, msg, jid, pinnedMessages); return; }
   if (matchCmd(cmdWord, 'pinned') || matchCmd(cmdWord, 'mensagemfixada'))
-    { await pinnedHandler.handlePinned(sock, msg, jid); return; }
+    { await pinnedHandler.handlePinned(sock, msg, jid, pinnedMessages); return; }
 
   // â”€â”€ ANIVERSÃRIOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (matchCmdStart(cmd, 'reganiversario'))

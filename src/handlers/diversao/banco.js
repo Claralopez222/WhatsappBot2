@@ -48,15 +48,16 @@ function formatTimeLeft(ms) {
 // ─── Helpers de acesso ao BD ──────────────────────────────────────────────────
 
 async function resolverUserId(sock, msg) {
-  let userId = msg.key.participant || msg.key.remoteJid;
-  if (userId?.endsWith('@lid')) {
-    try {
-      const number  = userId.split('@')[0].split(':')[0];
-      const results = await sock.onWhatsApp(number);
-      if (results?.length > 0 && results[0].jid) userId = results[0].jid;
-    } catch {}
-  }
-  return userId;
+  const raw = msg.key.participant || msg.key.remoteJid;
+  if (!raw) return raw;
+  // Mesma normalização de economia.js/roubo.js/utils/carteira.js — mantém
+  // @lid como está e só normaliza JIDs de telefone. Garante que !banco
+  // aponte para a MESMA carteira usada por !gold, !comprar etc.
+  // (a versão anterior tentava resolver @lid via sock.onWhatsApp, usando a
+  // parte numérica do @lid como se fosse telefone — nunca é.)
+  return raw.endsWith('@lid')
+    ? raw
+    : raw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
 }
 
 async function getCarteiraGrupo(userId, idGrupo) {

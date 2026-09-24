@@ -96,11 +96,23 @@ function formatarTempo(ms) {
  * usando $inc sobre o campo correto no CarteiraGrupo.
  */
 async function incrementarItem(idWhatsApp, idGrupo, campo, itemSlug, delta = 1) {
+  const filtro = { idWhatsApp, idGrupo };
+
+  // Guarda atômica: só decrementa se ainda houver estoque suficiente —
+  // evita ir a negativo com chamadas concorrentes (ex.: cliques duplos
+  // em !roubar/!roubarbanco quase simultâneos).
+  if (delta < 0) {
+    filtro[`${campo}.${itemSlug}`] = { $gte: -delta };
+  }
+
   return CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp, idGrupo },
+    filtro,
     { $inc: { [`${campo}.${itemSlug}`]: delta } },
-    { upsert: true, new: true }
+    { upsert: delta > 0, new: true }
   );
+  // Se delta < 0 e a guarda falhar, retorna null — os pontos de chamada já
+  // relêem a carteira depois pra decidir se desequipam o slot, então uma
+  // falha aqui só significa "nada mudou", sem quebrar o fluxo.
 }
 
 // ─── !menuroubar ──────────────────────────────────────────────────────────────
@@ -610,6 +622,17 @@ async function handleRoubar(sock, msg, jid) {
     return;
   }
 
+  // ── Confere se ainda tem o item em estoque (mesma checagem do !roubarbanco) ──
+  const qtdItemAtaque = getItemQtd(carteiraAtacante.itensRoubo, itemSlugAtaque);
+  if (qtdItemAtaque <= 0) {
+    await sock.sendMessage(jid, {
+      text:
+        `❌ Você não possui mais *${itemAtaque.nome}* no inventário!\n\n` +
+        `🛒 Compre com *!buyroubo ${itemSlugAtaque}*`,
+    }, { quoted: msg });
+    return;
+  }
+
   // ── Cooldown / Preso ──────────────────────────────────────────────────────────
   const agora = Date.now();
 
@@ -693,15 +716,20 @@ async function handleRoubar(sock, msg, jid) {
     `━━━━━━━━━━━━━━━━\n`;
 
   // ── Consumir item de ataque (sempre, independente do resultado) ──────────
-  await incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1);
+  // Reaproveita o documento retornado pelo próprio decremento — evita um
+  // round-trip extra ao banco só para checar se o estoque zerou.
+  const carteiraAtacanteAtualizada = await incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1);
+  const qtdItemAtaqueRestante = carteiraAtacanteAtualizada
+    ? getItemQtd(carteiraAtacanteAtualizada.itensRoubo, itemSlugAtaque)
+    : Math.max(0, getItemQtd(carteiraAtacante.itensRoubo, itemSlugAtaque) - 1); // fallback se a guarda atômica bloqueou
 
   // ── Consumir item de defesa da vítima (se houver, sempre) ────────────────
   if (itemDefesa) {
-    await incrementarItem(vitimaId, idGrupo, 'itensSec', itemDefesaSlug, -1);
+    const carteiraVitAtualizada = await incrementarItem(vitimaId, idGrupo, 'itensSec', itemDefesaSlug, -1);
+    const qtdDefesaRestante = carteiraVitAtualizada
+      ? getItemQtd(carteiraVitAtualizada.itensSec, itemDefesaSlug)
+      : Math.max(0, getItemQtd(carteiraVitima.itensSec, itemDefesaSlug) - 1);
 
-    // Se o item de defesa acabou, remover o slot equipado
-    const carteiraVitAtualizada = await getCarteira(vitimaId, idGrupo);
-    const qtdDefesaRestante = getItemQtd(carteiraVitAtualizada.itensSec, itemDefesaSlug);
     if (qtdDefesaRestante <= 0) {
       await CarteiraGrupo.findOneAndUpdate(
         { idWhatsApp: vitimaId, idGrupo },
@@ -710,9 +738,6 @@ async function handleRoubar(sock, msg, jid) {
     }
   }
 
-  // ── Verificar se atacante ainda tem o item (para exibir no resultado) ────
-  const carteiraAtacanteAtualizada = await getCarteira(atacanteId, idGrupo);
-  const qtdItemAtaqueRestante = getItemQtd(carteiraAtacanteAtualizada.itensRoubo, itemSlugAtaque);
   if (qtdItemAtaqueRestante <= 0) {
     await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: atacanteId, idGrupo },
@@ -1018,6 +1043,16 @@ async function handleRoubarBanco(sock, msg, jid) {
     return;
   }
 
+  // ── Verificar imunidade da vítima (mesma regra do !roubar) ────────────────
+  const imunidadeAte = _tsOuZero(carteiraVitima.imunidadeRouboAte);
+  if (agora < imunidadeAte) {
+    const restante = imunidadeAte - agora;
+    await sock.sendMessage(jid, {
+      text: `🛡️ *VÍTIMA IMUNE!*\n\nEssa pessoa foi roubada recentemente e está protegida por mais *${formatarTempo(restante)}*.`,
+    }, { quoted: msg });
+    return;
+  }
+
   // ── Preso? ────────────────────────────────────────────────────────────────
   const prestoAte = _tsOuZero(carteiraAtacante.prestoAte);
   if (agora < prestoAte) {
@@ -1085,9 +1120,10 @@ async function handleRoubarBanco(sock, msg, jid) {
     const pct          = Math.floor(Math.random() * (max - min + 1)) + min;
     const valorRoubado = Math.max(1, Math.floor(saldoBanco * pct / 100));
 
-    // Debitar do banco da vítima atomicamente
+    // Debitar do banco da vítima só se ainda houver saldo suficiente —
+    // evita banco.amount negativo com assaltos concorrentes.
     await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: vitimaId, idGrupo },
+      { idWhatsApp: vitimaId, idGrupo, 'banco.amount': { $gte: valorRoubado } },
       { $inc: { 'banco.amount': -valorRoubado } }
     );
 
@@ -1096,10 +1132,12 @@ async function handleRoubarBanco(sock, msg, jid) {
       atacanteId, idGrupo, valorRoubado, `Assaltou banco de ${vitimaId}`
     );
 
-    // Consumir item de ataque
-    await incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1);
-    const carteiraAtacanteAtualizada = await getCarteira(atacanteId, idGrupo);
-    const qtdRestante = getItemQtd(carteiraAtacanteAtualizada.itensRoubo, itemSlugAtaque);
+    // Consumir item de ataque — reaproveita o doc retornado pelo decremento
+    // em vez de buscar a carteira de novo.
+    const carteiraAtacanteAtualizada = await incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1);
+    const qtdRestante = carteiraAtacanteAtualizada
+      ? getItemQtd(carteiraAtacanteAtualizada.itensRoubo, itemSlugAtaque)
+      : Math.max(0, getItemQtd(carteiraAtacante.itensRoubo, itemSlugAtaque) - 1);
     if (qtdRestante <= 0) {
       await CarteiraGrupo.findOneAndUpdate(
         { idWhatsApp: atacanteId, idGrupo },
@@ -1139,8 +1177,9 @@ async function handleRoubarBanco(sock, msg, jid) {
         { idWhatsApp: atacanteId, idGrupo },
         { $set: { prestoAte: new Date(agora + COOLDOWN_PRESO_BANCO_MS) } }
       ),
-      // Multa em gold
-      alterarGold(atacanteId, idGrupo, -multa, 'Multa por falha no assalto ao banco'),
+      // Multa em gold — versão "segura" que nunca lança erro por saldo
+      // insuficiente, só debita o que houver (evita crash com gold baixo/zerado).
+      alterarGoldSeguro(atacanteId, idGrupo, -multa, 'Multa por falha no assalto ao banco'),
       // Consome 1 item equipado
       incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1),
     ]);

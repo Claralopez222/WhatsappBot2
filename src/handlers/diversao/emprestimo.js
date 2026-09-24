@@ -2,6 +2,7 @@
 
 const path = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 // Usuario removido — level agora vem do grupo
 
 // ─── Configuração ─────────────────────────────────────────────────────────────
@@ -179,9 +180,14 @@ async function enviarErro(sock, msg, jid, texto) {
   await sock.sendMessage(jid, { text: `❌ *Erro:* ${texto}` }, { quoted: msg });
 }
 
-/** Extrai o ID do usuário da mensagem. */
-function getUserId(msg) {
-  return msg.key.participant || msg.key.remoteJid;
+/**
+ * Extrai e resolve o ID do usuário para o MESMO jid que getCarteira/
+ * alterarGold usam (via LidMapping) — sem isso, o empréstimo podia ficar
+ * numa carteira diferente da usada por !gold, !banco etc.
+ */
+async function getUserId(msg, idGrupo) {
+  const raw = msg.key.participant || msg.key.remoteJid;
+  return resolverJidCarteira(raw, idGrupo);
 }
 
 // ─── Operações de banco reutilizáveis ────────────────────────────────────────

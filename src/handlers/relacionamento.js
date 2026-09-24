@@ -182,6 +182,9 @@ const ITEM_NECESSARIO = {
 // Comandos que NÃO exigem item do inventário (carinhos "gratuitos")
 const CARINHOS_SEM_ITEM = new Set(['abraco', 'beijo']);
 
+// Comandos que funcionam mesmo sem estar em relacionamento (exigem @menção)
+const CARINHOS_SEM_RELACIONAMENTO = new Set(['abraco']);
+
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
   // ── Normaliza o JID de quem enviou o comando ──
   const senderJidNormalizado = jidNormalizedUser(senderJid);

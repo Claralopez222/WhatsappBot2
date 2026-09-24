@@ -22,7 +22,7 @@ let alterarGold;
 
 try {
   CarteiraGrupo = require('../../models/CarteiraGrupo');
-  ({ getCarteira, alterarGold } = require('../../utils/carteira'));
+  ({ getCarteira, alterarGold, resolverJidCarteira } = require('../../utils/carteira'));
 } catch (err) {
   console.error(
     '[Emprego] ERRO CRÍTICO: Não foi possível importar dependências.\n' +
@@ -131,10 +131,10 @@ function msParaAbertura(ts = Date.now()) {
 }
 
 async function resolverContexto(sock, msg, jid) {
-  const userId  = getUserId(msg);
-  const groupId = getGroupId(msg);
+  const userIdRaw = getUserId(msg);
+  const groupId   = getGroupId(msg);
 
-  if (!userId) {
+  if (!userIdRaw) {
     await reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
     return null;
   }
@@ -144,6 +144,15 @@ async function resolverContexto(sock, msg, jid) {
     );
     return null;
   }
+
+  // Resolve para o MESMO jid que getCarteira/alterarGold usam internamente
+  // (via LidMapping) — sem isso, os writes diretos abaixo (findOneAndUpdate
+  // com o jid "cru") caem num documento diferente do lido por getCarteira,
+  // fazendo cargo e turnos sumirem silenciosamente para quem usa @lid.
+  const userId = resolverJidCarteira
+    ? await resolverJidCarteira(userIdRaw, groupId)
+    : userIdRaw;
+
   return { userId, groupId };
 }
 

@@ -2,6 +2,7 @@
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // Itens de casal que podem ser EQUIPADOS (cada um é seu próprio "slot")
 const ACESSORIOS_CASAL = {
@@ -23,8 +24,12 @@ async function handleEquiparAcessorio(sock, msg, jid, senderJid, itemKey) {
   const item = ACESSORIOS_CASAL[itemKey];
   if (!item) return false; // não é um acessório de casal, ignora
 
+  // Mesma normalização usada em relacionamento.js — evita que o mesmo
+  // usuário acabe com dois documentos Usuario diferentes.
+  const senderJidNorm = jidNormalizedUser(senderJid);
+
   try {
-    const userData = await Usuario.findOne({ idWhatsApp: senderJid }).lean();
+    const userData = await Usuario.findOne({ idWhatsApp: senderJidNorm }).lean();
 
     // ── Verifica se o usuário possui o item no inventário ──
     const possui = (userData?.inventory?.[itemKey] || 0) > 0;
@@ -42,7 +47,7 @@ async function handleEquiparAcessorio(sock, msg, jid, senderJid, itemKey) {
     const novoEstado = !equipadoAtual;
 
     await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJid },
+      { idWhatsApp: senderJidNorm },
       { $set: { [`acessoriosCasal.${itemKey}`]: novoEstado } },
       { upsert: true }
     );

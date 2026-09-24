@@ -273,8 +273,7 @@ async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
       `📊 *RANKING E HISTÓRICO*\n` +
       `▸ *!rankmedieval* — Ranking de guerreiros\n` +
         `▸ *!historico* — Suas últimas batalhas\n` +
-        `▸ *!menumediev* — Ver todos os comandos\n` +
-        `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
+        `▸ *!menumediev* — Ver todos os comandos\n\n` +
         `_Use *!ficha* para criar seu personagem!_ ⚔️`,
     }, { quoted: msg });
   } else {
@@ -376,7 +375,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   }
 
   // Anti-farm: limita XP contra o mesmo alvo a 1 vez por cooldown de ataque
-  const chaveAntiFarm = `ataque:${senderJid}:${targetJid}`;
+  const chaveAntiFarm = `ataque:${jid}:${senderJid}:${targetJid}`;
   if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
   const ultimoContraEsse = global._medievalFarmCache.get(chaveAntiFarm) || 0;
   const farmBloqueado    = (Date.now() - ultimoContraEsse) < CD_ATAQUE;
@@ -497,7 +496,7 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 
   // Anti-farm para magia — cache compartilhado com !atacar
   if (!global._medievalFarmCache) global._medievalFarmCache = new Map();
-  const chaveAntiFarmMagia  = `magia:${senderJid}:${targetJid}`;
+  const chaveAntiFarmMagia  = `magia:${jid}:${senderJid}:${targetJid}`;
 const ultimoMagia         = global._medievalFarmCache.get(chaveAntiFarmMagia) || 0;
 if ((Date.now() - ultimoMagia) < CD_MAGIA) {
     return sock.sendMessage(jid, {
@@ -567,7 +566,9 @@ if ((Date.now() - ultimoMagia) < CD_MAGIA) {
     }
   );
 
-  await verificarLevelUp(sock, jid, senderJid, atacante);
+  // Sem passar o objeto local: força leitura fresca do banco, já que o
+  // $inc de xpMedieval acima não atualiza a variável "atacante" em memória.
+  await verificarLevelUp(sock, jid, senderJid);
 }
 // ═══════════════════════════════════════════════════════════════
 // ─── !missaomed ────────────────────────────────────────────────
@@ -650,14 +651,24 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
 
     await verificarLevelUp(sock, jid, senderJid);
   } else {
-    const danoTomado  = Math.floor(Math.random() * 30) + 10;
-    const novoHp      = Math.max(5, p.hp - danoTomado);
-    const danoReal    = p.hp - novoHp; // dano efetivo considerando o teto mínimo de 5
+    const danoTomado = Math.floor(Math.random() * 30) + 10;
 
-    await MedievalPersonagem.updateOne(
+    // Aplica o dano atomicamente a partir do HP atual no banco — evita que
+    // um ataque/magia simultâneo seja sobrescrito por este update (mesma
+    // race condition corrigida em !atacar e !magia).
+    const atualizado = await MedievalPersonagem.findOneAndUpdate(
       { idWhatsApp: senderJid, idGrupo: jid },
-      { $set: { ultimaMissao: new Date(), hp: novoHp }, $inc: { xpMedieval: 10 } }
+      [{
+        $set: {
+          hp:           { $max: [5, { $subtract: ['$hp', danoTomado] }] },
+          xpMedieval:   { $add: ['$xpMedieval', 10] },
+          ultimaMissao: new Date(),
+        },
+      }],
+      { new: true }
     );
+    const novoHp   = atualizado.hp;
+    const danoReal = p.hp - novoHp; // aproximado, só para exibição na mensagem
 
     await sock.sendMessage(jid, {
       text:
@@ -692,16 +703,25 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
     }, { quoted: msg });
   }
 
-  const hpRecupera  = Math.floor(p.hpMax * 0.6);
-  const hpAntes     = p.hp;
-  const novoHp      = Math.min(p.hpMax, p.hp + hpRecupera);
-  const hpGanho     = novoHp - hpAntes;
-  const novaMana    = p.manaMax;
-
-  await MedievalPersonagem.updateOne(
+  // Aplica a cura atomicamente a partir do HP atual no banco — evita perder
+  // dano sofrido enquanto a recarga estava em andamento (mesma race
+  // condition de !atacar/!magia/!missaomed).
+  const atualizado = await MedievalPersonagem.findOneAndUpdate(
     { idWhatsApp: senderJid, idGrupo: jid },
-    { $set: { ultimaRecarga: new Date(), hp: novoHp, mana: novaMana } }
+    [{
+      $set: {
+        hp:            { $min: ['$hpMax', { $add: ['$hp', { $floor: { $multiply: ['$hpMax', 0.6] } }] }] },
+        mana:          '$manaMax',
+        ultimaRecarga: new Date(),
+      },
+    }],
+    { new: true }
   );
+
+  const hpAntes  = p.hp;
+  const novoHp   = atualizado.hp;
+  const hpGanho  = novoHp - hpAntes; // aproximado, só para exibição
+  const novaMana = atualizado.mana;
 
   // Mensagem diferente se já estava com HP cheio
   const hpTexto = hpGanho > 0

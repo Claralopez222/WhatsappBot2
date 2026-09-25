@@ -93,31 +93,43 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
   const tipo      = valor >= 0 ? 'recebido' : 'gasto';
   const absValor  = Math.abs(valor);
 
-  // Garante que o saldo nunca fique negativo: usa $max para travar no mínimo
-  // Para débitos: verifica antes se há saldo suficiente
-  if (valor < 0) {
-    const carteira = await getCarteira(idWhatsApp, idGrupo);
-    if ((carteira.gold ?? 0) + valor < GOLD_MIN) {
-      throw new RangeError(
-        `carteiraService.alterarGold: saldo insuficiente. ` +
-        `Atual: ${carteira.gold} | Tentativa de débito: ${absValor}`
-      );
-    }
-  }
-
-  return CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp, idGrupo },
-    {
-      $inc: { gold: valor },
-      $push: {
-        goldHistory: {
-          $each:  [{ type: tipo, item: descricao.trim(), amount: absValor }],
-          $slice: -GOLD_HISTORY_LIMITE,
-        },
+  const pushGoldHistory = {
+    $push: {
+      goldHistory: {
+        $each:  [{ type: tipo, item: descricao.trim(), amount: absValor }],
+        $slice: -GOLD_HISTORY_LIMITE,
       },
     },
-    { upsert: true, new: true }
+  };
+
+  if (valor >= 0) {
+    // Crédito: não precisa checar saldo, upsert simples
+    return CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp, idGrupo },
+      { $inc: { gold: valor }, ...pushGoldHistory },
+      { upsert: true, new: true }
+    );
+  }
+
+  // Débito: checagem de saldo ATÔMICA — o filtro "gold >= absValor" garante
+  // que duas chamadas concorrentes não passem ambas pela validação.
+  // Não usa upsert aqui: se o documento não existir ainda, gold=0 e o filtro
+  // já reprova, então cai no bloco abaixo com "carteira não encontrada".
+  const atualizado = await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp, idGrupo, gold: { $gte: absValor } },
+    { $inc: { gold: valor }, ...pushGoldHistory },
+    { new: true }
   );
+
+  if (!atualizado) {
+    const carteira = await getCarteira(idWhatsApp, idGrupo); // só para reportar o saldo atual no erro
+    throw new RangeError(
+      `carteiraService.alterarGold: saldo insuficiente. ` +
+      `Atual: ${carteira.gold} | Tentativa de débito: ${absValor}`
+    );
+  }
+
+  return atualizado;
 }
 
 // ─── alterarGoldSeguro ────────────────────────────────────────────────────────
@@ -207,10 +219,25 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
   const numDe   = deIdWhatsApp.split('@')[0].split(':')[0];
   const numPara = paraIdWhatsApp.split('@')[0].split(':')[0];
 
-  const carteiraDE   = await alterarGold(deIdWhatsApp,  idGrupo, -valor, `${label} para @${numPara}`);
-  const carteiraPARA = await alterarGold(paraIdWhatsApp, idGrupo,  valor, `${label} de @${numDe}`);
+  const carteiraDE = await alterarGold(deIdWhatsApp, idGrupo, -valor, `${label} para @${numPara}`);
 
-  return { de: carteiraDE, para: carteiraPARA };
+  try {
+    const carteiraPARA = await alterarGold(paraIdWhatsApp, idGrupo, valor, `${label} de @${numDe}`);
+    return { de: carteiraDE, para: carteiraPARA };
+  } catch (e) {
+    // ✅ Se o crédito falhar depois do débito ter passado, devolve o gold
+    // para não deixá-lo sumir. Sem transação real (precisa de replica set),
+    // isso é um "best effort" de compensação.
+    try {
+      await alterarGold(deIdWhatsApp, idGrupo, valor, `estorno: falha ao transferir para @${numPara}`);
+    } catch (estornoErr) {
+      console.error(
+        `❌ FALHA CRÍTICA: débito de ${valor} gold de ${deIdWhatsApp} não pôde ser estornado. ` +
+        `Motivo original: ${e.message} | Motivo do estorno: ${estornoErr.message}`
+      );
+    }
+    throw e;
+  }
 }
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────

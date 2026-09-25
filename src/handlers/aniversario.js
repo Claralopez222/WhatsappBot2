@@ -152,6 +152,22 @@ async function handleListAniversarios(sock, msg, jid) {
     return reply(sock, chatJid, msg, '❌ Erro ao carregar lista. Tente novamente!');
   }
 
+  // Aniversario é um registro global por telefone (sem idGrupo). Sem
+  // filtrar, !listaniversarios num grupo expõe datas de pessoas de OUTROS
+  // grupos que nunca estiveram neste chat. Restringe aos membros do grupo
+  // atual quando o comando é usado dentro de um grupo.
+  if (chatJid.endsWith('@g.us')) {
+    try {
+      const meta = await sock.groupMetadata(chatJid);
+      const membrosSet = new Set(
+        meta.participants.flatMap(p => [p.id, p.lid]).filter(Boolean).map(id => id.toLowerCase())
+      );
+      list = list.filter(entry => membrosSet.has(jidNormalizedUser(entry.idWhatsApp).toLowerCase()));
+    } catch (e) {
+      console.error('⚠️ Erro ao filtrar aniversários por grupo:', e.message);
+    }
+  }
+
   if (!list.length) {
     return reply(sock, chatJid, msg, '📋 Nenhum aniversário registrado ainda.');
   }

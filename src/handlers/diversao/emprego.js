@@ -375,8 +375,25 @@ async function handleProcurarEmprego(sock, msg, jid) {
 
 function calcularTempoForaHorario(desde, ate) {
   const PASSO = 60_000; // 1 minuto em ms
-  let fora    = 0;
-  let cursor  = desde;
+
+  // Atalho: mesmo que 100% do tempo decorrido fosse "fora do horário"
+  // (11h de folga por dia), depois de alguns dias sem bater ponto o
+  // resultado final já é demissão de qualquer forma. Evita iterar
+  // minuto a minuto por meses quando o usuário some por muito tempo.
+  const bruto = ate - desde;
+  const HORAS_ABERTAS_POR_DIA = HORARIO.FIM_MIN - HORARIO.INICIO_MIN; // minutos
+  const FOLGA_MAX_POR_DIA_MS = (24 * 60 - HORAS_ABERTAS_POR_DIA) * 60_000;
+  const DIAS_MARGEM = Math.ceil(bruto / (24 * 60 * 60_000)) + 1;
+  const tetoForaHorario = FOLGA_MAX_POR_DIA_MS * DIAS_MARGEM;
+
+  if (bruto - tetoForaHorario >= TEMPO.DEMISSAO_MS) {
+    // Mesmo no cenário mais favorável ao usuário, já passou do prazo —
+    // não precisa iterar minuto a minuto para saber que é demissão.
+    return tetoForaHorario;
+  }
+
+  let fora   = 0;
+  let cursor = desde;
 
   while (cursor < ate) {
     const min = getMinutosBrasilia(cursor);

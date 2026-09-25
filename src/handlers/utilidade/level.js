@@ -2,6 +2,7 @@
 
 const path          = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ─────────────────────────────────────────────────────────────────────────
 // ⚠️ IMPORTANTE — Identidade do usuário (idWhatsApp)
@@ -77,7 +78,11 @@ async function handleLevel(sock, msg, jid) {
   const remetente = normalizarRemetente(msg);
   if (!remetente) return;
 
-  const { fullJid, numero } = remetente;
+  const { numero } = remetente;
+  // Resolve para o MESMO jid que a carteira real usa (@lid ↔ @pn) — sem
+  // isso, quem tem carteira salva sob o outro formato aparecia como
+  // "sem XP registrado" mesmo tendo XP acumulado.
+  const fullJid = await resolverJidCarteira(remetente.fullJid, jid);
 
   try {
     const doc = await CarteiraGrupo.findOne({ idWhatsApp: fullJid, idGrupo: jid });
@@ -130,10 +135,14 @@ async function handleRankLevel(sock, msg, jid) {
   try {
     const metadata = await sock.groupMetadata(jid);
 
+    // Inclui p.id E p.lid — a carteira de um membro pode estar salva sob
+    // qualquer um dos dois formatos; faltando um deles, esse membro sumia
+    // do ranking por engano.
     const membrosSet = new Set(
       metadata.participants
-        .map(p => p.id?.toLowerCase())
+        .flatMap(p => [p.id, p.lid])
         .filter(Boolean)
+        .map(id => id.toLowerCase())
     );
 
     if (membrosSet.size === 0) {

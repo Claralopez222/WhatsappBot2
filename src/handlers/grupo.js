@@ -2,6 +2,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { normalizarJid } = require('../utils/jid');
 
 // ─── Import handleRanking do economia ────────────────────────────────────────
 
@@ -462,13 +463,19 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   }
 
   // ── Mute individual ────────────────────────────────────────
-  const targetJid = await resolveTargetJid(sock, msg, content, jid);
-  if (!targetJid) {
+  const targetJidRaw = await resolveTargetJid(sock, msg, content, jid);
+  if (!targetJidRaw) {
     await sock.sendMessage(jid, {
       text: '⚠️ Marque alguém.\nExemplo: *!mute @fulano* ou *!mute @all*',
     }, { quoted: msg });
     return;
   }
+
+  // Normaliza (remove sufixo de dispositivo, ex: ":5") antes de usar como
+  // chave — resolveTargetJid via reply pode devolver o JID cru, e a
+  // checagem de isMuted() no bot.js usa sempre o JID normalizado. Sem
+  // isso, quem é mutado por reply pode continuar falando sem ser detectado.
+  const targetJid = normalizarJid(targetJidRaw) || targetJidRaw;
 
   if (isBotJid(targetJid, botJid)) {
     await sock.sendMessage(jid, { text: '🤖 Não é possível mutar o bot.' }, { quoted: msg });
@@ -721,7 +728,27 @@ const MAX_POLL_OPTIONS = 12;
 // need tallies to survive that.
 const activePolls = new Map();
 
+// Limpeza periódica — mesmo padrão de _slowModeLastMsg / _antiFloodMsgs:
+// sem isso, activePolls cresce pra sempre enquanto o bot roda, já que
+// nada nunca deleta uma entrada depois que a enquete é criada.
+const POLL_TTL_MS = 24 * 60 * 60 * 1000; // enquetes "expiram" da memória após 24h
+let ultimaLimpezaPolls = 0;
+
+function limparPollsAntigos() {
+  const agora = Date.now();
+  if (agora - ultimaLimpezaPolls < 5 * 60 * 1000) return; // no máx a cada 5min
+  ultimaLimpezaPolls = agora;
+
+  for (const [id, poll] of activePolls.entries()) {
+    if (agora - (poll.createdAt || 0) > POLL_TTL_MS) {
+      activePolls.delete(id);
+    }
+  }
+}
+
 async function handleEnquete(sock, msg, jid, caption) {
+  limparPollsAntigos();
+
   const texto = caption.replace(/^[!.,\/]enquete\s*/i, '').trim();
   if (!texto) {
     await sock.sendMessage(jid, {
@@ -808,6 +835,7 @@ async function handleEnquete(sock, msg, jid, caption) {
     options: opcoesFinais,
     jid,
     tallies: new Map(opcoesFinais.map(o => [o, 0])),
+    createdAt: Date.now(),
   });
 }
 
@@ -1143,8 +1171,12 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
   }
   if (!await checkAdmin(sock, msg, jid, 'reportar')) return;
 
-  const quotedMsg   = content.extendedTextMessage?.contextInfo?.quotedMessage;
-  const reportedJid = content.extendedTextMessage?.contextInfo?.participant;
+  const quotedMsg      = content.extendedTextMessage?.contextInfo?.quotedMessage;
+  const reportedJidRaw = content.extendedTextMessage?.contextInfo?.participant;
+  // Normaliza igual ao resto do arquivo (ex: handleDesmute) — o Baileys
+  // costuma já entregar isso normalizado, mas gravar o JID cru no Mongo
+  // pode duplicar o mesmo usuário sob chaves diferentes se algum dia não vier.
+  const reportedJid    = reportedJidRaw ? normalizarJid(reportedJidRaw) : null;
 
   if (!quotedMsg || !reportedJid) {
     await sock.sendMessage(jid, {
@@ -1152,7 +1184,7 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
     }, { quoted: msg }); return;
   }
 
-  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderJid = normalizarJid(msg.key.participant || msg.key.remoteJid);
   if (reportedJid === senderJid) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se reportar.' }, { quoted: msg }); return;
   }
@@ -1234,14 +1266,18 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
 
   if (!await checkAdmin(sock, msg, jid, 'removerreporte')) return;
 
-  const senderJid  = msg.key.participant || msg.key.remoteJid;
+  const senderJid  = normalizarJid(msg.key.participant || msg.key.remoteJid);
   const senderBase = normalizeJidBase(senderJid);
 
   // ── Resolve o alvo: reply tem prioridade sobre menção ──
-  const targetJid =
+  // Normaliza igual ao resto do arquivo (ex: handleDesmute, handleReportar)
+  // para gravar/ler sempre a mesma chave no Mongo, independente de o
+  // Baileys entregar o JID com ou sem sufixo de dispositivo.
+  const targetJidRaw =
     content.extendedTextMessage?.contextInfo?.participant ??
     content.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ??
     null;
+  const targetJid = targetJidRaw ? normalizarJid(targetJidRaw) : null;
 
   if (!targetJid) {
     return sock.sendMessage(jid, {
@@ -1648,6 +1684,16 @@ async function handleApagarMsg(sock, msg, content, jid) {
 // Cache em memória só para os timestamps das últimas mensagens — não precisa persistir
 if (!global._slowModeLastMsg) global._slowModeLastMsg = new Map();
 
+// As chaves reais são "jid:userJid" — um simples .delete(jid) nunca bate
+// com nada e não limpa nada de fato. Isso remove todas as entradas de
+// um grupo específico, varrendo pelo prefixo.
+function limparSlowModeDoGrupo(jid) {
+  const prefixo = `${jid}:`;
+  for (const chave of global._slowModeLastMsg.keys()) {
+    if (chave.startsWith(prefixo)) global._slowModeLastMsg.delete(chave);
+  }
+}
+
 async function handleSlowMode(sock, msg, jid, caption) {
   if (!jid.endsWith('@g.us')) {
     await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
@@ -1669,7 +1715,7 @@ async function handleSlowMode(sock, msg, jid, caption) {
       { $set: { slowModeAtivo: false } },
       { upsert: true }
     );
-    global._slowModeLastMsg.delete(jid);
+    limparSlowModeDoGrupo(jid);
     await sock.sendMessage(jid, { text: '⏱️❌ *Slow Mode desativado!*' }, { quoted: msg });
     return;
   }
@@ -1705,7 +1751,7 @@ async function handleSlowMode(sock, msg, jid, caption) {
     { upsert: true }
   );
   // Limpa cache de timestamps ao mudar configuração
-  global._slowModeLastMsg.delete(jid);
+  limparSlowModeDoGrupo(jid);
   await sock.sendMessage(jid, {
     text: `⏱️✅ *Slow Mode ativado!*\n_Intervalo: 1 mensagem a cada *${seg}s* por usuário._`,
   }, { quoted: msg });
@@ -1996,7 +2042,8 @@ async function handleAdvertencia(sock, msg, jid) {
     );
   }
 
-  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderJidRaw = msg.key.participant || msg.key.remoteJid;
+  const senderJid     = senderJidRaw ? normalizarJid(senderJidRaw) : null;
   if (!senderJid) return;
 
   const groupKey = jid.replace(/\./g, '_');
@@ -2188,7 +2235,7 @@ module.exports = {
   handlePromoverRebaixar,
 
   // Informação e listas
-  
+  handleRanking,
   handleGrupInfo,
   handleListaAdm,
   handleListaMembros,

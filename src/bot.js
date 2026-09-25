@@ -241,6 +241,7 @@ const activeGroups     = new Set();
 const pedidosPendentes = new Map();
 const pinnedMessages   = new Map(Object.entries(_savedData.pinnedMessages || {}));
 const lastTexts        = new Map();
+let botJid              = null; // ✅ evita ReferenceError antes da 1ª conexão abrir
 
 // ─── Limpeza de arquivos temporários ───────────────────────────────────────
 const TMP_DIR = path.resolve(__dirname, '../tmp');
@@ -273,35 +274,53 @@ function limparTmpAntigos(maxAgeMs = 10 * 60 * 1000) {
 }
 
 // ── XP do usuário ─────────────────────────────────────────────────────────────
+// Única fonte de verdade para XP/mensagens/level/missões do Usuario global.
+// Chamada uma vez por mensagem (privada ou de grupo) em handleMessage().
+// NUNCA incremente xp/mensagens do Usuario em outro lugar — sempre passe por aqui.
 async function addUserXp(userId, xp = 1, pushName = null) {
   if (!userId) return null;
 
-  // Normaliza o JID antes de qualquer operação
   const userIdNorm = normalizarJid(userId);
-if (!userIdNorm) return null;
+  if (!userIdNorm) return null;
 
   try {
-    await prepareDailyMissionState(userIdNorm);
+    // Resolve para @lid se houver mapeamento e já existir Usuario salvo nesse @lid
+    let idAlvo = userIdNorm;
+    if (!userIdNorm.endsWith('@lid')) {
+      const lidMap = await LidMapping.findOne({ pn: userIdNorm }).lean();
+      if (lidMap?.lid && await Usuario.exists({ idWhatsApp: lidMap.lid })) {
+        idAlvo = lidMap.lid;
+      }
+    }
+
+    await prepareDailyMissionState(idAlvo);
+
+    const hojeISO = new Date().toISOString().slice(0, 10);
 
     const update = {
-      $inc: { xp, mensagens: 1, 'dailyMissions.progress.xp100': xp },
-      $setOnInsert: { level: 1, idWhatsApp: userIdNorm, createdAt: new Date() },
+      $inc: {
+        xp,
+        mensagens: 1,
+        'dailyMissions.progress.xp100': xp,
+        'dailyMissions.progress.msg50': 1,
+        [`xpHistory.${hojeISO}`]: xp,
+      },
+      $setOnInsert: { level: 1, idWhatsApp: idAlvo, createdAt: new Date() },
     };
     if (pushName) update.$set = { nome: pushName };
 
     const updated = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userIdNorm },
+      { idWhatsApp: idAlvo },
       update,
       { new: true, upsert: true }
     );
 
-    // Mesma fórmula do bot.js — progressão exponencial
     const xpAtual   = updated?.xp ?? 0;
     const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
 
     if ((updated?.level ?? 1) !== levelNovo) {
       await Usuario.findOneAndUpdate(
-        { idWhatsApp: userIdNorm },
+        { idWhatsApp: idAlvo }, // ✅ agora usa o mesmo id resolvido, nunca o "cru"
         { $set: { level: levelNovo } }
       );
       updated.level = levelNovo;
@@ -441,6 +460,9 @@ async function startBot() {
   // ── Credenciais ───────────────────────────────────────────────────────────────
   sock.ev.on('creds.update', saveCreds);
 
+  // ── Votos de enquete (decripta e tabula pollUpdates) ──────────────────────────
+  grupoHandler.registerPollVoteHandler(sock);
+
   // ── Atualizar nomes de contato ────────────────────────────────────────────────
   sock.ev.on('contacts.upsert', cs => {
     for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
@@ -528,47 +550,25 @@ const carteiraAtual = await CarteiraGrupo.findOne(
     }).catch(() => {});
   }
 } else {
-  await CarteiraGrupo.findOneAndUpdate(
+  // ✅ Carteira nova: também é a "primeira mensagem do dia", então paga o bônus
+  const carteiraCriada = await CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: remetenteReal, idGrupo: _jid },
-    { $inc: { mensagens: 1, xp: 1 }, $set: { nome: nomeDoCara, ultimoBonusDiario: new Date() } },
-    { upsert: true }
+    {
+      $inc: { mensagens: 1, xp: 1, gold: 100 },
+      $set: { nome: nomeDoCara, ultimoBonusDiario: new Date() },
+    },
+    { upsert: true, new: true }
   );
+
+  await sock.sendMessage(_jid, {
+    text: `🪙 *${nomeDoCara}*, você ganhou seu bônus diário de *100 gold*! Volte amanhã para ganhar mais. 💰`,
+    mentions: [remetenteReal],
+  }).catch(() => {});
 }
 
-            // ── Usuario global: XP global, level e missões ────────────────────
-            const hojeISO = new Date().toISOString().slice(0, 10);
-
-            // Resolve qual idWhatsApp o Usuario está salvo (pode ser @lid ou @s.whatsapp.net)
-            const lidMapUsuario = remetenteNorm.endsWith('@lid')
-              ? null
-              : await LidMapping.findOne({ pn: remetenteNorm }).lean();
-            const idWhatsAppUsuario = lidMapUsuario?.lid
-              ? (await Usuario.exists({ idWhatsApp: lidMapUsuario.lid }) ? lidMapUsuario.lid : remetenteNorm)
-              : remetenteNorm;
-
-            const usuarioAtualizado = await Usuario.findOneAndUpdate(
-              { idWhatsApp: idWhatsAppUsuario },
-              {
-                $inc: {
-                  mensagens: 1,
-                  xp: 1,
-                  'dailyMissions.progress.msg50': 1,
-                  [`xpHistory.${hojeISO}`]: 1,
-                },
-                $set: { nome: nomeDoCara },
-              },
-              { upsert: true, new: true }
-            );
-
-            const xpAtual   = usuarioAtualizado?.xp ?? 0;
-            const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
-
-            if ((usuarioAtualizado?.level ?? 1) !== levelNovo) {
-              await Usuario.findOneAndUpdate(
-                { idWhatsApp: remetenteNorm },
-                { $set: { level: levelNovo } }
-              );
-            }
+            // Usuario global (xp, mensagens, level, missões, xpHistory) agora é
+            // tratado inteiramente por addUserXp(), chamada mais abaixo em
+            // handleMessage(). Não duplicar aqui.
           }
 
           await handleMessage(sock, msg);

@@ -120,12 +120,7 @@ const usuarioSchema = new mongoose.Schema({
   // ── Missões diárias ──────────────────────────────────────────
   dailyMissions: { type: dailyMissionsSchema, default: () => ({}) },
 
-  // ── Roubo ────────────────────────────────────────────────────
-  itensRoubo:  { type: Map,    of: Number, default: {} },
-  itensSec:    { type: Map,    of: Number, default: {} },
-  equiparoubo: { type: String, default: null },
-  equiparsec:  { type: String, default: null },
-  ultimoRoubo: { type: Date,   default: null },
+
 
   // ── Acessórios de casal equipados (itemKey → boolean) ────────
   acessoriosCasal: { type: Map, of: Boolean, default: {} },

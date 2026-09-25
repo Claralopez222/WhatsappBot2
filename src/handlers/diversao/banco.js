@@ -99,9 +99,13 @@ async function handleBanco(sock, msg, jid, caption) {
   const carteira = await getCarteiraGrupo(userId, idGrupo);
   const banco    = carteira.banco ?? {};
   const today    = new Date().toISOString().split('T')[0];
-  
-  // 🔥 NOVO: Pega o level do usuário e calcula o limite diário dinâmico
-  const userLevel    = carteira.level ?? 1;
+
+  // ── Calcula o level DINAMICAMENTE a partir do xp — o campo carteira.level
+  // só é atualizado via CarteiraGrupo.incrementXp() ou .save(), mas o ganho
+  // de xp por mensagem no bot.js usa $inc direto (findOneAndUpdate), que NÃO
+  // dispara nenhum dos dois. Ler carteira.level aqui sempre devolvia 1,
+  // travando todo mundo no limite mínimo (100000, nível 1-4).
+  const userLevel    = CarteiraGrupo.levelFromXp(carteira.xp ?? 0);
   const limiteDiario = calcularLimiteBanco(userLevel);
 
   // ── Resetar limite diário se necessário ─────────────────────────────────────

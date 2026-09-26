@@ -66,7 +66,7 @@ function gerarVariantesNumero(termo) {
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
-const { prepareDailyMissionState } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
+const { prepareDailyMissionState, incrementMission } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
 
 const figurinhaHandler      = require(path.join(__dirname, 'handlers', 'figurinha'));
 const diversaoHandler       = require(path.join(__dirname, 'handlers', 'diversao'));
@@ -297,12 +297,16 @@ async function addUserXp(userId, xp = 1, pushName = null) {
 
     const hojeISO = new Date().toISOString().slice(0, 10);
 
+    // xp100 e msg50 saíram do $inc abaixo — iam direto pro banco sem
+    // nunca travar no alvo (100/50), então o !missao podia mostrar
+    // "1500/100" pra quem manda muita mensagem no dia. Agora passam por
+    // incrementMission(), que usa $inc atômico + trava no alvo com $min
+    // e marca completed:true uma única vez, sem escrita extra nas
+    // mensagens seguintes (a query já ignora quem já completou a missão).
     const update = {
       $inc: {
         xp,
         mensagens: 1,
-        'dailyMissions.progress.xp100': xp,
-        'dailyMissions.progress.msg50': 1,
         [`xpHistory.${hojeISO}`]: xp,
       },
       $setOnInsert: { level: 1, idWhatsApp: idAlvo, createdAt: new Date() },
@@ -314,6 +318,9 @@ async function addUserXp(userId, xp = 1, pushName = null) {
       update,
       { new: true, upsert: true }
     );
+
+    await incrementMission(idAlvo, 'xp100', xp);
+    await incrementMission(idAlvo, 'msg50', 1);
 
     const xpAtual   = updated?.xp ?? 0;
     const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;

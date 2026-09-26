@@ -607,30 +607,26 @@ async function handleComprarPesca(sock, msg, jid, caption) {
   const info   = ehVara ? VARAS_PESCA[itemKey] : ISCAS[itemKey];
 
   try {
-    // ── Varas são equipamento único — não pode comprar se já tiver ──────────
-    if (ehVara) {
-      const carteiraAtual = await CarteiraGrupo
-        .findOne({ idWhatsApp: userId, idGrupo: groupId })
-        .lean();
-
-      const jaTem = getQtdItem(carteiraAtual, itemKey) > 0;
-      if (jaTem) {
-        return reply(sock, jid, msg,
-          `⚠️ Você já possui *${info.nome}*!\n\n` +
-          `_Varas não acumulam — venda a antiga antes de comprar outra (em breve)._`
-        );
-      }
-    }
-
     const qtdComprar = ehVara ? 1 : qtd;
     const custoTotal = info.preco * qtdComprar;
 
-    // ── Verifica saldo e debita de forma atômica ─────────────────────────────
+    // ── BUG 10 FIX: a checagem "já tem vara" e o débito eram duas operações
+    // separadas (findOne depois findOneAndUpdate) sem trava nenhuma entre
+    // elas — duas compras simultâneas da mesma vara podiam passar as duas
+    // pela checagem antes que qualquer uma gravasse, comprando a "vara única"
+    // em dobro. Agora a condição "não tem a vara ainda" entra na MESMA query
+    // atômica do débito.
+    const guardaVaraUnica = ehVara
+      ? { [`itensPesca.${itemKey}`]: { $not: { $gt: 0 } } }
+      : {};
+
+    // ── Verifica saldo (e, se for vara, ausência prévia) e debita de forma atômica ──
     const operacaoCompra = await CarteiraGrupo.findOneAndUpdate(
       {
         idWhatsApp: userId,
         idGrupo:    groupId,
         gold:       { $gte: custoTotal },
+        ...guardaVaraUnica,
       },
       {
         $inc: {
@@ -642,8 +638,18 @@ async function handleComprarPesca(sock, msg, jid, caption) {
     );
 
     if (!operacaoCompra) {
+      // A guarda pode ter falhado por dois motivos diferentes — busca o
+      // estado atual pra reportar a causa certa em vez de sempre dizer
+      // "saldo insuficiente" quando na verdade já tinha a vara.
       const carteiraAtual = await getCarteira(userId, groupId);
       const saldoAtual    = carteiraAtual?.gold ?? 0;
+
+      if (ehVara && getQtdItem(carteiraAtual, itemKey) > 0) {
+        return reply(sock, jid, msg,
+          `⚠️ Você já possui *${info.nome}*!\n\n` +
+          `_Varas não acumulam — venda a antiga antes de comprar outra (em breve)._`
+        );
+      }
 
       return reply(sock, jid, msg,
         `❌ *SALDO INSUFICIENTE!*\n\n` +
@@ -830,10 +836,14 @@ async function handleVenderPesca(sock, msg, jid, caption) {
   }
 
   // ── Valor base e taxa ────────────────────────────────────────────────────────
-  // Equipamentos: vendem por 50% do preço de compra (info.preco)
-  // Itens pescados: vendem por 70% do gold base (info.gold)
+  // Varas: vendem por 50% do preço de compra (equipamento único, valor mais alto)
+  // Iscas E itens pescados: vendem por 70% (consumíveis/coletáveis)
+  //
+  // BUG 9 FIX: antes "ehEquip" (vara OU isca) usava 50%, mas o preço mostrado
+  // em !inventariopesca pras iscas já calculava com 70% — o jogador via um
+  // valor no inventário e recebia outro (menor) ao vender de fato.
   const valorBase     = ehEquip ? (info.preco ?? 0) : (info.gold ?? 0);
-  const taxaVenda     = ehEquip ? 0.50 : CONFIG_PESCA.PERCENTUAL_VENDA;
+  const taxaVenda     = ehVara ? 0.50 : CONFIG_PESCA.PERCENTUAL_VENDA;
   const precoUnitario = Math.floor(valorBase * taxaVenda);
 
   if (valorBase <= 0 || precoUnitario <= 0) {
@@ -888,7 +898,10 @@ async function handleVenderPesca(sock, msg, jid, caption) {
       .select('gold')
       .lean();
 
-    const avisoEquip = ehEquip
+    // BUG 9 FIX: o aviso de "50%" só faz sentido pra vara agora — iscas
+    // vendem na mesma taxa que itens pescados (70%), então não são mais
+    // tratadas como "equipamento desvalorizado" aqui.
+    const avisoEquip = ehVara
       ? `⚠️ _Equipamento vendido por 50% do valor de compra._\n\n`
       : '';
 
@@ -924,22 +937,51 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
     const metadata = await sock.groupMetadata(jid);
     const membrosAtuais = new Set(metadata.participants.map(p => p.id));
 
-    // Busca os registros locais do grupo no banco de dados
-    const carteiras = await CarteiraGrupo
-      .find({ idGrupo: groupId })
-      .lean();
+    // ── BUG 11 FIX: antes buscava TODOS os documentos do grupo (com o
+    // itensPesca inteiro de cada um) e só depois somava/ordenava em memória —
+    // isso cresce sem limite conforme o grupo e o histórico de pesca crescem.
+    // Agora a soma e a ordenação acontecem no próprio MongoDB via agregação,
+    // e só os 50 melhores candidatos (mesma margem de segurança que
+    // !rankgold usa) trafegam pro Node antes do filtro de membros ativos.
+    const chavesExcluidas = [
+      ...Object.keys(VARAS_PESCA),
+      ...Object.keys(ISCAS),
+      ...DESCARTAVEL_KEYS,
+    ];
 
-    // Mapeia e filtra mantendo apenas os usuários ativos com pontuação válida
-    const candidatos = carteiras
-      .map(c => {
-        const invRaw = c.itensPesca;
-        const inv    = invRaw instanceof Map ? Object.fromEntries(invRaw) : (invRaw ?? {});
-        const total = Object.entries(inv)
-  .filter(([k]) => !VARAS_PESCA[k] && !ISCAS[k] && !DESCARTAVEL_KEYS.has(k))
-  .reduce((acc, [, v]) => acc + (v ?? 0), 0);
-        return { idWhatsApp: c.idWhatsApp, total, gold: c.gold ?? 0 };
-      })
-      .filter(s => s.total > 0 && membrosAtuais.has(s.idWhatsApp)); // Remove inativos/banidos
+    const candidatosBrutos = await CarteiraGrupo.aggregate([
+      { $match: { idGrupo: groupId } },
+      { $addFields: {
+          _itensArray: { $objectToArray: { $ifNull: ['$itensPesca', {}] } },
+        },
+      },
+      { $addFields: {
+          _total: {
+            $sum: {
+              $map: {
+                input: '$_itensArray',
+                as: 'i',
+                in: {
+                  $cond: [
+                    { $in: ['$$i.k', chavesExcluidas] },
+                    0,
+                    { $ifNull: ['$$i.v', 0] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+      { $match: { _total: { $gt: 0 } } },
+      { $sort: { _total: -1 } },
+      { $limit: 50 },
+      { $project: { idWhatsApp: 1, gold: 1, total: '$_total' } },
+    ]);
+
+    // Remove inativos/banidos (mesmo padrão de !rankgold)
+    const candidatos = candidatosBrutos
+      .filter(s => membrosAtuais.has(s.idWhatsApp));
 
     // Organiza por pontuação decrescente e extrai o Top 10
     const scores = candidatos

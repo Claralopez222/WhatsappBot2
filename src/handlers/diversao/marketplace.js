@@ -107,6 +107,17 @@ const ofertaSchema = new mongoose.Schema(
         ? () => new Date(Date.now() + CONFIG.OFERTA_EXPIRA_DIAS * 86_400_000)
         : null,
     },
+    // ── BUG 4 FIX: rastreia de qual campo do Usuario cada unidade da oferta
+    // veio (inventory / itensRoubo / itensSec / itensPesca). Sem isso, ao
+    // cancelar uma oferta, o item sempre voltava pro campo "inventory" —
+    // mesmo que tivesse sido retirado de itensRoubo ou itensPesca — deixando
+    // o item preso num campo onde o sistema de origem não procura por ele.
+    // Invariante: soma dos valores deste mapa === quantidade da oferta.
+    origemInventario: {
+      type:    Map,
+      of:      Number,
+      default: () => ({}),
+    },
   },
   {
     timestamps: true,   // gerencia createdAt e updatedAt; evita dessincronismo em upserts
@@ -301,14 +312,16 @@ const ITEM_KEY_RE = /^[a-z0-9_-]+$/;
  *
  * Comportamento por contexto:
  *  - Com session (dentro de transação): lança Error em qualquer falha → abort automático.
- *  - Sem session (uso avulso):          retorna false em falhas recuperáveis,
+ *  - Sem session (uso avulso):          retorna null em falhas recuperáveis,
  *                                       lança TypeError apenas para erros de programação.
  *
  * @param  {string}           userId    - JID do usuário
  * @param  {string}           itemKey   - Chave do item (ex: "dinamite")
  * @param  {number}           quantidade - Inteiro positivo a remover
  * @param  {ClientSession|null} session - Session Mongoose (opcional)
- * @returns {Promise<boolean>} true em sucesso; false se sem session e estoque insuficiente
+ * @returns {Promise<Object|null>} objeto { campo: quantidadeRemovidaDoCampo, ... }
+ *          em sucesso (BUG 4 FIX — antes retornava só `true`); null se sem
+ *          session e estoque insuficiente.
  */
 async function removerInventario(userId, itemKey, quantidade, session = null) {
 
@@ -367,8 +380,9 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
   // Ex: se "inventory" tem 2 e "itensRoubo" tem 3, e pediu=4,
   //     desconta 2 de inventory e 2 de itensRoubo.
 
-  let restante  = quantidade;
-  const incrMap = {};
+  let restante          = quantidade;
+  const incrMap         = {};
+  const distribuicao    = {}; // BUG 4 FIX: contagem positiva por campo, devolvida ao caller
 
   for (const campo of CAMPOS_INVENTARIO) {
     if (restante <= 0) break;
@@ -376,9 +390,10 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
     const disponivel = user[campo]?.[itemKey];
     if (typeof disponivel !== 'number' || disponivel <= 0) continue;
 
-    const descontar              = Math.min(disponivel, restante);
+    const descontar               = Math.min(disponivel, restante);
     incrMap[`${campo}.${itemKey}`] = -descontar;
-    restante                    -= descontar;
+    distribuicao[campo]           = descontar;
+    restante                     -= descontar;
   }
 
   // Invariante: somarCampos garantiu totalDisponivel >= quantidade.
@@ -421,10 +436,12 @@ async function removerInventario(userId, itemKey, quantidade, session = null) {
       `userId=${userId} item=${itemKey}`;
     console.warn(errMsg);
     if (session) throw new Error(errMsg);
-    return false;
+    return null; // BUG 4 FIX: null (não false) — o contrato agora é objeto|null
   }
 
-  return true;
+  // BUG 4 FIX: retorna de onde cada unidade saiu, para handleOfertar poder
+  // gravar isso na oferta e handleCancelarOferta devolver ao lugar certo.
+  return distribuicao;
 }
 
 // ─── ADICIONAR INVENTÁRIO ─────────────────────────────────────────────────────
@@ -488,6 +505,41 @@ async function adicionarInventario(userId, itemKey, quantidade, session = null) 
     console.error('[Market] adicionarInventario:', e.message);
     return false;
   }
+}
+
+// ─── ORIGEM DO INVENTÁRIO (BUG 4 FIX) ─────────────────────────────────────────
+
+/**
+ * Calcula, em ordem de prioridade de CAMPOS_INVENTARIO, de quais campos
+ * `quantidadeConsumir` unidades devem ser descontadas do mapa `origemAtual`
+ * (o `origemInventario` salvo na oferta). Usada quando parte de uma oferta
+ * é vendida — o restante da oferta precisa continuar sabendo de onde veio,
+ * pra um cancelamento futuro devolver certo.
+ *
+ * Não lança se o mapa não cobrir toda a quantidade (dado legado de ofertas
+ * criadas antes desta correção, sem origemInventario) — nesse caso apenas
+ * desconta o que existe; a diferença fica pro caller decidir.
+ *
+ * @param  {Map|Object|null} origemAtual
+ * @param  {number}          quantidadeConsumir
+ * @returns {Object} incremento NEGATIVO por campo, pronto pra usar em $inc
+ *          (ex: { 'origemInventario.itensPesca': -2 })
+ */
+function consumirOrigemInventario(origemAtual, quantidadeConsumir) {
+  const origemObj = origemAtual instanceof Map ? Object.fromEntries(origemAtual) : (origemAtual || {});
+  const incDelta  = {};
+  let restante    = quantidadeConsumir;
+
+  for (const campo of CAMPOS_INVENTARIO) {
+    if (restante <= 0) break;
+    const disponivel = origemObj[campo] || 0;
+    if (disponivel <= 0) continue;
+    const consumir = Math.min(disponivel, restante);
+    incDelta[`origemInventario.${campo}`] = -consumir;
+    restante -= consumir;
+  }
+
+  return incDelta;
 }
 
 // ─── TRANSAÇÃO ────────────────────────────────────────────────────────────────
@@ -635,7 +687,10 @@ function filtroOfertasAtivas(extra = {}) {
 // ─── MENSAGENS ────────────────────────────────────────────────────────────────
 
 function parseBuyArgs(caption) {
-  const match = caption.match(/buy\s+([\d@.\w]+)\s+([A-Za-z0-9_-]+)\s+(\d{1,6})/i);
+  // Antes o regex procurava "buy" seguido de espaço — mas o comando real é
+  // "!buyoferta", onde depois de "buy" vem "oferta" (sem espaço), não whitespace.
+  // O match nunca acontecia e !buyoferta ficava permanentemente quebrado.
+  const match = caption.match(/buyoferta\s+([\d@.\w]+)\s+([A-Za-z0-9_-]+)\s+(\d{1,6})/i);
   if (!match) return null;
   const quantidade = parseInt(match[3], 10);
   if (!Number.isFinite(quantidade) || quantidade < 1) return null;
@@ -691,7 +746,7 @@ async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, co
   const [ofertaExistente, saldoDoc] = await Promise.all([
     Oferta.findOne(
       filtroOfertasAtivas({ sellerId: vendedorId, itemKey }),
-      { preco: 1, quantidade: 1, itemNome: 1, sellerId: 1, sellerName: 1 },
+      { preco: 1, quantidade: 1, itemNome: 1, sellerId: 1, sellerName: 1, origemInventario: 1 },
       { session }
     ).lean(),
     Usuario.findOne({ idWhatsApp: compradorId }, { gold: 1 }, { session }).lean(),
@@ -756,9 +811,16 @@ async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, co
     // O $gte aqui é correto: para compra parcial, qualquer quantidade >= pedida
     // é válida. A diferença é que o resultado pode ter mais unidades do que
     // ofertaExistente indicava — o comprador recebe exatamente o que pediu.
+    //
+    // BUG 4 FIX: junto do $inc de quantidade, também desconta do
+    // origemInventario (mesma ordem de prioridade usada por removerInventario),
+    // pra que a oferta restante continue sabendo de onde vieram as unidades
+    // que sobraram — necessário pra um cancelamento futuro devolver certo.
+    const incOrigemConsumido = consumirOrigemInventario(ofertaExistente.origemInventario, quantidade);
+
     oferta = await Oferta.findOneAndUpdate(
       filtroOfertasAtivas({ sellerId: vendedorId, itemKey, quantidade: { $gte: quantidade } }),
-      { $inc: { quantidade: -quantidade } },
+      { $inc: { quantidade: -quantidade, ...incOrigemConsumido } },
       { session, new: false }
     ).lean();
   }
@@ -918,7 +980,8 @@ async function handleAvenda(sock, msg, jid, caption = '') {
 
 // !buscaroferta <item>
 async function handleBuscarOferta(sock, msg, jid, caption) {
-  const match = caption.match(/buscaroferta\s+([A-Za-z0-9_-]+)/i);
+  // Aceita tanto "!buscaroferta" quanto o alias "!buscaoferta" registrado no bot.js
+  const match = caption.match(/busca(?:r)?oferta\s+([A-Za-z0-9_-]+)/i);
   if (!match) {
     return reply(sock, jid, msg,
       '⚠️ Use: *!buscaroferta <item>*\n📌 Exemplo: *!buscaroferta dinamite*'
@@ -1123,8 +1186,18 @@ async function handleOfertar(sock, msg, jid, caption) {
       }
 
       // removerInventario lança com session ativa em caso de falha,
-      // garantindo abort automático pela withTransaction
-      await removerInventario(userId, itemKey, quantidade, session);
+      // garantindo abort automático pela withTransaction. O retorno indica
+      // de qual(is) campo(s) o item saiu — necessário pra devolver certo
+      // se a oferta for cancelada depois (BUG 4 FIX).
+      const distribuicao = await removerInventario(userId, itemKey, quantidade, session);
+
+      // $inc por campo de origem, além do $inc de quantidade — acumula
+      // corretamente mesmo se o vendedor já tinha oferta ativa deste item
+      // (upsert soma em cima do que já estava lá).
+      const incOrigem = Object.entries(distribuicao || {}).reduce((acc, [campo, qtd]) => {
+        acc[`origemInventario.${campo}`] = qtd;
+        return acc;
+      }, {});
 
       // findOneAndUpdate com upsert: cria oferta se não existir,
       // ou acumula quantidade + atualiza preço/nome se já existir.
@@ -1133,7 +1206,7 @@ async function handleOfertar(sock, msg, jid, caption) {
         { sellerId: userId, itemKey },
         {
           $set: { sellerName, itemNome, preco },
-          $inc: { quantidade },
+          $inc: { quantidade, ...incOrigem },
         },
         { upsert: true, new: true, session }
       );
@@ -1334,6 +1407,8 @@ async function handleBuy(sock, msg, jid, caption) {
       )
     );
   } catch (e) {
+    // Erro: libera o cooldown pra permitir retry imediato — não faz sentido
+    // punir uma tentativa que nem chegou a completar.
     BUY_COOLDOWNS.delete(compradorId);
 
     if (e.userMsg) {
@@ -1355,7 +1430,11 @@ async function handleBuy(sock, msg, jid, caption) {
     );
   }
 
-  BUY_COOLDOWNS.delete(compradorId);
+  // ── CORREÇÃO: sem sucesso, NÃO apagamos o cooldown aqui — antes isso
+  // liberava o comprador pra comprar de novo instantaneamente após uma
+  // compra bem-sucedida, anulando o throttle de 3s entre compras. Agora o
+  // cooldown expira sozinho (checkCooldown já calcula por timestamp, e o
+  // _cooldownCleanup varre entradas velhas periodicamente).
 
   // ── 9. Notificações pós-transação ────────────────────────────────────────
 
@@ -1382,7 +1461,8 @@ async function handleCancelarOferta(sock, msg, jid, caption) {
   const userId = getUserId(msg);
   if (!userId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
 
-  const match = caption.match(/cancelaroferta\s+([A-Za-z0-9_-]+)/i);
+  // Aceita tanto "!cancelaroferta" quanto o alias "!canceloferta" registrado no bot.js
+  const match = caption.match(/cancela(?:r)?oferta\s+([A-Za-z0-9_-]+)/i);
   if (!match) {
     return reply(sock, jid, msg,
       '⚠️ Use: *!cancelaroferta <item>*\nExemplo: *!cancelaroferta dinamite*'
@@ -1411,9 +1491,41 @@ async function handleCancelarOferta(sock, msg, jid, caption) {
         throw err;
       }
 
-      // ✅ adicionarInventario lança exceção em caso de falha quando session
-      // está presente — a transação aborta automaticamente via withTransaction
-      await adicionarInventario(userId, itemKey, oferta.quantidade, session);
+      // ── BUG 4 FIX: devolve cada unidade pro campo de onde ela realmente
+      // saiu (inventory / itensRoubo / itensSec / itensPesca), em vez de
+      // sempre jogar tudo em "inventory". Ofertas criadas antes desta
+      // correção não têm origemInventario — pra essas, mantém o comportamento
+      // antigo (tudo em "inventory") como fallback.
+      const origemObj  = oferta.origemInventario instanceof Map
+        ? Object.fromEntries(oferta.origemInventario)
+        : (oferta.origemInventario || {});
+      const somaOrigem = Object.values(origemObj).reduce((a, b) => a + (b || 0), 0);
+
+      if (somaOrigem > 0) {
+        await Promise.all(
+          Object.entries(origemObj)
+            .filter(([, qtd]) => qtd > 0)
+            .map(([campo, qtd]) =>
+              Usuario.findOneAndUpdate(
+                { idWhatsApp: userId },
+                { $inc: { [`${campo}.${itemKey}`]: qtd } },
+                { session, upsert: true }
+              )
+            )
+        );
+
+        // Sobra não coberta pelo mapa de origem (drift ou dado parcialmente
+        // legado) — devolve pro fallback antigo, pra nunca perder unidades.
+        const faltante = oferta.quantidade - somaOrigem;
+        if (faltante > 0) {
+          await adicionarInventario(userId, itemKey, faltante, session);
+        }
+      } else {
+        // Oferta sem origemInventario registrado (criada antes da correção) —
+        // comportamento legado preservado.
+        await adicionarInventario(userId, itemKey, oferta.quantidade, session);
+      }
+
       return oferta;
     });
 
@@ -1497,7 +1609,9 @@ async function handleHistoricoMarket(sock, msg, jid, caption = '') {
   const userId = getUserId(msg);
   if (!userId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
 
-  const pageStr = caption.match(/historicomarket\s+(\d+)/i)?.[1] ?? '1';
+  // Aceita tanto "!historicomarket" quanto o alias "!mercadohistorico" registrado
+  // no bot.js — antes, usar o alias sempre caía silenciosamente na página 1.
+  const pageStr = caption.match(/(?:historicomarket|mercadohistorico)\s+(\d+)/i)?.[1] ?? '1';
   const page    = parseInt(pageStr, 10);
 
   if (!Number.isFinite(page) || page < 1) {
@@ -1645,8 +1759,8 @@ async function handleOfertasRecebidas(sock, msg, jid) {
 
 async function handleAceitarOfferta(sock, msg, jid) {
   return reply(sock, jid, msg,
-    '💼 Este comando foi substituído por *!buy*!\n\n' +
-    'Exemplo: *!buy 5511999999999 dinamite 2*\n' +
+    '💼 Este comando foi substituído por *!buyoferta*!\n\n' +
+    'Exemplo: *!buyoferta 5511999999999 dinamite 2*\n' +
     'Ver ofertas disponíveis: *!avenda*'
   );
 }

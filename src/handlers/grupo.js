@@ -147,7 +147,14 @@ async function resolveTargetJid(sock, msg, content, jid) {
 
   // Sem menção → tenta reply
   if (mentionedJid.length === 0) {
-    return quotedParticipant || null;
+    if (!quotedParticipant) return null;
+    // Normaliza (remove sufixo de dispositivo, ex: ":5") aqui, no ponto
+    // único de resolução — via reply o Baileys pode devolver o JID cru
+    // vindo de contextInfo.participant. Assim, todo handler que chama
+    // resolveTargetJid (atual e futuro: !ban, !mute, !desmute, !promover,
+    // !rebaixar) já recebe o JID limpo, sem precisar lembrar de aplicar
+    // normalizarJid(...) manualmente em cada um.
+    return normalizarJid(quotedParticipant) || quotedParticipant;
   }
 
   let rawJid = mentionedJid[0];
@@ -165,7 +172,7 @@ async function resolveTargetJid(sock, msg, content, jid) {
     }
   }
 
-  return rawJid;
+  return normalizarJid(rawJid) || rawJid;
 }
 
 /**
@@ -463,19 +470,15 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   }
 
   // ── Mute individual ────────────────────────────────────────
-  const targetJidRaw = await resolveTargetJid(sock, msg, content, jid);
-  if (!targetJidRaw) {
+  // resolveTargetJid já devolve o JID normalizado (sem sufixo de
+  // dispositivo) — a normalização agora é responsabilidade dela.
+  const targetJid = await resolveTargetJid(sock, msg, content, jid);
+  if (!targetJid) {
     await sock.sendMessage(jid, {
       text: '⚠️ Marque alguém.\nExemplo: *!mute @fulano* ou *!mute @all*',
     }, { quoted: msg });
     return;
   }
-
-  // Normaliza (remove sufixo de dispositivo, ex: ":5") antes de usar como
-  // chave — resolveTargetJid via reply pode devolver o JID cru, e a
-  // checagem de isMuted() no bot.js usa sempre o JID normalizado. Sem
-  // isso, quem é mutado por reply pode continuar falando sem ser detectado.
-  const targetJid = normalizarJid(targetJidRaw) || targetJidRaw;
 
   if (isBotJid(targetJid, botJid)) {
     await sock.sendMessage(jid, { text: '🤖 Não é possível mutar o bot.' }, { quoted: msg });
@@ -600,7 +603,7 @@ async function handleRanking(sock, msg, jid, msgCount = new Map()) {
 
   try {
     const entradas = [...msgCount.entries()]
-      .filter(([id]) => id.endsWith('@s.whatsapp.net') || id.endsWith('@c.us'))
+      .filter(([id]) => id.endsWith('@s.whatsapp.net') || id.endsWith('@c.us') || id.endsWith('@lid'))
       .map(([id, data]) => ({
         idWhatsApp: id,
         count: typeof data === 'object' ? (data.count ?? 0) : (data ?? 0),

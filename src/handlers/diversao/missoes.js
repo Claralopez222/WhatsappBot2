@@ -4,7 +4,9 @@
  */
 
 const path = require('path');
-const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const Usuario    = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
+const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 
 // ─── DEFINIÇÃO DAS MISSÕES ──────────────────────────────────────────────────
 
@@ -22,12 +24,40 @@ const MISSION_IDS = new Set(dailyMissionDefinitions.map(m => m.id));
 
 // ─── UTILITÁRIOS ────────────────────────────────────────────────────────────
 
-function getUserId(msg) {
-  return msg.key.participant || msg.key.remoteJid;
+// Resolve o mesmo Usuario global que addUserXp() usa em bot.js: se o
+// remetente vier como @s.whatsapp.net mas já existir um Usuario salvo sob
+// o @lid mapeado, usa o @lid. Sem isso, "!missao" podia ler/gravar um
+// documento diferente do que addUserXp estava de fato atualizando, e o
+// progresso "sumia" para quem usa @lid.
+async function getUserId(msg) {
+  const raw  = msg.key.participant || msg.key.remoteJid;
+  const norm = normalizarJid(raw) || raw;
+
+  if (!norm.endsWith('@lid')) {
+    try {
+      const lidMap = await LidMapping.findOne({ pn: norm }).lean();
+      if (lidMap?.lid && await Usuario.exists({ idWhatsApp: lidMap.lid })) {
+        return lidMap.lid;
+      }
+    } catch {
+      // Falha na consulta de mapeamento não deve travar o comando —
+      // segue com o JID normalizado mesmo.
+    }
+  }
+
+  return norm;
 }
 
-function getTodayStr() {
-  return new Date().toISOString().split('T')[0];
+// Data de hoje no fuso de Brasília, não UTC — com UTC, as missões
+// "viravam o dia" às 21h de Brasília (meia-noite UTC) em vez de à meia-noite
+// local, 3h antes do que o texto "Missões renovam à meia-noite" promete.
+function getTodayStr(ts = Date.now()) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(ts));
+  const map = Object.fromEntries(partes.map(p => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}`;
 }
 
 function buildDefaultMissions() {
@@ -50,28 +80,30 @@ async function prepareDailyMissionState(userId) {
   const todayStr = getTodayStr();
 
   try {
-    let user = await Usuario.findOne({ idWhatsApp: userId });
+    // Leitura rápida (sem escrita) — cobre o caminho mais comum: usuário
+    // já existe e as missões de hoje já foram preparadas.
+    const existing = await Usuario.findOne(
+      { idWhatsApp: userId },
+      { dailyMissions: 1 }
+    ).lean();
 
-    if (!user) {
-      user = await Usuario.create({
-        idWhatsApp: userId,
-        gold: 0,
-        xp: 0,
-        level: 1,
-        dailyMissions: buildDefaultMissions(),
-      });
-      return user.dailyMissions;
+    if (existing?.dailyMissions?.date === todayStr) {
+      return existing.dailyMissions;
     }
 
-    if (user.dailyMissions?.date === todayStr) {
-      return user.dailyMissions;
-    }
-
+    // Usuário novo ou o dia virou — upsert atômico. A versão anterior fazia
+    // findOne() e só depois Usuario.create() se não achasse nada; duas
+    // mensagens quase simultâneas do mesmo usuário novo passavam as duas
+    // pelo "não existe" e a segunda Usuario.create() explodia com erro de
+    // chave única em idWhatsApp. upsert:true resolve isso em uma operação.
     const fresh = buildDefaultMissions();
     const updated = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId },
-      { $set: { dailyMissions: fresh } },
-      { new: true }
+      {
+        $set: { dailyMissions: fresh },
+        $setOnInsert: { idWhatsApp: userId, gold: 0, xp: 0, level: 1 },
+      },
+      { upsert: true, new: true }
     );
 
     return updated?.dailyMissions ?? fresh;
@@ -86,29 +118,38 @@ async function prepareDailyMissionState(userId) {
 async function incrementMission(userId, missionId, amount = 1) {
   if (!MISSION_IDS.has(missionId)) return;
 
+  const mission = dailyMissionDefinitions.find(m => m.id === missionId);
+  if (!mission) return;
+
   try {
-    await prepareDailyMissionState(userId);
+    // Garante que as missões de hoje existem — se o dia virou, isso já
+    // reseta o progresso antes de incrementar.
+    const state = await prepareDailyMissionState(userId);
+    if (state?.completed?.[missionId]) return; // já bateu a meta hoje
 
-    const todayStr = getTodayStr();
-    const mission  = dailyMissionDefinitions.find(m => m.id === missionId);
-    if (!mission) return;
+    // $inc é atômico. A versão anterior lia o progresso, somava na
+    // memória e gravava de volta — duas chamadas concorrentes (ex: duas
+    // ações quase simultâneas do mesmo usuário) liam o mesmo valor de
+    // partida, e a segunda gravação apagava o incremento da primeira
+    // ("lost update"). $inc nunca perde incremento sob concorrência.
+    const incrementado = await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId, 'dailyMissions.date': state.date },
+      { $inc: { [`dailyMissions.progress.${missionId}`]: amount } },
+      { new: true }
+    );
+    if (!incrementado) return;
 
-    const user = await Usuario.findOne({ idWhatsApp: userId });
-    if (!user?.dailyMissions || user.dailyMissions.date !== todayStr) return;
+    const progresso = incrementado.dailyMissions?.progress?.[missionId] ?? 0;
+    if (progresso < mission.target) return;
 
-    const currentProgress = user.dailyMissions.progress?.[missionId] || 0;
-    if (currentProgress >= mission.target) return;
-
-    const newProgress  = Math.min(currentProgress + amount, mission.target);
-    const nowCompleted = newProgress >= mission.target;
-
-    await Usuario.findOneAndUpdate(
+    // Passou da meta (ex: um incremento em lote maior que o que faltava)
+    // — $min trava o valor exibido no teto sem nova corrida, e completed
+    // só é marcado true uma vez que a meta realmente foi atingida.
+    await Usuario.updateOne(
       { idWhatsApp: userId },
       {
-        $set: {
-          [`dailyMissions.progress.${missionId}`]:  newProgress,
-          [`dailyMissions.completed.${missionId}`]: nowCompleted,
-        },
+        $min: { [`dailyMissions.progress.${missionId}`]: mission.target },
+        $set: { [`dailyMissions.completed.${missionId}`]: true },
       }
     );
   } catch (e) {
@@ -122,15 +163,24 @@ function findDailyMission(missionKey) {
 
 // !missao
 async function handleMissao(sock, msg, jid, caption, getPrefix) {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg);
   const P      = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
 
   // ── Detectar prefixo e extrair args ──────────────────────────
   const semPrefix = caption.replace(/^[!.,/]\S+\s*/i, '').trim();
   const args      = semPrefix ? semPrefix.split(/\s+/) : [];
 
+  const ALIASES_RESGATE = ['resgatar', 'claim', 'pegar', 'receber'];
   let missionKey = null;
-  if (args.length >= 2 && ['resgatar', 'claim', 'pegar', 'receber'].includes(args[0].toLowerCase())) {
+
+  if (args.length >= 1 && ALIASES_RESGATE.includes(args[0].toLowerCase())) {
+    if (args.length < 2) {
+      const ids = dailyMissionDefinitions.map(m => `\`${m.id}\``).join(', ');
+      await sock.sendMessage(jid, {
+        text: `⚠️ Diga qual missão resgatar!\nExemplo: *${P}missao resgatar xp100*\n\n📋 IDs válidos: ${ids}`
+      }, { quoted: msg });
+      return;
+    }
     missionKey = args[1].toLowerCase();
   } else if (args.length >= 1 && args[0].toLowerCase() !== 'listar') {
     missionKey = args[0].toLowerCase();
@@ -264,6 +314,10 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       ? `🎁 *Você tem ${totalGoldDisponivel}g para resgatar!*\n💡 Use *${P}missao <id>* para resgatar.`
       : `💪 Continue jogando para completar suas missões!`;
 
+  const comoResgatar = dailyMissionDefinitions
+    .map(m => `  *${P}missao ${m.id}* — resgata "${m.label}"`)
+    .join('\n');
+
   const texto =
     `🎯 *MISSÕES DIÁRIAS* 🎯\n` +
     `📅 _${getTodayStr()}_\n` +
@@ -272,9 +326,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
     `\n\n━━━━━━━━━━━━━━━━\n` +
     `${rodape}\n\n` +
     `📌 *Como resgatar:*\n` +
-    `  *${P}missao xp100* — resgata XP\n` +
-    `  *${P}missao msg50* — resgata mensagens\n` +
-    `  *${P}missao quiz5* — resgata quiz`;
+    comoResgatar;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -287,4 +339,5 @@ module.exports = {
   incrementMission,
   findDailyMission,
   dailyMissionDefinitions,
+  getTodayStr,
 };

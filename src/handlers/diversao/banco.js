@@ -4,6 +4,7 @@ const path = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { incrementMission } = require('./missoes');
 
 // ─── Configuração central ─────────────────────────────────────────────────────
 
@@ -401,10 +402,10 @@ async function handleResgatar(sock, msg, jid) {
 
   // ── Progresso de missão no Usuario ──────────────────────────────────────────
   if (ganho > 0) {
-    await Usuario.updateOne(
-      { idWhatsApp: userId },
-      { $inc: { 'dailyMissions.progress.gold500': ganho } }
-    ).catch(() => {});
+    // Era um $inc direto sem cap — "!missao" podia mostrar progresso acima
+    // de 500 (a meta de gold500) pra quem resgatava investimentos grandes.
+    // incrementMission() trava no alvo com $min e marca completed uma vez.
+    await incrementMission(userId, 'gold500', ganho).catch(() => {});
   }
 
   await sock.sendMessage(jid, {

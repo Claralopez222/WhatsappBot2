@@ -10,7 +10,7 @@
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { getCarteira, alterarGold, transferirGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
-const { prepareDailyMissionState } = require('./missoes');
+const { prepareDailyMissionState, incrementMission } = require('./missoes');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { VARAS_PESCA, ISCAS } = require('./pesca');
 // removido — jidNormalizedUser não é mais utilizado neste arquivo
@@ -1090,11 +1090,16 @@ const userId = userIdRaw?.includes('@')
 
     const [carteira] = await Promise.all([
       alterarGold(userId, jid, goldFinal, `Garimpo - ${minerio.nome}`),
+      // gold500 saiu deste $inc direto — sem cap, "!missao" podia mostrar
+      // progresso passando de 500 (ex: "12300/500") pra quem garimpava
+      // itens caros repetidamente. incrementMission() trava no alvo com
+      // $min e marca completed uma única vez.
       Usuario.findOneAndUpdate(
         { idWhatsApp: userId },
-        { $inc: { 'dailyMissions.progress.gold500': goldFinal, xp: xpFinal } },
+        { $inc: { xp: xpFinal } },
         { upsert: true }
       ),
+      incrementMission(userId, 'gold500', goldFinal),
       CarteiraGrupo.findOneAndUpdate(
         { idWhatsApp: userId, idGrupo: jid },
         { $inc: { xp: xpFinal } },

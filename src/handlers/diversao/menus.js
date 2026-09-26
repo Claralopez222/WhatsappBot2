@@ -23,7 +23,6 @@ async function handleBrincadeiras(sock, msg, jid, getPrefix) {
       `${P}roletarussa — roleta russa\n` +
       `${P}eununca — eu nunca\n` +
       `${P}verdadeoudesafio — verdade ou desafio\n` +
-      `${P}ship [@] — shippar\n` +
       `${P}xingar [@] — xingar alguém\n` +
       `${P}elogio [@] — elogiar alguém\n` +
       `${P}cantada [@] — cantada\n` +
@@ -158,27 +157,68 @@ async function handleSistemaMedieval(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   await sock.sendMessage(jid, {
     text:
-      `⚔️ *COMO FUNCIONA O SISTEMA MEDIEVAL* ⚔️\n\n` +
-      `🏰 *O que é?*\n` +
-      `Um RPG de batalha onde você cria um personagem e luta contra outros!\n\n` +
-      `📊 *Atributos:*\n` +
-      `• ❤️ HP — vida do personagem\n` +
-      `• 💧 Mana — para usar magias\n` +
-      `• ⚔️ Ataque — dano físico\n` +
-      `• 🛡️ Defesa — reduz dano recebido\n` +
-      `• ✨ Magia — dano mágico\n\n` +
-      `🎯 *Classes:*\n` +
-      `• ⚔️ Guerreiro — alto HP e Defesa\n` +
-      `• 🧙 Mago — alta Magia e Mana\n` +
-      `• 🏹 Arqueiro — alto Ataque\n` +
-      `• 🗡️ Ladino — velocidade e crítico\n\n` +
-      `📜 *Comandos básicos:*\n` +
-      `▸ ${P}ficha — ver sua ficha\n` +
-      `▸ ${P}atacar [@] — atacar alguém\n` +
-      `▸ ${P}magia [@] — usar magia\n` +
-      `▸ ${P}lojamedieval — loja medieval\n` +
-      `▸ ${P}missaomed — missão diária\n` +
-      `▸ ${P}menumediev — menu completo`,
+      `⚔️🏰 *SISTEMA MEDIEVAL* 🏰⚔️\n\n` +
+      `O modo medieval é um RPG completo dentro do grupo!\n` +
+      `Crie seu personagem, batalhe, evolua e domine o reino.\n\n` +
+      `👤 *PERSONAGEM*\n` +
+      `  • Ao usar *${P}ficha* pela primeira vez, um personagem\n` +
+      `    é criado automaticamente com classe e elemento aleatórios\n` +
+      `  • Há 7 classes: Guerreiro, Mago, Arqueiro, Paladino,\n` +
+      `    Assassino, Druida e Necromante\n` +
+      `  • Cada classe tem ataque, defesa, HP e mana únicos\n\n` +
+      `🔥 *ELEMENTOS*\n` +
+      `  • Seu personagem recebe um elemento aleatório\n` +
+      `  • São 8 elementos: Fogo, Água, Terra, Ar, Trovão,\n` +
+      `    Sombra, Luz e Magia Negra\n` +
+      `  • Cada elemento tem vantagem (+50% dano) contra alguns\n` +
+      `    e fraqueza (-30% dano) contra outros\n\n` +
+      `⚔️ *COMBATE*\n` +
+      `  • *${P}atacar @alguém* — Ataque físico (cooldown 2min)\n` +
+      `    Ganha 10 XP (15 se crítico). Crítico tem 15% de chance\n` +
+      `    e multiplica o dano por 1.8x\n` +
+      `  • *${P}magia @alguém* — Habilidade elemental (cooldown 5min)\n` +
+      `    Consome 30 de mana. Dano 2.2x maior que ataque normal\n` +
+      `    Ganha 20 XP. Não pode críticar\n` +
+      `  • Derrotar um inimigo dá +30 XP (!atacar) ou +40 XP (!magia)\n` +
+      `  • Inimigo derrotado fica com HP 0 até usar *${P}recargamana*\n\n` +
+      `🗺️ *MISSÕES*\n` +
+      `  • *${P}missaomed* — Embarca em missão aleatória (cooldown 30min)\n` +
+      `  • Requer HP mínimo de 20 para participar\n` +
+      `  • 3 dificuldades: fácil, médio e difícil\n` +
+      `  • Sucesso: XP + Gold | Falha: dano + 10 XP de consolação\n\n` +
+      `❤️ *RECUPERAÇÃO*\n` +
+      `  • *${P}recargamana* — Recupera 60% do HP e 100% da mana\n` +
+      `    Cooldown de 10 minutos\n` +
+      `  • *Regeneração passiva* — Todo personagem recupera automaticamente\n` +
+      `    +10% HP e +15% Mana a cada 1 hora (apenas grupos com medieval ativo)\n\n` +
+      `🏪 *LOJA E EQUIPAMENTOS*\n` +
+      `  • *${P}lojamedieval* — Ver armas, armaduras e poções\n` +
+      `  • *${P}comprar [item]* — Comprar com gold do grupo\n` +
+      `  • *${P}equipar [item]* — Equipar arma ou armadura\n` +
+      `  • *${P}desequipar arma/armadura* — Remover item equipado\n` +
+      `  • *${P}invmed* — Ver seu inventário medieval\n` +
+      `  • *${P}usarpocao [nome]* — Usar poção (sem cooldown!)\n` +
+      `  • Armas aumentam o ataque | Armaduras aumentam a defesa\n` +
+      `  • Poções recuperam HP e/ou mana instantaneamente\n` +
+      `  • Raridades: comum → incomum → raro → lendário\n\n` +
+      `⭐ *PROGRESSÃO*\n` +
+      `  • XP acumulado em batalhas e missões sobe seu nível\n` +
+      `  • Cada level up aumenta HP máx, mana máx, ataque e defesa\n` +
+      `  • Missões têm nível mínimo — quanto mais difícil, maior a recompensa\n` +
+      `  • Itens raros e lendários exigem nível mínimo para comprar e equipar\n` +
+      `  • *${P}rankmedieval* — Top 10 guerreiros por vitórias\n` +
+      `  • *${P}historico* — Ver suas últimas 5 batalhas\n\n` +
+      `📜 *COMANDOS RÁPIDOS*\n` +
+      `  👤 *${P}ficha* — Ver/criar seu personagem\n` +
+      `  ⚔️ *${P}atacar @* — Atacar alguém\n` +
+      `  🔮 *${P}magia @* — Usar habilidade elemental\n` +
+      `  🗺️ *${P}missaomed* — Embarcar em missão\n` +
+      `  🌟 *${P}recargamana* — Recuperar HP e mana\n` +
+      `  🧪 *${P}usarpocao [nome]* — Usar poção\n` +
+      `  🎒 *${P}invmed* — Ver inventário\n` +
+      `  🏪 *${P}lojamedieval* — Ver loja\n` +
+      `  🏆 *${P}rankmedieval* — Ranking\n` +
+      `  📖 *${P}menumediev* — Menu de comandos`,
   }, { quoted: msg });
 }
 
@@ -189,19 +229,17 @@ async function handleMenuMarket(sock, msg, jid, getPrefix) {
     text:
       `🏪 *MARKETPLACE* 🏪\n\n` +
       `Compre e venda itens com outros jogadores!\n\n` +
-      `📤 *Vender:*\n` +
-      `▸ ${P}avenda [item] [qtd] [preço] — anunciar item\n` +
-      `▸ ${P}cancelaroferta [id] — cancelar anúncio\n` +
-      `▸ ${P}minhasofertas — seus anúncios\n\n` +
-      `📥 *Comprar:*\n` +
-      `▸ ${P}buscaroferta [item] — buscar ofertas\n` +
-      `▸ ${P}buyoferta [id] — comprar oferta\n\n` +
-      `🤝 *Trocar:*\n` +
-      `▸ ${P}ofertar [@] [item] [qtd] — propor troca\n` +
-      `▸ ${P}aceitaroferta [id] — aceitar troca\n` +
-      `▸ ${P}ofertasrecebidas — ver propostas\n\n` +
+      `📤 *Anunciar / Vender:*\n` +
+      `▸ ${P}ofertar [item] [preço] [quantidade] — anunciar item à venda\n` +
+      `▸ ${P}cancelaroferta [item] — cancelar seu anúncio (pelo nome do item)\n` +
+      `▸ ${P}minhasofertas — ver seus anúncios ativos\n\n` +
+      `📥 *Navegar / Comprar:*\n` +
+      `▸ ${P}avenda [página] — navegar pelos itens à venda no mercado\n` +
+      `▸ ${P}buscaroferta [item] — buscar ofertas de um item específico\n` +
+      `▸ ${P}buyoferta [vendedor] [item] [quantidade] — comprar de um anúncio\n\n` +
       `📊 *Histórico:*\n` +
-      `▸ ${P}historicomarket — histórico de vendas`,
+      `▸ ${P}historicomarket — histórico de vendas\n\n` +
+      `_Obs: ${P}aceitaroferta foi descontinuado — use ${P}buyoferta para comprar diretamente._`,
   }, { quoted: msg });
 }
 

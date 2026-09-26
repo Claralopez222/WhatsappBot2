@@ -9,14 +9,12 @@ const {
   handleMenuRelacionamento,
   handleAlteradores,
   handleMenuFilho,
-  handleMenuWork,
-  handleBrincadeiras,
-  handleMenuGold,
-  handleMenuPet,
-  handleSistemaGold,
-  handleSistemaPet,
-  handleSistemaMedieval,
 } = require(path.join(__dirname, 'menu'));
+// handleMenuWork, handleBrincadeiras, handleMenuGold, handleMenuPet,
+// handleSistemaGold, handleSistemaPet e handleSistemaMedieval foram
+// removidos daqui: o bot.js nunca chama utilidadeHandler.X para esses
+// comandos, sempre usa diversaoHandler.X (ver handlers/diversao/menus.js
+// e handlers/diversao/emprego.js, que são as versões realmente ativas).
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { handleLevelOn, handleLevel, handleRankLevel } = require(path.join(__dirname, 'level'));
 const { handleSave, handleSaveRec, handleTiktok, handleAudioDownload, handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs, getFfmpegPath, getFfprobePath } = require(path.join(__dirname, 'downloads'));
@@ -24,26 +22,7 @@ const { handleSave, handleSaveRec, handleTiktok, handleAudioDownload, handleSom,
 let logger = { level: 'silent' };
 let REMOVEBG_KEY = process.env.REMOVEBG_KEY || '';
 
-const MORSE_TABLE = {
-  A: '.-', B: '-...', C: '-.-.', D: '-..', E: '.', F: '..-.', G: '--.', H: '....', I: '..', J: '.---', K: '-.-', L: '.-..', M: '--', N: '-.', O: '---', P: '.--.', Q: '--.-', R: '.-.', S: '...', T: '-', U: '..-', V: '...-', W: '.--', X: '-..-', Y: '-.--', Z: '--..',
-  0: '-----', 1: '.----', 2: '..---', 3: '...--', 4: '....-', 5: '.....', 6: '-....', 7: '--...', 8: '---..', 9: '----.',
-  '.': '.-.-.-', ',': '--..--', '?': '..--..', '!': '-.-.--', ':': '---...', ';': '-.-.-.', "'": '.----.', '"': '.-..-.', '/': '-..-.', '(': '-.--.', ')': '-.--.-', '&': '.-...', '=': '-...-', '+': '.-.-.', '-': '-....-', '_': '..--.-', '@': '.--.-.',
-};
-const MORSE_REVERSE = Object.entries(MORSE_TABLE).reduce((acc, [key, value]) => { acc[value] = key; return acc; }, {});
 
-function encodeMorse(text) {
-  return text.toUpperCase().split('').map((char) => {
-    if (char === ' ') return '/';
-    return MORSE_TABLE[char] || '?';
-  }).join(' ');
-}
-
-function decodeMorse(code) {
-  return code.trim().split(/\s+/).map((token) => {
-    if (token === '/') return ' ';
-    return MORSE_REVERSE[token] || '?';
-  }).join('').replace(/ {2,}/g, ' ');
-}
 
 function setLogger(newLogger) {
   logger = newLogger;
@@ -53,23 +32,7 @@ function setRemoveBgKey(key) {
   REMOVEBG_KEY = key;
 }
 
-function chunkLongText(text, limit = 4000) {
-  const lines = text.split('\n');
-  const chunks = [];
-  let current = '';
 
-  for (const line of lines) {
-    if (current.length + line.length + 1 > limit) {
-      chunks.push(current.trim());
-      current = `${line}\n`;
-    } else {
-      current += `${line}\n`;
-    }
-  }
-
-  if (current.trim()) chunks.push(current.trim());
-  return chunks;
-}
 
 async function handleQrcode(sock, msg, jid, caption) {
   const texto = caption.replace(/^[!.,\/]qrcode\s*/i, '').trim();
@@ -907,9 +870,13 @@ try {
   // ── Missões diárias ───────────────────────────────────────────
   let missaoText = '';
   try {
-    const { dailyMissionDefinitions } = require('./missoes');
+    // Era require('./missoes'), que resolve para
+    // handlers/utilidade/missoes.js — arquivo que não existe (o real fica
+    // em handlers/diversao/missoes.js). O erro caía no catch{} silencioso
+    // abaixo, então essa seção do perfil nunca mostrava nada.
+    const { dailyMissionDefinitions, getTodayStr } = require('../diversao/missoes');
     const dm    = userData?.dailyMissions;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayStr(); // mesmo fuso (Brasília) usado para gravar dm.date
     if (dm && dm.date === today) {
       const concluidas = dailyMissionDefinitions.filter(m =>
         (dm.progress?.[m.id] || 0) >= m.target || dm.completed?.[m.id]
@@ -1117,7 +1084,6 @@ module.exports = {
   handleMenuRelacionamento,
   handleAlteradores,
   handleMenuFilho,
-  handleMenuWork,
   handleLevelOn,
   handleLevel,
   handleRankLevel,
@@ -1136,12 +1102,6 @@ module.exports = {
   handleLetra,
   handlePerfil,
   handleBio,
-  handleBrincadeiras,
-  handleMenuGold,
-  handleMenuPet,
-  handleSistemaGold,
-  handleSistemaPet,
-  handleSistemaMedieval,
   handleSave,
   handleSaveRec,
   handleTiktok,

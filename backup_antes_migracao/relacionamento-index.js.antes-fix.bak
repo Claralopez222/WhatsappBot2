@@ -663,8 +663,8 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
 // para que handleCancelarPedido, handleCancelarCasamento,
 // handleTerminar e handleResposta (se existirem nos sub-módulos)
 // já estejam disponíveis quando o Object.assign rodar.
-const relacionamentoExtra = require(path.join(__dirname, 'relacionamento-extra'));
-const relacionamentoFixar = require(path.join(__dirname, 'relacionamento-fixar'));
+const relacionamentoExtra = require(path.join(__dirname, 'extra'));
+const relacionamentoFixar = require(path.join(__dirname, 'fixar'));
 
 module.exports = Object.assign(
   {

@@ -1,8 +1,8 @@
 ﻿const path = require('path');
 
-const Usuario = require(path.join(__dirname, '..', 'models', 'Usuario'));
-const { getNivelInfo }      = require(path.join(__dirname, '..', 'utils', 'levelUtils'));
-const { ITENS_LOJA } = require(path.join(__dirname, 'diversao', 'economia'));
+const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const { getNivelInfo }      = require(path.join(__dirname, '..', '..', 'utils', 'levelUtils'));
+const { ITENS_LOJA } = require(path.join(__dirname, '..', 'diversao', 'economia'));
 let _jidNormalizedUser = null;
 function jidNormalizedUser(jid) {
   if (!_jidNormalizedUser) {
@@ -14,7 +14,7 @@ function jidNormalizedUser(jid) {
 // ─── Lazy require para quebrar dependência circular ────────────
 let _rel = null;
 function rel() {
-  if (!_rel) _rel = require(path.join(__dirname, 'relacionamento'));
+  if (!_rel) _rel = require(path.join(__dirname, 'index'));
   return _rel;
 }
 

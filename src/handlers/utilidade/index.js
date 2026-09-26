@@ -19,7 +19,7 @@ const {
 } = require(path.join(__dirname, 'menu'));
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { handleLevelOn, handleLevel, handleRankLevel } = require(path.join(__dirname, 'level'));
-const { handleSave, handleSaveRec, handleTiktok, handleAudioDownload, handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs, getFfmpegPath, getFfprobePath } = require(path.join(__dirname, '..', 'downloads'));
+const { handleSave, handleSaveRec, handleTiktok, handleAudioDownload, handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs, getFfmpegPath, getFfprobePath } = require(path.join(__dirname, 'downloads'));
 
 let logger = { level: 'silent' };
 let REMOVEBG_KEY = process.env.REMOVEBG_KEY || '';

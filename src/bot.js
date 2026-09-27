@@ -137,11 +137,27 @@ async function startBot() {
   const grupoHandler = require('./handlers/grupo');
   grupoHandler.registerPollVoteHandler(sock);
 
-  // Boas-Vindas em novos membros no grupo
+  // Boas-Vindas e Saída de Grupos
   sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
     if (action === 'add') {
       for (const p of participants) {
         await processarBemVindo(sock, id, p, p.split('@')[0]);
+      }
+    } else if (action === 'remove' || action === 'leave') {
+      const botNum = sock.user?.id ? sock.user.id.split(':')[0].split('@')[0] : null;
+      const botLid = sock.user?.lid ? sock.user.lid.split(':')[0].split('@')[0] : null;
+
+      const botSaiu = participants.some(p => {
+        const pNum = p.split(':')[0].split('@')[0];
+        return (botNum && pNum === botNum) || (botLid && pNum === botLid);
+      });
+
+      if (botSaiu) {
+        console.log(`🚪 Bot foi removido ou saiu do grupo ${id}. Limpando dados do ranking e integrantes do grupo...`);
+        const CarteiraGrupo = require('./models/CarteiraGrupo');
+        const GrupoConfig   = require('./models/GrupoConfig');
+        await CarteiraGrupo.deleteMany({ idGrupo: id });
+        await GrupoConfig.deleteOne({ idGrupo: id });
       }
     }
   });

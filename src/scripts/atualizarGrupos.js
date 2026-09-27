@@ -3,8 +3,9 @@
 const path = require('path');
 require('dotenv').config();
 
-// ─── MongoDB Model ────────────────────────────────────────────────────────────
+// ─── MongoDB Models ───────────────────────────────────────────────────────────
 const CarteiraGrupoModel = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
+const GrupoConfigModel   = require(path.join(__dirname, '..', 'models', 'GrupoConfig'));
 
 // ─── Firebase Firestore (SDK v9+ Modular) ────────────────────────────────────
 const { db } = require(path.join(__dirname, '..', '..', 'firebaseConfig'));
@@ -14,9 +15,8 @@ const { doc, setDoc } = require('firebase/firestore');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Descobre o nome real dos grupos via Baileys e sincroniza:
- *  - MongoDB  → campo `nome` em CarteiraGrupo (updateMany por idGrupo)
- *  - Firestore → coleção `configuracoes_grupo`, documento com ID = JID do grupo
+ * Descobre os grupos ativos do bot, remove do banco grupos dos quais o bot saiu,
+ * e atualiza o nome real dos grupos restantes no MongoDB e Firestore.
  *
  * @param {Object} sock - Instância ativa do Baileys
  */
@@ -27,10 +27,41 @@ async function rodarAtualizacao(sock) {
   }
 
   console.log('━'.repeat(60));
-  console.log('🔄 Iniciando sincronização de nomes de grupos...');
+  console.log('🔄 Iniciando sincronização e limpeza de grupos...');
   console.log('━'.repeat(60));
 
-  // ── 1. Busca JIDs únicos com nome ausente ou genérico no MongoDB ────────────
+  // ── 1. Remove JIDs inválidos (que não terminam com @g.us) ─────────────────
+  try {
+    const resInvalidos = await CarteiraGrupoModel.deleteMany({ idGrupo: { $not: /@g\.us$/ } });
+    if (resInvalidos.deletedCount > 0) {
+      console.log(`🧹 Removidos ${resInvalidos.deletedCount} registro(s) com idGrupo inválido (não @g.us).`);
+    }
+  } catch (err) {
+    console.error('⚠️ Erro ao remover JIDs inválidos:', err.message);
+  }
+
+  // ── 2. Busca a lista REAL de grupos em que o bot participa ativamente ──────
+  let activeGroupJids = [];
+  try {
+    const participatingMap = await sock.groupFetchAllParticipating();
+    activeGroupJids = Object.keys(participatingMap || {});
+    console.log(`📋 O bot está participando ativamente de ${activeGroupJids.length} grupo(s).`);
+
+    // Remove do banco todos os grupos que o bot NÃO faz mais parte
+    const delCarteira = await CarteiraGrupoModel.deleteMany({ idGrupo: { $nin: activeGroupJids } });
+    const delConfig   = await GrupoConfigModel.deleteMany({ idGrupo: { $nin: activeGroupJids } });
+
+    if (delCarteira.deletedCount > 0) {
+      console.log(`🧹 Removidos ${delCarteira.deletedCount} registro(s) de CarteiraGrupo de grupos em que o bot não está mais.`);
+    }
+    if (delConfig.deletedCount > 0) {
+      console.log(`🧹 Removidos ${delConfig.deletedCount} registro(s) de GrupoConfig de grupos em que o bot não está mais.`);
+    }
+  } catch (err) {
+    console.error('⚠️ Erro ao obter lista de grupos ativos do WhatsApp:', err.message);
+  }
+
+  // ── 3. Busca JIDs únicos com nome ausente ou genérico no MongoDB ────────────
   let jidsPendentes;
   try {
     jidsPendentes = await CarteiraGrupoModel.distinct('idGrupo', {
@@ -59,20 +90,18 @@ async function rodarAtualizacao(sock) {
   let atualizados = 0;
   let falhas      = 0;
 
-  // ── 2. Itera sobre cada JID pendente ───────────────────────────────────────
+  // ── 4. Itera sobre cada JID pendente ───────────────────────────────────────
   for (let i = 0; i < jidsPendentes.length; i++) {
     const jid     = jidsPendentes[i];
     const prefixo = `[${i + 1}/${total}]`;
 
-    // Validação básica do JID
     if (!jid || !jid.endsWith('@g.us')) {
-      console.warn(`${prefixo} ⚠️  JID inválido ignorado: "${jid}"`);
+      await CarteiraGrupoModel.deleteMany({ idGrupo: jid });
       falhas++;
       continue;
     }
 
     try {
-      // ── 3. Busca metadados em tempo real no WhatsApp ──────────────────────
       const metadata = await sock.groupMetadata(jid);
       const nomeReal = metadata?.subject?.trim();
 
@@ -80,13 +109,11 @@ async function rodarAtualizacao(sock) {
         throw new Error('Campo "subject" vazio ou ausente nos metadados.');
       }
 
-      // ── 4a. Atualiza o MongoDB ────────────────────────────────────────────
       const resultadoMongo = await CarteiraGrupoModel.updateMany(
         { idGrupo: jid },
         { $set: { nome: nomeReal } }
       );
 
-      // ── 4b. Atualiza o Firestore ──────────────────────────────────────────
       const docRef = doc(db, 'configuracoes_grupo', jid);
       await setDoc(
         docRef,
@@ -108,18 +135,26 @@ async function rodarAtualizacao(sock) {
     } catch (err) {
       falhas++;
       console.error(`${prefixo} ❌ Ignorado (${jid}): ${err.message}`);
+      if (
+        err.message.includes('not-authorized') ||
+        err.message.includes('403') ||
+        err.message.includes('404') ||
+        err.message.includes('PERMISSION_DENIED')
+      ) {
+        await CarteiraGrupoModel.deleteMany({ idGrupo: jid });
+        await GrupoConfigModel.deleteOne({ idGrupo: jid });
+        console.log(`         🧹 Grupo ${jid} removido do banco pois o bot não tem mais acesso.`);
+      }
     }
 
-    // Delay anti-flood entre chamadas ao WhatsApp (1.2s)
     await sleep(1200);
   }
 
-  // ── 5. Relatório Final ─────────────────────────────────────────────────────
   console.log('\n' + '━'.repeat(60));
-  console.log('📊 SINCRONIZAÇÃO CONCLUÍDA');
+  console.log('📊 SINCRONIZAÇÃO E LIMPEZA CONCLUÍDAS');
   console.log('━'.repeat(60));
   console.log(`   ✅ Atualizados com sucesso : ${atualizados}`);
-  console.log(`   ❌ Falhas / sem acesso     : ${falhas}`);
+  console.log(`   ❌ Falhas / removidos      : ${falhas}`);
   console.log('━'.repeat(60) + '\n');
 }
 

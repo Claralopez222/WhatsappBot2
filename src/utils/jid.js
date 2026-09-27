@@ -2,7 +2,6 @@
 
 /**
  * Normaliza um JID de remetente para uso como identidade (idWhatsApp).
- *
  * Regras:
  * - Sempre lowercase.
  * - Remove sufixo de dispositivo (ex: "5511999:12@s.whatsapp.net" → "5511999@s.whatsapp.net").

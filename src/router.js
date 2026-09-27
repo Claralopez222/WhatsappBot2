@@ -316,6 +316,36 @@ async function handleMessage(sock, msg) {
   if (!isAnyCmd(raw)) return;
   if (senderJid) contarCmd(senderJid);
 
+  // ── ALTERADORES DE MÍDIA (voz/vídeo) ───────────────────────────
+  // Precisa vir ANTES do intercept de acessórios de casal logo abaixo —
+  // como esses comandos usam prefixo "." e não estavam em nenhuma lista de
+  // exclusão, o intercept os capturava primeiro e eles nunca chegavam a
+  // ser processados de verdade (por isso pareciam simplesmente não funcionar).
+  if (matchCmd(cmdWord, 'videolento'))      { await alteradoresHandler.handleVideoLento(sock, msg, jid);     return; }
+  if (matchCmd(cmdWord, 'videorapido'))     { await alteradoresHandler.handleVideoRapido(sock, msg, jid);    return; }
+  if (matchCmd(cmdWord, 'videocontrario'))  { await alteradoresHandler.handleVideoContrario(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'reversevideo'))    { await alteradoresHandler.handleReverseVideo(sock, msg, jid);   return; }
+  if (matchCmd(cmdWord, 'audiolento'))      { await alteradoresHandler.handleAudioLento(sock, msg, jid);     return; }
+  if (matchCmd(cmdWord, 'audiorapido'))     { await alteradoresHandler.handleAudioRapido(sock, msg, jid);    return; }
+  if (matchCmd(cmdWord, 'grave'))           { await alteradoresHandler.handleGrave(sock, msg, jid);          return; }
+  if (matchCmd(cmdWord, 'esquilo'))         { await alteradoresHandler.handleEsquilo(sock, msg, jid);        return; }
+  if (matchCmd(cmdWord, 'bass'))            { await alteradoresHandler.handleBass(sock, msg, jid);           return; }
+  if (matchCmd(cmdWord, 'vozmenino'))       { await alteradoresHandler.handleVozMenino(sock, msg, jid);      return; }
+  if (matchCmd(cmdWord, 'vozgrossa'))       { await alteradoresHandler.handleVozGrossa(sock, msg, jid);      return; }
+  if (matchCmd(cmdWord, 'vozmulher'))       { await alteradoresHandler.handleVozMulher(sock, msg, jid);      return; }
+  if (matchCmd(cmdWord, 'audioreverse'))    { await alteradoresHandler.handleAudioReverse(sock, msg, jid);   return; }
+  if (matchCmd(cmdWord, 'vozrobo'))         { await alteradoresHandler.handleVozRobo(sock, msg, jid);        return; }
+  if (matchCmd(cmdWord, 'vozalien'))        { await alteradoresHandler.handleVozAlien(sock, msg, jid);       return; }
+  if (matchCmd(cmdWord, 'vozvelho'))        { await alteradoresHandler.handleVozVelho(sock, msg, jid);       return; }
+  if (matchCmd(cmdWord, 'vozcrianca'))      { await alteradoresHandler.handleVozCrianca(sock, msg, jid);     return; }
+  if (matchCmd(cmdWord, 'vozdemonio'))      { await alteradoresHandler.handleVozDemonio(sock, msg, jid);     return; }
+  if (matchCmd(cmdWord, 'eco'))             { await alteradoresHandler.handleEco(sock, msg, jid);            return; }
+  if (matchCmd(cmdWord, 'caverna'))         { await alteradoresHandler.handleCaverna(sock, msg, jid);        return; }
+  if (matchCmd(cmdWord, 'telefone'))        { await alteradoresHandler.handleTelefone(sock, msg, jid);       return; }
+  if (matchCmd(cmdWord, 'radio'))           { await alteradoresHandler.handleRadio(sock, msg, jid);          return; }
+  if (matchCmd(cmdWord, 'megafone'))        { await alteradoresHandler.handleMegafone(sock, msg, jid);       return; }
+  if (matchCmd(cmdWord, 'underwater'))      { await alteradoresHandler.handleUnderwater(sock, msg, jid);     return; }
+
   // ── ACESSÓRIOS DE CASAL ───────────────────────────────────────
   const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'givemed', 'saquear', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval'];
   if (!CMDS_MEDIEVAIS.includes(cmdWord.slice(1)) && cmdWord.startsWith('.')) {

@@ -26,7 +26,16 @@ function setLogger(newLogger) {
 
 // ─── Helper: baixa mídia ──────────────────────────────────────────────────────
 async function getMediaFromMsg(sock, msg, jid) {
-  const content = msg.message;
+  // O router.js desembrulha mensagens temporárias (ephemeralMessage) e de
+  // visualização única (viewOnceMessage) antes de rotear qualquer comando,
+  // mas aqui a leitura era feita direto em msg.message, sem esse desembrulho.
+  // Em grupos com mensagens temporárias ativadas, o comando citando um áudio
+  // simplesmente não encontrava o contextInfo (e portanto a mídia citada),
+  // e nada visível acontecia.
+  const content =
+    msg.message?.ephemeralMessage?.message ||
+    msg.message?.viewOnceMessage?.message  ||
+    msg.message;
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const quoted = contextInfo?.quotedMessage;
 

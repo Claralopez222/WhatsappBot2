@@ -487,9 +487,17 @@ async function handleSave(sock, msg, jid, caption) {
 
   const infoText = formatMeta(meta);
   const isVideo = lower.match(/\.(mp4|mov|webm|mkv)$/);
-  const cap = (txt) => isVideo
-    ? buildVideoCaption(meta, buffer.length, link)
-    : (infoText ? infoText + txt : txt);
+  // Antes, quando isVideo era verdadeiro, o texto extra passado pra cap()
+  // era sempre descartado — o usuário nunca via avisos como "enviado como
+  // documento por ser grande demais". Agora esse aviso vem primeiro, e a
+  // legenda de metadados continua logo abaixo.
+  const cap = (txt) => {
+    if (isVideo) {
+      const metadados = buildVideoCaption(meta, buffer.length, link);
+      return txt ? `${txt}\n\n${metadados}` : metadados;
+    }
+    return infoText ? infoText + txt : txt;
+  };
 
   if (buffer.length > SIZE_LIMIT) {
     await sock.sendMessage(jid, { document: buffer, mimetype: 'application/octet-stream', fileName: name, caption: cap('📄 Arquivo muito grande — enviado como documento.') }, { quoted: msg });
@@ -951,12 +959,17 @@ async function handleAudioDownload(sock, msg, jid, caption) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-// !som
+// !som (também atendido pelo alias !play, roteado aqui pelo router.js)
 async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const P = getPrefix(jid);
-  const nome = caption.replace(/^[!.,\/]*som\s*/i, '').trim();
+  // A regex precisa remover tanto "som" quanto "play", já que o router.js
+  // manda os dois comandos pra esse mesmo handler. Antes só "som" era
+  // reconhecido, então "!play nome da musica" caía aqui sem o prefixo ser
+  // removido — "nome" virava "!play nome da musica" (comando incluso),
+  // e era isso que ia parar na busca do yt-dlp.
+  const nome = caption.replace(/^[!.,\/]*(som|play)\s*/i, '').trim();
   if (!nome) {
-    return sock.sendMessage(jid, { text: `⚠️ Digite o nome da música.\nExemplo: *${P}som Ela Deixou um Bilhete*` }, { quoted: msg });
+    return sock.sendMessage(jid, { text: `⚠️ Digite o nome da música.\nExemplo: *${P}som Ela Deixou um Bilhete* ou *${P}play Ela Deixou um Bilhete*` }, { quoted: msg });
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });

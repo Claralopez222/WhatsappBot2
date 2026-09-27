@@ -178,6 +178,8 @@ async function startBot() {
 
     if (connection === 'close') {
       schedulersIniciados = false;
+      _botSock = null;
+
       const code   = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const motivo = lastDisconnect?.error?.message ?? 'desconhecido';
       const logado = code !== DisconnectReason.loggedOut;
@@ -186,21 +188,20 @@ async function startBot() {
 
       if (code === DisconnectReason.connectionReplaced) {
         console.error('🚨 CONEXÃO SUBSTITUÍDA (440). Parando...');
-        _botSock = null;
         await releaseLock();
         process.exit(1);
       }
 
       if (logado) {
-        const delay = 30_000;
+        const isRestartRequired = code === DisconnectReason.restartRequired;
+        const delay = isRestartRequired ? 1_000 : 3_000;
+
         console.log(`🔄 Reconectando em ${delay / 1000}s...`);
         setTimeout(() => {
-          if (_botSock) return;
           startBot().catch(err => console.error('❌ Erro ao reiniciar:', err));
         }, delay);
       } else {
         console.log('🚪 Sessão encerrada no WhatsApp (loggedOut - 401). Limpando credenciais...');
-        _botSock = null;
         await clearMongoAuthState();
         saveData();
         await releaseLock();

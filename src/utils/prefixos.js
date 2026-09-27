@@ -1,9 +1,20 @@
 'use strict';
 
-const { getPrefix, setPrefix } = require('./persistence');
 const GrupoConfig = require('../models/GrupoConfig');
 
 const DEFAULT_PREFIXES = ['!', '.', '/', ',', '#'];
+
+// ─── Cache local de prefixos customizados por grupo ─────────────────────────
+// Dono exclusivo deste módulo — não depende mais de utils/persistence.js.
+// Bug corrigido: a versão anterior importava `setPrefix` de persistence.js,
+// mas esse arquivo nunca exportou essa função — então `setGroupPrefix()`
+// salvava o prefixo no MongoDB (GrupoConfig) só que NUNCA atualizava nada
+// em memória, e `getGroupPrefix()` continuava servindo o prefixo antigo até
+// o processo reiniciar. Ou seja: trocar o prefixo do grupo não tinha efeito
+// nenhum na prática. Agora o cache é local a este módulo, atualizado na
+// hora em `setGroupPrefix()`, e pode ser pré-carregado do Mongo no boot via
+// `hydratePrefixCache()`.
+const customPrefixCache = new Map();
 
 /**
  * Retorna o prefixo ativo para o grupo/chat.
@@ -11,11 +22,13 @@ const DEFAULT_PREFIXES = ['!', '.', '/', ',', '#'];
  * @returns {string}
  */
 function getGroupPrefix(jid) {
-  return (typeof getPrefix === 'function' ? getPrefix(jid) : '!') || '!';
+  return customPrefixCache.get(jid) || '!';
 }
 
 /**
- * Define um novo prefixo para o grupo/chat e persiste no banco/memória.
+ * Define um novo prefixo para o grupo/chat: persiste no MongoDB e
+ * atualiza o cache em memória na mesma chamada, para que o próximo
+ * comando já reconheça o novo prefixo sem precisar reiniciar o bot.
  * @param {string} jid
  * @param {string} novoPrefixo
  */
@@ -23,14 +36,34 @@ async function setGroupPrefix(jid, novoPrefixo) {
   if (!DEFAULT_PREFIXES.includes(novoPrefixo)) {
     throw new Error(`Prefixo inválido. Escolha um dos permitidos: ${DEFAULT_PREFIXES.join(' ')}`);
   }
-  if (typeof setPrefix === 'function') {
-    setPrefix(jid, novoPrefixo);
-  }
   await GrupoConfig.findOneAndUpdate(
     { idGrupo: jid },
     { $set: { prefixo: novoPrefixo } },
     { upsert: true }
   );
+  customPrefixCache.set(jid, novoPrefixo);
+}
+
+/**
+ * Carrega o cache de prefixos customizados a partir do MongoDB. Chamar
+ * uma vez no boot do bot, depois de conectar ao Mongo — sem isso, um
+ * grupo que já tinha prefixo customizado antes do último restart volta
+ * a responder só ao prefixo padrão até alguém rodar o comando de trocar
+ * o prefixo de novo.
+ */
+async function hydratePrefixCache() {
+  try {
+    const docs = await GrupoConfig.find(
+      { prefixo: { $exists: true, $ne: '!' } },
+      { idGrupo: 1, prefixo: 1 }
+    ).lean();
+    for (const doc of docs) {
+      if (doc?.idGrupo && doc?.prefixo) customPrefixCache.set(doc.idGrupo, doc.prefixo);
+    }
+    console.log(`🔤 Prefixos customizados carregados: ${customPrefixCache.size} grupo(s).`);
+  } catch (err) {
+    console.error('⚠️ Erro ao carregar cache de prefixos:', err.message);
+  }
 }
 
 /**
@@ -95,6 +128,7 @@ module.exports = {
   DEFAULT_PREFIXES,
   getGroupPrefix,
   setGroupPrefix,
+  hydratePrefixCache,
   isAnyCmd,
   matchCmd,
   extractArgs,

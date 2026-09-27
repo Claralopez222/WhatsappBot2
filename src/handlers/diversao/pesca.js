@@ -15,7 +15,7 @@
 
 const path          = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { getCarteira, alterarGold, resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
 

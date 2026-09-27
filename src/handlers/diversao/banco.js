@@ -5,16 +5,7 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { incrementMission } = require('./missoes');
-
-// ─── Configuração central ─────────────────────────────────────────────────────
-
-const BANCO_CONFIG = {
-  PRAZO_MS:         3 * 60 * 60 * 1000,
-  JUROS_MIN:        5,
-  JUROS_MAX:        15,
-  DAILY_LIMIT: 100000,
-  HISTORICO_LIMITE: 10,
-};
+const { BANCO_CONFIG } = require(path.join(__dirname, '..', '..', 'config', 'banco'));
 
 // ─── Helpers puros ────────────────────────────────────────────────────────────
 

@@ -503,10 +503,15 @@ async function handleBotToggle(sock, msg, jid, args, isAdminUser) {
   }
 
   try {
+    const CarteiraGrupoModel = require('../../models/CarteiraGrupo');
     await GrupoConfig.findOneAndUpdate(
       { idGrupo: jid },
-      { $set: { botAtivo: ativo } },
+      { $set: { idGrupo: jid, botAtivo: ativo } },
       { upsert: true }
+    );
+    await CarteiraGrupoModel.updateMany(
+      { idGrupo: jid },
+      { $set: { 'config.botAtivo': ativo, botAtivo: ativo } }
     );
   } catch (err) {
     console.error('[handleBotToggle] Erro ao atualizar GrupoConfig:', err.message);
@@ -517,12 +522,12 @@ async function handleBotToggle(sock, msg, jid, args, isAdminUser) {
 
   if (ativo) {
     return sock.sendMessage(jid, {
-      text: '✅ *Bot ligado!* Estou de volta, pode mandar comandos. 🤖',
+      text: '✅ *Bot ligado neste grupo!* Estou de volta, pode mandar comandos. 🤖',
     }, { quoted: msg });
   } else {
     return sock.sendMessage(jid, {
       text:
-        '🔕 *Bot desligado!*\n\n' +
+        '🔕 *Bot desligado neste grupo!*\n\n' +
         'Não responderei mais comandos neste grupo.\n' +
         '_Use *!bot on* para reativar._',
     }, { quoted: msg });

@@ -7,6 +7,38 @@ const API = window.location.hostname === 'localhost' || window.location.hostname
   ? 'http://localhost:3000/api'
   : 'https://whatsappbot2-130c.onrender.com/api';
 
+/* ── Auto-Login por Token de Acesso Direto (!site / !painel) ── */
+(function checkTokenAutoLogin() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if (token) {
+    const apiHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'http://localhost:3000/api'
+      : 'https://whatsappbot2-130c.onrender.com/api';
+
+    fetch(`${apiHost}/auth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.jwt) {
+          localStorage.setItem('jwt', data.jwt);
+          sessionStorage.setItem('piro_jwt', data.jwt);
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+          if (window.location.pathname.includes('login.html') || window.location.pathname.includes('cadastro.html')) {
+            window.location.replace('perfil.html');
+          } else {
+            window.location.reload();
+          }
+        }
+      })
+      .catch(err => console.error('Erro no auto-login:', err));
+  }
+})();
+
 /* ── Utilitários básicos ─────────────────────────────────── */
 const $ = id => document.getElementById(id);
 const show = id => $(id)?.classList.remove('hidden');

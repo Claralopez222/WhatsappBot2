@@ -312,7 +312,8 @@ async function handleMessage(sock, msg) {
     { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
   if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
     { await utilidadeHandler.handleBio(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'meupainel'))   { await require('./handlers/painel').handleMeuPainel(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'meupainel') || matchCmd(cmdWord, 'painel') || matchCmd(cmdWord, 'site') || matchCmd(cmdWord, 'link'))
+    { await require('./handlers/painel').handleMeuPainel(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'recuperar') || matchCmd(cmdWord, 'recuperarsenha') || matchCmd(cmdWord, 'token') || matchCmd(cmdWord, 'codigo')) {
     const rawNum = senderJid ? senderJid.split(':')[0].split('@')[0] : '';
     if (!rawNum) return;

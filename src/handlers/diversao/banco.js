@@ -43,13 +43,23 @@ async function resolverUserId(sock, msg) {
   const raw = msg.key.participant || msg.key.remoteJid;
   if (!raw) return raw;
   // Mesma normalização de economia.js/roubo.js/utils/carteira.js — mantém
-  // @lid como está e só normaliza JIDs de telefone. Garante que !banco
-  // aponte para a MESMA carteira usada por !gold, !comprar etc.
+  // @lid como está (não tenta converter para telefone) e só normaliza
+  // JIDs de telefone. Garante que !banco aponte para a MESMA carteira
+  // usada por !gold, !comprar etc.
   // (a versão anterior tentava resolver @lid via sock.onWhatsApp, usando a
   // parte numérica do @lid como se fosse telefone — nunca é.)
-  return raw.endsWith('@lid')
-    ? raw
-    : raw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  //
+  // FIX: o ramo @lid devolvia o JID cru, sem remover o sufixo de dispositivo
+  // (":12") nem forçar lowercase — diferente do que normalizarJid()/
+  // resolveGlobalId() fazem no resto do bot. Em WhatsApp multi-dispositivo
+  // isso criava uma CarteiraGrupo "fantasma" (idWhatsApp diferente) só para
+  // o banco, separada da carteira real usada por !gold — o gold depositado
+  // ficava preso lá, invisível em qualquer outro comando.
+  if (raw.endsWith('@lid')) {
+    const userPart = raw.split('@')[0].split(':')[0];
+    return `${userPart}@lid`.toLowerCase();
+  }
+  return raw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
 }
 
 async function getCarteiraGrupo(userId, idGrupo) {

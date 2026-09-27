@@ -20,7 +20,11 @@ const {
 } = require('./downloads');
 
 const { handleCep, handleClima, handleMoeda, handleCalcular, handleTraduzir } = require('./consultas');
-const { handleQrcode, handleEncurtar, handlePiada, handleFato, handleCodigoMorse, handleDecodificarMorse } = require('./texto-fun');
+const {
+  handleQrcode, handleEncurtar, handlePiada, handleFato,
+  handleCodigoMorse, handleDecodificarMorse, handleReverseText,
+  handleSayFofoca, handleGerarNome,
+} = require('./texto-fun');
 const { handlePerfil, handleBio } = require('./perfil');
 
 module.exports = {
@@ -64,6 +68,9 @@ module.exports = {
   handleFato,
   handleCodigoMorse,
   handleDecodificarMorse,
+  handleReverseText,
+  handleSayFofoca,
+  handleGerarNome,
 
   // Perfil & Bio
   handlePerfil,

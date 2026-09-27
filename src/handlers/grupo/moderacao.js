@@ -4,6 +4,7 @@ const fs   = require('fs');
 const path = require('path');
 const Usuario = require('../../models/Usuario');
 const { normalizarJid } = require('../../utils/jid');
+const { resolveUsuarioInfo } = require('../../utils/identity');
 
 const {
   somenteGrupo,
@@ -16,6 +17,7 @@ const {
   isMuted,
   mutedCount,
   clearMuted,
+  getGroupMetadataCached,
 } = require('./helpers');
 
 const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imageban.jpg');
@@ -41,15 +43,21 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   if (isAll) {
     let meta;
     try {
-      meta = await sock.groupMetadata(jid);
+      meta = await getGroupMetadataCached(sock, jid);
     } catch (err) {
       console.error('[handleBan @all] Erro ao buscar metadata:', err.message);
       await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg });
       return;
     }
 
+    if (!meta?.participants) {
+      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg });
+      return;
+    }
+
     const targets = meta.participants
       .filter(p => {
+        if (!p) return false;
         if (isBotJid(p.id, botJid)) return false;
         if (p.admin) return false; // Proteção: ignora outros admins!
         const base    = normalizeJidBase(p.id);
@@ -120,26 +128,24 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
+  // Tenta enviar mídias sem deixar falhas de mídia abortarem o banimento
   try {
-    const promises = [];
-
     if (fs.existsSync(BAN_IMAGE_PATH)) {
-      promises.push(sock.sendMessage(jid, {
+      await sock.sendMessage(jid, {
         image:    fs.readFileSync(BAN_IMAGE_PATH),
-        caption:  `🔨 @${targetJid.split('@')[0]} foi banido(a) do grupo! Tchau! 👋`,
+        caption:  `🔨 @${normalizeJidBase(targetJid)} foi banido(a) do grupo! Tchau! 👋`,
         mentions: [targetJid],
-      }));
+      }).catch(() => {});
     }
 
     if (fs.existsSync(BAN_AUDIO_PATH)) {
-      promises.push(sock.sendMessage(jid, {
+      await sock.sendMessage(jid, {
         audio:    fs.readFileSync(BAN_AUDIO_PATH),
         mimetype: 'audio/mp4',
         ptt:      false,
-      }));
+      }).catch(() => {});
     }
 
-    await Promise.all(promises);
     await sock.groupParticipantsUpdate(jid, [targetJid], 'remove');
     unmuteUser(jid, targetJid);
   } catch (err) {
@@ -170,15 +176,21 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   if (isAll) {
     let meta;
     try {
-      meta = await sock.groupMetadata(jid);
+      meta = await getGroupMetadataCached(sock, jid);
     } catch (err) {
       console.error('[handleMute @all] Erro:', err.message);
       await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg });
       return;
     }
 
+    if (!meta?.participants) {
+      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg });
+      return;
+    }
+
     const targets = meta.participants
       .filter(p => {
+        if (!p) return false;
         if (isBotJid(p.id, botJid)) return false;
         if (p.admin) return false; // Proteção: ignora admins!
         const base    = normalizeJidBase(p.id);
@@ -216,7 +228,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  const tag = `@${targetJid.split('@')[0]}`;
+  const tag = `@${normalizeJidBase(targetJid)}`;
 
   if (isMuted(jid, targetJid)) {
     await sock.sendMessage(jid, {
@@ -274,7 +286,7 @@ async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  const nome = contactNames[targetJid] || targetJid.split('@')[0];
+  const nome = contactNames?.[targetJid] || `@${normalizeJidBase(targetJid)}`;
 
   if (!unmuteUser(jid, targetJid)) {
     await sock.sendMessage(jid, {
@@ -311,25 +323,31 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
   const textMsg   = content.conversation || content.extendedTextMessage?.text || '';
   const isAll     = /@all\b/i.test(textMsg);
   const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderBase = normalizeJidBase(senderJid);
 
   if (isAll) {
     let meta;
     try {
-      meta = await sock.groupMetadata(jid);
+      meta = await getGroupMetadataCached(sock, jid);
     } catch (err) {
       console.error('[handlePromoverRebaixar @all] Erro:', err.message);
       await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg }); return;
     }
 
+    if (!meta?.participants) {
+      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg }); return;
+    }
+
     const alvos = acao === 'promote'
       ? meta.participants
-          .filter(p => !p.admin && !isBotJid(p.id, botJid))
+          .filter(p => p && !p.admin && !isBotJid(p.id, botJid))
           .map(p => p.id)
       : meta.participants
           .filter(p =>
+            p &&
             p.admin &&
             !isBotJid(p.id, botJid) &&
-            p.id !== senderJid
+            normalizeJidBase(p.id) !== senderBase
           )
           .map(p => p.id);
 
@@ -374,17 +392,17 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     }, { quoted: msg }); return;
   }
 
-  if (acao === 'demote' && targetJid === senderJid) {
+  if (acao === 'demote' && normalizeJidBase(targetJid) === senderBase) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se rebaixar.' }, { quoted: msg }); return;
   }
 
   try {
     await sock.groupParticipantsUpdate(jid, [targetJid], acao);
-    const nome = contactNames[targetJid] || targetJid.split('@')[0];
+    const targetBase = normalizeJidBase(targetJid);
     await sock.sendMessage(jid, {
       text: acao === 'promote'
-        ? `⬆️ *@${targetJid.split('@')[0]}* foi promovido(a) a admin! 👑`
-        : `⬇️ *@${targetJid.split('@')[0]}* perdeu o admin! 📉`,
+        ? `⬆️ *@${targetBase}* foi promovido(a) a admin! 👑`
+        : `⬇️ *@${targetBase}* perdeu o admin! 📉`,
       mentions: [targetJid],
     }, { quoted: msg });
   } catch (err) {
@@ -403,17 +421,20 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
   }
   if (!await checkAdmin(sock, msg, jid, 'reportar')) return;
 
-  // Aceita reply OU menção direta via resolveTargetJid para consistência de UX
-  const reportedJid = await resolveTargetJid(sock, msg, content, jid);
+  const reportedJidRaw = await resolveTargetJid(sock, msg, content, jid);
 
-  if (!reportedJid) {
+  if (!reportedJidRaw) {
     await sock.sendMessage(jid, {
       text: '⚠️ Responda a uma mensagem ou mencione um usuário com *!reportar @pessoa* para adverti-lo.',
     }, { quoted: msg }); return;
   }
 
-  const senderJid = normalizarJid(msg.key.participant || msg.key.remoteJid);
-  if (normalizeJidBase(reportedJid) === normalizeJidBase(senderJid)) {
+  const { resolvedJid, userData } = await resolveUsuarioInfo(reportedJidRaw, sock);
+  const reportedJid = userData?.idWhatsApp || resolvedJid || reportedJidRaw;
+  const reportedBase = normalizeJidBase(reportedJid);
+
+  const senderJid  = normalizarJid(msg.key.participant || msg.key.remoteJid);
+  if (reportedBase === normalizeJidBase(senderJid)) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se reportar.' }, { quoted: msg }); return;
   }
 
@@ -430,8 +451,8 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
     { upsert: true, new: true },
   );
 
-  const current = usuario.warnings.get(groupKey) || 0;
-  const nome    = contactNames[reportedJid] || reportedJid.split('@')[0];
+  const current = usuario?.warnings?.get?.(groupKey) ?? usuario?.warnings?.[groupKey] ?? 0;
+  const nome    = contactNames?.[reportedJid] || `@${reportedBase}`;
 
   if (current >= 3) {
     try {
@@ -460,7 +481,7 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
     await sock.sendMessage(jid, {
       text:
         `⚠️ *ADVERTÊNCIA ${nivelLabel}* ⚠️\n\n` +
-        `👤 Usuário: *@${reportedJid.split('@')[0]}*\n` +
+        `👤 Usuário: *@${reportedBase}*\n` +
         `${nivelEmoji} Advertências: *${current}/3*\n` +
         `⏳ Mais *${remaining}* para ser removido!\n\n` +
         `_Respeite as regras do grupo!_ 📜`,
@@ -483,9 +504,9 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
   const senderJid  = normalizarJid(msg.key.participant || msg.key.remoteJid);
   const senderBase = normalizeJidBase(senderJid);
 
-  const targetJid = await resolveTargetJid(sock, msg, content, jid);
+  const targetJidRaw = await resolveTargetJid(sock, msg, content, jid);
 
-  if (!targetJid) {
+  if (!targetJidRaw) {
     return sock.sendMessage(jid, {
       text:
         '⚠️ Informe quem terá a advertência removida.\n' +
@@ -493,7 +514,11 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
     }, { quoted: msg });
   }
 
-  if (normalizeJidBase(targetJid) === senderBase) {
+  const { resolvedJid, userData } = await resolveUsuarioInfo(targetJidRaw, sock);
+  const targetJid  = userData?.idWhatsApp || resolvedJid || targetJidRaw;
+  const targetBase = normalizeJidBase(targetJid);
+
+  if (targetBase === senderBase) {
     return sock.sendMessage(jid, {
       text: '🤡 Você não pode remover sua própria advertência. Peça a outro admin.',
     }, { quoted: msg });
@@ -506,12 +531,11 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
   }
 
   const groupKey = jid.replace(/\./g, '_');
-  const nome     = contactNames[targetJid] || targetJid.split('@')[0];
+  const nome     = contactNames?.[targetJid] || `@${targetBase}`;
 
-  const usuario = await Usuario.findOne({ idWhatsApp: targetJid }).lean();
-  const atual   = Number(usuario?.warnings?.[groupKey] ?? 0);
+  const atual = Number(userData?.warnings?.[groupKey] ?? 0);
 
-  if (!usuario || atual <= 0) {
+  if (!userData || atual <= 0) {
     return sock.sendMessage(jid, {
       text: `✅ *${nome}* não possui advertências neste grupo.`,
       mentions: [targetJid],
@@ -540,7 +564,7 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
   await sock.sendMessage(jid, {
     text:
       `✅ *ADVERTÊNCIA REMOVIDA*\n\n` +
-      `👤 Usuário: *@${targetJid.split('@')[0]}*\n` +
+      `👤 Usuário: *@${targetBase}*\n` +
       `📉 Era: *${atual}/3* → Agora: *${novoValor}/3*\n\n` +
       textoStatus,
     mentions: [targetJid],
@@ -589,6 +613,53 @@ async function handleApagarMsg(sock, msg, content, jid) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ─── !limparwarns / !clearwarns (NOVA FUNÇÃO) ──────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleLimparWarns(sock, msg, content, jid, botJid) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'limparwarns')) return;
+
+  const groupKey = jid.replace(/\./g, '_');
+  const textCmd  = (content?.conversation || content?.extendedTextMessage?.text || '').toLowerCase();
+
+  if (/@all\b/i.test(textCmd)) {
+    await Usuario.updateMany(
+      { [`warnings.${groupKey}`]: { $exists: true } },
+      { $unset: { [`warnings.${groupKey}`]: '' } }
+    );
+    await sock.sendMessage(jid, {
+      text: '🧹✅ *Todas as advertências deste grupo foram zeradas!*',
+    }, { quoted: msg });
+    return;
+  }
+
+  const targetJidRaw = await resolveTargetJid(sock, msg, content, jid);
+  if (!targetJidRaw) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Marque alguém ou use *@all*.\nExemplo: *!limparwarns @fulano* ou *!limparwarns @all*',
+    }, { quoted: msg });
+    return;
+  }
+
+  const { resolvedJid, userData } = await resolveUsuarioInfo(targetJidRaw, sock);
+  const targetJid  = userData?.idWhatsApp || resolvedJid || targetJidRaw;
+  const targetBase = normalizeJidBase(targetJid);
+
+  await Usuario.updateOne(
+    { idWhatsApp: targetJid },
+    { $unset: { [`warnings.${groupKey}`]: '' } }
+  );
+
+  await sock.sendMessage(jid, {
+    text: `🧹✅ Advertências de *@${targetBase}* foram totalmente zeradas!`,
+    mentions: [targetJid],
+  }, { quoted: msg });
+}
+
 module.exports = {
   handleBan,
   handleMute,
@@ -597,4 +668,5 @@ module.exports = {
   handleReportar,
   handleRemoverReporte,
   handleApagarMsg,
+  handleLimparWarns,
 };

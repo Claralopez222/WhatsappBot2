@@ -8,6 +8,7 @@ const {
   handleReportar,
   handleRemoverReporte,
   handleApagarMsg,
+  handleLimparWarns,
 } = require('./moderacao');
 
 const {
@@ -107,6 +108,7 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     `▸ ${P}apagarmsg — Apagar mensagem (reply)\n` +
     `▸ ${P}reportar — Advertir usuário (reply)\n` +
     `▸ ${P}removerreporte — Remover 1 advertência (reply/@)\n` +
+    `▸ ${P}limparwarns — Zerar todas advertências (@/@all)\n` +
     `▸ ${P}adv / ${P}advertencia — Ver suas advertências\n\n` +
 
     `📊 *JOGO / ECONOMIA*\n` +
@@ -126,6 +128,7 @@ module.exports = {
   handleDesmute,
   handleReportar,
   handlePromoverRebaixar,
+  handleLimparWarns,
 
   // Informação, estatísticas e listas
   handleRanking,

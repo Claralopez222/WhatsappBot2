@@ -78,19 +78,17 @@ async function handleMenuUtil(sock, msg, jid, getPrefix) {
 
 🌐 *TEXTO & IDIOMAS*
   ▸ ${P}traduzir _(idioma) (texto)_
-  ▸ ${P}maiusculo _(texto)_
-  ▸ ${P}invertido _(texto)_
-  ▸ ${P}caixa _(texto)_
+  ▸ ${P}inverter _(texto)_
+  ▸ ${P}gerarnome
+  ▸ ${P}fofoca _([@alguém])_
 
 📡 *CÓDIGO MORSE*
   ▸ ${P}morse _(texto)_
   ▸ ${P}demorse _(código)_
 
-🔗 *OUTROS*
+🔗 *OUTROS & DIVERSÃO*
   ▸ ${P}encurtar _(link)_
   ▸ ${P}qrcode _(texto)_
-  ▸ ${P}dado _(lados)_
-  ▸ ${P}moeda _(câmbio ou cara/coroa)_
   ▸ ${P}piada
   ▸ ${P}fato
 

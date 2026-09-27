@@ -379,6 +379,8 @@ async function handleMessage(sock, msg) {
     { await grupoHandler.handleReportar(sock, msg, content, jid, botJid); return; }
   if (matchCmd(cmdWord, 'removerreporte') || matchCmdStart(cmd, 'removerreporte '))
     { await grupoHandler.handleRemoverReporte(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'limparwarns') || matchCmd(cmdWord, 'clearwarns') || matchCmdStart(cmd, 'limparwarns ') || matchCmdStart(cmd, 'clearwarns '))
+    { await grupoHandler.handleLimparWarns(sock, msg, content, jid, botJid); return; }
   if (matchCmd(cmdWord, 'apagarmsg'))
     { await grupoHandler.handleApagarMsg(sock, msg, content, jid); return; }
   if (matchCmd(cmdWord, 'todos') || matchCmdStart(cmd, 'todos '))
@@ -627,6 +629,15 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'decodificarmorse ') || matchCmd(cmdWord, 'decodificarmorse') ||
       matchCmdStart(cmd, 'demorse ')           || matchCmd(cmdWord, 'demorse'))
     { await utilidadeHandler.handleDecodificarMorse(sock, msg, jid, caption); return; }
+
+  if (matchCmdStart(cmd, 'inverter ') || matchCmd(cmdWord, 'inverter'))
+    { await utilidadeHandler.handleReverseText(sock, msg, jid, caption); return; }
+
+  if (matchCmdStart(cmd, 'fofoca ') || matchCmd(cmdWord, 'fofoca'))
+    { await utilidadeHandler.handleSayFofoca(sock, msg, content, jid, author, contactNames); return; }
+
+  if (matchCmdStart(cmd, 'gerarnome ') || matchCmd(cmdWord, 'gerarnome'))
+    { await utilidadeHandler.handleGerarNome(sock, msg, jid, caption); return; }
 
   if (matchCmdStart(cmd, 'moeda ')) {
     const args = caption.replace(/^[!.,\/]moeda\s*/i, '').trim().split(/\s+/);

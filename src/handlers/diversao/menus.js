@@ -30,7 +30,10 @@ async function handleBrincadeiras(sock, msg, jid, getPrefix) {
       `${P}julgamento [@] — julgar\n` +
       `${P}fortuna — fortuna\n` +
       `${P}maldizer [@] — maldizer\n` +
-      `${P}confissao — confissão`,
+      `${P}confissao — confissão\n` +
+      `${P}fofoca [@] — contar fofoca\n` +
+      `${P}inverter [texto] — inverter texto\n` +
+      `${P}gerarnome — gerador de nicknames`,
   }, { quoted: msg });
 }
 

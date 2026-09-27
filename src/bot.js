@@ -19,7 +19,7 @@ const {
   fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
 
-const { useMongoAuthState } = require('./mongoAuthState');
+const { useMongoAuthState, clearMongoAuthState } = require('./mongoAuthState');
 const { Boom }  = require('@hapi/boom');
 const pino      = require('pino');
 const QRCode    = require('qrcode');
@@ -199,10 +199,12 @@ async function startBot() {
           startBot().catch(err => console.error('❌ Erro ao reiniciar:', err));
         }, delay);
       } else {
-        console.log('🚪 Sessão encerrada (loggedOut).');
+        console.log('🚪 Sessão encerrada no WhatsApp (loggedOut - 401). Limpando credenciais...');
         _botSock = null;
+        await clearMongoAuthState();
         saveData();
         await releaseLock();
+        console.log('\n⚠️ Credenciais resetadas com sucesso! Execute "npm start" para gerar um novo QR Code.\n');
         process.exit(0);
       }
     }

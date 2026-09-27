@@ -75,4 +75,13 @@ async function useMongoAuthState() {
   };
 }
 
-module.exports = { useMongoAuthState };
+async function clearMongoAuthState() {
+  try {
+    await AuthData.deleteMany({});
+    console.log('🧹 Credenciais da sessão do WhatsApp limpas com sucesso no MongoDB.');
+  } catch (err) {
+    console.error('⚠️ Erro ao limpar credenciais da sessão no MongoDB:', err.message);
+  }
+}
+
+module.exports = { useMongoAuthState, clearMongoAuthState };

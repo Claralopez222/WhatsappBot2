@@ -1,16 +1,49 @@
-node_modules
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+
+# Environment & Secrets
 .env
+.env.*
+*.env
+*.pem
+*.key
 
-# Baileys session/auth — check your actual folder name in the code
-auth_info_baileys/
+# Cookies & Authentication Sessions
+*cookies*.txt
+*_cookies.txt
+cookies.txt
+session/
 sessions/
+auth_info/
+auth_info_baileys/
+qrcode.png
+*.qr.png
 
-# OS/editor noise
-.DS_Store
+# Database & Data Dumps
+data.json
+dados.json
+numeros.json
+downloads_full.txt
+backup_antes_migracao/
+
+# Binaries & Executables
+*.exe
+yt-dlp.exe
+
+# Logs & Temporary Files
 *.log
 npm-debug.log*
-
-# if you ever build/test locally
+yarn-debug.log*
+yarn-error.log*
+temp/
+tmp/
+downloads/
 coverage/
 dist/
-data.json
+
+# OS/Editor Noise
+.DS_Store
+Thumbs.db

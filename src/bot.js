@@ -316,6 +316,12 @@ function getSenderName(msg) {
 
 // ── Iniciar bot ───────────────────────────────────────────────────────────────
 async function startBot() {
+  // ── Proteção contra múltiplos sockets no mesmo processo ─────────────────────
+  if (_botSock) {
+    console.warn('⚠️ startBot() chamado, mas já existe um socket ativo. Ignorando nova inicialização.');
+    return;
+  }
+
   const { state, saveCreds } = await useMongoAuthState();
   const { version }          = await fetchLatestBaileysVersion();
 
@@ -333,6 +339,7 @@ async function startBot() {
         message.listMessage     ||
         message.stickerMessage
       );
+
       if (requiresPatch) {
         message = {
           viewOnceMessageV2: {
@@ -346,6 +353,7 @@ async function startBot() {
           },
         };
       }
+
       return message;
     },
   });
@@ -360,187 +368,20 @@ async function startBot() {
 
   // ── Atualizar nomes de contato ────────────────────────────────────────────────
   sock.ev.on('contacts.upsert', cs => {
-    for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
+    for (const c of cs) {
+      if (c.name || c.notify) {
+        contactNames[c.id] = c.name || c.notify;
+      }
+    }
   });
 
   sock.ev.on('contacts.update', cs => {
-    for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
-  });
-
-  // ── Mensagens ─────────────────────────────────────────────────────────────────
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify' && type !== 'append') return;
-
-    for (const msg of messages) {
-      if (msg.key.fromMe) continue;
-      if (!msg.message)   continue;
-
-      const _jid       = msg.key.remoteJid || '';
-      const _isPrivate = !_jid.endsWith('@g.us') && !_jid.endsWith('@broadcast');
-
-      if (_isPrivate) {
-        const _txt = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-        console.log(`📩 Privado | ${_jid} | "${_txt.slice(0, 50)}"`);
+    for (const c of cs) {
+      if (c.name || c.notify) {
+        contactNames[c.id] = c.name || c.notify;
       }
-
-      (async () => {
-        try {
-          if (!_isPrivate) {
-            const remetente     = msg.key.participant || msg.key.remoteJid;
-            const remetenteNorm = normalizarJid(remetente);
-            if (!remetenteNorm) return;
-
-            // ── Captura o par LID↔telefone
-            if (remetenteNorm.endsWith('@lid') && msg.key.participantPn) {
-              const pnNorm = normalizarJid(msg.key.participantPn);
-              if (pnNorm) salvarLidMapping(remetenteNorm, pnNorm);
-            }
-
-            const nomeDoCara = msg.pushName || 'Usuário do Zap';
-
-            await prepareDailyMissionState(remetenteNorm);
-
-            // ── Bônus diário de 100 gold (primeira mensagem do dia no grupo) ──
-            const hoje = new Date();
-            hoje.setHours(0, 0, 0, 0);
-
-            let remetenteReal = remetenteNorm;
-
-// Se for @s.whatsapp.net, verifica se existe carteira com @lid no mesmo grupo
-if (!remetenteNorm.endsWith('@lid')) {
-  const lidMap = await LidMapping.findOne({ pn: remetenteNorm }).lean();
-  if (lidMap?.lid) {
-    const carteiraLid = await CarteiraGrupo.findOne({ idWhatsApp: lidMap.lid, idGrupo: _jid }).lean();
-    if (carteiraLid) remetenteReal = lidMap.lid;
-  }
-}
-
-const carteiraAtual = await CarteiraGrupo.findOne(
-  { idWhatsApp: remetenteReal, idGrupo: _jid },
-  { ultimoBonusDiario: 1, gold: 1 }
-).lean();
-
-            const recebeuHoje = carteiraAtual?.ultimoBonusDiario
-              && new Date(carteiraAtual.ultimoBonusDiario) >= hoje;
-
-            const incCarteira = { mensagens: 1, xp: 1 };
-            const setCarteira = { nome: nomeDoCara };
-
-            if (!recebeuHoje && carteiraAtual) {
-              incCarteira.gold = 100;
-              setCarteira.ultimoBonusDiario = new Date();
-            }
-
-            if (carteiraAtual) {
-  await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: remetenteReal, idGrupo: _jid },
-    { $inc: incCarteira, $set: setCarteira },
-    { new: true }
-  );
-
-  if (!recebeuHoje) {
-    await sock.sendMessage(_jid, {
-      text: `🪙 *${nomeDoCara}*, você ganhou seu bônus diário de *100 gold*! Volte amanhã para ganhar mais. 💰`,
-      mentions: [remetenteReal],
-    }).catch(() => {});
-  }
-} else {
-  // ✅ Carteira nova: também é a "primeira mensagem do dia", então paga o bônus
-  const carteiraCriada = await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: remetenteReal, idGrupo: _jid },
-    {
-      $inc: { mensagens: 1, xp: 1, gold: 100 },
-      $set: { nome: nomeDoCara, ultimoBonusDiario: new Date() },
-    },
-    { upsert: true, new: true }
-  );
-
-  await sock.sendMessage(_jid, {
-    text: `🪙 *${nomeDoCara}*, você ganhou seu bônus diário de *100 gold*! Volte amanhã para ganhar mais. 💰`,
-    mentions: [remetenteReal],
-  }).catch(() => {});
-}
-
-            // Usuario global (xp, mensagens, level, missões, xpHistory) agora é
-            // tratado inteiramente por addUserXp(), chamada mais abaixo em
-            // handleMessage(). Não duplicar aqui.
-          }
-
-          await handleMessage(sock, msg);
-
-          if (_jid.endsWith('@g.us')) {
-            registerActiveGroup(_jid);
-            activeGroups.add(_jid);
-          }
-
-        } catch (err) {
-          console.error('❌ Erro no processamento da mensagem:', err.message);
-        }
-      })();
     }
   });
-
-  // ── Eventos de grupo (entradas/saídas) ───────────────────────────────────────
-  sock.ev.on('group-participants.update', async ({ id: groupJid, participants, action }) => {
-
-    // ── Entrada de membros ──────────────────────────────────────────────────
-    if (action === 'add') {
-      for (const userJid of participants) {
-        const nome = contactNames[userJid] || userJid.split('@')[0];
-        try {
-          await grupoHandler.processarBemVindo(sock, groupJid, userJid, nome);
-        } catch (e) {
-          console.log('⚠️ Erro no bem-vindo:', e.message);
-        }
-      }
-    }
-
-    // ── Saída de membros ────────────────────────────────────────────────────
-    if (action === 'remove') {
-      for (const participantJid of participants) {
-
-        // 🗑️ Remove a carteira do usuário neste grupo
-        try {
-          const jidNorm = normalizarJid(participantJid);
-          if (jidNorm) {
-            const deletado = await CarteiraGrupo.deleteOne({ idWhatsApp: jidNorm, idGrupo: groupJid });
-
-            // Se não achou pelo JID direto, tenta via LidMapping
-            if (!deletado.deletedCount) {
-              const variantesPn = gerarVariantesNumero(jidNorm.split('@')[0])
-                .map(d => `${d}@s.whatsapp.net`);
-              const lidMap = await LidMapping.findOne({ pn: { $in: [jidNorm, ...variantesPn] } }).lean();
-              if (lidMap?.lid) {
-                await CarteiraGrupo.deleteOne({ idWhatsApp: lidMap.lid, idGrupo: groupJid });
-              }
-            }
-            console.log(`🗑️ CarteiraGrupo removida: ${jidNorm} saiu de ${groupJid}`);
-          }
-        } catch (e) {
-          console.error('⚠️ Erro ao remover CarteiraGrupo na saída:', e.message);
-        }
-
-        // 💔 Encerra relacionamento se houver
-        const found = relacionamentoHandler.findRelByJid(groupJid, participantJid, relacionamentos);
-        if (!found) continue;
-
-        const { key, rel } = found;
-        const parceiro = rel.jidA === participantJid ? rel.jidB : rel.jidA;
-
-        relacionamentos.delete(key);
-        if (relacionamentoHandler.xpCasais) {
-          relacionamentoHandler.xpCasais.delete(key);
-        }
-
-        await relacionamentoHandler.clearCasamentoDb(participantJid, parceiro);
-
-        await sock.sendMessage(groupJid, {
-          text:     `💔 *@${participantJid.split('@')[0]}* saiu do grupo e o relacionamento foi encerrado automaticamente.`,
-          mentions: [participantJid, parceiro].filter(Boolean),
-        }).catch(() => {});
-      }
-    }
-  }); // ← fecha group-participants.update
 
   // ── Conexão ───────────────────────────────────────────────────────────────────
   let schedulersIniciados = false;
@@ -550,9 +391,20 @@ const carteiraAtual = await CarteiraGrupo.findOne(
     // ── QR Code ────────────────────────────────────────────────────────────────
     if (qr) {
       console.log('\n📱 Escaneie o QR Code:\n');
+
       try {
-        console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
-        await QRCode.toFile(path.resolve(__dirname, '../qrcode.png'), qr, { width: 400 });
+        console.log(
+          await QRCode.toString(qr, {
+            type: 'terminal',
+            small: true
+          })
+        );
+
+        await QRCode.toFile(
+          path.resolve(__dirname, '../qrcode.png'),
+          qr,
+          { width: 400 }
+        );
       } catch (err) {
         console.error('[QRCode] Erro ao gerar QR:', err.message);
       }
@@ -562,63 +414,140 @@ const carteiraAtual = await CarteiraGrupo.findOne(
     if (connection === 'close') {
       schedulersIniciados = false;
 
-      const code    = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      const motivo  = lastDisconnect?.error?.message ?? 'desconhecido';
-      const logado  = code !== DisconnectReason.loggedOut;
+      const code =
+        new Boom(lastDisconnect?.error)?.output?.statusCode;
 
-      console.warn(`🔌 Desconectado. Código: ${code} | Motivo: ${motivo}`);
+      const motivo =
+        lastDisconnect?.error?.message ?? 'desconhecido';
 
-      if (logado) {
-        let delay;
-        if (code === DisconnectReason.connectionReplaced) {
-          // Outra sessão conectou com o mesmo número e substituiu esta.
-          // Backoff maior pra evitar loop de reconexão brigando com a outra
-          // instância ainda ativa — verifique se não há bot local ou outro
-          // deploy usando a mesma sessão salva no MongoDB.
-          delay = 60_000;
-          console.warn('⚠️ Conexão substituída (440): outra instância do bot conectou com o mesmo número. Verifique se há bot local ou outro deploy ativo usando a mesma sessão.');
-        } else {
-          delay = 30_000;
-        }
-        console.log(`🔄 Reconectando em ${delay / 1000}s...`);
-        setTimeout(() => startBot(), delay);
-      } else {
-        console.log('🚪 Sessão encerrada definitivamente (loggedOut).');
-        saveData();
+      const logado =
+        code !== DisconnectReason.loggedOut;
+
+      console.warn(
+        `🔌 Desconectado. Código: ${code} | Motivo: ${motivo}`
+      );
+
+      // ────────────────────────────────────────────────────────────────────────
+      // 440 = connectionReplaced
+      //
+      // Outra conexão assumiu a sessão do WhatsApp.
+      //
+      // NÃO tentar reconectar automaticamente neste caso.
+      // Caso contrário, duas instâncias podem ficar disputando a mesma sessão.
+      // ────────────────────────────────────────────────────────────────────────
+      if (code === DisconnectReason.connectionReplaced) {
+        console.error(
+          '🚨 CONEXÃO SUBSTITUÍDA (440).'
+        );
+
+        console.error(
+          'Outra conexão está usando a mesma sessão do WhatsApp.'
+        );
+
+        console.error(
+          '🛑 Esta instância não será reconectada automaticamente.'
+        );
+
+        _botSock = null;
+
         await releaseLock();
+
+        process.exit(1);
+      }
+
+      // ────────────────────────────────────────────────────────────────────────
+      // Outros tipos de desconexão
+      // ────────────────────────────────────────────────────────────────────────
+      if (logado) {
+        const delay = 30_000;
+
+        console.log(
+          `🔄 Reconectando em ${delay / 1000}s...`
+        );
+
+        setTimeout(() => {
+          if (_botSock) {
+            console.warn(
+              '⚠️ Socket antigo ainda está registrado. Reconexão cancelada.'
+            );
+            return;
+          }
+
+          startBot().catch(err => {
+            console.error(
+              '❌ Erro ao reiniciar o bot:',
+              err
+            );
+          });
+        }, delay);
+
+      } else {
+        console.log(
+          '🚪 Sessão encerrada definitivamente (loggedOut).'
+        );
+
+        _botSock = null;
+
+        saveData();
+
+        await releaseLock();
+
         process.exit(0);
       }
     }
 
     // ── Conexão aberta ─────────────────────────────────────────────────────────
-  if (connection === 'open') {
-    botJid = sock.user?.id ?? null;
-    console.log(`✅ Bot conectado! JID: ${botJid}\n`);
+    if (connection === 'open') {
+      botJid = sock.user?.id ?? null;
 
-    if (!schedulersIniciados) {
-      // Primeira conexão — inicializa os schedulers
-      initPetScheduler(sock);
-      initQuizRankingScheduler(sock, activeGroups);
-      initFilhosScheduler();
+      console.log(
+        `✅ Bot conectado! JID: ${botJid}\n`
+      );
 
-      // Limpeza periódica de arquivos temporários (a cada 5min, remove >10min)
-      setInterval(() => downloadsHandler.limparTmpAntigos(10 * 60 * 1000), 5 * 60 * 1000);
-      downloadsHandler.limparTmpAntigos(10 * 60 * 1000);
+      if (!schedulersIniciados) {
+        // Primeira conexão — inicializa os schedulers
+        initPetScheduler(sock);
+        initQuizRankingScheduler(sock, activeGroups);
+        initFilhosScheduler();
 
-      schedulersIniciados = true;
-      console.log('[Schedulers] Iniciados.');
+        // Limpeza periódica de arquivos temporários
+        // (a cada 5min, remove >10min)
+        setInterval(
+          () =>
+            downloadsHandler.limparTmpAntigos(
+              10 * 60 * 1000
+            ),
+          5 * 60 * 1000
+        );
 
-      // 🚀 Sincroniza nomes dos grupos no MongoDB + Firestore (apenas na 1ª conexão)
-      setTimeout(() => rodarAtualizacao(sock), 8000);
+        downloadsHandler.limparTmpAntigos(
+          10 * 60 * 1000
+        );
 
-    } else {
-      // Reconexão — só atualiza o sock nos schedulers existentes
-      initPetScheduler.updateSock?.(sock);
-      initQuizRankingScheduler.updateSock?.(sock);
-      console.log('[Schedulers] Sock atualizado após reconexão.');
+        schedulersIniciados = true;
+
+        console.log(
+          '[Schedulers] Iniciados.'
+        );
+
+        // 🚀 Sincroniza nomes dos grupos no MongoDB + Firestore
+        // apenas na 1ª conexão
+        setTimeout(
+          () => rodarAtualizacao(sock),
+          8000
+        );
+
+      } else {
+        // Reconexão — só atualiza o sock nos schedulers existentes
+        initPetScheduler.updateSock?.(sock);
+        initQuizRankingScheduler.updateSock?.(sock);
+
+        console.log(
+          '[Schedulers] Sock atualizado após reconexão.'
+        );
+      }
     }
-  }
-});
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════

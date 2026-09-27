@@ -310,14 +310,14 @@ async function handleXpDobro(sock, msg, jid, senderJid, relacionamentos) {
     return;
   }
 
-  // Custo para ativar bônus: 200 moedas
-  const userDoc = await Usuario.findOne({ idWhatsApp: senderNorm }, { moedas: 1 }).lean();
-  if ((userDoc?.moedas || 0) < 200) {
-    await sock.sendMessage(jid, { text: '🪙 Você precisa de 200 moedas para ativar o XP Dobro por 1 hora!' }, { quoted: msg });
+  // Custo para ativar bônus: 200 de gold (campo real do schema Usuario é "gold", não "moedas")
+  const userDoc = await Usuario.findOne({ idWhatsApp: senderNorm }, { gold: 1 }).lean();
+  if ((userDoc?.gold || 0) < 200) {
+    await sock.sendMessage(jid, { text: '🪙 Você precisa de 200 de gold para ativar o XP Dobro por 1 hora!' }, { quoted: msg });
     return;
   }
 
-  await Usuario.updateOne({ idWhatsApp: senderNorm }, { $inc: { moedas: -200 } });
+  await Usuario.updateOne({ idWhatsApp: senderNorm }, { $inc: { gold: -200 } });
 
   xpBonus.set(key, { ativo: true, expiry: Date.now() + 60 * 60 * 1000 });
 
@@ -387,14 +387,14 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
     return;
   }
 
-  // Custo da surpresa: 50 moedas
-  const userDoc = await Usuario.findOne({ idWhatsApp: senderNorm }, { moedas: 1 }).lean();
-  if ((userDoc?.moedas || 0) < 50) {
-    await sock.sendMessage(jid, { text: '🪙 Você precisa de 50 moedas para fazer uma surpresa!' }, { quoted: msg });
+  // Custo da surpresa: 50 de gold (campo real do schema Usuario é "gold", não "moedas")
+  const userDoc = await Usuario.findOne({ idWhatsApp: senderNorm }, { gold: 1 }).lean();
+  if ((userDoc?.gold || 0) < 50) {
+    await sock.sendMessage(jid, { text: '🪙 Você precisa de 50 de gold para fazer uma surpresa!' }, { quoted: msg });
     return;
   }
 
-  await Usuario.updateOne({ idWhatsApp: senderNorm }, { $inc: { moedas: -50 } });
+  await Usuario.updateOne({ idWhatsApp: senderNorm }, { $inc: { gold: -50 } });
 
   const surpresas = [
     { text: '🎁 Preparou um picnic surpresa no parque!', xp: 15 },

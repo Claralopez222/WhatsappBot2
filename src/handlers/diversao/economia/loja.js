@@ -298,19 +298,25 @@ async function handleVender(sock, msg, jid, caption) {
     return;
   }
 
-  const itemKey    = match[1].toLowerCase().trim();
-  const preco      = parseInt(match[2]);
-  const quantidade = parseInt(match[3]);
-  const itemInfo   = ITENS_LOJA[itemKey];
+  const itemKey        = match[1].toLowerCase().trim();
+  const precoDigitado  = parseInt(match[2]);
+  const quantidade     = parseInt(match[3]);
+  const itemInfo       = ITENS_LOJA[itemKey];
 
   if (!itemInfo) {
     await sock.sendMessage(jid, { text: `⚠️ Item *${itemKey}* não existe! Use *!loja* para ver os itens.` }, { quoted: msg });
     return;
   }
-  if (preco <= 0 || quantidade <= 0) {
+  if (precoDigitado <= 0 || quantidade <= 0) {
     await sock.sendMessage(jid, { text: '⚠️ Preço e quantidade devem ser maiores que 0!' }, { quoted: msg });
     return;
   }
+
+  // ⚠️ SEGURANÇA: o preço de venda nunca pode ultrapassar o preço oficial
+  // do item (itemInfo.preco). Sem esta trava, qualquer pessoa poderia
+  // digitar um preço absurdo (ex: !vender pizza 999999999 1) e mintar
+  // gold do nada, quebrando toda a economia do bot.
+  const preco = Math.min(precoDigitado, itemInfo.preco);
 
   const user = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
   const qtdDisponivel = user?.inventory?.[itemKey] ?? 0;
@@ -340,11 +346,15 @@ async function handleVender(sock, msg, jid, caption) {
   const totalRecebido = preco * quantidade;
   const carteira = await alterarGold(userId, jid, totalRecebido, `Venda: ${itemInfo.nome} x${quantidade}`);
 
+  const avisoPrecoAjustado = preco < precoDigitado
+    ? `\n_(preço ajustado para o máximo permitido: ${itemInfo.preco} gold/un.)_`
+    : '';
+
   await sock.sendMessage(jid, {
     text:
       `✅ *VENDA REALIZADA!* ✅\n\n` +
       `📦 Item: *${itemInfo.nome}*\n` +
-      `💵 Preço unitário: *${preco} gold*\n` +
+      `💵 Preço unitário: *${preco} gold*${avisoPrecoAjustado}\n` +
       `📊 Quantidade: *${quantidade}*\n` +
       `💰 Total recebido: *${totalRecebido} gold*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +

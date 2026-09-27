@@ -28,7 +28,9 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
     const carteira  = await getCarteira(userId, idGrupo);
     const gold      = carteira?.gold ?? 0;
     const numero    = userId.split('@')[0];
-    const userName  = contactNames?.[userIdRaw] || contactNames?.[userId] || numero;
+    // msg.pushName é o nome de exibição que o próprio WhatsApp já manda em
+    // toda mensagem — funciona mesmo antes do evento contacts.upsert chegar.
+    const userName  = contactNames?.[userIdRaw] || contactNames?.[userId] || msg.pushName || numero;
 
     let status = '🪨 Pobre';
     if (gold >= 1000)     status = '💰 Rico';

@@ -888,4 +888,5 @@ module.exports = {
   handleMessage,
   setBotJid,
   getBotJid,
+  contactNames, // exportado para bot.js poder popular via contacts.upsert/update
 };

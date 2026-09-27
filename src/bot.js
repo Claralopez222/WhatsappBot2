@@ -32,7 +32,7 @@ const { saveData } = require('./utils/persistence');
 
 // ─── Router & Handlers ────────────────────────────────────────────────────────
 // Fix #3: Conectado ao router.js modular!
-const { handleMessage, setBotJid } = require('./router');
+const { handleMessage, setBotJid, contactNames } = require('./router');
 const { processarBemVindo }       = require('./handlers/grupo');
 
 const { initPetScheduler, registerActiveGroup, initFilhosScheduler } = require('./handlers/diversao');
@@ -132,6 +132,15 @@ async function startBot() {
   _botSock = sock;
 
   sock.ev.on('creds.update', saveCreds);
+
+  // Popula contactNames (usado por !gold, !mute, !ban, etc. para mostrar nome
+  // em vez do número/LID cru) — sem isso o objeto fica sempre vazio.
+  sock.ev.on('contacts.upsert', cs => {
+    for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
+  });
+  sock.ev.on('contacts.update', cs => {
+    for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
+  });
 
   // Votos de enquete
   const grupoHandler = require('./handlers/grupo');

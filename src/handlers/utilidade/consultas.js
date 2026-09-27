@@ -167,22 +167,81 @@ async function handleCalcular(sock, msg, jid, caption) {
   }
 }
 
+// Mapa de códigos ISO suportados. Fica fora da função pra ser reutilizado
+// tanto na formatação da resposta quanto na validação de entrada.
+const NOMES_IDIOMA = {
+  en: 'Inglês', es: 'Espanhol', fr: 'Francês', de: 'Alemão', it: 'Italiano',
+  ja: 'Japonês', zh: 'Chinês', ru: 'Russo', ar: 'Árabe', pt: 'Português',
+  ko: 'Coreano', nl: 'Holandês', pl: 'Polonês', tr: 'Turco', hi: 'Hindi',
+};
+
+// Permite que o usuário digite o nome do idioma em português (sem acento),
+// já que é mais natural pra quem fala PT-BR do que decorar código ISO.
+const ALIASES_IDIOMA = {
+  ingles: 'en', english: 'en',
+  espanhol: 'es', spanish: 'es', castelhano: 'es',
+  frances: 'fr', french: 'fr',
+  alemao: 'de', german: 'de',
+  italiano: 'it', italian: 'it',
+  japones: 'ja', japanese: 'ja',
+  chines: 'zh', chinese: 'zh', mandarim: 'zh',
+  russo: 'ru', russian: 'ru',
+  arabe: 'ar', arabic: 'ar',
+  portugues: 'pt', portuguese: 'pt',
+  coreano: 'ko', korean: 'ko',
+  holandes: 'nl', dutch: 'nl',
+  polones: 'pl', polish: 'pl',
+  turco: 'tr', turkish: 'tr',
+  hindi: 'hi',
+};
+
+function removerAcentos(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Resolve um token digitado (código ISO ou nome em português/inglês) pro
+// código ISO correspondente. Retorna null se não reconhecer — isso é o que
+// evita o bug antigo de tratar qualquer palavra de 2-3 letras como idioma.
+function resolverIdioma(token) {
+  if (!token) return null;
+  const codigo = token.toLowerCase();
+  if (NOMES_IDIOMA[codigo]) return codigo;
+  const semAcento = removerAcentos(codigo);
+  return ALIASES_IDIOMA[semAcento] ?? null;
+}
+
 async function handleTraduzir(sock, msg, jid, caption) {
-  const NOMES_IDIOMA = {
-    en: 'Inglês', es: 'Espanhol', fr: 'Francês', de: 'Alemão', it: 'Italiano',
-    ja: 'Japonês', zh: 'Chinês', ru: 'Russo', ar: 'Árabe', pt: 'Português',
-  };
   const raw = caption.replace(/^[!.,\/#]traduzir\s*/i, '').trim();
-  const parts = raw.split(/\s+/);
+  const primeiraPalavra = raw.split(/\s+/)[0] || '';
 
-  let idioma = 'en';
-  let texto = '';
+  let origem = 'pt';
+  let destino = 'en';
+  let texto = raw;
 
-  if (parts.length >= 1 && /^[a-z]{2,3}$/i.test(parts[0])) {
-    idioma = parts[0].toLowerCase();
-    texto = parts.slice(1).join(' ').trim();
+  // Formato "origem-destino" (ex: en-es, ingles-espanhol) — controle explícito dos dois lados
+  if (primeiraPalavra.includes('-')) {
+    const [tokenOrigem, tokenDestino] = primeiraPalavra.split('-');
+    const codOrigem = resolverIdioma(tokenOrigem);
+    const codDestino = resolverIdioma(tokenDestino);
+    if (codOrigem && codDestino) {
+      origem = codOrigem;
+      destino = codDestino;
+      texto = raw.slice(primeiraPalavra.length).trim();
+    }
   } else {
-    texto = raw;
+    // Formato de um único idioma (ex: en, espanhol) — esse token é sempre a
+    // ORIGEM do texto, nunca o destino. Antes o código assumia que o texto
+    // já estava em português e traduzia PARA o idioma informado — por isso
+    // "!traduzir en dog" traduzia pt->en, e como "dog" não é português,
+    // voltava em inglês mesmo (dando a impressão de que não traduzia).
+    // Agora: se a origem for português, o destino vira inglês; caso
+    // contrário, o destino vira português — o sentido natural de uso.
+    const codOrigem = resolverIdioma(primeiraPalavra);
+    if (codOrigem) {
+      origem = codOrigem;
+      destino = codOrigem === 'pt' ? 'en' : 'pt';
+      texto = raw.slice(primeiraPalavra.length).trim();
+    }
   }
 
   // Suporte a mensagem citada (reply) se nenhum texto direto foi fornecido
@@ -200,25 +259,58 @@ async function handleTraduzir(sock, msg, jid, caption) {
 
   if (!texto) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!traduzir [idioma] [texto]* ou responda a uma mensagem com *!traduzir [idioma]*.\nExemplo: *!traduzir en Olá mundo*',
+      text: '⚠️ Use: *!traduzir [idioma-do-texto] [texto]* ou responda a uma mensagem com *!traduzir [idioma-do-texto]*.\n' +
+            'O idioma informado é o idioma ORIGINAL do texto — o destino é escolhido automaticamente (português ↔ outro idioma).\n' +
+            'Exemplo: *!traduzir en dog* → traduz do inglês para o português\n' +
+            'Sem idioma, assume que o texto está em português: *!traduzir Bom dia* → traduz para o inglês\n' +
+            'Também aceita nomes em português: *!traduzir espanhol hola*\n' +
+            'Para escolher os dois lados manualmente: *!traduzir en-es Good morning*',
     }, { quoted: msg });
     return;
   }
 
+  if (origem === destino) {
+    await sock.sendMessage(jid, { text: '⚠️ O idioma de origem e o de destino são o mesmo.' }, { quoted: msg });
+    return;
+  }
+
+  // A API tem limite de ~500 caracteres por requisição anônima.
+  const LIMITE_CARACTERES = 500;
+  let truncado = false;
+  if (texto.length > LIMITE_CARACTERES) {
+    texto = texto.slice(0, LIMITE_CARACTERES);
+    truncado = true;
+  }
+
   await safeReact(sock, jid, msg.key, '⏳');
   try {
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(texto)}&langpair=pt|${idioma}`;
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(texto)}&langpair=${origem}|${destino}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+
+    if (data.responseStatus && Number(data.responseStatus) !== 200) {
+      throw new Error(`API retornou status ${data.responseStatus}`);
+    }
+
     const traduzido = data?.responseData?.translatedText?.trim();
-    if (!traduzido) throw new Error('Sem tradução');
-    const nomeIdioma = NOMES_IDIOMA[idioma] ?? idioma.toUpperCase();
-    await sock.sendMessage(jid, { text: `🌐 *Tradução (${nomeIdioma}):*\n\n*${traduzido}*` }, { quoted: msg });
+    // A MyMemory às vezes devolve HTTP 200 com um aviso de cota estourada
+    // no lugar da tradução — sem esse checar, isso ia direto pro usuário.
+    if (!traduzido || /MYMEMORY WARNING/i.test(traduzido)) {
+      throw new Error('Cota da API excedida ou sem tradução disponível');
+    }
+
+    const nomeOrigem = NOMES_IDIOMA[origem] ?? origem.toUpperCase();
+    const nomeDestino = NOMES_IDIOMA[destino] ?? destino.toUpperCase();
+    const aviso = truncado ? `\n\n_(texto cortado em ${LIMITE_CARACTERES} caracteres)_` : '';
+
+    await sock.sendMessage(jid, {
+      text: `🌐 *Tradução (${nomeOrigem} → ${nomeDestino}):*\n\n*${traduzido}*${aviso}`,
+    }, { quoted: msg });
     await safeReact(sock, jid, msg.key, '✅');
   } catch {
     await safeReact(sock, jid, msg.key, '❌');
-    await sock.sendMessage(jid, { text: '❌ Erro ao traduzir o texto.' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '❌ Erro ao traduzir o texto. Tente novamente em instantes.' }, { quoted: msg });
   }
 }
 

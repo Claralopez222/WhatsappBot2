@@ -31,6 +31,10 @@ const {
   handleAdvertencia,
   handleRanking,
   handleLinkGrupo,
+  handleRegras,
+  handleSetRegras,
+  handleAdms,
+  handleStatsGrupo,
 } = require('./info');
 
 const {
@@ -45,6 +49,7 @@ const {
 
 const {
   isAdmin,
+  getGroupOwner,
   isMuted,
   unmuteUser,
   setBemVindo,
@@ -60,7 +65,7 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
   const menu =
     `🛡️ *MENU DE ADMINISTRAÇÃO* 🛡️\n\n` +
 
-    `👤 *MEMBROS*\n` +
+    `👤 *MEMBROS & ADMINS*\n` +
     `▸ ${P}ban @fulano — Banir membro\n` +
     `▸ ${P}ban @all — Banir todos não-admins\n` +
     `▸ ${P}mute @fulano — Mutar membro\n` +
@@ -71,10 +76,14 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     `▸ ${P}rebaixar @fulano — Remover admin\n` +
     `▸ ${P}listamembros — Listar membros\n` +
     `▸ ${P}listaadm — Listar admins\n` +
+    `▸ ${P}adms [motivo] — Notificar todos os admins\n` +
     `▸ ${P}tempo [@fulano] — Tempo no grupo\n\n` +
 
-    `📋 *GRUPO*\n` +
+    `📋 *GRUPO & REGRAS*\n` +
     `▸ ${P}grupinfo — Informações do grupo\n` +
+    `▸ ${P}statsgrupo — Estatísticas completas\n` +
+    `▸ ${P}regras — Ver regras do grupo\n` +
+    `▸ ${P}setregras [texto] — Definir regras do grupo\n` +
     `▸ ${P}fechar — Fechar grupo (só admins falam)\n` +
     `▸ ${P}abrir — Abrir grupo (todos falam)\n` +
     `▸ ${P}linkgrupo — Gerar link de convite\n` +
@@ -83,24 +92,22 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     `▸ ${P}sorteio [@membros] — Sortear vencedor\n\n` +
 
     `⚙️ *CONFIGURAÇÕES*\n` +
+    `▸ ${P}bot on/off — Ligar/desligar bot no grupo\n` +
     `▸ ${P}antilink on/off — Anti-link\n` +
     `▸ ${P}autosticker on/off — Auto-sticker\n` +
     `▸ ${P}slowmode [seg] — Slow mode (1–3600s)\n` +
     `▸ ${P}antiflood [msgs]/[seg] — Anti-flood\n` +
-    `▸ ${P}bemvindo on — Ativar boas-vindas\n` +
-    `▸ ${P}bemvindo [msg] — Ativar com msg customizada\n` +
-    `▸ ${P}bemvindo off — Desativar boas-vindas\n` +
-    `▸ ${P}pet on/off — Spawn de pets selvagens\n` +
-    `▸ ${P}pet status — Ver status do spawn de pets\n\n` +
+    `▸ ${P}bemvindo on/off/[msg] — Configurar boas-vindas\n` +
+    `▸ ${P}pet on/off — Spawn de pets selvagens\n\n` +
 
-    `🔔 *COMUNICAÇÃO*\n` +
+    `🔔 *COMUNICAÇÃO & MODERAÇÃO*\n` +
     `▸ ${P}avisar [texto] — Avisar e mencionar @todos\n` +
     `▸ ${P}fixargrupo — Fixar mensagem (reply)\n` +
     `▸ ${P}fixargrupo ver — Ver último aviso fixado\n` +
     `▸ ${P}apagarmsg — Apagar mensagem (reply)\n` +
     `▸ ${P}reportar — Advertir usuário (reply)\n` +
     `▸ ${P}removerreporte — Remover 1 advertência (reply/@)\n` +
-    `▸ ${P}adv / ${P}advertencia — Ver suas próprias advertências\n\n` +
+    `▸ ${P}adv / ${P}advertencia — Ver suas advertências\n\n` +
 
     `📊 *JOGO / ECONOMIA*\n` +
     `▸ ${P}rankgold — Ranking de Gold deste grupo`;
@@ -120,12 +127,16 @@ module.exports = {
   handleReportar,
   handlePromoverRebaixar,
 
-  // Informação e listas
+  // Informação, estatísticas e listas
   handleRanking,
   handleGrupInfo,
   handleListaAdm,
   handleListaMembros,
   handleTempo,
+  handleRegras,
+  handleSetRegras,
+  handleAdms,
+  handleStatsGrupo,
 
   // Interação com o grupo
   handleSorteio,
@@ -154,8 +165,9 @@ module.exports = {
   verificarSlowMode,
   verificarAntiFlood,
   isMuted,
-  unmuteUser, // Fix #1: Exportação de unmuteUser garantida!
+  unmuteUser,
   isAdmin,
+  getGroupOwner,
   handleRemoverReporte,
   handleAdvertencia,
   setBemVindo,

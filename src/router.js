@@ -354,6 +354,68 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'menupet'))
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
 
+  // ── GRUPO & MODERAÇÃO ──────────────────────────────────────────
+  if (matchCmd(cmdWord, 'ban') || matchCmdStart(cmd, 'ban '))
+    { await grupoHandler.handleBan(sock, msg, content, jid, botJid); return; }
+  if (matchCmd(cmdWord, 'mute') || matchCmdStart(cmd, 'mute '))
+    { await grupoHandler.handleMute(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'desmute') || matchCmdStart(cmd, 'desmute '))
+    { await grupoHandler.handleDesmute(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'promover') || matchCmdStart(cmd, 'promover '))
+    { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, true); return; }
+  if (matchCmd(cmdWord, 'rebaixar') || matchCmdStart(cmd, 'rebaixar '))
+    { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, false); return; }
+  if (matchCmd(cmdWord, 'grupinfo'))
+    { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'listaadm'))
+    { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }
+  if (matchCmd(cmdWord, 'listamembros'))
+    { await grupoHandler.handleListaMembros(sock, msg, jid, contactNames); return; }
+  if (matchCmd(cmdWord, 'tempo') || matchCmdStart(cmd, 'tempo '))
+    { await grupoHandler.handleTempo(sock, msg, content, jid, author, contactNames); return; }
+  if (matchCmd(cmdWord, 'adv') || matchCmd(cmdWord, 'advertencia'))
+    { await grupoHandler.handleAdvertencia(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'reportar') || matchCmdStart(cmd, 'reportar '))
+    { await grupoHandler.handleReportar(sock, msg, content, jid, botJid); return; }
+  if (matchCmd(cmdWord, 'removerreporte') || matchCmdStart(cmd, 'removerreporte '))
+    { await grupoHandler.handleRemoverReporte(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'apagarmsg'))
+    { await grupoHandler.handleApagarMsg(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'todos') || matchCmdStart(cmd, 'todos '))
+    { await grupoHandler.handleTodos(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'avisar') || matchCmdStart(cmd, 'avisar '))
+    { await grupoHandler.handleAvisar(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'fixargrupo') || matchCmdStart(cmd, 'fixargrupo '))
+    { await grupoHandler.handleFixarGrupo(sock, msg, content, jid, caption); return; }
+  if (matchCmd(cmdWord, 'sorteio') || matchCmdStart(cmd, 'sorteio '))
+    { await grupoHandler.handleSorteio(sock, msg, content, jid, botJid, contactNames); return; }
+  if (matchCmd(cmdWord, 'enquete') || matchCmdStart(cmd, 'enquete '))
+    { await grupoHandler.handleEnquete(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'antilink') || matchCmdStart(cmd, 'antilink '))
+    { await grupoHandler.handleAntiLink(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'autosticker') || matchCmdStart(cmd, 'autosticker '))
+    { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
+  if (matchCmd(cmdWord, 'slowmode') || matchCmdStart(cmd, 'slowmode '))
+    { await grupoHandler.handleSlowMode(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'antiflood') || matchCmdStart(cmd, 'antiflood '))
+    { await grupoHandler.handleAntiFlood(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'bemvindo') || matchCmdStart(cmd, 'bemvindo '))
+    { await grupoHandler.handleBemVindo(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'fechar'))
+    { await grupoHandler.handleFecharAbrir(sock, msg, jid, true); return; }
+  if (matchCmd(cmdWord, 'abrir'))
+    { await grupoHandler.handleFecharAbrir(sock, msg, jid, false); return; }
+  if (matchCmd(cmdWord, 'linkgrupo'))
+    { await grupoHandler.handleLinkGrupo(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'regras') || matchCmd(cmdWord, 'regrasgrupo'))
+    { await grupoHandler.handleRegras(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'setregras') || matchCmdStart(cmd, 'setregras '))
+    { await grupoHandler.handleSetRegras(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'adms') || matchCmd(cmdWord, 'marcaradms') || matchCmd(cmdWord, 'chamaradms') || matchCmdStart(cmd, 'adms '))
+    { await grupoHandler.handleAdms(sock, msg, jid, caption, contactNames); return; }
+  if (matchCmd(cmdWord, 'statsgrupo') || matchCmd(cmdWord, 'estatisticas'))
+    { await grupoHandler.handleStatsGrupo(sock, msg, jid); return; }
+
   // ── ECONOMIA ──────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'gold'))
     { await diversaoHandler.handleGold(sock, msg, jid, getPrefix, contactNames); return; }

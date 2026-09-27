@@ -34,6 +34,9 @@ const grupoConfigSchema = new mongoose.Schema(
     bemVindoAtivo:    { type: Boolean, default: false },
     bemVindoMensagem: { type: String,  default: null,  trim: true },
     boasVindas:       { type: Boolean, default: true  },
+
+    // ── Regras do Grupo ──────────────────────────────────────────
+    regras:           { type: String,  default: null,  trim: true },
   },
   {
     timestamps: true,

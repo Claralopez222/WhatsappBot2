@@ -28,12 +28,14 @@ const mutedUsers = new Map();
 // ─── CACHE DE METADATA DE GRUPO ────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 // Evita rate-limit do WhatsApp em grupos movimentados. TTL de 5 minutos;
-// invalidado automaticamente por tempo (sem limpeza manual necessária).
+// invalidado automaticamente por tempo.
 
 if (!global._groupMetadataCache) global._groupMetadataCache = new Map();
 const GROUP_METADATA_TTL_MS = 5 * 60 * 1000;
 
 async function getGroupMetadataCached(sock, groupJid, forceRefresh = false) {
+  if (!groupJid || typeof groupJid !== 'string') return null;
+
   const agora = Date.now();
   const cached = global._groupMetadataCache.get(groupJid);
 
@@ -41,30 +43,25 @@ async function getGroupMetadataCached(sock, groupJid, forceRefresh = false) {
     return cached.meta;
   }
 
-  const meta = await sock.groupMetadata(groupJid);
-  global._groupMetadataCache.set(groupJid, { meta, fetchedAt: agora });
-  return meta;
+  try {
+    const meta = await sock.groupMetadata(groupJid);
+    if (meta) {
+      global._groupMetadataCache.set(groupJid, { meta, fetchedAt: agora });
+    }
+    return meta;
+  } catch (err) {
+    console.error(`[getGroupMetadataCached] Erro ao buscar metadata para ${groupJid}:`, err.message);
+    if (cached) return cached.meta; // Fallback para cache antigo se a rede falhar
+    throw err;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
 // ─── IDENTIDADE / PERMISSÕES ────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function isAdmin(sock, groupJid, userJid) {
-  try {
-    const meta = await getGroupMetadataCached(sock, groupJid);
-    const part = meta.participants?.find(
-      p => p.id === userJid || p.lid === userJid
-    );
-    return part?.admin === 'admin' || part?.admin === 'superadmin';
-  } catch (err) {
-    console.error('[isAdmin] Erro ao buscar metadata:', err.message);
-    return false;
-  }
-}
-
 /**
- * Normaliza um JID removendo sufixos de dispositivo.
+ * Normaliza um JID removendo sufixos de dispositivo e domínio.
  * Exemplos:
  *   "5511912345678:3@s.whatsapp.net" → "5511912345678"
  *   "5511912345678@s.whatsapp.net"   → "5511912345678"
@@ -72,6 +69,43 @@ async function isAdmin(sock, groupJid, userJid) {
 function normalizeJidBase(jid) {
   if (!jid || typeof jid !== 'string') return '';
   return jid.split(':')[0].split('@')[0].toLowerCase();
+}
+
+async function isAdmin(sock, groupJid, userJid) {
+  if (!groupJid || !userJid) return false;
+  try {
+    const meta = await getGroupMetadataCached(sock, groupJid);
+    if (!meta?.participants) return false;
+
+    const userBase = normalizeJidBase(userJid);
+    const part = meta.participants.find(p => {
+      if (!p) return false;
+      const pIdBase  = normalizeJidBase(p.id);
+      const pLidBase = p.lid ? normalizeJidBase(p.lid) : '';
+      return pIdBase === userBase || pLidBase === userBase;
+    });
+
+    return part?.admin === 'admin' || part?.admin === 'superadmin';
+  } catch (err) {
+    console.error('[isAdmin] Erro ao verificar permissão de admin:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Obtém o criador / dono do grupo (superadmin).
+ */
+async function getGroupOwner(sock, groupJid) {
+  try {
+    const meta = await getGroupMetadataCached(sock, groupJid);
+    if (!meta) return null;
+
+    if (meta.owner) return meta.owner;
+    const superadmin = meta.participants?.find(p => p.admin === 'superadmin');
+    return superadmin ? superadmin.id : null;
+  } catch {
+    return null;
+  }
 }
 
 function isBotJid(jid, botJid) {
@@ -85,7 +119,7 @@ function isBotJid(jid, botJid) {
  * Tenta resolver @lid para @s.whatsapp.net quando possível.
  */
 async function resolveTargetJid(sock, msg, content, jid) {
-  const ctx               = content.extendedTextMessage?.contextInfo;
+  const ctx               = content?.extendedTextMessage?.contextInfo;
   const mentionedJid      = ctx?.mentionedJid || [];
   const quotedParticipant = ctx?.participant;
 
@@ -96,14 +130,16 @@ async function resolveTargetJid(sock, msg, content, jid) {
   }
 
   let rawJid = mentionedJid[0];
+  const targetBase = normalizeJidBase(rawJid);
 
   // Resolve @lid → @s.whatsapp.net quando o grupo fornece o mapeamento
   if (rawJid.endsWith('@lid') && jid.endsWith('@g.us')) {
     try {
       const meta = await getGroupMetadataCached(sock, jid);
-      const part = meta.participants?.find(
-        p => p.id === rawJid || p.lid === rawJid
-      );
+      const part = meta?.participants?.find(p => {
+        if (!p) return false;
+        return normalizeJidBase(p.id) === targetBase || (p.lid && normalizeJidBase(p.lid) === targetBase);
+      });
       if (part?.id && !part.id.endsWith('@lid')) rawJid = part.id;
     } catch (err) {
       console.error('[resolveTargetJid] Erro ao resolver @lid:', err.message);
@@ -139,7 +175,13 @@ async function checkAdmin(sock, msg, jid, cmd = 'este comando') {
 // ═══════════════════════════════════════════════════════════════
 
 function isMuted(groupJid, userJid) {
-  return mutedUsers.get(groupJid)?.has(userJid) ?? false;
+  const base = normalizeJidBase(userJid);
+  const set = mutedUsers.get(groupJid);
+  if (!set) return false;
+  for (const item of set) {
+    if (normalizeJidBase(item) === base) return true;
+  }
+  return false;
 }
 
 function muteUser(groupJid, userJid) {
@@ -150,9 +192,16 @@ function muteUser(groupJid, userJid) {
 function unmuteUser(groupJid, userJid) {
   const s = mutedUsers.get(groupJid);
   if (!s) return false;
-  const deleted = s.delete(userJid);
+  const base = normalizeJidBase(userJid);
+  let removed = false;
+  for (const item of Array.from(s)) {
+    if (normalizeJidBase(item) === base) {
+      s.delete(item);
+      removed = true;
+    }
+  }
   if (s.size === 0) mutedUsers.delete(groupJid);
-  return deleted;
+  return removed;
 }
 
 function mutedCount(groupJid) {
@@ -173,6 +222,7 @@ module.exports = {
 
   getGroupMetadataCached,
   isAdmin,
+  getGroupOwner,
   normalizeJidBase,
   isBotJid,
   resolveTargetJid,

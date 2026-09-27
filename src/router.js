@@ -504,6 +504,8 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'extrato'))
     { await diversaoHandler.handleExtrato(sock, msg, jid, contactNames); return; }
+  if (matchCmd(cmdWord, 'rankgold'))
+    { await handleRankGold(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
     { await diversaoHandler.handleGarimpar(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'emprestimo') || matchCmdStart(cmd, 'emprestimo '))
@@ -662,6 +664,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'buysec'))       { await diversaoHandler.handleComprarSec(sock, msg, jid, caption);   return; }
   if (matchCmd(cmdWord, 'equiparroubo')) { await diversaoHandler.handleEquiparRoubo(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'equiparsec'))   { await diversaoHandler.handleEquiparSec(sock, msg, jid, caption);   return; }
+  if (matchCmd(cmdWord, 'meiosec'))      { await diversaoHandler.handleMeioSec(sock, msg, jid);               return; }
   if (matchCmd(cmdWord, 'roubar'))       { await diversaoHandler.handleRoubar(sock, msg, jid, caption);       return; }
   if (matchCmd(cmdWord, 'roubarbanco'))  { await diversaoHandler.handleRoubarBanco(sock, msg, jid);           return; }
   if (matchCmd(cmdWord, 'invroubo'))     { await diversaoHandler.handleInvRoubo(sock, msg, jid);              return; }

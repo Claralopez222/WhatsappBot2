@@ -28,12 +28,13 @@ const {
   handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup,
 } = require('./brincadeiras');
 
-  // ── Filhos (5 itens) ────────────────────────────────────────────────────
+  // ── Filhos (6 itens) ────────────────────────────────────────────────────
 const {
   handleTentarFilho,
   handleVerFilho,
   handleCuidarFilho,
   handleRemedioFilho,
+  handleRenomearFilho,
   initFilhosScheduler,
 } = require('./filhos');
 
@@ -42,7 +43,7 @@ const {
   handleGold, handleLoja, handleLojaFood, handleLojaPet, handleLojaTec, handleLojaCasal,
   handleComprar, handleVender, handleInventario, handlePix, handlePixMulti, handlePixDoar,
   handleApostar, handleExtrato, handleGarimpar, handleSlots, handleCorrida,
-  getSaldoAtual, changeGold, ITENS_LOJA
+  getSaldoAtual, changeGold, ITENS_LOJA, handleRankGold
 } = require('./economia');
 
 // Menus
@@ -156,7 +157,7 @@ module.exports = {
   handleGado,
   handleBucetudo,
   handleWorldCup,
-  // ── Economia (17 itens) ────────────────────────────────────────────────────
+  // ── Economia (18 itens) ────────────────────────────────────────────────────
   handleGold,
   handleLoja,
   handleLojaFood,
@@ -177,6 +178,7 @@ module.exports = {
   getSaldoAtual,
   changeGold,
   ITENS_LOJA,
+  handleRankGold,
 
   // ── Menus (6 funções) ──────────────────────────────────────────────────────
   handleBrincadeiras,
@@ -232,11 +234,12 @@ module.exports = {
   findDailyMission,
   dailyMissionDefinitions,
 
-  // ── Filhos (5 itens) ─────────────────────────────────────────────────────
+  // ── Filhos (6 itens) ─────────────────────────────────────────────────────
 handleTentarFilho,
 handleVerFilho,
 handleCuidarFilho,
 handleRemedioFilho,
+handleRenomearFilho,
 initFilhosScheduler,
 
   // ── Pets (14 itens) ───────────────────────────────────────────────────────

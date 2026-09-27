@@ -1,6 +1,7 @@
 'use strict';
 
 const { normalizarJid } = require('../../utils/jid');
+const LidMapping = require('../../models/LidMapping');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── ESTADO GLOBAL COMPARTILHADO (em memória) ──────────────────
@@ -78,12 +79,37 @@ async function isAdmin(sock, groupJid, userJid) {
     if (!meta?.participants) return false;
 
     const userBase = normalizeJidBase(userJid);
-    const part = meta.participants.find(p => {
+
+    let part = meta.participants.find(p => {
       if (!p) return false;
       const pIdBase  = normalizeJidBase(p.id);
       const pLidBase = p.lid ? normalizeJidBase(p.lid) : '';
       return pIdBase === userBase || pLidBase === userBase;
     });
+
+    // Fallback: a metadata do grupo às vezes só traz UMA forma do JID
+    // do participante (id OU lid, não os dois), mas msg.key.participant
+    // pode chegar na outra forma. Sem isso, um admin real pode ser
+    // rejeitado só por mismatch de formato — não por falta de permissão.
+    if (!part) {
+      const mapping = await LidMapping.findOne({
+        $or: [{ pn: userJid }, { lid: userJid }],
+      }).lean().catch(() => null);
+
+      if (mapping) {
+        const outraForma = normalizarJid(mapping.pn) === normalizarJid(userJid)
+          ? mapping.lid
+          : mapping.pn;
+        const altBase = outraForma ? normalizeJidBase(outraForma) : '';
+
+        if (altBase) {
+          part = meta.participants.find(p => {
+            if (!p) return false;
+            return normalizeJidBase(p.id) === altBase || (p.lid && normalizeJidBase(p.lid) === altBase);
+          });
+        }
+      }
+    }
 
     return part?.admin === 'admin' || part?.admin === 'superadmin';
   } catch (err) {

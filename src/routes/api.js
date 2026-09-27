@@ -438,7 +438,10 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
     ]);
     const posicaoRanking = (posicaoResult[0]?.acima ?? 0) + 1;
 
-    const jidsGruposMe = carteiras.map(c => c.idGrupo);
+    // Filtra APENAS carteiras de grupos válidos (terminados em @g.us)
+    const carteirasGruposValidos = carteiras.filter(c => c.idGrupo && typeof c.idGrupo === 'string' && c.idGrupo.endsWith('@g.us'));
+
+    const jidsGruposMe = carteirasGruposValidos.map(c => c.idGrupo);
     const nomesGruposMe = {};
     if (jidsGruposMe.length) {
       const docsNomes = await CarteiraGrupo.aggregate([
@@ -452,7 +455,7 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
       for (const d of docsNomes) nomesGruposMe[d._id] = nomeGrupo(d, d._id);
     }
 
-    const grupos = carteiras.map(c => ({
+    const grupos = carteirasGruposValidos.map(c => ({
       jid:          c.idGrupo,
       nome:         nomesGruposMe[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
       xp:           c.xp           ?? 0,
@@ -464,23 +467,77 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
       statsPesca:   c.statsPesca   ?? null,
     }));
 
-    // Resolve casadoCom: se for @lid, tenta achar o telefone real no LidMapping
+    // Resolve casamento / relacionamento detalhado
+    let casamentoInfo = null;
     let casadoComResolvido = usuario.casadoCom ?? null;
     if (casadoComResolvido && casadoComResolvido.endsWith('@lid')) {
       const mapa = await LidMapping.findOne({ lid: casadoComResolvido }).lean();
       if (mapa?.pn) casadoComResolvido = mapa.pn;
     }
 
-    // 🔥 NOVO: Busca o nome do parceiro no banco de dados global
-    let nomeParceiro = null;
     if (casadoComResolvido) {
-      const uParceiro = await Usuario.findOne({ idWhatsApp: casadoComResolvido }).select('nome').lean();
-      if (uParceiro && uParceiro.nome) nomeParceiro = uParceiro.nome;
+      const parceiroNum = casadoComResolvido.split('@')[0];
+      const variantesParceiro = gerarVariantesNumero(parceiroNum).map(d => `${d}@s.whatsapp.net`);
+
+      const [lidMapParceiro, uParceiro] = await Promise.all([
+        LidMapping.findOne({ pn: { $in: variantesParceiro } }).lean(),
+        Usuario.findOne({ idWhatsApp: { $in: [casadoComResolvido, ...variantesParceiro] } }).lean(),
+      ]);
+
+      const parceiroFinal = uParceiro
+        ?? (lidMapParceiro ? await Usuario.findOne({ idWhatsApp: lidMapParceiro.lid }).lean() : null);
+
+      const nomeParceiroReal = parceiroFinal?.nome || parceiroFinal?.username || (parceiroNum ? `+${parceiroNum}` : 'Parceiro(a)');
+      const telParceiroReal  = parceiroFinal?.telefone || parceiroNum || null;
+
+      let nomeGrupoCasamento = null;
+      if (usuario.casadoGrupo && usuario.casadoGrupo.endsWith('@g.us')) {
+        nomeGrupoCasamento = nomesGruposMe[usuario.casadoGrupo] || nomeGrupoFallback(usuario.casadoGrupo);
+      }
+
+      const desdeDate = usuario.casadoDesde ? new Date(usuario.casadoDesde) : null;
+      let duracaoTxt = null;
+      if (desdeDate && !isNaN(desdeDate)) {
+        const diffMs = Date.now() - desdeDate.getTime();
+        const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDias < 1) duracaoTxt = 'Hoje';
+        else if (diffDias < 30) duracaoTxt = `${diffDias} dia${diffDias > 1 ? 's' : ''}`;
+        else {
+          const diffMeses = Math.floor(diffDias / 30);
+          const restoDias = diffDias % 30;
+          if (diffMeses < 12) {
+            duracaoTxt = `${diffMeses} mês${diffMeses > 1 ? 'es' : ''}${restoDias > 0 ? ` e ${restoDias}d` : ''}`;
+          } else {
+            const anos = Math.floor(diffMeses / 12);
+            const m = diffMeses % 12;
+            duracaoTxt = `${anos} ano${anos > 1 ? 's' : ''}${m > 0 ? ` e ${m}m` : ''}`;
+          }
+        }
+      }
+
+      casamentoInfo = {
+        ativo: true,
+        idWhatsApp: casadoComResolvido,
+        nomeParceiro: nomeParceiroReal,
+        telefoneParceiro: telParceiroReal,
+        tipo: usuario.casadoTipo || 'casamento',
+        desde: usuario.casadoDesde || null,
+        duracao: duracaoTxt,
+        idGrupo: usuario.casadoGrupo || null,
+        nomeGrupo: nomeGrupoCasamento,
+      };
+    }
+
+    // Resolve Pet: prioriza Usuario.pet, se nulo busca em CarteiraGrupo
+    let petResolvido = usuario.pet ?? null;
+    if (!petResolvido || (!petResolvido.name && !petResolvido.nome)) {
+      const cComPet = carteiras.find(c => c.pet && (c.pet.name || c.pet.nome));
+      if (cComPet) petResolvido = cComPet.pet;
     }
 
     // xpHistory: soma o xpHistory de todas as carteiras do usuário
     const xpHistoryMerge = {};
-    for (const c of carteiras) {
+    for (const c of carteirasGruposValidos) {
       const raw = mapParaObjeto(c.xpHistory ?? {});
       for (const [k, v] of Object.entries(raw)) {
         if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) {
@@ -488,7 +545,6 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
         }
       }
     }
-    // Fallback: se carteiras não tiverem xpHistory, usa o do Usuario
     const xpHistoryLimpo = Object.keys(xpHistoryMerge).length > 0
       ? xpHistoryMerge
       : (() => {
@@ -500,8 +556,7 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
           return obj;
         })();
 
-    // Resolve nome e telefone — prioriza Usuario, fallback pra CarteiraGrupo
-    const nomeResolvido     = usuario.nome     || carteiras[0]?.nome || null;
+    const nomeResolvido     = usuario.nome     || carteirasGruposValidos[0]?.nome || null;
     const telefoneResolvido = usuario.telefone || idWhatsApp.split('@')[0] || null;
 
     return res.json({
@@ -522,11 +577,13 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
       atividadeSemanal: usuario.atividadeSemanal || [0, 0, 0, 0, 0, 0, 0],
       inventory:        mapParaObjeto(usuario.inventory ?? {}),
       goldHistory:      (usuario.goldHistory || []).slice(-20),
-      pet:              usuario.pet        ?? null,
-      
-      // ✨ ATUALIZADO: Enviando o nome do parceiro para o frontend
+
+      pet:              petResolvido,
+
+      // Dados completos de relacionamento
+      casamento:        casamentoInfo,
       casadoCom:        casadoComResolvido,
-      nomeParceiro:     nomeParceiro,
+      nomeParceiro:     casamentoInfo?.nomeParceiro ?? null,
       casadoTipo:       usuario.casadoTipo ?? null,
       casadoDesde:      usuario.casadoDesde ?? null,
 

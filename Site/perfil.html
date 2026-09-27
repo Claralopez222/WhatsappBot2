@@ -274,6 +274,12 @@
       return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
     }
 
+    function escapeHtml(str) {
+      return String(str ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
     let chartXP        = null;
     let chartAtividade = null;
 
@@ -391,25 +397,37 @@
 
     function renderRelacionamento(u) {
       const container = $('rel-conteudo');
-      if (!u.casadoCom) {
+      const cas = u.casamento || {};
+
+      if (!u.casadoCom && !cas.ativo) {
         container.innerHTML = `
           <div class="rel-vazio">
             💔 Você ainda não tem um relacionamento no bot.<br/>
-            Use <strong>!casar</strong> ou <strong>!namorar</strong> no grupo!
+            Use <strong>!casar @pessoa</strong> ou <strong>!namorar @pessoa</strong> em um grupo!
           </div>`;
         return;
       }
-      const tipoEmoji = u.casadoTipo === 'casamento' ? '💍' : '💕';
-      const tipoLabel = u.casadoTipo === 'casamento' ? 'Casado(a) com' : 'Namorando';
-      const parceiro  = u.nomeParceiro ? u.nomeParceiro : '+' + u.casadoCom.split('@')[0];
-      const desde     = fmtData(u.casadoDesde);
+
+      const tipoEmoji = (cas.tipo || u.casadoTipo) === 'casamento' ? '💍' : '💕';
+      const tipoLabel = (cas.tipo || u.casadoTipo) === 'casamento' ? 'Casado(a) com' : 'Namorando com';
+      const nomeParceiro = cas.nomeParceiro || u.nomeParceiro || (cas.idWhatsApp || u.casadoCom || '').split('@')[0] || 'Parceiro(a)';
+      const telParceiro = cas.telefoneParceiro ? `+${cas.telefoneParceiro}` : (u.casadoCom ? '+' + u.casadoCom.split('@')[0] : '');
+
+      const desdeData = fmtData(cas.desde || u.casadoDesde);
+      const duracao = cas.duracao ? `${cas.duracao} de união` : '';
+      const nomeGrupo = cas.nomeGrupo ? `📍 Unídos no grupo <strong>${escapeHtml(cas.nomeGrupo)}</strong>` : '';
+
       container.innerHTML = `
         <div class="rel-card">
-          <span class="rel-heart">${tipoEmoji}</span>
+          <div class="rel-ring-icon">${tipoEmoji}</div>
           <div class="rel-info">
-            <div class="rel-nome">${parceiro}</div>
+            <div class="rel-nome">${escapeHtml(nomeParceiro)} ${telParceiro ? `<span class="rel-tel">(${telParceiro})</span>` : ''}</div>
             <div class="rel-tipo">${tipoLabel}</div>
-            ${desde ? `<div class="rel-desde">Desde ${desde}</div>` : ''}
+            <div class="rel-meta">
+              ${desdeData ? `<span>📅 Desde ${desdeData}</span>` : ''}
+              ${duracao ? `<span class="rel-badge-duracao">⏳ ${duracao}</span>` : ''}
+            </div>
+            ${nomeGrupo ? `<div class="rel-grupo-info">${nomeGrupo}</div>` : ''}
           </div>
         </div>`;
     }

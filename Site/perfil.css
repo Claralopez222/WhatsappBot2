@@ -452,6 +452,45 @@ body > * { position: relative; z-index: 1; }
   text-align: center; color: var(--muted); font-size: 0.88rem;
 }
 
+.rel-ring-icon {
+  font-size: 2rem;
+  animation: heartbeat 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.rel-tel {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 500;
+  font-family: var(--mono);
+}
+
+.rel-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.rel-badge-duracao {
+  background: var(--roxo-lo);
+  color: var(--roxo);
+  border: 1px solid rgba(184,85,255,0.3);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.rel-grupo-info {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.rel-grupo-info strong { color: var(--text-2); }
+
 /* ===== INVENTÁRIO ===== */
 .inventario-grid {
   display: grid;
@@ -744,4 +783,92 @@ body > * { position: relative; z-index: 1; }
 .btn-apagar:hover {
   background: var(--red-lo);
   border-color: var(--red);
+}
+
+/* ===== RELACIONAMENTO CARD ===== */
+.rel-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.4rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.rel-ring-icon {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  border: 2px solid rgba(184,85,255,0.4);
+  background: var(--surface2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.2rem;
+  box-shadow: 0 0 20px rgba(184,85,255,0.2);
+  flex-shrink: 0;
+}
+
+.rel-info {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rel-nome {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.rel-tel {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.rel-tipo {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--roxo);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rel-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+.rel-badge-duracao {
+  background: rgba(0, 255, 176, 0.1);
+  color: var(--mint);
+  border: 1px solid rgba(0, 255, 176, 0.25);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.rel-grupo-info {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid var(--roxo);
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
+  margin-top: 0.3rem;
 }

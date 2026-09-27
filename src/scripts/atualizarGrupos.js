@@ -109,6 +109,25 @@ async function rodarAtualizacao(sock) {
         throw new Error('Campo "subject" vazio ou ausente nos metadados.');
       }
 
+      // ── 3b. Limpa membros fantasmas (que não estão mais no grupo) ─────────
+      const participantesAtuais = metadata?.participants || [];
+      if (participantesAtuais.length > 0) {
+        const jidsAtivosGrupo = [];
+        for (const p of participantesAtuais) {
+          const rawNum = p.id.split(':')[0].split('@')[0];
+          jidsAtivosGrupo.push(p.id);
+          jidsAtivosGrupo.push(`${rawNum}@s.whatsapp.net`);
+          jidsAtivosGrupo.push(`${rawNum}@lid`);
+        }
+        const delFantasmas = await CarteiraGrupoModel.deleteMany({
+          idGrupo: jid,
+          idWhatsApp: { $nin: jidsAtivosGrupo }
+        });
+        if (delFantasmas.deletedCount > 0) {
+          console.log(`         🧹 Removidos ${delFantasmas.deletedCount} membro(s) fantasma(s) do grupo "${nomeReal}".`);
+        }
+      }
+
       const resultadoMongo = await CarteiraGrupoModel.updateMany(
         { idGrupo: jid },
         { $set: { nome: nomeReal } }

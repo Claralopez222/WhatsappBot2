@@ -158,6 +158,39 @@ async function startBot() {
         const GrupoConfig   = require('./models/GrupoConfig');
         await CarteiraGrupo.deleteMany({ idGrupo: id });
         await GrupoConfig.deleteOne({ idGrupo: id });
+      } else {
+        // Um ou mais integrantes saíram/foram removidos do grupo — remove do rank do grupo
+        const CarteiraGrupo = require('./models/CarteiraGrupo');
+        const LidMapping    = require('./models/LidMapping');
+
+        const targetJids = [];
+        for (const p of participants) {
+          const rawNum = p.split(':')[0].split('@')[0];
+          targetJids.push(p);
+          targetJids.push(`${rawNum}@s.whatsapp.net`);
+          targetJids.push(`${rawNum}@lid`);
+        }
+
+        const lidMaps = await LidMapping.find({
+          $or: [
+            { pn: { $in: targetJids } },
+            { lid: { $in: targetJids } }
+          ]
+        }).lean();
+
+        for (const lm of lidMaps) {
+          if (lm.pn)  targetJids.push(lm.pn);
+          if (lm.lid) targetJids.push(lm.lid);
+        }
+
+        const deletados = await CarteiraGrupo.deleteMany({
+          idGrupo: id,
+          idWhatsApp: { $in: targetJids }
+        });
+
+        if (deletados.deletedCount > 0) {
+          console.log(`👤 Removidos ${deletados.deletedCount} integrante(s) que saíram do grupo ${id} do ranking.`);
+        }
       }
     }
   });

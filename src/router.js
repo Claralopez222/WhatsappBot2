@@ -313,11 +313,47 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
     { await utilidadeHandler.handleBio(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'meupainel'))   { await require('./handlers/painel').handleMeuPainel(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'recuperar') || matchCmd(cmdWord, 'recuperarsenha') || matchCmd(cmdWord, 'token') || matchCmd(cmdWord, 'codigo')) {
+    const rawNum = senderJid ? senderJid.split(':')[0].split('@')[0] : '';
+    if (!rawNum) return;
+
+    const codigo = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    const OtpCadastro = require('./models/OtpCadastro');
+    await OtpCadastro.findOneAndUpdate(
+      { idWhatsApp: senderJid },
+      { codigo, expiresAt, usado: false },
+      { upsert: true }
+    );
+
+    const pnJid = `${rawNum}@s.whatsapp.net`;
+    if (pnJid !== senderJid) {
+      await OtpCadastro.findOneAndUpdate(
+        { idWhatsApp: pnJid },
+        { codigo, expiresAt, usado: false },
+        { upsert: true }
+      );
+    }
+
+    await sock.sendMessage(jid, {
+      text:
+        `🔐 *CÓDIGO DE RECUPERAÇÃO / VERIFICAÇÃO*\n\n` +
+        `Olá *@${rawNum}*!\n` +
+        `Seu código de 6 dígitos para criar conta ou redefinir a senha no site é:\n\n` +
+        `👉 *${codigo}*\n\n` +
+        `⏰ *Válido por 15 minutos.*\n` +
+        `Acesse o site para criar sua conta ou redefinir sua senha!`,
+      mentions: [senderJid]
+    }, { quoted: msg });
+    return;
+  }
+
   if (matchCmd(cmdWord, 'resetsenha'))  {
     await sock.sendMessage(jid, {
       text:
-        `🔑 Para resetar sua senha, acesse o painel e use a opção *"Alterar senha"* após fazer login.\n\n` +
-        `🌐 https://piroquinhasbot.github.io/painel-piroquinhas/perfil.html`,
+        `🔑 Para redefinir sua senha, acesse o painel e use a opção *"Recuperar conta"* com o código gerado via *!recuperar* no grupo.\n\n` +
+        `🌐 https://piroquinhasbot.github.io/painel-piroquinhas-bot/recuperar.html`,
     }, { quoted: msg });
     return;
   }

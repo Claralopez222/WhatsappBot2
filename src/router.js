@@ -493,7 +493,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir') || matchCmdStart(cmd, 'pix ') || matchCmdStart(cmd, 'transferir '))
     { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'apostar') || matchCmdStart(cmd, 'apostar '))
-    { await diversaoHandler.handleApostar(sock, msg, jid, caption); return; }
+  { await diversaoHandler.handleApostar(sock, msg, jid, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'slots') || matchCmdStart(cmd, 'slots '))
     { await diversaoHandler.handleSlots(sock, msg, jid, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'corrida') || matchCmdStart(cmd, 'corrida '))

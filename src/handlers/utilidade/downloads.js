@@ -15,10 +15,16 @@ function setLogger(loggerInstance) {
   }
 }
 
+// warn/error deste módulo NUNCA passam pelo logger injetado (que pode
+// estar em modo 'silent', como o pino em bot.js). São falhas reais de
+// download (yt-dlp/ffmpeg) — se forem silenciadas, o sintoma vira "o bot
+// diz que não encontrou" sem nenhuma pista de por quê. info() continua
+// respeitando o logger injetado, para não voltar a poluir o console
+// com o volume normal de logs de progresso.
 const log = {
-  info:  (...a) => _logger.info  ? _logger.info(...a)  : console.log(...a),
-  warn:  (...a) => _logger.warn  ? _logger.warn(...a)  : console.warn(...a),
-  error: (...a) => _logger.error ? _logger.error(...a) : console.error(...a),
+  info:  (...a) => _logger.info ? _logger.info(...a) : console.log(...a),
+  warn:  (...a) => console.warn(...a),
+  error: (...a) => console.error(...a),
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -125,6 +131,13 @@ async function getYtDlpPath() {
     }
   }
 
+  // Raiz do projeto — este arquivo mora em src/handlers/utilidade/, então
+  // são 3 níveis acima até a raiz (D:\Project\Whatsapp ou equivalente em
+  // produção). O antigo '../yt-dlp.exe' subia só 1 nível e nunca alcançava
+  // esse local, era a causa do "não encontrei a música" mesmo com o
+  // binário funcionando manualmente.
+  const projectRoot = path.resolve(__dirname, '..', '..', '..');
+
   // 1) which / where
   try {
     const { execSync } = require('child_process');
@@ -135,17 +148,21 @@ async function getYtDlpPath() {
 
   // 2) Caminhos candidatos por plataforma
   const candidates = process.platform === 'win32' ? [
+    // Raiz do projeto primeiro — é onde o binário standalone normalmente
+    // fica (o mesmo que "npm start" já usa como cwd), então também tenta
+    // via process.cwd() como reforço, caso o projeto seja movido depois.
+    path.join(projectRoot, 'yt-dlp.exe'),
+    path.join(process.cwd(), 'yt-dlp.exe'),
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
     'C:\\Python312\\Scripts\\yt-dlp.exe',
-    path.resolve(__dirname, '../yt-dlp.exe'),
   ] : [
     '/usr/local/bin/yt-dlp',
     '/usr/bin/yt-dlp',
     '/home/user/.venv/bin/yt-dlp',
     '/opt/render/.venv/bin/yt-dlp',
-    path.resolve(__dirname, '../yt-dlp'),
+    path.join(projectRoot, 'yt-dlp'),
     '/tmp/yt-dlp',
   ];
 
@@ -189,7 +206,7 @@ async function getYtDlpPath() {
 
   // 5) Auto-download .exe no Windows
   if (process.platform === 'win32') {
-    const dlPath = path.resolve(__dirname, '../yt-dlp.exe');
+    const dlPath = path.join(projectRoot, 'yt-dlp.exe');
     if (!fs.existsSync(dlPath)) {
       log.info('yt-dlp não encontrado. Baixando automaticamente...');
       try {

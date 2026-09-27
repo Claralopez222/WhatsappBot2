@@ -18,19 +18,19 @@ const {
 } = require('./utils/persistence');
 
 // ─── Identidade / JID ─────────────────────────────────────────────────────
-const { normalizarJid, extrairNumero } = require('./utils/jid');
+const { normalizarJid, extrairNumero, registrarLidEMapping } = require('./utils/identity');
 
 // ─── Models ───────────────────────────────────────────────────────────────
-const LidMapping  = require(path.join(__dirname, 'models', 'LidMapping'));
+const LidMapping    = require(path.join(__dirname, 'models', 'LidMapping'));
+const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
 
 // ─── Handlers ─────────────────────────────────────────────────────────────
+const menuHandler           = require('./handlers/menus');
 const figurinhaHandler      = require('./handlers/figurinha');
 const diversaoHandler       = require('./handlers/diversao');
 const relacionamentoHandler = require('./handlers/relacionamento');
 const grupoHandler          = require('./handlers/grupo');
 const medievalHandler       = require('./handlers/medieval');
-const medievalLojaHandler   = require('./handlers/medievalLoja');
-const medievalSaqueHandler  = require('./handlers/medievalSaque');
 const imagemHandler         = require('./handlers/imagem');
 const textoHandler          = require('./handlers/texto');
 const utilidadeHandler      = require('./handlers/utilidade');
@@ -44,15 +44,10 @@ const { handleRankGold, handleGive }                                 = require('
 const { handleEmprestimo, handlePayEmprestimo, handleDivida }        = require('./handlers/diversao/emprestimo');
 const { registerActiveGroup }                                       = require('./handlers/diversao');
 
-// Preserva o mesmo require direto de missoes.js (não passa pelo index.js
-// agregado) que existia no bot.js original — incrementMission não é
-// reexportado por diversao/index.js.
 const { prepareDailyMissionState, incrementMission } = require('./handlers/diversao/missoes');
-const { addUserXp } = require('./utils/xp');
+const { addUserXp, getBonusHorario }                 = require('./utils/xp');
 
-// Bug preservado de propósito (já documentado e confirmado com você):
-// grupo/index.js não exporta unmuteUser, então esta desestruturação
-// deixa unmuteUser undefined — igual ao comportamento original.
+// Fix #1: unmuteUser agora é corretamente re-exportado por handlers/grupo/index.js!
 const { isMuted, unmuteUser } = require('./handlers/grupo');
 
 // ═══════════════════════════════════════════════════════════════
@@ -69,7 +64,7 @@ let botJid = null;
 function setBotJid(id) { botJid = id; }
 function getBotJid() { return botJid; }
 
-// ─── Helpers de prefixo (candidatos a config/prefixos.js no futuro) ───────
+// ─── Helpers de prefixo ─────────────────────────────────────────────────────
 const VALID_PREFIXES = ['!', '.', '/', ','];
 
 function isAnyCmd(text) {
@@ -92,8 +87,6 @@ function getSenderName(msg) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   return msg.pushName || senderJid?.split('@')[0] || 'Usuário';
 }
-
-// addUserXp agora vive em utils/xp.js (compartilhado com bot.js).
 
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL (ROTEADOR DE COMANDOS) ──────────────────
@@ -122,9 +115,6 @@ async function handleMessage(sock, msg) {
   const isPrivate = jid && !jid.endsWith('@g.us') && !jid.endsWith('@broadcast');
   const isGroup   = jid && jid.endsWith('@g.us');
 
-  // Marca o grupo como ativo pros schedulers (pet, quiz ranking). Antes essa
-  // marcação só existia em bot.js, fora do handleMessage — centralizei aqui
-  // pra não depender de quem chamar handleMessage lembrar de repetir isso.
   if (isGroup) {
     registerActiveGroup(jid);
     activeGroups.add(jid);
@@ -145,7 +135,7 @@ async function handleMessage(sock, msg) {
     if (cfgGrupo?.botAtivo === false) return;
   }
 
-  // ── Mute check ───────────────────────────────────────────────
+  // ── Mute check (agora funciona perfeitamente com unmuteUser exportado!) ──
   if (isGroup && senderJid) {
     const senderNorm = normalizarJid(senderJid);
     if (senderNorm && isMuted(jid, senderNorm)) {
@@ -178,7 +168,25 @@ async function handleMessage(sock, msg) {
 
   if (senderJid) {
     contarMensagem(senderJid, author);
-    await addUserXp(senderJid, 1, msg.pushName || author);
+    const bonusInfo = getBonusHorario();
+    const xpGanho   = bonusInfo.xp;
+
+    await addUserXp(senderJid, xpGanho, msg.pushName || author);
+
+    if (isGroup) {
+      const senderNorm = normalizarJid(senderJid);
+      const resGroup   = await CarteiraGrupo.incrementXp(senderNorm, jid, xpGanho);
+
+      if (resGroup?.levelUp) {
+        await sock.sendMessage(jid, {
+          text: `🎉 *@${senderNorm.split('@')[0]}* subiu para o *Nível ${resGroup.level}*! 🏅\n` +
+                `_${bonusInfo.emoji} ${bonusInfo.bonusName}: +${xpGanho} XP por mensagem!_`,
+          mentions: [senderJid],
+        }).catch(() => {});
+      }
+    }
+
+    registrarLidEMapping(msg, msg.pushName || author).catch(() => {});
   }
 
   // ── Slow Mode ────────────────────────────────────────────────
@@ -276,8 +284,8 @@ async function handleMessage(sock, msg) {
   }
 
   // ── Resposta pendente de !saquear ─────────────────────────────
-  if (isGroup && medievalSaqueHandler.saqueState.has(senderJid)) {
-    const tratado = await medievalSaqueHandler.handleRespostaSaque(sock, msg, jid, senderJid, caption);
+  if (isGroup && medievalHandler.saqueState.has(senderJid)) {
+    const tratado = await medievalHandler.handleRespostaSaque(sock, msg, jid, senderJid, caption);
     if (tratado) return;
   }
 
@@ -407,7 +415,7 @@ async function handleMessage(sock, msg) {
     { await medievalHandler.handleMissao(sock, msg, jid, senderJid, author); return; }
   if (matchCmd(cmdWord, 'saquear') || matchCmdStart(cmd, 'saquear ')) {
     const targetSaque = content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || null;
-    await medievalSaqueHandler.handleSaquear(sock, msg, jid, senderJid, targetSaque);
+    await medievalHandler.handleSaquear(sock, msg, jid, senderJid, targetSaque);
     return;
   }
   if (matchCmd(cmdWord, 'recargamana'))
@@ -417,31 +425,31 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'lojamedieval') || matchCmdStart(cmd, 'lojamedieval ') ||
       matchCmd(cmdWord, 'lojamed')      || matchCmdStart(cmd, 'lojamed ')) {
     const argsLoja = caption.replace(/^[!.,\/](lojamedieval|lojamed)\s*/i, '').trim();
-    await medievalLojaHandler.handleLojaMedieval(sock, msg, jid, senderJid, author, argsLoja);
+    await medievalHandler.handleLojaMedieval(sock, msg, jid, senderJid, author, argsLoja);
     return;
   }
   if (matchCmd(cmdWord, 'comprar') || matchCmdStart(cmd, 'comprar '))
-    { await medievalLojaHandler.handleComprarMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]comprar\s*/i, '')); return; }
+    { await medievalHandler.handleComprarMedieval(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]comprar\s*/i, '')); return; }
   if (matchCmd(cmdWord, 'equipar') || matchCmdStart(cmd, 'equipar '))
-    { await medievalLojaHandler.handleEquipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]equipar\s*/i, '')); return; }
+    { await medievalHandler.handleEquipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]equipar\s*/i, '')); return; }
   if (matchCmd(cmdWord, 'desequipar') || matchCmdStart(cmd, 'desequipar '))
-    { await medievalLojaHandler.handleDesequipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]desequipar\s*/i, '')); return; }
+    { await medievalHandler.handleDesequipar(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]desequipar\s*/i, '')); return; }
   if (matchCmd(cmdWord, 'invmed'))
-    { await medievalLojaHandler.handleInvMed(sock, msg, jid, senderJid, author); return; }
+    { await medievalHandler.handleInvMed(sock, msg, jid, senderJid, author); return; }
   if (matchCmd(cmdWord, 'sellmed') || matchCmdStart(cmd, 'sellmed '))
-    { await medievalLojaHandler.handleSellMed(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]sellmed\s*/i, '')); return; }
+    { await medievalHandler.handleSellMed(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]sellmed\s*/i, '')); return; }
   if (matchCmd(cmdWord, 'givemed') || matchCmdStart(cmd, 'givemed ')) {
     const targetGive = content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || null;
     const argsGive    = caption.replace(/^[!.,\/]givemed\s*/i, '').replace(/@\d+/g, '').trim();
-    await medievalLojaHandler.handleGiveMed(sock, msg, jid, senderJid, author, targetGive, argsGive);
+    await medievalHandler.handleGiveMed(sock, msg, jid, senderJid, author, targetGive, argsGive);
     return;
   }
   if (matchCmd(cmdWord, 'usarpocao') || matchCmdStart(cmd, 'usarpocao '))
-    { await medievalLojaHandler.handleUsarPocao(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]usarpocao\s*/i, '')); return; }
+    { await medievalHandler.handleUsarPocao(sock, msg, jid, senderJid, author, caption.replace(/^[!.,\/]usarpocao\s*/i, '')); return; }
   if (matchCmd(cmdWord, 'rankmedieval'))
-    { await medievalLojaHandler.handleRankMedieval(sock, msg, jid); return; }
+    { await medievalHandler.handleRankMedieval(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'menumediev'))
-    { await medievalLojaHandler.handleMenuMedieval(sock, msg, jid); return; }
+    { await medievalHandler.handleMenuMedieval(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'sistemmedieval') || matchCmd(cmdWord, 'comomediev'))
     { await diversaoHandler.handleSistemaMedieval(sock, msg, jid, getPrefix); return; }
 
@@ -483,8 +491,6 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleMinhasOfertas(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'historicomarket') || matchCmd(cmdWord, 'mercadohistorico') || matchCmdStart(cmd, 'historicomarket ') || matchCmdStart(cmd, 'mercadohistorico '))
     { await diversaoHandler.handleHistoricoMarket(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'minhasofertas') || matchCmd(cmdWord, 'mesofertas') || matchCmd(cmdWord, 'ofertasrecebidas'))
-    { await diversaoHandler.handleMinhasOfertas(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'aceitarofferta') || matchCmd(cmdWord, 'aceitaroferta'))
     { await diversaoHandler.handleAceitarOfferta(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'menumarket') || matchCmd(cmdWord, 'menumercado'))
@@ -538,8 +544,11 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'policia'))      { await diversaoHandler.handlePolicia(sock, msg, jid);               return; }
 
   // ── UTILITÁRIOS ────────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'level') || matchCmd(cmdWord, 'nivel') || matchCmd(cmdWord, 'mylevel') || matchCmd(cmdWord, 'meunivel'))
+    { await utilidadeHandler.handleLevel(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'ranklevel') || matchCmd(cmdWord, 'ranknivel') || matchCmd(cmdWord, 'rankxp') || matchCmd(cmdWord, 'toplevel') || matchCmd(cmdWord, 'topnivel'))
+    { await utilidadeHandler.handleRankLevel(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'alteradores'))  { await utilidadeHandler.handleAlteradores(sock, msg, jid); return; }
-
   if (matchCmdStart(cmd, 'qrcode ')      || matchCmd(cmdWord, 'qrcode'))      { await utilidadeHandler.handleQrcode(sock, msg, jid, caption);       return; }
   if (matchCmdStart(cmd, 'encurtar ')    || matchCmd(cmdWord, 'encurtar'))    { await utilidadeHandler.handleEncurtar(sock, msg, jid, caption);     return; }
   if (matchCmdStart(cmd, 'cep ')         || matchCmd(cmdWord, 'cep'))         { await utilidadeHandler.handleCep(sock, msg, jid, caption);          return; }
@@ -705,155 +714,10 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'gado'))          { await diversaoHandler.handleGado(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'peitudo'))       { await diversaoHandler.handlePeitudo(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'pauzudo'))       { await diversaoHandler.handlePauzudo(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'bundudo'))       { await diversaoHandler.handleBundudo(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'gordo'))         { await diversaoHandler.handleGordo(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'cuzudo'))        { await diversaoHandler.handleCuzudo(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'tiro'))          { await diversaoHandler.handleTiro(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'morte'))         { await diversaoHandler.handleMorte(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'maldizer'))      { await diversaoHandler.handleMaldizer(sock, msg, content, jid, author); return; }
-  if (matchCmdStart(cmd, 'fortuna'))       { await diversaoHandler.handleFortuna(sock, msg, content, jid, author); return; }
-  if (matchCmdStart(cmd, 'julgamento'))    { await diversaoHandler.handleJulgamento(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'confissao'))     { await diversaoHandler.handleConfissao(sock, msg, content, jid, author); return; }
-  if (matchCmdStart(cmd, 'verdadeoudesafio')) { await diversaoHandler.handleVerdadeOuDesafio(sock, msg, content, jid, author); return; }
-  if (matchCmd(cmdWord, 'roletarussa'))    { await diversaoHandler.handleRoletaRussa(sock, msg, jid, author, senderJid); return; }
-  if (matchCmd(cmdWord, 'roletarussa2'))   { await diversaoHandler.handleRoletaRussa2(sock, msg, jid, author); return; }
-  if (matchCmd(cmdWord, 'roletarussa3'))   { await diversaoHandler.handleRoletaRussa3(sock, msg, jid, author, senderJid); return; }
-  if (matchCmdStart(cmd, 'falta'))         { await diversaoHandler.handleFalta(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmd(cmdWord, 'baterfalta'))     { await diversaoHandler.handleBaterFalta(sock, msg, jid, author, senderJid); return; }
-  if (matchCmd(cmdWord, 'eununca'))        { await diversaoHandler.handleEuNunca(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'quiz') || matchCmdStart(cmd, 'quiz '))
-    { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'quizfut'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'quizctec'))       { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'quizgeo'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'quizmat'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'quizhis'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'quizbsq'))        { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'quizanime'))      { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
-  if (matchCmd(cmdWord, 'pontos'))         { await diversaoHandler.handlePontos(sock, msg, jid, author, senderJid); return; }
-  if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
-  if (matchCmd(cmdWord, 'banco') || matchCmdStart(cmd, 'banco '))
-    { await diversaoHandler.handleBanco(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'historicobanco')) { await diversaoHandler.handleHistoricoBanco(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'resgatar'))       { await diversaoHandler.handleResgatar(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'levelon'))        { await utilidadeHandler.handleLevelOn(sock, msg, jid, author); return; }
-  if (matchCmd(cmdWord, 'level'))          { await utilidadeHandler.handleLevel(sock, msg, jid, author, msgCount); return; }
-  if (matchCmd(cmdWord, 'ranklevel'))      { await utilidadeHandler.handleRankLevel(sock, msg, jid, contactNames, msgCount); return; }
-  if (matchCmd(cmdWord, 'anagrama') || matchCmdStart(cmd, 'anagrama '))
-    { await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid); return; }
-  if (matchCmdStart(cmd, 'ppt'))           { await diversaoHandler.handlePpt(sock, msg, jid, caption, author, senderJid); return; }
-  if (matchCmdStart(cmd, 'bucetudo'))      { await diversaoHandler.handleBucetudo(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmd(cmdWord, 'worldcup'))       { await diversaoHandler.handleWorldCup(sock, msg, jid); return; }
-
-  // ── GRUPO ─────────────────────────────────────────────────────
-  // Corrigido: mutedUsers removido de handleMute/handleDesmute (não faz
-  // mais parte da assinatura do moderacao.js novo).
-  if (matchCmdStart(cmd, 'ban'))           { await grupoHandler.handleBan(sock, msg, content, jid, botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'mute'))          { await grupoHandler.handleMute(sock, msg, content, jid, botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'desmute'))       { await grupoHandler.handleDesmute(sock, msg, content, jid, botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'ranking'))       { await grupoHandler.handleRanking(sock, msg, jid, msgCount); return; }
-  if (matchCmd(cmdWord, 'rankgold'))       { await handleRankGold(sock, msg, jid, contactNames); return; }
-  // Corrigido: botJid adicionado (era omitido, filtrava o bot errado).
-  if (matchCmdStart(cmd, 'sorteio'))       { await grupoHandler.handleSorteio(sock, msg, content, jid, botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'enquete'))       { await grupoHandler.handleEnquete(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'todos'))         { await grupoHandler.handleTodos(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'fechar'))        { await grupoHandler.handleFecharAbrir(sock, msg, jid, true); return; }
-  if (matchCmdStart(cmd, 'abrir'))         { await grupoHandler.handleFecharAbrir(sock, msg, jid, false); return; }
-  if (matchCmdStart(cmd, 'promover'))      { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'promote', botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'rebaixar'))      { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'demote', botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'tempo'))         { await grupoHandler.handleTempo(sock, msg, content, jid, author, contactNames); return; }
-  if (matchCmdStart(cmd, 'antilink'))      { await grupoHandler.handleAntiLink(sock, msg, content, jid); return; }
-  if (matchCmdStart(cmd, 'autosticker'))   { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
-  // Corrigido: warnings/saveData removidos (moderacao.js novo usa Mongo direto).
-  if (matchCmdStart(cmd, 'reportar'))      { await grupoHandler.handleReportar(sock, msg, content, jid, contactNames, botJid); return; }
-  if (matchCmdStart(cmd, 'removerreporte')){ await grupoHandler.handleRemoverReporte(sock, msg, content, jid, contactNames, botJid); return; }
-  if (matchCmd(cmdWord, 'adv') || matchCmd(cmdWord, 'advertencia'))
-  { await grupoHandler.handleAdvertencia(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'grupinfo'))       { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'listaadm'))       { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }
-  if (matchCmd(cmdWord, 'listamembros'))   { await grupoHandler.handleListaMembros(sock, msg, jid, contactNames); return; }
-  if (matchCmdStart(cmd, 'bemvindo'))      { await grupoHandler.handleBemVindo(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'linkgrupo'))      { await grupoHandler.handleLinkGrupo(sock, msg, jid); return; }
-  if (matchCmdStart(cmd, 'apagarmsg'))     { await grupoHandler.handleApagarMsg(sock, msg, content, jid); return; }
-  if (matchCmdStart(cmd, 'slowmode'))      { await grupoHandler.handleSlowMode(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'antiflood'))     { await grupoHandler.handleAntiFlood(sock, msg, jid, caption); return; }
-  // Corrigido: contactNames removido (comunicacao.js novo busca membros direto).
-  if (matchCmdStart(cmd, 'avisar'))        { await grupoHandler.handleAvisar(sock, msg, jid, caption); return; }
-  if (matchCmdStart(cmd, 'fixargrupo'))    { await grupoHandler.handleFixarGrupo(sock, msg, content, jid, caption); return; }
-
-  // ── FILTROS DE IMAGEM ─────────────────────────────────────────
-  if (matchCmdStart(cmd, 'pbiphone'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'pbiphone',  getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'pb'))         { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'pb',        getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'girar180'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'girar180',  getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'girar270'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'girar270',  getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'girar'))      { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'girar',     getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'pixelar'))    { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'pixelar',   getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'pixel'))      { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'pixel',     getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'blur'))       { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'blur',      getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'espelhar'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'espelhar',  getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'flipv'))      { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'flipv',     getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'negativo'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'negativo',  getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'sepia'))      { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'sepia',     getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'vintage'))    { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'vintage',   getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'brilho'))     { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'brilho',    getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'contraste'))  { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'contraste', getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'saturar'))    { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'saturar',   getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'nitido'))     { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'nitido',    getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'corecore'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'corecore',  getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'desfazer'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'desfazer',  getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'sfundo'))     { await imagemHandler.handleSfundo(sock, msg, content, jid); return; }
-  if (matchCmdStart(cmd, 'cartoon'))    { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'cartoon',   getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'glitch'))     { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'glitch',    getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'vinheta'))    { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'vinheta',   getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'radiancia'))  { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'radiancia', getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'matrix'))     { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'matrix',    getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'polaroid'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'polaroid',  getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'sketch'))     { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'sketch',    getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'calor'))      { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'calor',     getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'gelo'))       { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'gelo',      getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'dourado'))    { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'dourado',   getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'neon'))       { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'neon',      getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'cinema'))     { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'cinema',    getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'old'))        { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'old',       getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'halloween'))  { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'halloween', getPrefix(jid)); return; }
-  if (matchCmdStart(cmd, 'aquarela'))   { await imagemHandler.handleImageFilter(sock, msg, content, jid, 'aquarela',  getPrefix(jid)); return; }
-
-  // ── ALTERADORES ───────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'videolento'))     { await alteradoresHandler.handleVideoLento(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'videorapido'))    { await alteradoresHandler.handleVideoRapido(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'videocontrario')) { await alteradoresHandler.handleVideoContrario(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'reversevideo'))   { await alteradoresHandler.handleReverseVideo(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'audiolento'))     { await alteradoresHandler.handleAudioLento(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'audiorapido'))    { await alteradoresHandler.handleAudioRapido(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'grave'))          { await alteradoresHandler.handleGrave(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'esquilo'))        { await alteradoresHandler.handleEsquilo(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'bass'))           { await alteradoresHandler.handleBass(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'vozmenino'))      { await alteradoresHandler.handleVozMenino(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'vozgrossa'))      { await alteradoresHandler.handleVozGrossa(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'vozmulher'))      { await alteradoresHandler.handleVozMulher(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'audioreverse'))   { await alteradoresHandler.handleAudioReverse(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'vozrobo'))        { await alteradoresHandler.handleVozRobo(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'vozalien'))       { await alteradoresHandler.handleVozAlien(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'vozvelho'))       { await alteradoresHandler.handleVozVelho(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'vozcrianca'))     { await alteradoresHandler.handleVozCrianca(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'vozdemonio'))     { await alteradoresHandler.handleVozDemonio(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'eco'))            { await alteradoresHandler.handleEco(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'caverna'))        { await alteradoresHandler.handleCaverna(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'telefone'))       { await alteradoresHandler.handleTelefone(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'radio'))          { await alteradoresHandler.handleRadio(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'megafone'))       { await alteradoresHandler.handleMegafone(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'underwater'))     { await alteradoresHandler.handleUnderwater(sock, msg, jid); return; }
-
-  // ── TEXTO ─────────────────────────────────────────────────────
-  if (matchCmdStart(cmd, 'maiusculo'))  { await textoHandler.handleTextoFun(sock, msg, jid, caption, getPrefix(jid), 'maiusculo'); return; }
-  if (matchCmdStart(cmd, 'invertido'))  { await textoHandler.handleTextoFun(sock, msg, jid, caption, getPrefix(jid), 'invertido'); return; }
-  if (matchCmdStart(cmd, 'caixa'))      { await textoHandler.handleTextoFun(sock, msg, jid, caption, getPrefix(jid), 'caixa');     return; }
 }
 
 module.exports = {
   handleMessage,
-  contactNames,
-  activeGroups,
   setBotJid,
   getBotJid,
 };

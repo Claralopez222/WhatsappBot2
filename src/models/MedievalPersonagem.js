@@ -1,5 +1,6 @@
 'use strict';
 
+// Nome do arquivo: MedievalPersonagem.js
 const mongoose = require('mongoose');
 
 const medievalPersonagemSchema = new mongoose.Schema(

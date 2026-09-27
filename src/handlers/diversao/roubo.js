@@ -187,44 +187,26 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     return;
   }
 
-  // Checagem prévia apenas para dar feedback rápido — o débito real e
-  // atômico acontece em alterarGoldSeguro logo abaixo.
-  const carteira = await getCarteira(userId, idGrupo);
-  const saldo    = carteira.gold ?? 0;
-  if (saldo < itemInfo.preco) {
-    const faltam = itemInfo.preco - saldo;
-    await sock.sendMessage(jid, {
-      text:
-        `❌ *SALDO INSUFICIENTE!*\n\n` +
-        `💵 Preço:      *${itemInfo.preco}* gold\n` +
-        `💰 Seu saldo:  *${saldo}* gold\n` +
-        `⚠️ Faltam:     *${faltam}* gold`,
-    }, { quoted: msg });
-    return;
-  }
-
-  // Débito atômico: evita saldo negativo em caso de compras simultâneas.
-  let debitado;
+  // Débito atômico: debita o valor exato apenas se o saldo for suficiente.
   try {
-    ({ debitado } = await alterarGoldSeguro(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`));
+    await alterarGold(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`);
   } catch (e) {
+    if (e instanceof RangeError) {
+      const carteira = await getCarteira(userId, idGrupo);
+      const saldo    = carteira.gold ?? 0;
+      const faltam   = Math.max(0, itemInfo.preco - saldo);
+      await sock.sendMessage(jid, {
+        text:
+          `❌ *SALDO INSUFICIENTE!*\n\n` +
+          `💵 Preço:      *${itemInfo.preco}* gold\n` +
+          `💰 Seu saldo:  *${saldo}* gold\n` +
+          `⚠️ Faltam:     *${faltam}* gold`,
+      }, { quoted: msg });
+      return;
+    }
     console.error('Erro ao debitar gold (buyroubo):', e.message);
     await sock.sendMessage(jid, {
       text: '⚠️ Erro ao processar a compra. Tente novamente.',
-    }, { quoted: msg });
-    return;
-  }
-
-  if (debitado < itemInfo.preco) {
-    // Saldo mudou entre a checagem e o débito (ex.: compra concorrente).
-    // Reembolsa o que foi debitado, se algo foi.
-    if (debitado > 0) {
-      await alterarGold(userId, idGrupo, debitado, `Reembolso: ${itemInfo.nome}`).catch((e) =>
-        console.error('Falha ao reembolsar débito parcial (buyroubo):', e.message)
-      );
-    }
-    await sock.sendMessage(jid, {
-      text: '❌ *SALDO INSUFICIENTE!*\n\nSeu saldo mudou antes da compra ser concluída. Tente novamente.',
     }, { quoted: msg });
     return;
   }
@@ -283,43 +265,26 @@ async function handleComprarSec(sock, msg, jid, caption) {
     return;
   }
 
-  // Checagem prévia apenas para dar feedback rápido — o débito real e
-  // atômico acontece em alterarGoldSeguro logo abaixo.
-  const carteira = await getCarteira(userId, idGrupo);
-  const saldo    = carteira.gold ?? 0;
-  if (saldo < itemInfo.preco) {
-    const faltam = itemInfo.preco - saldo;
-    await sock.sendMessage(jid, {
-      text:
-        `❌ *SALDO INSUFICIENTE!*\n\n` +
-        `💵 Preço:      *${itemInfo.preco}* gold\n` +
-        `💰 Seu saldo:  *${saldo}* gold\n` +
-        `⚠️ Faltam:     *${faltam}* gold`,
-    }, { quoted: msg });
-    return;
-  }
-
-  // Débito atômico: evita saldo negativo em caso de compras simultâneas.
-  let debitado;
+  // Débito atômico: debita o valor exato apenas se o saldo for suficiente.
   try {
-    ({ debitado } = await alterarGoldSeguro(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`));
+    await alterarGold(userId, idGrupo, -itemInfo.preco, `Compra: ${itemInfo.nome}`);
   } catch (e) {
+    if (e instanceof RangeError) {
+      const carteira = await getCarteira(userId, idGrupo);
+      const saldo    = carteira.gold ?? 0;
+      const faltam   = Math.max(0, itemInfo.preco - saldo);
+      await sock.sendMessage(jid, {
+        text:
+          `❌ *SALDO INSUFICIENTE!*\n\n` +
+          `💵 Preço:      *${itemInfo.preco}* gold\n` +
+          `💰 Seu saldo:  *${saldo}* gold\n` +
+          `⚠️ Faltam:     *${faltam}* gold`,
+      }, { quoted: msg });
+      return;
+    }
     console.error('Erro ao debitar gold (buysec):', e.message);
     await sock.sendMessage(jid, {
       text: '⚠️ Erro ao processar a compra. Tente novamente.',
-    }, { quoted: msg });
-    return;
-  }
-
-  if (debitado < itemInfo.preco) {
-    // Saldo mudou entre a checagem e o débito (ex.: compra concorrente).
-    if (debitado > 0) {
-      await alterarGold(userId, idGrupo, debitado, `Reembolso: ${itemInfo.nome}`).catch((e) =>
-        console.error('Falha ao reembolsar débito parcial (buysec):', e.message)
-      );
-    }
-    await sock.sendMessage(jid, {
-      text: '❌ *SALDO INSUFICIENTE!*\n\nSeu saldo mudou antes da compra ser concluída. Tente novamente.',
     }, { quoted: msg });
     return;
   }

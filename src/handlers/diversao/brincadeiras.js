@@ -5,8 +5,8 @@ const path = require('path');
 function getAlvo(contextInfo, senderJid, contactNames) {
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
   const alvoJid = mentionedJid || senderJid;
-  const numero = alvoJid.split('@')[0];
-  const nome = contactNames?.[alvoJid] || `@${numero}`;
+  const numero = alvoJid ? alvoJid.split('@')[0].split(':')[0] : '';
+  const nome = contactNames?.[alvoJid] || (numero ? `@${numero}` : 'Usuário');
   return { alvoJid, mentionedJid, nome };
 }
 

@@ -1,7 +1,9 @@
 'use strict';
 
-const { getCarteira } = require('../../../utils/carteira');
-const { resolveUserFromMsg } = require('../../../utils/identity');
+const path = require('path');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { getCarteira } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { resolveUserFromMsg } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 
 const EXTRATO_LIMITE   = 10;
 const EXTRATO_DATE_FMT = { day: '2-digit', month: '2-digit' };
@@ -24,17 +26,10 @@ function formatarDataHora(date) {
   };
 }
 
-/**
- * Substitui "@numero@dominio" pelo nome do contato (se disponível),
- * ou pelo "@numero" curto como fallback.
- */
 function resolverNomesNoItem(item = '', contactNames = {}) {
   return item.replace(JID_MENTION_REGEX, (match, numero, dominio) => {
-    // Tenta resolver pelo JID completo (com domínio original ou padrão)
     const jidCompleto = `${numero}${dominio || '@s.whatsapp.net'}`;
-
-    // Tenta também o JID com @lid caso o contato esteja salvo assim
-    const jidLid = `${numero}@lid`;
+    const jidLid      = `${numero}@lid`;
 
     const nome =
       contactNames[jidCompleto] ||
@@ -51,7 +46,6 @@ function buildLinhaTransacao(t, index, contactNames = {}) {
   const sinal = t.type === 'recebido' ? '+' : '-';
   const num   = String(index + 1).padStart(2, '0');
 
-  // Substitui menções pelo nome do contato (ou @numero como fallback)
   const itemFormatado = resolverNomesNoItem(t.item, contactNames);
 
   return `  ${num}. ${icone} *${sinal}${t.amount}g* — ${itemFormatado}\n      🕐 ${data} às ${hora}`;
@@ -59,7 +53,7 @@ function buildLinhaTransacao(t, index, contactNames = {}) {
 
 // !extrato
 async function handleExtrato(sock, msg, jid, contactNames = {}) {
-  const userId    = resolveUserFromMsg(msg);
+  const userId    = jidNormalizedUser(resolveUserFromMsg(msg));
   const carteira  = await getCarteira(userId, jid);
   const historico = carteira?.goldHistory ?? [];
 
@@ -81,7 +75,6 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
     if (t.type === 'recebido') totalEntrada += t.amount;
     else                       totalSaida   += t.amount;
 
-    // Passa contactNames para resolver nomes na linha
     return buildLinhaTransacao(t, i, contactNames);
   });
 
@@ -103,7 +96,6 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
       `  ${iconeBalanco} Balanço:   *${sinalBalanco}${balanco} gold*\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `  💰 Saldo atual: *${saldo} gold*`,
-    // mentions removido — nomes aparecem em texto, sem marcação azul
   }, { quoted: msg });
 }
 

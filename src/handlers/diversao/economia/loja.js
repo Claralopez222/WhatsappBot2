@@ -1,23 +1,33 @@
 'use strict';
 
-const Usuario       = require('../../../models/Usuario');
-const CarteiraGrupo = require('../../../models/CarteiraGrupo');
-const { getCarteira, alterarGold, comprarComGold } = require('../../../utils/carteira');
-const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero } = require('../../../utils/identity');
-const { ITENS_LOJA } = require('../../../config/economia');
-const { VARAS_PESCA, ISCAS } = require('../pesca');
+const path = require('path');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
+const { getCarteira, alterarGold, comprarComGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
+
+// Safe lazy fallback if pesca config is missing
+let VARAS_PESCA = {}, ISCAS = {};
+try {
+  const pescaModule = require(path.join(__dirname, '..', 'pesca'));
+  VARAS_PESCA = pescaModule.VARAS_PESCA || {};
+  ISCAS = pescaModule.ISCAS || {};
+} catch {}
+
 const { resolverItemKey } = require('./_shared');
 
 // !gold
 async function handleGold(sock, msg, jid, getPrefix, contactNames) {
   const userIdRaw = getSenderJid(msg);
-  const userId    = resolveGlobalId(userIdRaw);
+  const userId    = jidNormalizedUser(resolveGlobalId(userIdRaw));
   const idGrupo   = jid;
 
   try {
     const carteira  = await getCarteira(userId, idGrupo);
     const gold      = carteira?.gold ?? 0;
-    const numero    = extrairNumero(userIdRaw);
+    const numero    = userId.split('@')[0];
     const userName  = contactNames?.[userIdRaw] || contactNames?.[userId] || numero;
 
     let status = '🪨 Pobre';
@@ -25,7 +35,7 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
     else if (gold >= 500) status = '💵 Abastado';
     else if (gold >= 100) status = '💴 Confortável';
 
-    const P = getPrefix(jid);
+    const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
     const texto =
       `💰 *SALDO DE GOLD* 💰\n\n` +
       `👤 *${userName}*\n` +
@@ -50,7 +60,7 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
 
 // !loja
 async function handleLoja(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const texto =
     `🛒 *LOJA PIROQUINHAS* 🛒\n\n` +
     `📂 *CATEGORIAS DISPONÍVEIS*\n\n` +
@@ -68,12 +78,9 @@ async function handleLoja(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-// ─── Lojas específicas ────────────────────────────────────────────────────
-
 // !lojafood
 async function handleLojaFood(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
-
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const categorias = {
     '🍕 PRINCIPAIS': ['pizza', 'hamburger', 'frango', 'picanha'],
     '🍫 DOCES':      ['chocolate', 'bolo'],
@@ -103,8 +110,7 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
 
 // !lojapet
 async function handleLojaPet(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
-
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const categorias = {
     '🦴 COMIDAS':      ['racao', 'racaopremium', 'carnefresh', 'peixe', 'leite'],
     '🎾 BRINQUEDOS':   ['bolinha', 'pelucia', 'corda', 'disco', 'casabrinquedo'],
@@ -135,8 +141,7 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
 
 // !lojatec
 async function handleLojaTec(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
-
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const categorias = {
     '🖥️ COMPUTADORES': ['notebook', 'pcgamerlegendario'],
     '📱 SMARTPHONES':  ['celular', 'smartphonebasico'],
@@ -168,8 +173,7 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
 
 // !lojacasal
 async function handleLojaCasal(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
-
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const categorias = {
     '🎁 PRESENTES ROMÂNTICOS': ['flores', 'carta', 'morango', 'urso', 'caixa'],
     '💎 JOIAS':                ['anel'],
@@ -198,11 +202,9 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-// ─── !buy ───────────────────────────────────────────────────────────────
-// Gold debitado da CarteiraGrupo; inventário salvo no Usuario global.
-
+// !buy
 async function handleComprar(sock, msg, jid, caption) {
-  const userId  = resolveUserFromMsg(msg);
+  const userId  = jidNormalizedUser(resolveUserFromMsg(msg));
   const idGrupo = jid;
   const match   = caption.match(/buy\s+(.+)/i);
 
@@ -212,9 +214,6 @@ async function handleComprar(sock, msg, jid, caption) {
   }
 
   const itemDigitado = match[1].trim();
-
-  // Aceita tanto a chave técnica quanto o nome de exibição (com ou sem
-  // acento/espaço), tanto para itens da loja quanto de pesca.
   const itemNome = resolverItemKey(itemDigitado);
 
   const itemInfo = itemNome
@@ -285,10 +284,9 @@ async function handleComprar(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── !vender (sem mudança de lógica) ─────────────────────────────────────
-
+// !vender
 async function handleVender(sock, msg, jid, caption) {
-  const userId = resolveUserFromMsg(msg);
+  const userId = jidNormalizedUser(resolveUserFromMsg(msg));
   const match  = caption.match(/vender\s+(\S+)\s+(\d+)\s+(\d+)/i);
 
   if (!match) {
@@ -312,7 +310,6 @@ async function handleVender(sock, msg, jid, caption) {
     return;
   }
 
-  // Verifica se o usuário tem o item no inventário
   const user = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
   const qtdDisponivel = user?.inventory?.[itemKey] ?? 0;
 
@@ -326,11 +323,11 @@ async function handleVender(sock, msg, jid, caption) {
     return;
   }
 
-  // Remove do inventário — atômico, só se ainda houver estoque suficiente
   const removido = await Usuario.findOneAndUpdate(
     { idWhatsApp: userId, [`inventory.${itemKey}`]: { $gte: quantidade } },
     { $inc: { [`inventory.${itemKey}`]: -quantidade } }
   );
+
   if (!removido) {
     await sock.sendMessage(jid, {
       text: `⚠️ Estoque de *${itemInfo.nome}* mudou antes da venda ser concluída. Tente novamente.`,
@@ -338,7 +335,6 @@ async function handleVender(sock, msg, jid, caption) {
     return;
   }
 
-  // Credita o gold
   const totalRecebido = preco * quantidade;
   const carteira = await alterarGold(userId, jid, totalRecebido, `Venda: ${itemInfo.nome} x${quantidade}`);
 
@@ -354,8 +350,7 @@ async function handleVender(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── !inventario ──────────────────────────────────────────────────────────
-
+// !inventario
 const MSG_INVENTARIO_VAZIO =
   `📦 *SEU INVENTÁRIO* 📦\n\n` +
   `Você não possui itens no momento!\n\n` +
@@ -365,7 +360,7 @@ const MSG_INVENTARIO_VAZIO =
   `Use *!buy <item>* para começar!`;
 
 async function handleInventario(sock, msg, jid) {
-  const userId = resolveUserFromMsg(msg);
+  const userId = jidNormalizedUser(resolveUserFromMsg(msg));
 
   const [user, carteira] = await Promise.all([
     Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean(),
@@ -383,7 +378,6 @@ async function handleInventario(sock, msg, jid) {
 
   const totalItens = itensValidos.reduce((acc, { qtd }) => acc + qtd, 0);
 
-  // Agrupa por categoria
   const porCategoria = {};
   for (const { info, qtd } of itensValidos) {
     const cat = info.categoria || 'outros';

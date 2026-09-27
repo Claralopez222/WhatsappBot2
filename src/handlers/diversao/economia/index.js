@@ -1,6 +1,8 @@
 'use strict';
 
-const { ITENS_LOJA } = require('../../../config/economia');
+const path = require('path');
+
+const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 const { getSaldoGrupo } = require('./_shared');
 
 const {
@@ -21,8 +23,8 @@ const { handlePix, handleGive } = require('./transferencia');
 const { handleExtrato } = require('./extrato');
 const { handleRankGold } = require('./ranking');
 
-// Mesma superfície pública de antes (handlers/diversao/economia.js) —
-// nenhum call site precisa mudar.
+const { alterarGold } = require('../../../utils/carteira');
+
 module.exports = {
   handleGold,
   handleLoja,
@@ -34,13 +36,15 @@ module.exports = {
   handleVender,
   handleInventario,
   handlePix,
+  handleGive,
   handleApostar,
   handleExtrato,
   handleGarimpar,
   handleSlots,
   handleCorrida,
   getSaldoGrupo,
+  getSaldoAtual: getSaldoGrupo,
+  changeGold: alterarGold,
   ITENS_LOJA,
   handleRankGold,
-  handleGive,
 };

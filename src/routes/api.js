@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const crypto        = require('crypto');
 const express       = require('express');
@@ -143,7 +143,7 @@ async function resolverIdWhatsApp(termo, idGrupo) {
 
 // Calcula nível a partir do XP (mesma fórmula usada no bot e no frontend)
 function calcularLevel(xp) {
-  return Math.max(1, Math.floor(Math.pow((xp || 0) / 100, 1 / 1.5)) + 1);
+  return Math.max(1, Math.floor(Math.pow((xp || 0) / 80, 1 / 1.4)) + 1);
 }
 
 // ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
@@ -420,8 +420,8 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
 
     const levelGlobal = calcularLevel(xpTotal);
 
-    const xpParaProximo = Math.ceil(100 * Math.pow(levelGlobal, 1.5));
-    const xpInicioNivel = Math.ceil(100 * Math.pow(Math.max(0, levelGlobal - 1), 1.5));
+    const xpParaProximo = Math.ceil(80 * Math.pow(levelGlobal, 1.4));
+    const xpInicioNivel = Math.ceil(80 * Math.pow(Math.max(0, levelGlobal - 1), 1.4));
     const xpNoNivel     = xpParaProximo - xpInicioNivel;
     const xpProgresso   = xpNoNivel > 0
       ? Math.min(100, Math.max(0, Math.floor(((xpTotal - xpInicioNivel) / xpNoNivel) * 100)))

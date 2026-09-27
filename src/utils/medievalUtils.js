@@ -1,5 +1,184 @@
 'use strict';
 
+// Nome do arquivo: medievalUtils.js
+// Localização: src/utils/medievalUtils.js
+// Tabelas de Dados, Helpers do Banco e Fórmulas do Modo Medieval
+
+const MedievalPersonagem = require('../models/MedievalPersonagem');
+const GrupoConfig        = require('../models/GrupoConfig');
+
+const JANELA_SAQUE_MS = 3 * 60 * 1000; // 3 minutos
+
+// ── Helpers do Banco de Dados e Estado ────────────────────────────────────────
+
+function somenteGrupo(jid) {
+  return typeof jid === 'string' && jid.endsWith('@g.us');
+}
+
+async function getModoAtivo(idGrupo) {
+  const cfg = await GrupoConfig.findOne({ idGrupo }).lean();
+  return cfg?.medievalAtivo === true;
+}
+
+function sanitizarNome(nome, fallback) {
+  const limpo = (nome || '')
+    .replace(/[*_~`]/g, '')
+    .trim()
+    .slice(0, 30);
+  return limpo || fallback;
+}
+
+function normalizarItemKey(nomeItem) {
+  return (nomeItem || '').trim().replace(/ /g, '_');
+}
+
+function itemKeyParaNome(chaveItem) {
+  return (chaveItem || '').replace(/_/g, ' ');
+}
+
+function getInventarioMap(personagem) {
+  if (!personagem || !personagem.inventarioMedieval) return new Map();
+  if (personagem.inventarioMedieval instanceof Map) {
+    return personagem.inventarioMedieval;
+  }
+  return new Map(Object.entries(personagem.inventarioMedieval || {}));
+}
+
+async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
+  const existente = await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
+  if (existente) return existente;
+
+  const classe   = sortearAleatorio(CLASSES);
+  const elemento = sortearAleatorio(ELEMENTOS);
+
+  if (!classe || !elemento) {
+    throw new Error('Falha ao sortear classe/elemento medieval.');
+  }
+
+  try {
+    return await MedievalPersonagem.create({
+      idWhatsApp,
+      idGrupo,
+      nome:     sanitizarNome(nome, idWhatsApp.split('@')[0]),
+      classe:   classe.nome,
+      elemento: elemento.nome,
+      nivel:    1,
+      xpMedieval: 0,
+      hp:       classe.hp,
+      hpMax:    classe.hp,
+      mana:     classe.mana,
+      manaMax:  classe.mana,
+      ataque:   classe.ataque,
+      defesa:   classe.defesa,
+      vitorias: 0,
+      derrotas: 0,
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      return await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
+    }
+    throw err;
+  }
+}
+
+function gerarBarra(atual, maximo, emoji = '❤️', tamanho = 8) {
+  if (!maximo || maximo <= 0) return '░'.repeat(tamanho);
+  const filled = Math.min(Math.round((atual / maximo) * tamanho), tamanho);
+  return emoji.repeat(filled) + '░'.repeat(tamanho - filled);
+}
+
+async function verificarRecuperacaoDerrota(p) {
+  if (!p?.derrotadoEm) return p;
+
+  const passouMs = Date.now() - new Date(p.derrotadoEm).getTime();
+  if (passouMs < JANELA_SAQUE_MS) return p;
+
+  if (p.hp > 0) {
+    await MedievalPersonagem.updateOne(
+      { _id: p._id },
+      { $unset: { derrotadoEm: '', derrotadoPor: '' } }
+    );
+  } else {
+    const hpMinimo = Math.max(1, Math.floor(p.hpMax * 0.3));
+    await MedievalPersonagem.updateOne(
+      { _id: p._id },
+      { $set: { hp: hpMinimo }, $unset: { derrotadoEm: '', derrotadoPor: '' } }
+    );
+    p.hp = hpMinimo;
+  }
+  p.derrotadoEm  = undefined;
+  p.derrotadoPor = undefined;
+  return p;
+}
+
+async function verificarLevelUp(sock, jid, senderJid, pAtual = null) {
+  let p = pAtual ?? await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
+  if (!p) return;
+
+  const nivelInicial = p.nivel;
+  let totalHp = 0, totalMana = 0, totalAtaque = 0, totalDefesa = 0;
+
+  while (p.xpMedieval >= xpParaNivel(p.nivel + 1)) {
+    const novoNivel   = p.nivel + 1;
+    const hpBonus     = 15;
+    const manaBonus   = 10;
+    const ataqueBonus = 2;
+    const defesaBonus = 1;
+
+    const novoHpMax   = p.hpMax   + hpBonus;
+    const novoManaMax = p.manaMax + manaBonus;
+
+    await MedievalPersonagem.updateOne(
+      { idWhatsApp: senderJid, idGrupo: jid },
+      {
+        $set: {
+          nivel:   novoNivel,
+          hpMax:   novoHpMax,
+          manaMax: novoManaMax,
+          hp:      Math.min(p.hp   + hpBonus,  novoHpMax),
+          mana:    Math.min(p.mana + manaBonus, novoManaMax),
+        },
+        $inc: {
+          ataque: ataqueBonus,
+          defesa: defesaBonus,
+        },
+      }
+    );
+
+    p.nivel  += 1;
+    p.hpMax  += hpBonus;
+    p.hp     += hpBonus;
+    p.manaMax += manaBonus;
+    p.mana   += manaBonus;
+    p.ataque += ataqueBonus;
+    p.defesa += defesaBonus;
+
+    totalHp     += hpBonus;
+    totalMana   += manaBonus;
+    totalAtaque += ataqueBonus;
+    totalDefesa += defesaBonus;
+  }
+
+  if (p.nivel === nivelInicial) return;
+
+  const textoNivel = (p.nivel - nivelInicial) > 1
+    ? `dos Níveis *${nivelInicial}* → *${p.nivel}*`
+    : `para o *Nível ${p.nivel}*`;
+
+  await sock.sendMessage(jid, {
+    text:
+      `⭐🎉 *LEVEL UP!* 🎉⭐\n\n` +
+      `*${p.nome}* subiu ${textoNivel}!\n\n` +
+      `📈 *Melhorias totais:*\n` +
+      `❤️ +${totalHp} HP Máximo\n` +
+      `💧 +${totalMana} Mana Máxima\n` +
+      `⚔️ +${totalAtaque} Ataque\n` +
+      `🛡️ +${totalDefesa} Defesa\n\n` +
+      `_Continue batalhando para ficar mais forte!_`,
+    mentions: [senderJid],
+  });
+}
+
 // ── Classes ──────────────────────────────────────────────────────────────────
 const CLASSES = [
   {
@@ -131,52 +310,52 @@ const ELEMENTOS = [
 
 // ── Armas ────────────────────────────────────────────────────────────────────
 const ARMAS = [
-  // ── Nível 1 ───────────────────────────────────────────────────────────────
+  // Nível 1
   { nome: 'Espada',              emoji: '⚔️',  bonusAtaque: 8,  preco: 300,  raridade: 'comum',    nivelMinimo: 1  },
   { nome: 'Machado',             emoji: '🪓',  bonusAtaque: 12, preco: 450,  raridade: 'comum',    nivelMinimo: 1  },
   { nome: 'Adaga',               emoji: '🗡️',  bonusAtaque: 6,  preco: 200,  raridade: 'comum',    nivelMinimo: 1  },
   { nome: 'Cajado de Madeira',   emoji: '🪵',  bonusAtaque: 4,  preco: 150,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 15 },
   { nome: 'Arco Simples',        emoji: '🏹',  bonusAtaque: 5,  preco: 180,  raridade: 'comum',    nivelMinimo: 1  },
   { nome: 'Lança Simples',       emoji: '🔱',  bonusAtaque: 7,  preco: 220,  raridade: 'comum',    nivelMinimo: 1  },
-  { nome: 'Cetro Enferrujado',   emoji: '🔩',  bonusAtaque: 3,  preco: 130,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 20 },  // Mago / Necromante iniciante
-  { nome: 'Faca de Caça',        emoji: '🔪',  bonusAtaque: 8,  preco: 240,  raridade: 'comum',    nivelMinimo: 1  },                  // Assassino variante
-  { nome: 'Bordão Sagrado',      emoji: '✝️',   bonusAtaque: 6,  preco: 260,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 10 },  // Paladino
-  { nome: 'Ramo Druídico',       emoji: '🌿',  bonusAtaque: 4,  preco: 160,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 25 },  // Druida
-  // ── Nível 3 ───────────────────────────────────────────────────────────────
+  { nome: 'Cetro Enferrujado',   emoji: '🔩',  bonusAtaque: 3,  preco: 130,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 20 },
+  { nome: 'Faca de Caça',        emoji: '🔪',  bonusAtaque: 8,  preco: 240,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Bordão Sagrado',      emoji: '✝️',   bonusAtaque: 6,  preco: 260,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 10 },
+  { nome: 'Ramo Druídico',       emoji: '🌿',  bonusAtaque: 4,  preco: 160,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 25 },
+  // Nível 3
   { nome: 'Lança',               emoji: '🔱',  bonusAtaque: 10, preco: 350,  raridade: 'incomum',  nivelMinimo: 3  },
   { nome: 'Cajado',              emoji: '🪄',  bonusAtaque: 5,  preco: 400,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 30 },
   { nome: 'Arco',                emoji: '🏹',  bonusAtaque: 9,  preco: 380,  raridade: 'incomum',  nivelMinimo: 3  },
-  { nome: 'Adaga Envenenada',    emoji: '💚',  bonusAtaque: 10, preco: 420,  raridade: 'incomum',  nivelMinimo: 3  },                  // Assassino
-  { nome: 'Cajado da Floresta',  emoji: '🌲',  bonusAtaque: 6,  preco: 430,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 40 },  // Druida
-  { nome: 'Martelo Sagrado',     emoji: '🔨',  bonusAtaque: 11, preco: 390,  raridade: 'incomum',  nivelMinimo: 3  },                  // Paladino / Guerreiro
-  { nome: 'Grimório Sombrio',    emoji: '📖',  bonusAtaque: 7,  preco: 460,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 45 },  // Necromante
-  { nome: 'Espada Longa',        emoji: '🗡️',  bonusAtaque: 13, preco: 500,  raridade: 'incomum',  nivelMinimo: 3  },                  // Guerreiro
-  // ── Nível 5 ───────────────────────────────────────────────────────────────
-  { nome: 'Arco Élfico',         emoji: '🌟',  bonusAtaque: 14, preco: 650,  raridade: 'incomum',  nivelMinimo: 5  },                  // Arqueiro / Druida
-  { nome: 'Espada do Amanhecer', emoji: '🌅',  bonusAtaque: 13, preco: 620,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 15 },  // Paladino
-  { nome: 'Cajado de Cristal',   emoji: '💎',  bonusAtaque: 9,  preco: 680,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 55 },  // Mago
-  { nome: 'Faca Gêmea',          emoji: '⚡',  bonusAtaque: 15, preco: 700,  raridade: 'incomum',  nivelMinimo: 5  },                  // Assassino
-  { nome: 'Machado de Guerra',   emoji: '🪓',  bonusAtaque: 16, preco: 720,  raridade: 'incomum',  nivelMinimo: 5  },                  // Guerreiro
-  // ── Nível 7 ───────────────────────────────────────────────────────────────
+  { nome: 'Adaga Envenenada',    emoji: '💚',  bonusAtaque: 10, preco: 420,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Cajado da Floresta',  emoji: '🌲',  bonusAtaque: 6,  preco: 430,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 40 },
+  { nome: 'Martelo Sagrado',     emoji: '🔨',  bonusAtaque: 11, preco: 390,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Grimório Sombrio',    emoji: '📖',  bonusAtaque: 7,  preco: 460,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 45 },
+  { nome: 'Espada Longa',        emoji: '🗡️',  bonusAtaque: 13, preco: 500,  raridade: 'incomum',  nivelMinimo: 3  },
+  // Nível 5
+  { nome: 'Arco Élfico',         emoji: '🌟',  bonusAtaque: 14, preco: 650,  raridade: 'incomum',  nivelMinimo: 5  },
+  { nome: 'Espada do Amanhecer', emoji: '🌅',  bonusAtaque: 13, preco: 620,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 15 },
+  { nome: 'Cajado de Cristal',   emoji: '💎',  bonusAtaque: 9,  preco: 680,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 55 },
+  { nome: 'Faca Gêmea',          emoji: '⚡',  bonusAtaque: 15, preco: 700,  raridade: 'incomum',  nivelMinimo: 5  },
+  { nome: 'Machado de Guerra',   emoji: '🪓',  bonusAtaque: 16, preco: 720,  raridade: 'incomum',  nivelMinimo: 5  },
+  // Nível 7
   { nome: 'Espada Rúnica',       emoji: '🔮',  bonusAtaque: 18, preco: 900,  raridade: 'raro',     nivelMinimo: 7  },
   { nome: 'Machado Sombrio',     emoji: '💀',  bonusAtaque: 22, preco: 1200, raridade: 'raro',     nivelMinimo: 7  },
   { nome: 'Cajado das Eras',     emoji: '✨',  bonusAtaque: 15, preco: 1100, raridade: 'raro',     nivelMinimo: 7,  bonusMana: 60 },
-  { nome: 'Adaga da Sombra',     emoji: '🌑',  bonusAtaque: 20, preco: 1050, raridade: 'raro',     nivelMinimo: 7  },                  // Assassino
-  { nome: 'Arco da Tempestade',  emoji: '⛈️',  bonusAtaque: 19, preco: 980,  raridade: 'raro',     nivelMinimo: 7  },                  // Arqueiro / Druida
-  { nome: 'Lança Sagrada',       emoji: '⚜️',  bonusAtaque: 17, preco: 950,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 25 },  // Paladino
-  { nome: 'Cajado dos Mortos',   emoji: '💀',  bonusAtaque: 16, preco: 1000, raridade: 'raro',     nivelMinimo: 7,  bonusMana: 70 },  // Necromante
-  { nome: 'Cetro da Natureza',   emoji: '🌺',  bonusAtaque: 14, preco: 920,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 65 },  // Druida
-  // ── Nível 10 ──────────────────────────────────────────────────────────────
-  { nome: 'Espada dos Titãs',    emoji: '⚡',  bonusAtaque: 23, preco: 1500, raridade: 'raro',     nivelMinimo: 10 },                  // Guerreiro / Paladino
-  { nome: 'Adaga do Caos',       emoji: '🌀',  bonusAtaque: 24, preco: 1550, raridade: 'raro',     nivelMinimo: 10 },                  // Assassino
-  { nome: 'Grimório das Trevas', emoji: '🖤',  bonusAtaque: 20, preco: 1600, raridade: 'raro',     nivelMinimo: 10, bonusMana: 90 },  // Necromante
-  { nome: 'Cajado Ancestral',    emoji: '🌳',  bonusAtaque: 18, preco: 1480, raridade: 'raro',     nivelMinimo: 10, bonusMana: 85 },  // Druida
-  // ── Nível 12 ──────────────────────────────────────────────────────────────
+  { nome: 'Adaga da Sombra',     emoji: '🌑',  bonusAtaque: 20, preco: 1050, raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Arco da Tempestade',  emoji: '⛈️',  bonusAtaque: 19, preco: 980,  raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Lança Sagrada',       emoji: '⚜️',  bonusAtaque: 17, preco: 950,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 25 },
+  { nome: 'Cajado dos Mortos',   emoji: '💀',  bonusAtaque: 16, preco: 1000, raridade: 'raro',     nivelMinimo: 7,  bonusMana: 70 },
+  { nome: 'Cetro da Natureza',   emoji: '🌺',  bonusAtaque: 14, preco: 920,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 65 },
+  // Nível 10
+  { nome: 'Espada dos Titãs',    emoji: '⚡',  bonusAtaque: 23, preco: 1500, raridade: 'raro',     nivelMinimo: 10 },
+  { nome: 'Adaga do Caos',       emoji: '🌀',  bonusAtaque: 24, preco: 1550, raridade: 'raro',     nivelMinimo: 10 },
+  { nome: 'Grimório das Trevas', emoji: '🖤',  bonusAtaque: 20, preco: 1600, raridade: 'raro',     nivelMinimo: 10, bonusMana: 90 },
+  { nome: 'Cajado Ancestral',    emoji: '🌳',  bonusAtaque: 18, preco: 1480, raridade: 'raro',     nivelMinimo: 10, bonusMana: 85 },
+  // Nível 12
   { nome: 'Lâmina do Vazio',     emoji: '🌑',  bonusAtaque: 25, preco: 1800, raridade: 'lendário', nivelMinimo: 12 },
-  { nome: 'Cetro do Apocalipse', emoji: '☄️',  bonusAtaque: 22, preco: 1900, raridade: 'lendário', nivelMinimo: 12, bonusMana: 100 }, // Necromante / Mago
-  { nome: 'Arco do Julgamento',  emoji: '🏹',  bonusAtaque: 24, preco: 1850, raridade: 'lendário', nivelMinimo: 12 },                  // Arqueiro / Druida
-  { nome: 'Espada Celestial',    emoji: '✨',  bonusAtaque: 26, preco: 2000, raridade: 'lendário', nivelMinimo: 12, bonusMana: 30 },  // Paladino / Guerreiro
-  { nome: 'Punhal Eterno',       emoji: '🗡️',  bonusAtaque: 27, preco: 2100, raridade: 'lendário', nivelMinimo: 12 },                  // Assassino
+  { nome: 'Cetro do Apocalipse', emoji: '☄️',  bonusAtaque: 22, preco: 1900, raridade: 'lendário', nivelMinimo: 12, bonusMana: 100 },
+  { nome: 'Arco do Julgamento',  emoji: '🏹',  bonusAtaque: 24, preco: 1850, raridade: 'lendário', nivelMinimo: 12 },
+  { nome: 'Espada Celestial',    emoji: '✨',  bonusAtaque: 26, preco: 2000, raridade: 'lendário', nivelMinimo: 12, bonusMana: 30 },
+  { nome: 'Punhal Eterno',       emoji: '🗡️',  bonusAtaque: 27, preco: 2100, raridade: 'lendário', nivelMinimo: 12 },
 ];
 
 // ── Poções ───────────────────────────────────────────────────────────────────
@@ -193,43 +372,43 @@ const POCOES = [
 
 // ── Armaduras ────────────────────────────────────────────────────────────────
 const ARMADURAS = [
-  // ── Nível 1 ───────────────────────────────────────────────────────────────
+  // Nível 1
   { nome: 'Armadura de Couro',    emoji: '🥋', bonusDefesa: 5,  preco: 200,  raridade: 'comum',    nivelMinimo: 1  },
   { nome: 'Cota de Malha',        emoji: '🛡️', bonusDefesa: 10, preco: 400,  raridade: 'comum',    nivelMinimo: 1  },
-  { nome: 'Manto de Aprendiz',    emoji: '👘', bonusDefesa: 3,  preco: 150,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 20 }, // Mago / Necromante
-  { nome: 'Capuz de Couro',       emoji: '🪖', bonusDefesa: 4,  preco: 170,  raridade: 'comum',    nivelMinimo: 1  },                 // Assassino / Arqueiro
-  { nome: 'Veste de Druida',      emoji: '🍃', bonusDefesa: 4,  preco: 180,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 15 }, // Druida
-  // ── Nível 3 ───────────────────────────────────────────────────────────────
+  { nome: 'Manto de Aprendiz',    emoji: '👘', bonusDefesa: 3,  preco: 150,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 20 },
+  { nome: 'Capuz de Couro',       emoji: '🪖', bonusDefesa: 4,  preco: 170,  raridade: 'comum',    nivelMinimo: 1  },
+  { nome: 'Veste de Druida',      emoji: '🍃', bonusDefesa: 4,  preco: 180,  raridade: 'comum',    nivelMinimo: 1,  bonusMana: 15 },
+  // Nível 3
   { nome: 'Armadura de Placas',   emoji: '🦾', bonusDefesa: 16, preco: 700,  raridade: 'incomum',  nivelMinimo: 3  },
   { nome: 'Manto Sombrio',        emoji: '🌑', bonusDefesa: 8,  preco: 500,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 20 },
-  { nome: 'Gibão Reforçado',      emoji: '🧥', bonusDefesa: 11, preco: 560,  raridade: 'incomum',  nivelMinimo: 3  },                 // Guerreiro / Paladino
-  { nome: 'Manto dos Ossos',      emoji: '🦴', bonusDefesa: 6,  preco: 480,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 35 }, // Necromante
-  { nome: 'Colete de Escamas',    emoji: '🐍', bonusDefesa: 9,  preco: 520,  raridade: 'incomum',  nivelMinimo: 3  },                 // Arqueiro / Assassino
-  // ── Nível 5 ───────────────────────────────────────────────────────────────
-  { nome: 'Armadura Sagrada',     emoji: '✝️',  bonusDefesa: 14, preco: 750,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 10 }, // Paladino
-  { nome: 'Manto Arcano',         emoji: '🔵', bonusDefesa: 7,  preco: 720,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 45 }, // Mago
-  { nome: 'Couraça da Floresta',  emoji: '🌲', bonusDefesa: 10, preco: 700,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 30 }, // Druida
-  { nome: 'Sombra Entrelaçada',   emoji: '🌙', bonusDefesa: 12, preco: 780,  raridade: 'incomum',  nivelMinimo: 5  },                 // Assassino
-  // ── Nível 7 ───────────────────────────────────────────────────────────────
+  { nome: 'Gibão Reforçado',      emoji: '🧥', bonusDefesa: 11, preco: 560,  raridade: 'incomum',  nivelMinimo: 3  },
+  { nome: 'Manto dos Ossos',      emoji: '🦴', bonusDefesa: 6,  preco: 480,  raridade: 'incomum',  nivelMinimo: 3,  bonusMana: 35 },
+  { nome: 'Colete de Escamas',    emoji: '🐍', bonusDefesa: 9,  preco: 520,  raridade: 'incomum',  nivelMinimo: 3  },
+  // Nível 5
+  { nome: 'Armadura Sagrada',     emoji: '✝️',  bonusDefesa: 14, preco: 750,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 10 },
+  { nome: 'Manto Arcano',         emoji: '🔵', bonusDefesa: 7,  preco: 720,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 45 },
+  { nome: 'Couraça da Floresta',  emoji: '🌲', bonusDefesa: 10, preco: 700,  raridade: 'incomum',  nivelMinimo: 5,  bonusMana: 30 },
+  { nome: 'Sombra Entrelaçada',   emoji: '🌙', bonusDefesa: 12, preco: 780,  raridade: 'incomum',  nivelMinimo: 5  },
+  // Nível 7
   { nome: 'Veste Élfica',         emoji: '🌿', bonusDefesa: 12, preco: 650,  raridade: 'raro',     nivelMinimo: 7  },
   { nome: 'Armadura Rúnica',      emoji: '🔮', bonusDefesa: 20, preco: 1000, raridade: 'raro',     nivelMinimo: 7  },
-  { nome: 'Manto das Trevas',     emoji: '🖤', bonusDefesa: 15, preco: 980,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 50 }, // Necromante
-  { nome: 'Armadura de Titânio',  emoji: '🤖', bonusDefesa: 22, preco: 1100, raridade: 'raro',     nivelMinimo: 7  },                 // Guerreiro
-  { nome: 'Veste da Lua Cheia',   emoji: '🌕', bonusDefesa: 13, preco: 900,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 40 }, // Druida
-  // ── Nível 10 ──────────────────────────────────────────────────────────────
-  { nome: 'Armadura do Crepúsculo', emoji: '🌇', bonusDefesa: 18, preco: 1350, raridade: 'raro',   nivelMinimo: 10, bonusMana: 20 }, // Paladino
-  { nome: 'Manto do Vazio',       emoji: '🌀', bonusDefesa: 14, preco: 1300, raridade: 'raro',     nivelMinimo: 10, bonusMana: 70 }, // Mago / Necromante
-  { nome: 'Colete Fantasma',      emoji: '👻', bonusDefesa: 16, preco: 1250, raridade: 'raro',     nivelMinimo: 10 },                 // Assassino
-  // ── Nível 12 ──────────────────────────────────────────────────────────────
+  { nome: 'Manto das Trevas',     emoji: '🖤', bonusDefesa: 15, preco: 980,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 50 },
+  { nome: 'Armadura de Titânio',  emoji: '🤖', bonusDefesa: 22, preco: 1100, raridade: 'raro',     nivelMinimo: 7  },
+  { nome: 'Veste da Lua Cheia',   emoji: '🌕', bonusDefesa: 13, preco: 900,  raridade: 'raro',     nivelMinimo: 7,  bonusMana: 40 },
+  // Nível 10
+  { nome: 'Armadura do Crepúsculo', emoji: '🌇', bonusDefesa: 18, preco: 1350, raridade: 'raro',   nivelMinimo: 10, bonusMana: 20 },
+  { nome: 'Manto do Vazio',       emoji: '🌀', bonusDefesa: 14, preco: 1300, raridade: 'raro',     nivelMinimo: 10, bonusMana: 70 },
+  { nome: 'Colete Fantasma',      emoji: '👻', bonusDefesa: 16, preco: 1250, raridade: 'raro',     nivelMinimo: 10 },
+  // Nível 12
   { nome: 'Placas do Abismo',     emoji: '💀', bonusDefesa: 25, preco: 1500, raridade: 'lendário', nivelMinimo: 12 },
-  { nome: 'Manto Celestial',      emoji: '✨', bonusDefesa: 20, preco: 1700, raridade: 'lendário', nivelMinimo: 12, bonusMana: 80 }, // Mago / Druida / Paladino
-  { nome: 'Armadura do Caos',     emoji: '🌪️', bonusDefesa: 23, preco: 1800, raridade: 'lendário', nivelMinimo: 12 },                // Guerreiro / Assassino
-  { nome: 'Veste do Além',        emoji: '🌌', bonusDefesa: 18, preco: 1600, raridade: 'lendário', nivelMinimo: 12, bonusMana: 100 },// Necromante
+  { nome: 'Manto Celestial',      emoji: '✨', bonusDefesa: 20, preco: 1700, raridade: 'lendário', nivelMinimo: 12, bonusMana: 80 },
+  { nome: 'Armadura do Caos',     emoji: '🌪️', bonusDefesa: 23, preco: 1800, raridade: 'lendário', nivelMinimo: 12 },
+  { nome: 'Veste do Além',        emoji: '🌌', bonusDefesa: 18, preco: 1600, raridade: 'lendário', nivelMinimo: 12, bonusMana: 100 },
 ];
 
 // ── Missões ──────────────────────────────────────────────────────────────────
 const MISSOES = [
-  // ── Nível 1+ (fácil) ──────────────────────────────────────────────────────
+  // Nível 1+ (fácil)
   { titulo: 'A Cripta dos Mortos Vivos',    dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 50,  goldReward: 100, emoji: '💀' },
   { titulo: 'O Pântano das Almas',          dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 60,  goldReward: 150, emoji: '🌿' },
   { titulo: 'A Aldeia dos Espíritos',       dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 70,  goldReward: 180, emoji: '👻' },
@@ -238,13 +417,11 @@ const MISSOES = [
   { titulo: 'O Mercado Maldito',            dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 50,  goldReward: 130, emoji: '🏚️' },
   { titulo: 'A Ponte dos Fantasmas',        dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 60,  goldReward: 140, emoji: '🌉' },
   { titulo: 'O Poço Sem Fundo',             dificuldade: 'fácil',   nivelMinimo: 1,  xpReward: 75,  goldReward: 170, emoji: '🕳️' },
-
-  // ── Nível 2+ (fácil) ──────────────────────────────────────────────────────
+  // Nível 2+ (fácil)
   { titulo: 'As Ruínas do Velho Reino',     dificuldade: 'fácil',   nivelMinimo: 2,  xpReward: 80,  goldReward: 190, emoji: '🏛️' },
   { titulo: 'O Acampamento Goblin',         dificuldade: 'fácil',   nivelMinimo: 2,  xpReward: 85,  goldReward: 200, emoji: '👺' },
   { titulo: 'A Estalagem Fantasma',         dificuldade: 'fácil',   nivelMinimo: 2,  xpReward: 80,  goldReward: 195, emoji: '🏠' },
-
-  // ── Nível 4+ (médio) ──────────────────────────────────────────────────────
+  // Nível 4+ (médio)
   { titulo: 'A Floresta Amaldiçoada',       dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 100, goldReward: 250, emoji: '🌲' },
   { titulo: 'As Minas do Esquecimento',     dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 120, goldReward: 300, emoji: '⛏️' },
   { titulo: 'O Covil do Lobisomem',         dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 130, goldReward: 320, emoji: '🐺' },
@@ -252,28 +429,24 @@ const MISSOES = [
   { titulo: 'O Labirinto de Pedra',         dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 115, goldReward: 280, emoji: '🌀' },
   { titulo: 'A Fortaleza dos Bandidos',     dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 125, goldReward: 310, emoji: '⚔️' },
   { titulo: 'O Navio Fantasma',             dificuldade: 'médio',   nivelMinimo: 4,  xpReward: 120, goldReward: 295, emoji: '🚢' },
-
-  // ── Nível 6+ (médio) ──────────────────────────────────────────────────────
+  // Nível 6+ (médio)
   { titulo: 'O Santuário Corrompido',       dificuldade: 'médio',   nivelMinimo: 6,  xpReward: 140, goldReward: 340, emoji: '⛩️' },
   { titulo: 'A Arena dos Condenados',       dificuldade: 'médio',   nivelMinimo: 6,  xpReward: 150, goldReward: 360, emoji: '🏟️' },
   { titulo: 'O Desfiladeiro das Sombras',   dificuldade: 'médio',   nivelMinimo: 6,  xpReward: 145, goldReward: 350, emoji: '🌑' },
   { titulo: 'A Biblioteca Proibida',        dificuldade: 'médio',   nivelMinimo: 6,  xpReward: 135, goldReward: 330, emoji: '📚' },
-
-  // ── Nível 8+ (difícil) ────────────────────────────────────────────────────
+  // Nível 8+ (difícil)
   { titulo: 'O Dragão das Montanhas',       dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 200, goldReward: 500, emoji: '🐉' },
   { titulo: 'O Castelo do Rei Sombrio',     dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 180, goldReward: 450, emoji: '🏰' },
   { titulo: 'O Golem de Ferro Ancestral',   dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 190, goldReward: 470, emoji: '🤖' },
   { titulo: 'A Hidra dos Pântanos Negros',  dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 195, goldReward: 480, emoji: '🐍' },
   { titulo: 'O Portal Dimensional',         dificuldade: 'difícil', nivelMinimo: 8,  xpReward: 185, goldReward: 460, emoji: '🌌' },
-
-  // ── Nível 10+ (difícil) ───────────────────────────────────────────────────
+  // Nível 10+ (difícil)
   { titulo: 'A Torre do Mago Louco',        dificuldade: 'difícil', nivelMinimo: 10, xpReward: 220, goldReward: 550, emoji: '🔮' },
   { titulo: 'O Templo da Magia Negra',      dificuldade: 'difícil', nivelMinimo: 10, xpReward: 250, goldReward: 600, emoji: '🖤' },
   { titulo: 'O Lich dos Tempos Antigos',    dificuldade: 'difícil', nivelMinimo: 10, xpReward: 240, goldReward: 580, emoji: '💀' },
   { titulo: 'A Dimensão do Caos',           dificuldade: 'difícil', nivelMinimo: 10, xpReward: 235, goldReward: 570, emoji: '🌀' },
   { titulo: 'O Trono do Deus Esquecido',    dificuldade: 'difícil', nivelMinimo: 10, xpReward: 260, goldReward: 620, emoji: '👑' },
-
-  // ── Nível 12+ (lendário) ──────────────────────────────────────────────────
+  // Nível 12+ (lendário)
   { titulo: 'O Despertar do Titã',          dificuldade: 'lendário', nivelMinimo: 12, xpReward: 350, goldReward: 900,  emoji: '⚡' },
   { titulo: 'A Forja dos Deuses',           dificuldade: 'lendário', nivelMinimo: 12, xpReward: 380, goldReward: 950,  emoji: '🔥' },
   { titulo: 'O Fim do Mundo Conhecido',     dificuldade: 'lendário', nivelMinimo: 12, xpReward: 400, goldReward: 1000, emoji: '🌍' },
@@ -289,28 +462,25 @@ function sortearAleatorio(lista) {
 }
 
 function getClasse(nome) {
-  return CLASSES.find(c => c.nome === nome) ?? null;
+  return CLASSES.find(c => c.nome.toLowerCase() === (nome || '').toLowerCase()) ?? null;
 }
 
 function getElemento(nome) {
-  return ELEMENTOS.find(e => e.nome === nome) ?? null;
+  return ELEMENTOS.find(e => e.nome.toLowerCase() === (nome || '').toLowerCase()) ?? null;
 }
 
 function getArma(nome) {
-  return ARMAS.find(a => a.nome === nome) ?? null;
+  return ARMAS.find(a => a.nome.toLowerCase() === (nome || '').toLowerCase()) ?? null;
 }
 
 function getArmadura(nome) {
-  return ARMADURAS.find(a => a.nome === nome) ?? null;
+  return ARMADURAS.find(a => a.nome.toLowerCase() === (nome || '').toLowerCase()) ?? null;
 }
 
 function getPocao(nome) {
-  return POCOES.find(p => p.nome.toLowerCase() === nome.toLowerCase()) ?? null;
+  return POCOES.find(p => p.nome.toLowerCase() === (nome || '').toLowerCase()) ?? null;
 }
 
-/**
- * Multiplicador elemental: 1.5 (vantagem) | 0.7 (fraqueza) | 1.0 (neutro)
- */
 function calcularMultElemento(elementoAtacante, elementoDefensor) {
   const el = getElemento(elementoAtacante);
   if (!el) return 1.0;
@@ -319,19 +489,11 @@ function calcularMultElemento(elementoAtacante, elementoDefensor) {
   return 1.0;
 }
 
-/**
- * XP necessário para subir de nível.
- * Nível 1→2: 100xp | 2→3: 263xp | 5→6: 954xp | 10→11: 2511xp
- */
 function xpParaNivel(nivel) {
   if (nivel < 1) return 100;
   return Math.floor(100 * Math.pow(Math.max(1, nivel), 1.4));
 }
 
-/**
- * Verifica cooldown de uma ação.
- * @returns {{ pode: boolean, tempoRestante: string|null }}
- */
 function verificarCooldown(dataUltimaAcao, cooldownMs) {
   if (!dataUltimaAcao) return { pode: true, tempoRestante: null };
   const diff = Date.now() - new Date(dataUltimaAcao).getTime();
@@ -342,11 +504,6 @@ function verificarCooldown(dataUltimaAcao, cooldownMs) {
   return { pode: false, tempoRestante: min > 0 ? `${min}min ${seg}s` : `${seg}s` };
 }
 
-/**
- * Calcula o dano de um ataque ou habilidade.
- * Habilidades NÃO rolam crítico — o multiplicador 2.2x já é o pico delas.
- * Ataques normais podem rolar crítico (15% de chance, 1.8x).
- */
 function calcularDano(personagem, alvo, habilidade = false) {
   const arma        = personagem.armaEquipada    ? getArma(personagem.armaEquipada)       : null;
   const armaduraAlvo = alvo.armaduraEquipada     ? getArmadura(alvo.armaduraEquipada)     : null;
@@ -355,11 +512,10 @@ function calcularDano(personagem, alvo, habilidade = false) {
   const baseDefesa = alvo.defesa       + (armaduraAlvo?.bonusDefesa || 0);
 
   const multElemento   = calcularMultElemento(personagem.elemento, alvo.elemento);
-  // Habilidades não críticam — evita dano absurdo (2.2 × 1.8 = 3.96x)
   const critico        = !habilidade && Math.random() < 0.15;
   const multCrit       = critico    ? 1.8 : 1.0;
   const multHabilidade = habilidade ? 2.2 : 1.0;
-  const variacao       = 0.85 + Math.random() * 0.3; // 85%–115%
+  const variacao       = 0.85 + Math.random() * 0.3;
 
   const dano = Math.max(1, Math.floor(
     (baseAtaque * multElemento * multCrit * multHabilidade * variacao) - (baseDefesa * 0.4)
@@ -368,10 +524,6 @@ function calcularDano(personagem, alvo, habilidade = false) {
   return { dano, critico, multElemento };
 }
 
-/**
- * Gera narração de combate.
- * Usa frases neutras para evitar problemas de concordância de gênero.
- */
 function narrarCombate(atacante, defensor, dano, critico, habilidade = null) {
   const elAtacante = getElemento(atacante.elemento);
   const cor        = elAtacante?.corNarrativa || 'energia mística';
@@ -402,7 +554,6 @@ function narrarCombate(atacante, defensor, dano, critico, habilidade = null) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-// ── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   CLASSES,
   ELEMENTOS,
@@ -410,6 +561,17 @@ module.exports = {
   ARMADURAS,
   POCOES,
   MISSOES,
+  JANELA_SAQUE_MS,
+  somenteGrupo,
+  getModoAtivo,
+  sanitizarNome,
+  normalizarItemKey,
+  itemKeyParaNome,
+  getInventarioMap,
+  getOuCriarPersonagem,
+  gerarBarra,
+  verificarRecuperacaoDerrota,
+  verificarLevelUp,
   sortearAleatorio,
   getClasse,
   getElemento,

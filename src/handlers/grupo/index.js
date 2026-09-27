@@ -46,14 +46,13 @@ const {
 const {
   isAdmin,
   isMuted,
+  unmuteUser,
   setBemVindo,
 } = require('./helpers');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !menuadm ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// Mantido aqui (texto estático, sem dependências de outros
-// submódulos) até a etapa futura de migração para handlers/menus/.
 
 async function handleMenuAdm(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
@@ -111,8 +110,6 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
 
 // ═══════════════════════════════════════════════════════════════
 // ─── EXPORTS ──────────────────────────────────────────────────
-// Mesma superfície pública do handlers/grupo.js original — nenhum
-// require() em bot.js precisa mudar.
 // ═══════════════════════════════════════════════════════════════
 
 module.exports = {
@@ -152,11 +149,12 @@ module.exports = {
   handleFixarGrupo,
   handleMenuAdm,
 
-  // Helpers para bot.js
+  // Helpers para bot.js e router.js
   processarBemVindo,
   verificarSlowMode,
   verificarAntiFlood,
   isMuted,
+  unmuteUser, // Fix #1: Exportação de unmuteUser garantida!
   isAdmin,
   handleRemoverReporte,
   handleAdvertencia,

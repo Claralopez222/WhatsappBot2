@@ -83,37 +83,40 @@ async function applyVideoFilter(buffer, vf, extraArgs = []) {
   const inPath  = path.join(tmpDir, `${tmpId}_in.mp4`);
   const outPath = path.join(tmpDir, `${tmpId}_out.mp4`);
 
-  fs.writeFileSync(inPath, buffer);
+  try {
+    fs.writeFileSync(inPath, buffer);
 
-  const args = [
-    '-y', '-i', inPath,
-    '-vf', `${vf},scale=trunc(iw/2)*2:trunc(ih/2)*2`,
-    '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
-    '-preset', 'fast', '-crf', '28', '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart',
-    ...extraArgs,
-    outPath,
-  ];
+    const args = [
+      '-y', '-i', inPath,
+      '-vf', `${vf},scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+      '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.1',
+      '-preset', 'fast', '-crf', '28', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart',
+      ...extraArgs,
+      outPath,
+    ];
 
-  const ok = await new Promise((resolve) => {
-    execFile(ffmpegBin, args, { timeout: VIDEO_TIMEOUT }, (err, _stdout, stderr) => {
-      if (err) {
-        console.error('[applyVideoFilter] ffmpeg error:', stderr?.slice(-600));
-        resolve(false);
-      } else {
-        resolve(true);
-      }
+    const ok = await new Promise((resolve) => {
+      execFile(ffmpegBin, args, { timeout: VIDEO_TIMEOUT }, (err, _stdout, stderr) => {
+        if (err) {
+          console.error('[applyVideoFilter] ffmpeg error:', stderr?.slice(-600));
+          resolve(false);
+        } else {
+          resolve(true);
+        }
+      });
     });
-  });
 
-  // Limpeza do arquivo de entrada
-  try { fs.unlinkSync(inPath); } catch {}
+    if (!ok || !fs.existsSync(outPath)) return null;
 
-  if (!ok || !fs.existsSync(outPath)) return null;
-
-  const out = fs.readFileSync(outPath);
-  try { fs.unlinkSync(outPath); } catch {}
-  return out;
+    return fs.readFileSync(outPath);
+  } catch (e) {
+    console.error('[applyVideoFilter] Erro inesperado:', e.message);
+    return null;
+  } finally {
+    try { fs.unlinkSync(inPath);  } catch {}
+    try { fs.unlinkSync(outPath); } catch {}
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -152,6 +155,10 @@ function screenBlend(bufA, bufB, info) {
 function dodgeBlend(baseData, blurData) {
   const out = Buffer.alloc(baseData.length);
   for (let i = 0; i < baseData.length; i++) {
+    if (baseData.length % 4 === 0 && (i % 4 === 3)) {
+      out[i] = baseData[i]; // Preserva canal alpha
+      continue;
+    }
     const b = blurData[i] / 255;
     out[i]  = b >= 1 ? 255 : Math.min(255, Math.round(baseData[i] / (1 - b)));
   }
@@ -779,7 +786,7 @@ async function handleSfundo(sock, msg, content, jid) {
       }
 
       removido = await sharp(
-        Buffer.from(pixels.buffer),
+        Buffer.from(pixels),
         { raw: { width, height, channels: 4 } }
       ).png().toBuffer();
 

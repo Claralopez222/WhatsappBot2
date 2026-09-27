@@ -1,14 +1,18 @@
 'use strict';
 
-const mongoose            = require('mongoose');
-const MedievalPersonagem = require('../models/MedievalPersonagem');
-const CarteiraGrupo      = require('../models/CarteiraGrupo');
-const { ARMAS, ARMADURAS, POCOES, getClasse, getElemento, getArma, getArmadura, getPocao } = require('../utils/medievalUtils');
-const { getModoAtivo, getOuCriarPersonagem, somenteGrupo } = require('./medieval');
+// ─── Handlers da Loja, Inventário, Compra, Equipamentos e Troca de Itens ──────
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !lojamedieval ─────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+const mongoose           = require('mongoose');
+const MedievalPersonagem = require('../../models/MedievalPersonagem');
+const CarteiraGrupo      = require('../../models/CarteiraGrupo');
+
+const {
+  ARMAS, ARMADURAS, POCOES, getClasse, getElemento, getArma, getArmadura, getPocao,
+  getModoAtivo, getOuCriarPersonagem, somenteGrupo,
+  getInventarioMap, normalizarItemKey, itemKeyParaNome,
+} = require('../../utils/medievalUtils');
+
+// ─── !lojamedieval ────────────────────────────────────────────────────────────
 
 async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
@@ -28,18 +32,15 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
     const armasPermitidas = classeData?.armasPermitidas || [];
     const RARIDADE_EMOJI  = { comum: '⚪', incomum: '🟢', raro: '🔵', lendário: '🟣' };
 
-    // ── Filtra por nível (ou mostra tudo se "todas") ──────────────────────────
     const armasFiltradas     = mostrarTodas ? ARMAS     : ARMAS.filter(a => nivelJog >= a.nivelMinimo && armasPermitidas.includes(a.nome));
     const armadurasFiltradas = mostrarTodas ? ARMADURAS : ARMADURAS.filter(a => nivelJog >= a.nivelMinimo);
 
-    // ── Monta texto das armas ─────────────────────────────────────────────────
     const armasTexto = armasFiltradas.length === 0
       ? '_Nenhuma arma disponível para o seu nível e classe._'
       : armasFiltradas.map(a => {
-          const chave           = a.nome.replace(/ /g, '_');
+          const chave           = normalizarItemKey(a.nome);
           const bloqueadoNivel  = nivelJog < a.nivelMinimo;
           const bloqueadoClasse = !armasPermitidas.includes(a.nome);
-          const bloqueado       = bloqueadoNivel || bloqueadoClasse;
           const mana            = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
 
           let statusTag = '';
@@ -59,13 +60,12 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
           );
         }).join('\n\n');
 
-    // ── Monta texto das armaduras ─────────────────────────────────────────────
     const armadurasTexto = armadurasFiltradas.length === 0
       ? '_Nenhuma armadura disponível para o seu nível._'
       : armadurasFiltradas.map(a => {
-          const chave    = a.nome.replace(/ /g, '_');
+          const chave     = normalizarItemKey(a.nome);
           const bloqueado = nivelJog < a.nivelMinimo;
-          const mana     = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
+          const mana      = a.bonusMana ? `\n   💧 Bônus de mana: *+${a.bonusMana}*` : '';
           const statusTag = mostrarTodas && bloqueado
             ? `   🔒 Requer Nível ${a.nivelMinimo}\n`
             : '';
@@ -79,9 +79,8 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
           );
         }).join('\n\n');
 
-    // ── Poções não têm nível mínimo — aparecem sempre ─────────────────────────
     const pocoesTexto = POCOES.map(poc => {
-      const chave  = poc.nome.replace(/ /g, '_');
+      const chave  = normalizarItemKey(poc.nome);
       const tipoIc = poc.tipo === 'hp' ? '❤️' : poc.tipo === 'mana' ? '💧' : '❤️💧';
       const tipoTx = poc.tipo === 'ambos' ? 'HP e Mana' : poc.tipo.toUpperCase();
       return (
@@ -121,17 +120,14 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !comprar ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !comprar ─────────────────────────────────────────────────────────────────
 
 async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) return;
 
   try {
-    // Normaliza: substitui _ por espaço — aceita tanto "Espada_Rúnica" quanto "Espada Rúnica"
-    const nomeItem = (args || '').trim().replace(/_/g, ' ');
+    const nomeItem = itemKeyParaNome((args || '').trim());
     if (!nomeItem) {
       return sock.sendMessage(jid, { text: '🏪 Diga o nome do item!\nExemplo: *!comprar Espada* ou *!comprar Espada_Rúnica*' }, { quoted: msg });
     }
@@ -149,7 +145,6 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
 
     const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
 
-    // Valida nível mínimo
     if (item.nivelMinimo && p.nivel < item.nivelMinimo) {
       return sock.sendMessage(jid, {
         text:
@@ -158,7 +153,6 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
       }, { quoted: msg });
     }
 
-    // Valida classe para armas — avisa antes de desperdiçar gold
     if (arma) {
       const classeData = getClasse(p.classe);
       if (classeData && !classeData.armasPermitidas.includes(item.nome)) {
@@ -171,11 +165,8 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
       }
     }
 
-    const chave = `inventarioMedieval.${item.nome.replace(/ /g, '_')}`;
+    const chave = `inventarioMedieval.${normalizarItemKey(item.nome)}`;
 
-    // ── Transação: débito do gold + crédito do item viram uma unidade atômica.
-    // Se qualquer parte falhar (inclusive um crash do processo no meio), o
-    // MongoDB desfaz tudo — nada de gold sumindo sem o item ser creditado.
     const session = await mongoose.startSession();
     let carteiraAtualizada;
     try {
@@ -210,7 +201,7 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
     }
     await session.endSession();
 
-    const gold = carteiraAtualizada.gold + item.preco; // gold antes do débito para exibir
+    const gold = carteiraAtualizada.gold + item.preco;
     const isPocao = !!pocao;
 
     await sock.sendMessage(jid, {
@@ -229,16 +220,14 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !equipar ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !equipar ─────────────────────────────────────────────────────────────────
 
 async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) return;
 
   try {
-    const nomeItem = (args || '').trim().replace(/_/g, ' ');
+    const nomeItem = itemKeyParaNome((args || '').trim());
     if (!nomeItem) {
       return sock.sendMessage(jid, { text: '🎽 Diga o nome do item!\nExemplo: *!equipar Espada* ou *!equipar Espada_Rúnica*' }, { quoted: msg });
     }
@@ -252,10 +241,8 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
     }
 
     const p        = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
-    const chaveInv = item.nome.replace(/ /g, '_');
-    const invMap   = p.inventarioMedieval instanceof Map
-      ? p.inventarioMedieval
-      : new Map(Object.entries(p.inventarioMedieval || {}));
+    const chaveInv = normalizarItemKey(item.nome);
+    const invMap   = getInventarioMap(p);
     const qtdInv   = invMap.get(chaveInv) || 0;
 
     if (qtdInv <= 0) {
@@ -264,7 +251,6 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
       }, { quoted: msg });
     }
 
-    // ── Validação de nível mínimo ─────────────────────────────────────────────
     if (item.nivelMinimo && p.nivel < item.nivelMinimo) {
       return sock.sendMessage(jid, {
         text:
@@ -273,7 +259,6 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
       }, { quoted: msg });
     }
 
-    // ── Validação de classe para armas ────────────────────────────────────────
     if (arma) {
       const classeData = getClasse(p.classe);
       if (classeData && !classeData.armasPermitidas.includes(item.nome)) {
@@ -285,7 +270,6 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
       }
     }
 
-    // ── Calcula ajuste de mana: desconta bônus da arma anterior antes de somar ─
     const updateFields = {};
     if (arma) {
       updateFields.armaEquipada = item.nome;
@@ -300,7 +284,6 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
       }
     } else {
       updateFields.armaduraEquipada = item.nome;
-      // Trata bonusMana de armaduras (ex: Manto Sombrio)
       if (item.bonusMana) {
         const armaduraAnt     = p.armaduraEquipada ? ARMADURAS.find(a => a.nome === p.armaduraEquipada) : null;
         const bonusAnt        = armaduraAnt?.bonusMana || 0;
@@ -330,9 +313,7 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !desequipar ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !desequipar ───────────────────────────────────────────────────────────────
 
 async function handleDesequipar(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
@@ -353,7 +334,6 @@ async function handleDesequipar(sock, msg, jid, senderJid, nomeDisplay, args) {
       if (!p.armaEquipada) {
         return sock.sendMessage(jid, { text: '❌ Você não tem nenhuma arma equipada.' }, { quoted: msg });
       }
-      // Desconta bônus de mana da arma removida
       const armaAnt = getArma(p.armaEquipada);
       if (armaAnt?.bonusMana) {
         const novoManaMax      = Math.max(1, p.manaMax - armaAnt.bonusMana);
@@ -365,7 +345,6 @@ async function handleDesequipar(sock, msg, jid, senderJid, nomeDisplay, args) {
       if (!p.armaduraEquipada) {
         return sock.sendMessage(jid, { text: '❌ Você não tem nenhuma armadura equipada.' }, { quoted: msg });
       }
-      // Desconta bonusMana da armadura removida (ex: Manto Sombrio)
       const armaduraAnt = ARMADURAS.find(a => a.nome === p.armaduraEquipada);
       if (armaduraAnt?.bonusMana) {
         const novoManaMax      = Math.max(1, p.manaMax - armaduraAnt.bonusMana);
@@ -389,21 +368,15 @@ async function handleDesequipar(sock, msg, jid, senderJid, nomeDisplay, args) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !inventario ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !inventario ───────────────────────────────────────────────────────────────
 
 async function handleInvMed(sock, msg, jid, senderJid, nomeDisplay) {
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) return;
 
   try {
-    const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
-    // Normaliza para Map independente de ser documento Mongoose ou objeto puro
-    const invRaw = p.inventarioMedieval;
-    const inv    = invRaw instanceof Map
-      ? invRaw
-      : new Map(Object.entries(invRaw || {}));
+    const p   = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const inv = getInventarioMap(p);
 
     if (!inv || inv.size === 0) {
       return sock.sendMessage(jid, {
@@ -414,7 +387,7 @@ async function handleInvMed(sock, msg, jid, senderJid, nomeDisplay) {
     const linhas = [];
     for (const [chave, qtd] of inv.entries()) {
       if (qtd <= 0) continue;
-      const nomeReal = chave.replace(/_/g, ' ');
+      const nomeReal = itemKeyParaNome(chave);
       const arma     = getArma(nomeReal);
       const armItem  = ARMADURAS.find(a => a.nome === nomeReal) || null;
       const pocao    = getPocao(nomeReal);
@@ -445,16 +418,14 @@ async function handleInvMed(sock, msg, jid, senderJid, nomeDisplay) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !usarpocao ────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !usarpocao ────────────────────────────────────────────────────────────────
 
 async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
   if (!await getModoAtivo(jid)) return;
 
   try {
-    const nomePocao = (args || '').trim().replace(/_/g, ' ');
+    const nomePocao = itemKeyParaNome((args || '').trim());
     if (!nomePocao) {
       return sock.sendMessage(jid, {
         text: '🧪 Diga o nome da poção!\nExemplo: *!usarpocao Poção_de_Cura* ou *!usarpocao Poção de Cura*',
@@ -466,10 +437,9 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
       return sock.sendMessage(jid, { text: `❌ Poção *"${nomePocao}"* não encontrada!` }, { quoted: msg });
     }
 
-    const chaveInv = pocao.nome.replace(/ /g, '_');
+    const chaveInv = normalizarItemKey(pocao.nome);
     const chaveMap = `inventarioMedieval.${chaveInv}`;
 
-    // Decrementa atomicamente apenas se qtd > 0 — previne race condition
     const resultado = await MedievalPersonagem.findOneAndUpdate(
       {
         idWhatsApp: senderJid,
@@ -477,7 +447,7 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
         [chaveMap]: { $gt: 0 },
       },
       { $inc: { [chaveMap]: -1 } },
-      { new: false } // retorna documento ANTES do update para calcular efeitos
+      { new: false }
     );
 
     if (!resultado) {
@@ -486,13 +456,10 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
       }, { quoted: msg });
     }
 
-    // Calcula efeitos com base no documento pré-update
     const updateFields  = {};
     const linhasEfeito  = [];
-    const invResultado = resultado.inventarioMedieval instanceof Map
-      ? resultado.inventarioMedieval
-      : new Map(Object.entries(resultado.inventarioMedieval || {}));
-    const qtdAntes = invResultado.get(chaveInv) || 0;
+    const invResultado = getInventarioMap(resultado);
+    const qtdAntes     = invResultado.get(chaveInv) || 0;
 
     let hpDepois = resultado.hp;
 
@@ -510,9 +477,6 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
       linhasEfeito.push(`💧 Mana: ${manaAntes} → ${novaMana} (+${novaMana - manaAntes})`);
     }
 
-    // Se a poção trouxe o HP de volta acima de 0 e o personagem estava
-    // marcado como derrotado, limpa o estado de derrota — não fica mais
-    // saqueável mesmo dentro da janela de 3 minutos.
     const setUpdate = { $set: updateFields };
     if (hpDepois > 0 && resultado.derrotadoEm) {
       setUpdate.$unset = { derrotadoEm: '', derrotadoPor: '' };
@@ -535,9 +499,7 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !sellmed ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !sellmed ─────────────────────────────────────────────────────────────────
 
 async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!somenteGrupo(jid)) return;
@@ -548,7 +510,7 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
     const ultimaParte = partes[partes.length - 1];
     const temQtd      = /^\d+$/.test(ultimaParte) && partes.length > 1;
     const quantidade  = temQtd ? Math.max(1, parseInt(ultimaParte, 10)) : 1;
-    const nomeItem    = (temQtd ? partes.slice(0, -1) : partes).join(' ').replace(/_/g, ' ').trim();
+    const nomeItem    = itemKeyParaNome((temQtd ? partes.slice(0, -1) : partes).join(' ').trim());
 
     if (!nomeItem) {
       return sock.sendMessage(jid, {
@@ -560,7 +522,6 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
       }, { quoted: msg });
     }
 
-    // Resolve item em qualquer categoria (busca case-insensitive)
     const arma     = ARMAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
     const armadura = ARMADURAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
     const pocao    = POCOES.find(p => p.nome.toLowerCase() === nomeItem.toLowerCase());
@@ -572,16 +533,13 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
       }, { quoted: msg });
     }
 
-    const chaveInv = item.nome.replace(/ /g, '_');
+    const chaveInv = normalizarItemKey(item.nome);
     const chaveMap = `inventarioMedieval.${chaveInv}`;
 
-    // Busca personagem fresco para checar estoque e equipamentos
     const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
       ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
 
-    const invMap   = p.inventarioMedieval instanceof Map
-      ? p.inventarioMedieval
-      : new Map(Object.entries(p.inventarioMedieval || {}));
+    const invMap   = getInventarioMap(p);
     const qtdAtual = invMap.get(chaveInv) || 0;
 
     if (qtdAtual <= 0) {
@@ -596,7 +554,6 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
       }, { quoted: msg });
     }
 
-    // Impede vender item equipado no momento
     if (p.armaEquipada === item.nome) {
       return sock.sendMessage(jid, {
         text: `❌ *${item.nome}* está equipado!\nUse *!desequipar arma* primeiro.`,
@@ -608,11 +565,9 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
       }, { quoted: msg });
     }
 
-    // Valor de venda = 50% do preço original por unidade
     const valorUnit  = Math.floor(item.preco * 0.5);
     const valorTotal = valorUnit * quantidade;
 
-    // Remove do inventário atomicamente — só executa se ainda tiver estoque suficiente
     const resultado = await MedievalPersonagem.findOneAndUpdate(
       {
         idWhatsApp: senderJid,
@@ -623,14 +578,12 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
       { new: false }
     );
 
-    // Se resultado for null, outro request consumiu o estoque entre a leitura e o update
     if (!resultado) {
       return sock.sendMessage(jid, {
         text: `❌ Não foi possível vender *${item.nome}*.\n_Verifique seu inventário com *!invmed*._`,
       }, { quoted: msg });
     }
 
-    // Credita o gold na carteira (upsert garante que cria se não existir)
     await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: senderJid, idGrupo: jid },
       { $inc: { gold: valorTotal } },
@@ -656,9 +609,7 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !givemed ────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !givemed ─────────────────────────────────────────────────────────────────
 
 async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, args) {
   if (!somenteGrupo(jid)) return;
@@ -678,7 +629,7 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
     const ultimaParte = partes[partes.length - 1];
     const temQtd      = /^\d+$/.test(ultimaParte) && partes.length > 1;
     const quantidade  = temQtd ? Math.max(1, parseInt(ultimaParte, 10)) : 1;
-    const nomeItem    = (temQtd ? partes.slice(0, -1) : partes).join(' ').replace(/_/g, ' ').trim();
+    const nomeItem    = itemKeyParaNome((temQtd ? partes.slice(0, -1) : partes).join(' ').trim());
 
     if (!nomeItem) {
       return sock.sendMessage(jid, {
@@ -701,15 +652,13 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
       }, { quoted: msg });
     }
 
-    const chaveInv = item.nome.replace(/ /g, '_');
+    const chaveInv = normalizarItemKey(item.nome);
     const chaveMap = `inventarioMedieval.${chaveInv}`;
 
     const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
       ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
 
-    const invMap   = p.inventarioMedieval instanceof Map
-      ? p.inventarioMedieval
-      : new Map(Object.entries(p.inventarioMedieval || {}));
+    const invMap   = getInventarioMap(p);
     const qtdAtual = invMap.get(chaveInv) || 0;
 
     if (qtdAtual <= 0) {
@@ -723,7 +672,6 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
       }, { quoted: msg });
     }
 
-    // Impede enviar item equipado no momento — mesma regra do !sellmed
     if (p.armaEquipada === item.nome) {
       return sock.sendMessage(jid, {
         text: `❌ *${item.nome}* está equipado!\nUse *!desequipar arma* primeiro.`,
@@ -735,13 +683,8 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
       }, { quoted: msg });
     }
 
-    // Garante que o destinatário tem personagem ANTES da transação
-    // (create fora da transação é seguro — não envolve gold/item).
     await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
 
-    // ── Transação: débito do remetente + crédito do destinatário viram uma
-    // unidade atômica. Elimina o padrão manual de "debita → tenta creditar →
-    // estorna se falhar".
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
@@ -792,9 +735,7 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !rankmedieval ─────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !rankmedieval ────────────────────────────────────────────────────────────
 
 async function handleRankMedieval(sock, msg, jid) {
   if (!somenteGrupo(jid)) return;
@@ -845,9 +786,7 @@ async function handleRankMedieval(sock, msg, jid) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !menumediev ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !menumediev ───────────────────────────────────────────────────────────────
 
 async function handleMenuMedieval(sock, msg, jid) {
   try {

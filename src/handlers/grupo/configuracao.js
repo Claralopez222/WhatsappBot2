@@ -76,7 +76,7 @@ async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, sav
     autoStickerGroups.add(jid);
     saveData();
     await sock.sendMessage(jid, {
-      text: '🖼️✅ *Auto-Sticker ATIVADO!*\n_Imagens/vídeos viran figurinhas automaticamente._',
+      text: '🖼️✅ *Auto-Sticker ATIVADO!*\n_Imagens/vídeos viram figurinhas automaticamente._',
     }, { quoted: msg });
   } else if (textMsg.includes('off') || textMsg.includes('desativ')) {
     autoStickerGroups.delete(jid);
@@ -317,7 +317,7 @@ async function verificarAntiFlood(sock, jid, userJid, botJid) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ─── !bemvindo ────────────────────────────────────────────────
+// ─── !bemvindo (PERSISTIDO NO MONGODB - GrupoConfig) ──────────
 // ═══════════════════════════════════════════════════════════════
 
 const BEMVINDO_MENSAGEM_PADRAO =
@@ -341,36 +341,46 @@ async function handleBemVindo(sock, msg, jid, caption) {
   const args      = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim();
   const argsLower = args.toLowerCase();
 
+  const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+
   if (argsLower === 'off' || argsLower === 'desativar') {
-    if (!bemVindoGroups.get(jid)?.ativo) {
+    if (!cfg?.bemVindoAtivo) {
       await sock.sendMessage(jid, { text: '😅 Boas-vindas já está desativado.' }, { quoted: msg });
       return;
     }
-    bemVindoGroups.delete(jid);
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { bemVindoAtivo: false } },
+      { upsert: true }
+    );
     await sock.sendMessage(jid, { text: '👋 Boas-vindas desativado com sucesso.' }, { quoted: msg });
     return;
   }
 
   if (argsLower === 'status') {
-    const cfg = bemVindoGroups.get(jid);
-    if (!cfg?.ativo) {
+    if (!cfg?.bemVindoAtivo) {
       await sock.sendMessage(jid, {
         text: 'ℹ️ Boas-vindas está *desativado* neste grupo.\n\n_Use *!bemvindo on* para ativar com a mensagem padrão._',
       }, { quoted: msg });
     } else {
+      const msgAtual = cfg.bemVindoMensagem || BEMVINDO_MENSAGEM_PADRAO;
       await sock.sendMessage(jid, {
-        text: `✅ Boas-vindas está *ativo*!\n\n📝 Mensagem atual:\n\n${cfg.mensagem}`,
+        text: `✅ Boas-vindas está *ativo*!\n\n📝 Mensagem atual:\n\n${msgAtual}`,
       }, { quoted: msg });
     }
     return;
   }
 
   if (argsLower === 'on' || argsLower === 'ativar' || args === '') {
-    const mensagem = BEMVINDO_MENSAGEM_PADRAO;
-    bemVindoGroups.set(jid, { ativo: true, mensagem });
+    const mensagem = cfg?.bemVindoMensagem || BEMVINDO_MENSAGEM_PADRAO;
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { bemVindoAtivo: true, bemVindoMensagem: mensagem } },
+      { upsert: true }
+    );
     await sock.sendMessage(jid, {
       text:
-        `✅ Boas-vindas ativado com a mensagem padrão!\n\n${mensagem}\n\n` +
+        `✅ Boas-vindas ativado com sucesso!\n\n${mensagem}\n\n` +
         `_Use *!bemvindo [sua mensagem]* para personalizar._\n` +
         `_Use *{nome}* para mencionar quem entrou._\n` +
         `_Use *!bemvindo off* para desativar._`,
@@ -378,10 +388,15 @@ async function handleBemVindo(sock, msg, jid, caption) {
     return;
   }
 
-  bemVindoGroups.set(jid, { ativo: true, mensagem: args });
+  // Mensagem personalizada enviada pelo admin
+  await GrupoConfig.findOneAndUpdate(
+    { idGrupo: jid },
+    { $set: { bemVindoAtivo: true, bemVindoMensagem: args } },
+    { upsert: true }
+  );
   await sock.sendMessage(jid, {
     text:
-      `✅ Mensagem de boas-vindas personalizada!\n\n${args}\n\n` +
+      `✅ Mensagem de boas-vindas personalizada salva no banco de dados!\n\n${args}\n\n` +
       `_Use *{nome}* para mencionar quem entrou._\n` +
       `_Use *!bemvindo off* para desativar._`,
   }, { quoted: msg });
@@ -389,16 +404,17 @@ async function handleBemVindo(sock, msg, jid, caption) {
 
 // ─── Chamado pelo bot.js ao detectar novo membro ──────────────
 async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
-  const cfg = bemVindoGroups.get(jid);
-
-  const numero  = novoMembro.split('@')[0].split(':')[0];
-  const mencao  = numero ? `@${numero}` : nomeDisplay;
-  const mensagem = (cfg?.ativo ? cfg.mensagem : BEMVINDO_MENSAGEM_PADRAO)
-    .replace(/\{nome\}/gi, mencao);
-
-  const joinImagePath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagejoin3.jpg');
-
   try {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (cfg && cfg.bemVindoAtivo === false) return; // Se desativado explicitamente, ignora
+
+    const mensagemBase = cfg?.bemVindoMensagem || BEMVINDO_MENSAGEM_PADRAO;
+    const numero  = novoMembro.split('@')[0].split(':')[0];
+    const mencao  = numero ? `@${numero}` : nomeDisplay;
+    const mensagem = mensagemBase.replace(/\{nome\}/gi, mencao);
+
+    const joinImagePath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagejoin3.jpg');
+
     if (fs.existsSync(joinImagePath)) {
       await sock.sendMessage(jid, {
         image:    fs.readFileSync(joinImagePath),

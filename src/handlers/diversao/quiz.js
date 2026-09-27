@@ -11,6 +11,7 @@ const path = require('path');
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { prepareDailyMissionState } = require('./missoes');
+const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 
 const quizState      = new Map(); // senderJid → { r, resolvedJid, timeout }
@@ -79,9 +80,7 @@ async function syncQuizPointsFromDB(userId) {
 
 async function saveQuizPointsToDB(userId, groupJid) {
   if (!userId) return;
-  const idNorm = userId.endsWith('@lid')
-    ? userId
-    : userId.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  const idNorm = await resolverJidCarteira(userId, groupJid);
   try {
     const ops = [
       Usuario.findOneAndUpdate(
@@ -111,10 +110,7 @@ async function changeGold(userId, amount, groupJid) {
     return 0;
   }
 
-  // Normaliza: remove sufixo de dispositivo (:83) — @lid permanece intocado
-  const idNorm = userId.endsWith('@lid')
-    ? userId
-    : userId.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  const idNorm = await resolverJidCarteira(userId, groupJid);
 
   try {
     // ── 1. Atualiza CarteiraGrupo (gold LOCAL do grupo) ───────────────────
@@ -534,29 +530,8 @@ const perguntasQuiz = [
 // handleQuiz
 async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
-  // ── Resolver @lid → telefone real via LidMapping ──────────────────────────
-  let resolvedJidNorm = senderJid;
-
-  if (senderJid?.endsWith('@lid')) {
-    try {
-      const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
-      const mapa = await LidMapping.findOne({ lid: senderJid }).lean();
-      if (mapa?.pn) {
-        resolvedJidNorm = mapa.pn;
-      } else {
-        // Sem mapeamento: usa o senderJid como está (melhor que tentar construir número errado)
-        resolvedJidNorm = senderJid;
-      }
-    } catch {
-      resolvedJidNorm = senderJid;
-    }
-  }
-
-  // Garante formato @s.whatsapp.net com apenas dígitos
-  if (!resolvedJidNorm.endsWith('@lid')) {
-    const digitos = resolvedJidNorm.split('@')[0].replace(/\D/g, '');
-    resolvedJidNorm = `${digitos}@s.whatsapp.net`;
-  }
+  // ── Resolver @lid → telefone real ─────────────────────────────────────────
+  const resolvedJidNorm = await resolverJidCarteira(senderJid, jid);
 
   await syncQuizPointsFromDB(resolvedJidNorm);
 
@@ -712,19 +687,8 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
 async function handlePontos(sock, msg, jid, author, senderJid) {
 
-  // ── Resolver @lid para jid real
-  let resolvedJid = senderJid;
-  if (senderJid?.endsWith('@lid')) {
-    try {
-      const number = senderJid.split('@')[0].split(':')[0];
-      const results = await sock.onWhatsApp(number);
-      if (results?.length > 0 && results[0].jid) {
-        resolvedJid = results[0].jid;
-      }
-    } catch {
-      resolvedJid = senderJid;
-    }
-  }
+  // ── Resolver @lid para jid real ───────────────────────────────────────────
+  const resolvedJid = await resolverJidCarteira(senderJid, jid);
 
   await syncQuizPointsFromDB(resolvedJid);        // ← corrigido
   const pts = pontosMap.get(resolvedJid) || 0;    // ← corrigido

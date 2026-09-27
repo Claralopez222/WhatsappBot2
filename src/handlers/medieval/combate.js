@@ -1,34 +1,30 @@
 'use strict';
 
-const MedievalPersonagem = require('../models/MedievalPersonagem');
-const CarteiraGrupo      = require('../models/CarteiraGrupo');
-const GrupoConfig        = require('../models/GrupoConfig');
+// ─── Handlers Principais de Combate e Personagem Medieval ────────────────────
+
+const MedievalPersonagem = require('../../models/MedievalPersonagem');
+const CarteiraGrupo      = require('../../models/CarteiraGrupo');
+const GrupoConfig        = require('../../models/GrupoConfig');
+
 const {
   CLASSES, ELEMENTOS, MISSOES,
   sortearAleatorio, getClasse, getElemento, getArma, getArmadura,
   calcularDano, narrarCombate, xpParaNivel, verificarCooldown,
-} = require('../utils/medievalUtils');
+  somenteGrupo, getModoAtivo, getOuCriarPersonagem, gerarBarra,
+  verificarRecuperacaoDerrota, verificarLevelUp, JANELA_SAQUE_MS,
+} = require('../../utils/medievalUtils');
 
 // ── Cooldowns (ms) ────────────────────────────────────────────────────────────
 const CD_ATAQUE  = 2  * 60 * 1000;
 const CD_MAGIA   = 5  * 60 * 1000;
 const CD_MISSAO  = 30 * 60 * 1000;
 const CD_RECARGA = 10 * 60 * 1000;
-const JANELA_SAQUE_MS = 3 * 60 * 1000; // tempo que o derrotado fica vulnerável a saque
-
-// ── Anti-farm agora é persistido no próprio documento do personagem
-// (campos ultimoAlvoAtaque/quandoAtacouAlvo e ultimoAlvoMagia/quandoUsouMagiaAlvo).
-// Isso sobrevive a restart do bot e funciona corretamente mesmo com múltiplas
-// instâncias do processo rodando ao mesmo tempo — o cache em memória não.
 
 // ── Regeneração passiva de HP e mana — roda a cada 1 hora ────────────────────
-// Recupera 10% do HP máx e 15% da mana máx para todos os personagens vivos
-// $expr garante que só atualiza quem está abaixo do máximo
 if (!global._medievalRegenAtivo) {
   global._medievalRegenAtivo = true;
   setInterval(async () => {
     try {
-      // Busca apenas grupos com medieval ativo
       const gruposAtivos = await GrupoConfig.find({ medievalAtivo: true }, { idGrupo: 1 }).lean();
       const idsAtivos    = gruposAtivos.map(g => g.idGrupo);
       if (!idsAtivos.length) return;
@@ -52,188 +48,7 @@ if (!global._medievalRegenAtivo) {
   }, 60 * 60 * 1000);
 }
 
-// ── Helpers internos ──────────────────────────────────────────────────────────
-
-function somenteGrupo(jid) {
-  return typeof jid === 'string' && jid.endsWith('@g.us');
-}
-
-async function getModoAtivo(idGrupo) {
-  const cfg = await GrupoConfig.findOne({ idGrupo }).lean();
-  return cfg?.medievalAtivo === true;
-}
-
-/**
- * Remove caracteres de formatação do WhatsApp (evita que o nome quebre o
- * negrito/itálico do resto da mensagem) e limita o tamanho.
- */
-function sanitizarNome(nome, fallback) {
-  const limpo = (nome || '')
-    .replace(/[*_~`]/g, '')
-    .trim()
-    .slice(0, 30);
-  return limpo || fallback;
-}
-
-/**
- * Busca ou cria personagem com proteção contra race condition.
- * Se dois !ficha chegarem ao mesmo tempo, o segundo findOne pega o criado pelo primeiro.
- */
-async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
-  const existente = await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
-  if (existente) return existente;
-
-  const classe   = sortearAleatorio(CLASSES);
-  const elemento = sortearAleatorio(ELEMENTOS);
-
-  // Guard defensivo — sortearAleatorio retorna null se lista vazia
-  if (!classe || !elemento) throw new Error('Falha ao sortear classe/elemento medieval.');
-
-  try {
-    return await MedievalPersonagem.create({
-      idWhatsApp,
-      idGrupo,
-      nome:     sanitizarNome(nome, idWhatsApp.split('@')[0]),
-      classe:   classe.nome,
-      elemento: elemento.nome,
-      nivel:    1,
-      xpMedieval: 0,
-      hp:       classe.hp,
-      hpMax:    classe.hp,
-      mana:     classe.mana,
-      manaMax:  classe.mana,
-      ataque:   classe.ataque,
-      defesa:   classe.defesa,
-      vitorias: 0,
-      derrotas: 0,
-    });
-  } catch (err) {
-    // Erro 11000 = duplicate key — race condition, busca o que foi criado
-    if (err.code === 11000) {
-      return await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
-    }
-    throw err;
-  }
-}
-
-function gerarBarra(atual, maximo, emoji = '❤️', tamanho = 8) {
-  if (!maximo || maximo <= 0) return '░'.repeat(tamanho);
-  const filled = Math.min(Math.round((atual / maximo) * tamanho), tamanho);
-  return emoji.repeat(filled) + '░'.repeat(tamanho - filled);
-}
-
-/**
- * Se o personagem está marcado como derrotado e a janela de saque (3min) já
- * expirou, devolve um HP mínimo (30% do máximo) e limpa o estado de derrota.
- * Se ele já foi curado por outro meio (poção/recarga) antes da janela acabar,
- * só limpa o estado sem mexer no HP.
- *
- * Deve ser chamada sempre que um personagem é buscado do banco antes de ser
- * usado (ataque, magia, ficha, saque) — mesma lógica "lazy" já usada em
- * verificarCooldown, só que pra revivência.
- */
-async function verificarRecuperacaoDerrota(p) {
-  if (!p?.derrotadoEm) return p;
-
-  const passouMs = Date.now() - new Date(p.derrotadoEm).getTime();
-  if (passouMs < JANELA_SAQUE_MS) return p; // ainda dentro da janela de saque
-
-  if (p.hp > 0) {
-    await MedievalPersonagem.updateOne(
-      { _id: p._id },
-      { $unset: { derrotadoEm: '', derrotadoPor: '' } }
-    );
-  } else {
-    const hpMinimo = Math.max(1, Math.floor(p.hpMax * 0.3));
-    await MedievalPersonagem.updateOne(
-      { _id: p._id },
-      { $set: { hp: hpMinimo }, $unset: { derrotadoEm: '', derrotadoPor: '' } }
-    );
-    p.hp = hpMinimo;
-  }
-  p.derrotadoEm  = undefined;
-  p.derrotadoPor = undefined;
-  return p;
-}
-
-/**
- * Verifica e aplica level up em loop até não ter mais XP suficiente.
- * Garante que pulos de vários níveis de uma vez sejam aplicados corretamente.
- * Envia UMA única mensagem ao final, mesmo que suba vários níveis de uma vez.
- */
-async function verificarLevelUp(sock, jid, senderJid, pAtual = null) {
-  let p = pAtual ?? await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
-  if (!p) return;
-
-  const nivelInicial = p.nivel;
-  let totalHp = 0, totalMana = 0, totalAtaque = 0, totalDefesa = 0;
-
-  while (p.xpMedieval >= xpParaNivel(p.nivel + 1)) {
-    const novoNivel   = p.nivel + 1;
-    const hpBonus     = 15;
-    const manaBonus   = 10;
-    const ataqueBonus = 2;
-    const defesaBonus = 1;
-
-    // Calcula novos valores respeitando o teto ANTES de salvar
-    const novoHpMax   = p.hpMax   + hpBonus;
-    const novoManaMax = p.manaMax + manaBonus;
-
-    await MedievalPersonagem.updateOne(
-      { idWhatsApp: senderJid, idGrupo: jid },
-      {
-        $set: {
-          nivel:   novoNivel,
-          hpMax:   novoHpMax,
-          manaMax: novoManaMax,
-          hp:      Math.min(p.hp   + hpBonus,   novoHpMax),
-          mana:    Math.min(p.mana + manaBonus,  novoManaMax),
-        },
-        $inc: {
-          ataque: ataqueBonus,
-          defesa: defesaBonus,
-        },
-      }
-    );
-
-    // Atualiza p localmente para o próximo loop
-    p.nivel  += 1;
-    p.hpMax  += hpBonus;
-    p.hp     += hpBonus;
-    p.manaMax += manaBonus;
-    p.mana   += manaBonus;
-    p.ataque += ataqueBonus;
-    p.defesa += defesaBonus;
-
-    totalHp     += hpBonus;
-    totalMana   += manaBonus;
-    totalAtaque += ataqueBonus;
-    totalDefesa += defesaBonus;
-  }
-
-  if (p.nivel === nivelInicial) return; // não subiu de nível, nada a enviar
-
-  const textoNivel = (p.nivel - nivelInicial) > 1
-    ? `dos Níveis *${nivelInicial}* → *${p.nivel}*`
-    : `para o *Nível ${p.nivel}*`;
-
-  await sock.sendMessage(jid, {
-    text:
-      `⭐🎉 *LEVEL UP!* 🎉⭐\n\n` +
-      `*${p.nome}* subiu ${textoNivel}!\n\n` +
-      `📈 *Melhorias totais:*\n` +
-      `❤️ +${totalHp} HP Máximo\n` +
-      `💧 +${totalMana} Mana Máxima\n` +
-      `⚔️ +${totalAtaque} Ataque\n` +
-      `🛡️ +${totalDefesa} Defesa\n\n` +
-      `_Continue batalhando para ficar mais forte!_`,
-    mentions: [senderJid],
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ─── !medieval on/off ──────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !medieval on/off ─────────────────────────────────────────────────────────
 
 async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
   if (!somenteGrupo(jid)) {
@@ -285,14 +100,14 @@ async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
           `▸ *!missaomed* — Embarcar em uma missão\n` +
           `▸ *!recargamana* — Recuperar HP e mana\n` +
           `▸ *!lojamedieval* — Ver loja de armas, armaduras e poções\n` +
-        `▸ *!comprar [item]* — Comprar um item\n` +
-        `▸ *!equipar [item]* — Equipar arma ou armadura\n` +
-        `▸ *!desequipar arma/armadura* — Remover item equipado\n` +
-        `▸ *!usarpocao [nome]* — Usar poção do inventário\n` +
-        `▸ *!invmed* — Ver seus itens\n` +
-        `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
-        `📊 *RANKING E HISTÓRICO*\n` +
-        `▸ *!rankmedieval* — Ranking de guerreiros\n` +
+          `▸ *!comprar [item]* — Comprar um item\n` +
+          `▸ *!equipar [item]* — Equipar arma ou armadura\n` +
+          `▸ *!desequipar arma/armadura* — Remover item equipado\n` +
+          `▸ *!usarpocao [nome]* — Usar poção do inventário\n` +
+          `▸ *!invmed* — Ver seus itens\n` +
+          `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
+          `📊 *RANKING E HISTÓRICO*\n` +
+          `▸ *!rankmedieval* — Ranking de guerreiros\n` +
           `▸ *!historico* — Suas últimas batalhas\n` +
           `▸ *!menumediev* — Ver todos os comandos\n\n` +
           `_Use *!ficha* para criar seu personagem!_ ⚔️`,
@@ -308,9 +123,7 @@ async function handleMedievalToggle(sock, msg, jid, args, isAdmin) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !ficha ────────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !ficha ───────────────────────────────────────────────────────────────────
 
 async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
   if (!somenteGrupo(jid)) return;
@@ -322,6 +135,7 @@ async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
     const p        = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
       ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     await verificarRecuperacaoDerrota(p);
+
     const classe   = getClasse(p.classe);
     const elemento = getElemento(p.elemento);
     const arma     = p.armaEquipada     ? getArma(p.armaEquipada)         : null;
@@ -362,9 +176,7 @@ async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !atacar ───────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !atacar ──────────────────────────────────────────────────────────────────
 
 async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   if (!somenteGrupo(jid)) return;
@@ -376,7 +188,6 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       return sock.sendMessage(jid, { text: '⚔️ Marque um inimigo para atacar!\nExemplo: *!atacar @fulano*' }, { quoted: msg });
     }
 
-    // findOne fresco — garante HP e cooldown atualizados mesmo com requests simultâneos
     const atacante = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
       ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     await verificarRecuperacaoDerrota(atacante);
@@ -405,7 +216,6 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       }, { quoted: msg });
     }
 
-    // Anti-farm persistente: limita XP contra o mesmo alvo a 1 vez por cooldown de ataque
     const farmBloqueado =
       atacante.ultimoAlvoAtaque === targetJid &&
       atacante.quandoAtacouAlvo &&
@@ -420,8 +230,6 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 
     const { dano, critico, multElemento } = calcularDano(atacante, defensor);
 
-    // ── Aplica o dano atomicamente no banco — evita que !atacar e !magia
-    // simultâneos no mesmo alvo se sobrescrevam (um "comendo" o dano do outro).
     const defensorAtualizado = await MedievalPersonagem.findOneAndUpdate(
       { idWhatsApp: targetJid, idGrupo: jid },
       [{ $set: { hp: { $max: [0, { $subtract: ['$hp', dano] }] } } }],
@@ -433,7 +241,6 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     const vitoria   = novoHp <= 0;
     const xpTotal   = vitoria ? xpGanho + 30 : xpGanho;
 
-    // Update único do atacante — inclui o registro de anti-farm persistente
     await MedievalPersonagem.updateOne(
       { idWhatsApp: senderJid, idGrupo: jid },
       {
@@ -468,7 +275,6 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       mentions: [senderJid, targetJid],
     }, { quoted: msg });
 
-    // ── Grava histórico + atualiza defensor num write só ─────────────────────
     const entradaAtacante = { tipo: 'ataque', oponente: defensor.nome, dano, resultado: vitoria ? 'vitoria' : 'neutro', critico };
     const entradaDefensor = { tipo: 'defesa', oponente: atacante.nome, dano, resultado: vitoria ? 'derrota' : 'neutro', critico };
     await MedievalPersonagem.updateOne(
@@ -484,10 +290,6 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       }
     );
 
-    // Sem passar "atacante": ele é o mesmo objeto buscado no início da função,
-    // então xpMedieval ainda está no valor de ANTES do $inc de agora — passar
-    // ele faria o level-up ficar sempre um ataque atrasado (mesma correção já
-    // aplicada em !magia e !missaomed).
     await verificarLevelUp(sock, jid, senderJid);
   } catch (err) {
     console.error('⚠️ [Medieval:Atacar] Erro:', err.message);
@@ -495,9 +297,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !magia ────────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !magia ───────────────────────────────────────────────────────────────────
 
 async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
   if (!somenteGrupo(jid)) return;
@@ -509,7 +309,6 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       return sock.sendMessage(jid, { text: '🔮 Marque um alvo para usar sua magia!\nExemplo: *!magia @fulano*' }, { quoted: msg });
     }
 
-    // findOne fresco — garante mana e cooldown atualizados
     const atacante = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
       ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     await verificarRecuperacaoDerrota(atacante);
@@ -538,7 +337,6 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       }, { quoted: msg });
     }
 
-    // Anti-farm persistente para magia
     const farmBloqueado =
       atacante.ultimoAlvoMagia === targetJid &&
       atacante.quandoUsouMagiaAlvo &&
@@ -555,7 +353,6 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     const habilidade = elemento?.habilidadeUltima || 'Magia Elemental';
     const { dano }   = calcularDano(atacante, defensor, true);
 
-    // ── Mesma correção de !atacar: aplica o dano atomicamente no banco
     const defensorAtualizado = await MedievalPersonagem.findOneAndUpdate(
       { idWhatsApp: targetJid, idGrupo: jid },
       [{ $set: { hp: { $max: [0, { $subtract: ['$hp', dano] }] } } }],
@@ -567,7 +364,6 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     const vitoria = novoHp <= 0;
     const xpTotal = vitoria ? 20 + 40 : 20;
 
-    // Update único do atacante — inclui o registro de anti-farm persistente
     await MedievalPersonagem.updateOne(
       { idWhatsApp: senderJid, idGrupo: jid },
       {
@@ -600,7 +396,6 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       mentions: [senderJid, targetJid],
     }, { quoted: msg });
 
-    // ── Grava histórico + atualiza defensor num write só ─────────────────────
     const entradaAtacante = { tipo: 'magia', oponente: defensor.nome, dano, resultado: vitoria ? 'vitoria' : 'neutro', critico: false };
     const entradaDefensor = { tipo: 'defesa', oponente: atacante.nome, dano, resultado: vitoria ? 'derrota' : 'neutro', critico: false };
     await MedievalPersonagem.updateOne(
@@ -610,28 +405,20 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     await MedievalPersonagem.updateOne(
       { idWhatsApp: targetJid, idGrupo: jid },
       {
-        // Sem "hp: novoHp" aqui — o hp já foi gravado atomicamente lá em cima
-        // (findOneAndUpdate com $subtract). Reescrevê-lo agora reabre a mesma
-        // race condition que aquele update atômico existe pra evitar: se algo
-        // mudou o hp do alvo entre as duas escritas (outro ataque, cura,
-        // poção), esse $set apagaria essa mudança.
         $set:  { ...(vitoria && { derrotadoEm: new Date(), derrotadoPor: senderJid }) },
         $inc:  { ...(vitoria && { derrotas: 1 }) },
         $push: { historicoBatalhas: { $each: [entradaDefensor], $slice: -5 } },
       }
     );
 
-    // Sem passar o objeto local: força leitura fresca do banco, já que o
-    // $inc de xpMedieval acima não atualiza a variável "atacante" em memória.
     await verificarLevelUp(sock, jid, senderJid);
   } catch (err) {
     console.error('⚠️ [Medieval:Magia] Erro:', err.message);
     await sock.sendMessage(jid, { text: '⚠️ Ocorreu um erro ao lançar a magia. Tente novamente.' }, { quoted: msg }).catch(() => {});
   }
 }
-// ═══════════════════════════════════════════════════════════════
-// ─── !missaomed ────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+
+// ─── !missaomed ───────────────────────────────────────────────────────────────
 
 async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
   if (!somenteGrupo(jid)) return;
@@ -655,7 +442,6 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
       }, { quoted: msg });
     }
 
-    // Filtra missões disponíveis para o nível do personagem
     const missoesDisponiveis = MISSOES.filter(m => p.nivel >= m.nivelMinimo);
     if (!missoesDisponiveis.length) {
       return sock.sendMessage(jid, {
@@ -681,7 +467,6 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
         `⏳ _Aguarde o resultado..._`,
     }, { quoted: msg });
 
-    // Delay reduzido: efeito narrativo sem travar o event loop por muito tempo
     await new Promise(r => setTimeout(r, 1200));
 
     if (sucesso) {
@@ -713,10 +498,6 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
     } else {
       const danoTomado = Math.floor(Math.random() * 30) + 10;
 
-      // { new: false } retorna o documento de ANTES do update atômico —
-      // como a fórmula é determinística ($max: [5, hp - dano]), calculamos
-      // o resultado exato a partir desse snapshot fresco do banco, em vez
-      // de usar "p" (que pode estar velho por causa do delay de 1200ms acima).
       const antes = await MedievalPersonagem.findOneAndUpdate(
         { idWhatsApp: senderJid, idGrupo: jid },
         [{
@@ -729,7 +510,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
         { new: false }
       );
       const novoHp   = Math.max(5, antes.hp - danoTomado);
-      const danoReal = antes.hp - novoHp; // agora exato, calculado do estado real no momento do update
+      const danoReal = antes.hp - novoHp;
 
       await sock.sendMessage(jid, {
         text:
@@ -749,9 +530,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !recargamana ──────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !recargamana ─────────────────────────────────────────────────────────────
 
 async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
   if (!somenteGrupo(jid)) return;
@@ -769,9 +548,6 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
       }, { quoted: msg });
     }
 
-    // { new: false } retorna o documento de ANTES do update atômico — usamos
-    // esse snapshot fresco (em vez de "p") para calcular hpGanho com exatidão,
-    // e também para saber se a cura tirou o personagem do estado de derrota.
     const antes = await MedievalPersonagem.findOneAndUpdate(
       { idWhatsApp: senderJid, idGrupo: jid },
       [{
@@ -786,12 +562,9 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
 
     const hpGanhoCalc = Math.floor(antes.hpMax * 0.6);
     const novoHp       = Math.min(antes.hpMax, antes.hp + hpGanhoCalc);
-    const hpGanho       = novoHp - antes.hp; // exato agora
+    const hpGanho       = novoHp - antes.hp;
     const novaMana      = antes.manaMax;
 
-    // Se a recarga trouxe o HP de volta acima de 0 e o personagem estava
-    // marcado como derrotado, limpa o estado de derrota (não fica mais
-    // saqueável mesmo dentro da janela de 3 minutos).
     if (novoHp > 0 && antes.derrotadoEm) {
       await MedievalPersonagem.updateOne(
         { idWhatsApp: senderJid, idGrupo: jid },
@@ -799,7 +572,6 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
       );
     }
 
-    // Mensagem diferente se já estava com HP cheio
     const hpTexto = hpGanho > 0
       ? `❤️ HP: ${novoHp}/${antes.hpMax} (+${hpGanho})`
       : `❤️ HP: ${novoHp}/${antes.hpMax} _(já estava cheio)_`;
@@ -818,9 +590,7 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !historico ────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !historico ───────────────────────────────────────────────────────────────
 
 async function handleHistorico(sock, msg, jid, senderJid, nomeDisplay) {
   if (!somenteGrupo(jid)) return;
@@ -863,7 +633,6 @@ async function handleHistorico(sock, msg, jid, senderJid, nomeDisplay) {
   }
 }
 
-// ── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   handleMedievalToggle,
   handleFicha,
@@ -872,11 +641,9 @@ module.exports = {
   handleMissao,
   handleRecargaMana,
   handleHistorico,
-  // helpers exportados para medievalLoja.js
   getModoAtivo,
   getOuCriarPersonagem,
   somenteGrupo,
-  // helpers exportados para medievalSaque.js
   verificarRecuperacaoDerrota,
   JANELA_SAQUE_MS,
 };

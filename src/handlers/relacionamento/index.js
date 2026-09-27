@@ -3,13 +3,14 @@
  * Comandos: !casar, !namorar, !euaceito, !eurecuso, !cancelarpedido,
  *           !cancelarcasamento, !terminar, !flores, !doces, !carta,
  *           !mimo, !beijo, !rankcasais, !fixar, !pinned, !desfixar,
- *           [NOVOS] !abraco, !presente, !jantar, !cinema, !viajar,
+ *           !abraco, !presente, !jantar, !cinema, !viajar,
  *           !declarar, !ciumento, !statu, !aniversario_casal,
- *           !meupar, !xpdobro, !serenata, !duelodecasais
+ *           !meupar, !xpdobro, !serenata, !duelodecasais, !surpresa
  */
 
 const path = require('path');
 const fs   = require('fs');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 
 // ═══════════════════════════════════════════════════════════════
@@ -33,14 +34,12 @@ function hoje() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// ─── Limpeza periódica de memória (evita crescimento ilimitado) ───────────
-// diariosUsados: chave termina em "...:YYYY-MM-DD" — remove entradas de
-// dias anteriores ao atual (não precisamos do histórico, só do dia corrente)
+// ─── Limpeza periódica de memória ─────────────────────────────
 function limparDiariosAntigos() {
   const hojeStr = hoje();
   let removidos = 0;
   for (const chave of diariosUsados.keys()) {
-    const dataNaChave = chave.slice(-10); // últimos 10 caracteres = "YYYY-MM-DD"
+    const dataNaChave = chave.slice(-10);
     if (dataNaChave !== hojeStr) {
       diariosUsados.delete(chave);
       removidos++;
@@ -51,9 +50,6 @@ function limparDiariosAntigos() {
   }
 }
 
-// xpBonus e ciumentosMap já fazem limpeza "passiva" (no momento do check),
-// mas isso só funciona se alguém checar aquela chave de novo. Esta limpeza
-// periódica cobre o caso de usuários que nunca mais interagiram.
 function limparExpirados() {
   let removidos = 0;
 
@@ -79,42 +75,43 @@ function limparExpirados() {
   }
 
   if (removidos > 0) {
-    console.log(`🧹 [relacionamento] ${removidos} entrada(s) expirada(s) removida(s) (xpBonus/ciumentosMap/bloqueados).`);
+    console.log(`🧹 [relacionamento] ${removidos} entrada(s) expirada(s) removida(s).`);
   }
 }
 
-// diariosUsados: 1x por hora (limpeza de dias passados)
 setInterval(limparDiariosAntigos, 60 * 60 * 1000);
-
-// xpBonus/ciumentosMap/bloqueados: cooldowns curtos (1h) — checa a cada 15min
 setInterval(limparExpirados, 15 * 60 * 1000);
 
 function isBloqueado(jid) {
-  if (!bloqueados.has(jid)) return false;
-  if (Date.now() > bloqueados.get(jid)) { bloqueados.delete(jid); return false; }
+  const norm = jidNormalizedUser(jid);
+  if (!bloqueados.has(norm)) return false;
+  if (Date.now() > bloqueados.get(norm)) { bloqueados.delete(norm); return false; }
   return true;
 }
 
 function minutosRestantes(jid) {
-  if (!bloqueados.has(jid)) return 0;
-  return Math.ceil((bloqueados.get(jid) - Date.now()) / (1000 * 60));
+  const norm = jidNormalizedUser(jid);
+  if (!bloqueados.has(norm)) return 0;
+  return Math.ceil((bloqueados.get(norm) - Date.now()) / (1000 * 60));
 }
 
 function getRelacionamento(jid, a, b, relacionamentos) {
-  return relacionamentos.get(relKey(jid, a, b)) || null;
+  return relacionamentos.get(relKey(jid, jidNormalizedUser(a), jidNormalizedUser(b))) || null;
 }
 
 async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.now(), idGrupo = null) {
+  const normA = jidNormalizedUser(jidA);
+  const normB = jidNormalizedUser(jidB);
   try {
     await Promise.all([
       Usuario.findOneAndUpdate(
-        { idWhatsApp: jidA },
-        { $set: { casadoCom: jidB, casadoTipo: tipo, casadoDesde: desde, casadoGrupo: idGrupo, idWhatsApp: jidA } },
+        { idWhatsApp: normA },
+        { $set: { casadoCom: normB, casadoTipo: tipo, casadoDesde: desde, casadoGrupo: idGrupo, idWhatsApp: normA } },
         { upsert: true, new: true }
       ),
       Usuario.findOneAndUpdate(
-        { idWhatsApp: jidB },
-        { $set: { casadoCom: jidA, casadoTipo: tipo, casadoDesde: desde, casadoGrupo: idGrupo, idWhatsApp: jidB } },
+        { idWhatsApp: normB },
+        { $set: { casadoCom: normA, casadoTipo: tipo, casadoDesde: desde, casadoGrupo: idGrupo, idWhatsApp: normB } },
         { upsert: true, new: true }
       ),
     ]);
@@ -124,10 +121,12 @@ async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.no
 }
 
 async function clearCasamentoDb(jidA, jidB) {
+  const normA = jidNormalizedUser(jidA);
+  const normB = jidNormalizedUser(jidB);
   try {
     await Promise.all([
-      Usuario.updateOne({ idWhatsApp: jidA }, { $set: { casadoCom: null, casadoTipo: null } }),
-      Usuario.updateOne({ idWhatsApp: jidB }, { $set: { casadoCom: null, casadoTipo: null } }),
+      Usuario.updateOne({ idWhatsApp: normA }, { $set: { casadoCom: null, casadoTipo: null } }),
+      Usuario.updateOne({ idWhatsApp: normB }, { $set: { casadoCom: null, casadoTipo: null } }),
     ]);
   } catch (e) {
     console.error('⚠️ Erro ao limpar casamento no MongoDB:', e.message);
@@ -135,7 +134,8 @@ async function clearCasamentoDb(jidA, jidB) {
 }
 
 function findRelByJid(jid, userJid, relacionamentos) {
-  const num = userJid.split('@')[0];
+  const norm = jidNormalizedUser(userJid);
+  const num  = norm.split('@')[0];
   for (const [key, rel] of relacionamentos) {
     if (key.startsWith(jid + '|') && key.includes(num)) return { key, rel };
   }
@@ -158,37 +158,23 @@ function formatarTempo(ms) {
   return `${mins} minuto(s)`;
 }
 
-const { getNivelInfo } = require(path.join(__dirname, '..', '..', 'utils', 'levelUtils'));
-
-// ─── Helper carinho diário ─────────────────────────────────────
-
-// handleCarinh
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-
-// ─── Mapa: comando → item obrigatório no inventário ────────────
 // ─── Mapa: comando → item obrigatório no inventário ────────────
 const ITEM_NECESSARIO = {
   flores:   { key: 'flores',   nome: 'Flores 🌹'                },
   doces:    { key: 'morango',  nome: 'Morango com Chocolate 🍓'  },
   carta:    { key: 'carta',    nome: 'Carta de Amor 💌'          },
   mimo:     { key: 'caixa',    nome: 'Caixa Presente Luxo 🎁'    },
-  // beijo removido — não requer item
   jantar:   { key: 'taça',     nome: 'Taça para Vinho 🍷'        },
   cinema:   { key: 'almofada', nome: 'Almofada Casal 🛋️'         },
   viajar:   { key: 'garrafa',  nome: 'Garrafa Vinho Tinto 🍾'    },
   serenata: { key: 'vela',     nome: 'Vela Aromática 🕯️'         },
 };
 
-// Comandos que NÃO exigem item do inventário (carinhos "gratuitos")
 const CARINHOS_SEM_ITEM = new Set(['abraco', 'beijo']);
-
-// Comandos que funcionam mesmo sem estar em relacionamento (exigem @menção)
 const CARINHOS_SEM_RELACIONAMENTO = new Set(['abraco']);
 
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
-  // ── Normaliza o JID de quem enviou o comando ──
   const senderJidNormalizado = jidNormalizedUser(senderJid);
-
   const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
 
   let key, rel;
@@ -199,12 +185,8 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
   if (found) {
     ({ key, rel } = found);
-
-    // Garante os JIDs limpos e normalizados de ambos
     jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
     jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-
-    // Descobre de forma cirúrgica quem é o parceiro usando os IDs normalizados
     parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
   } else {
     if (!CARINHOS_SEM_RELACIONAMENTO.has(cmd)) {
@@ -214,7 +196,6 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
       return;
     }
 
-    // ── !abraco (e outros liberados) funcionam sem relacionamento, mas exigem @menção ──
     const mentionedJid =
       msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
       msg.message?.extendedTextMessage?.contextInfo?.participant ||
@@ -238,21 +219,29 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
     jidANormalizado = senderJidNormalizado;
     jidBNormalizado = parcJid;
-
-    // Chave estável independente de quem manda primeiro (cooldown compartilhado pela dupla, por grupo)
     key = relKey(jid, senderJidNormalizado, parcJid);
   }
 
-  // ── Define se o comando exige item, e qual chave/nome usar no inventário ──
+  // ── 1. Verifica Cooldown Diário PRIMEIRO (Evita consumo/consultas desnecessárias) ──
+  const diarioKey = `${key}:${cmd}:${hoje()}`;
+  if (diariosUsados.has(diarioKey)) {
+    const msgCooldown = cmd === 'abraco'
+      ? `⏰ Vocês já trocaram um abraço hoje! Volte amanhã para mais um carinho. 🤗`
+      : `⏰ Você já usou *!${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`;
+
+    await sock.sendMessage(jid, { text: msgCooldown }, { quoted: msg });
+    return;
+  }
+
+  // ── 2. Define e consome item (se o comando exigir) ──
   const itemInfo  = ITEM_NECESSARIO[cmd] || null;
   const exigeItem = !CARINHOS_SEM_ITEM.has(cmd) && !!itemInfo;
-  const itemKey   = itemInfo?.key  ?? cmd; // chave real dentro de inventory.*
-  const itemNome  = itemInfo?.nome ?? cmd; // nome bonito pra mensagens
+  const itemKey   = itemInfo?.key  ?? cmd;
+  const itemNome  = itemInfo?.nome ?? cmd;
 
   let consumo = null;
 
   if (exigeItem) {
-    // ── Verifica se o item existe no inventário do sender ──
     const userDoc = await Usuario.findOne(
       { idWhatsApp: senderJidNormalizado },
       { [`inventory.${itemKey}`]: 1 }
@@ -267,7 +256,6 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
       return;
     }
 
-    // ── Consome 1 unidade do item antes de qualquer outra operação ──
     consumo = await Usuario.findOneAndUpdate(
       { idWhatsApp: senderJidNormalizado, [`inventory.${itemKey}`]: { $gte: 1 } },
       { $inc: { [`inventory.${itemKey}`]: -1 } },
@@ -282,95 +270,37 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     }
   }
 
-  // ── Cooldown diário por casal/dupla+comando (não só por sender) ──
-  const diarioKey = `${key}:${cmd}:${hoje()}`;
-  if (diariosUsados.has(diarioKey)) {
-    if (exigeItem) {
-      // Devolve o item consumido acima para não prejudicar o usuário
-      await Usuario.updateOne(
-        { idWhatsApp: senderJidNormalizado },
-        { $inc: { [`inventory.${itemKey}`]: 1 } }
-      ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no cooldown:`, e.message));
-    }
-
-    const msgCooldown = cmd === 'abraco'
-      ? `⏰ Vocês já trocaram um abraço hoje! Volte amanhã para mais um carinho. 🤗`
-      : `⏰ Você já usou *!${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`;
-
-    await sock.sendMessage(jid, { text: msgCooldown }, { quoted: msg });
-    return;
-  }
+  // Registra uso diário após sucesso na verificação/consumo
   diariosUsados.set(diarioKey, true);
 
-  // ── Cálculo de XP baseado no banco de dados para evitar perdas ao reiniciar ──
-  let xpAtual = 0;
+  // ── 3. Cálculo e Persistência de XP ──
   const temBonus = temRelacionamento && typeof temXpBonus === 'function' && temXpBonus(key);
   const ganho    = temBonus ? xpValor * 2 : xpValor;
+  const xpAtual  = (xpCasais.get(key) || 0) + ganho;
 
-  // Sem relacionamento: XP é só simbólico/individual do remetente, não soma "casal"
+  xpCasais.set(key, xpAtual);
+
   const jidsParaXp = temRelacionamento
     ? [jidANormalizado, jidBNormalizado].filter(Boolean)
     : [senderJidNormalizado];
 
-  try {
-    const usuarios = await Usuario.find(
-      { idWhatsApp: { $in: jidsParaXp } },
-      { idWhatsApp: 1, xpCasal: 1 }
-    ).lean();
+  Usuario.updateMany(
+    { idWhatsApp: { $in: jidsParaXp } },
+    { $inc: { xpCasal: ganho } }
+  ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao persistir XP no DB:`, e.message));
 
-    const xpAntigo = usuarios.reduce((acc, u) => acc + (u?.xpCasal || 0), 0);
-    xpAtual = xpAntigo + ganho;
-  } catch (err) {
-    console.error(`[handleCarinh:${cmd}] Erro ao calcular XP prévio do banco:`, err.message);
-    // Fallback para o Map em caso de falha no banco
-    xpAtual = (typeof xpCasais !== 'undefined' ? (xpCasais.get(key) || 0) : 0) + ganho;
-  }
-
-  // Atualiza também o mapa local para comandos síncronos se necessário
-  if (typeof xpCasais !== 'undefined') xpCasais.set(key, xpAtual);
-
-  // ── Persiste XP no banco ──
-  try {
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: jidsParaXp } },
-      { $inc: { xpCasal: ganho } }
-    );
-  } catch (e) {
-    console.error(`[handleCarinh:${cmd}] Erro ao persistir XP:`, e.message);
-    // Reverte Map, cooldown e item consumido
-    if (typeof xpCasais !== 'undefined') xpCasais.set(key, xpAtual - ganho);
-    diariosUsados.delete(diarioKey);
-
-    if (exigeItem) {
-      await Usuario.updateOne(
-        { idWhatsApp: senderJidNormalizado },
-        { $inc: { [`inventory.${itemKey}`]: 1 } }
-      ).catch(err => console.error(`[handleCarinh:${cmd}] Erro ao devolver item no rollback de XP:`, err.message));
-    }
-
-    await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao registrar o carinho. Tente novamente.',
-    }, { quoted: msg });
-    return;
-  }
-
-  // ── FORMATAÇÃO DAS MARCAÇÕES (@MENCÕES) DIRETO PELO NÚMERO JID ──
+  // ── 4. Formatação da Resposta ──
   const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
   const tagParceiro  = parcJid
     ? `@${parcJid.split('@')[0]}`
     : (rel?.nomeA === author ? rel?.nomeB : rel?.nomeA);
 
   const bonusStr = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
-
-  // Linha de inventário só aparece para carinhos que consomem item
   const inventarioStr = exigeItem
     ? `\n🎒 *${itemNome}* restantes no seu inventário: *${consumo.inventory?.[itemKey] ?? 0}*`
     : '';
 
-  // Texto do XP muda dependendo de ter ou não relacionamento
   const xpLabel = temRelacionamento ? 'Total do casal' : 'Seu total';
-
-  // Lista de JIDs que vão receber o ping/marcação azul de verdade no chat
   const listaMentions = [senderJidNormalizado];
   if (parcJid) listaMentions.push(parcJid);
 
@@ -382,13 +312,13 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     mentions: listaMentions,
   }, { quoted: msg });
 }
+
 // ═══════════════════════════════════════════════════════════════
 // ─── PEDIDO DE CASAMENTO / NAMORO ─────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-// !casar @alguém
 async function handleRelacionamento(sock, msg, content, jid, author, tipo, relacionamentos, pedidosPendentes, contactNames) {
-  const senderJid    = msg.key.participant || msg.key.remoteJid;
+  const senderJid    = jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
   const contextInfo  = content.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid || [];
 
@@ -402,7 +332,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  const alvoJid  = mentionedJid[0];
+  const alvoJid  = jidNormalizedUser(mentionedJid[0]);
   const nomeAlvo = contactNames[alvoJid] || alvoJid.split('@')[0];
 
   if (alvoJid.split('@')[0] === senderJid.split('@')[0]) {
@@ -529,31 +459,33 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
 // ─── ACEITAR OU RECUSAR PEDIDO ────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-// !euaceito 
 async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames) {
-  const pedido = pedidosPendentes.get(senderJid);
+  const senderNorm = jidNormalizedUser(senderJid);
+  const pedido = pedidosPendentes.get(senderNorm) || pedidosPendentes.get(senderJid);
   if (!pedido) {
     await sock.sendMessage(jid, { text: '⚠️ Você não tem nenhum pedido pendente.' }, { quoted: msg });
     return;
   }
+  pedidosPendentes.delete(senderNorm);
   pedidosPendentes.delete(senderJid);
 
-  const nomeAlvo = msg.pushName || contactNames[senderJid] || senderJid.split('@')[0];
+  const nomeAlvo = msg.pushName || contactNames[senderNorm] || senderNorm.split('@')[0];
   const { jidPedinte, nomePedinte, jid: jidOrigem, tipo } = pedido;
-  const key  = relKey(jidOrigem || jid, senderJid, jidPedinte);
-  const agora = Date.now(); // ← captura uma vez só
+  const pedinteNorm = jidNormalizedUser(jidPedinte);
+  const key   = relKey(jidOrigem || jid, senderNorm, pedinteNorm);
+  const agora = Date.now();
 
   relacionamentos.set(key, {
-    tipo:  tipo || 'casamento',
-    nomeA: nomePedinte,
-    nomeB: nomeAlvo,
-    jidA:  jidPedinte,
-    jidB:  senderJid,
-    desde: agora,
+    tipo:    tipo || 'casamento',
+    nomeA:   nomePedinte,
+    nomeB:   nomeAlvo,
+    jidA:    pedinteNorm,
+    jidB:    senderNorm,
+    desde:   agora,
     idGrupo: jidOrigem || jid,
   });
   xpCasais.set(key, 0);
-  await syncCasamentoToDb(jidPedinte, senderJid, tipo, agora, jidOrigem || jid);
+  await syncCasamentoToDb(pedinteNorm, senderNorm, tipo || 'casamento', agora, jidOrigem || jid);
 
   const frases = [
     `💍 CARALHOOOOO! *${nomePedinte}* e *${nomeAlvo}* são CASADOS AGORA! Corre gritando que ninguém acreditava! 😂💍`,
@@ -572,32 +504,34 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
     await sock.sendMessage(jidOrigem || jid, {
       image: imageBuffer,
       caption,
-      mentions: [senderJid, jidPedinte],
+      mentions: [senderNorm, pedinteNorm],
     });
   } catch {
     await sock.sendMessage(jidOrigem || jid, {
       text: caption,
-      mentions: [senderJid, jidPedinte],
+      mentions: [senderNorm, pedinteNorm],
     });
   }
 }
 
-// !eurecuso
 async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames) {
-  const pedido = pedidosPendentes.get(senderJid);
+  const senderNorm = jidNormalizedUser(senderJid);
+  const pedido = pedidosPendentes.get(senderNorm) || pedidosPendentes.get(senderJid);
   if (!pedido) {
     await sock.sendMessage(jid, { text: '⚠️ Você não tem nenhum pedido pendente.' }, { quoted: msg });
     return;
   }
+  pedidosPendentes.delete(senderNorm);
   pedidosPendentes.delete(senderJid);
 
   const { jidPedinte, jid: jidOrigem } = pedido;
+  const pedinteNorm = jidNormalizedUser(jidPedinte);
 
   const frases = [
-    `💔 @${senderJid.split('@')[0]} COM TODA FORÇA recusou @${jidPedinte.split('@')[0]}! DESTRUÍDO(A)! 😭😭😭`,
-    `🚫 @${senderJid.split('@')[0]} não quer nem saber! @${jidPedinte.split('@')[0]} saiu de ré levando o balde d'agua! 🪣`,
-    `😒 Que MANCADA! @${jidPedinte.split('@')[0]} tomou um fora espetacular de @${senderJid.split('@')[0]}! AHAHAHA! 😂`,
-    `🤡 CANCELAMENTO! @${jidPedinte.split('@')[0]} é PERSONA NON GRATA na vida de @${senderJid.split('@')[0]}! 🚷`,
+    `💔 @${senderNorm.split('@')[0]} COM TODA FORÇA recusou @${pedinteNorm.split('@')[0]}! DESTRUÍDO(A)! 😭😭😭`,
+    `🚫 @${senderNorm.split('@')[0]} não quer nem saber! @${pedinteNorm.split('@')[0]} saiu de ré levando o balde d'agua! 🪣`,
+    `😒 Que MANCADA! @${pedinteNorm.split('@')[0]} tomou um fora espetacular de @${senderNorm.split('@')[0]}! AHAHAHA! 😂`,
+    `🤡 CANCELAMENTO! @${pedinteNorm.split('@')[0]} é PERSONA NON GRATA na vida de @${senderNorm.split('@')[0]}! 🚷`,
   ];
 
   const caption = frases[Math.floor(Math.random() * frases.length)];
@@ -608,19 +542,19 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
     await sock.sendMessage(jidOrigem || jid, {
       image: imageBuffer,
       caption,
-      mentions: [senderJid, jidPedinte],
+      mentions: [senderNorm, pedinteNorm],
     });
   } catch {
     await sock.sendMessage(jidOrigem || jid, {
       text: caption,
-      mentions: [senderJid, jidPedinte],
+      mentions: [senderNorm, pedinteNorm],
     });
   }
 }
 
-// !terminar
 async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos) {
-  const found = findRelByJid(jid, senderJid, relacionamentos);
+  const senderNorm = jidNormalizedUser(senderJid);
+  const found = findRelByJid(jid, senderNorm, relacionamentos);
   if (!found) {
     await sock.sendMessage(jid, {
       text: '💔 Você não está em nenhum relacionamento para terminar.',
@@ -629,16 +563,16 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
   }
 
   const { key, rel } = found;
-  const parcJid = rel.jidA === senderJid ? rel.jidB : rel.jidA;
-  const tagSelf = `@${senderJid.split('@')[0]}`;
+  const parcJid = jidNormalizedUser(rel.jidA === senderNorm ? rel.jidB : rel.jidA);
+  const tagSelf = `@${senderNorm.split('@')[0]}`;
   const tagParc = `@${parcJid.split('@')[0]}`;
 
   relacionamentos.delete(key);
   xpCasais.delete(key);
-  await clearCasamentoDb(senderJid, parcJid);
+  await clearCasamentoDb(senderNorm, parcJid);
 
   const expiry = Date.now() + 10 * 60 * 1000;
-  bloqueados.set(senderJid, expiry);
+  bloqueados.set(senderNorm, expiry);
   bloqueados.set(parcJid,   expiry);
 
   const frases = [
@@ -651,7 +585,7 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
   await sock.sendMessage(jid, {
     text: frases[Math.floor(Math.random() * frases.length)] +
       `\n\n⏳ Ambos ficam bloqueados por *10 minutos* antes de se comprometer novamente.`,
-    mentions: [senderJid, parcJid],
+    mentions: [senderNorm, parcJid],
   }, { quoted: msg });
 }
 
@@ -659,10 +593,6 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
 // ─── EXPORTS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-// Os requires dos sub-módulos VÊM ANTES do module.exports
-// para que handleCancelarPedido, handleCancelarCasamento,
-// handleTerminar e handleResposta (se existirem nos sub-módulos)
-// já estejam disponíveis quando o Object.assign rodar.
 const relacionamentoExtra = require(path.join(__dirname, 'extra'));
 const relacionamentoFixar = require(path.join(__dirname, 'fixar'));
 
@@ -680,7 +610,7 @@ module.exports = Object.assign(
     hoje,
     isBloqueado,
     minutosRestantes,
-    diasRestantes: minutosRestantes, // alias de compatibilidade
+    diasRestantes: minutosRestantes,
     getRelacionamento,
     syncCasamentoToDb,
     clearCasamentoDb,

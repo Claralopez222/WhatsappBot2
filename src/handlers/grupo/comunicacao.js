@@ -74,19 +74,18 @@ const MAX_POLL_OPTIONS = 12;
 const activePolls = new Map();
 
 const POLL_TTL_MS = 24 * 60 * 60 * 1000; // enquetes "expiram" da memória após 24h
-let ultimaLimpezaPolls = 0;
 
 function limparPollsAntigos() {
   const agora = Date.now();
-  if (agora - ultimaLimpezaPolls < 5 * 60 * 1000) return;
-  ultimaLimpezaPolls = agora;
-
   for (const [id, poll] of activePolls.entries()) {
     if (agora - (poll.createdAt || 0) > POLL_TTL_MS) {
       activePolls.delete(id);
     }
   }
 }
+
+// Fix #6: Limpeza agendada automática a cada 30 minutos (evita vazamento de memória)
+setInterval(limparPollsAntigos, 30 * 60 * 1000);
 
 async function handleEnquete(sock, msg, jid, caption) {
   limparPollsAntigos();
@@ -177,6 +176,7 @@ async function handleEnquete(sock, msg, jid, caption) {
 }
 
 // ─── Vote tallying ────────────────────────────────────────────
+// Fix #7: try/catch seguro por item para evitar que um voto malformado aborte o batch inteiro
 function registerPollVoteHandler(sock) {
   sock.ev.on('messages.update', (updates) => {
     for (const { key, update } of updates) {
@@ -185,13 +185,17 @@ function registerPollVoteHandler(sock) {
       const poll = activePolls.get(key.id);
       if (!poll) continue;
 
-      const aggregated = getAggregateVotesInPollMessage({
-        message: poll.message,
-        pollUpdates: update.pollUpdates,
-      });
+      try {
+        const aggregated = getAggregateVotesInPollMessage({
+          message: poll.message,
+          pollUpdates: update.pollUpdates,
+        });
 
-      for (const result of aggregated) {
-        poll.tallies.set(result.name, result.voters.length);
+        for (const result of aggregated) {
+          poll.tallies.set(result.name, result.voters.length);
+        }
+      } catch (err) {
+        console.error('[registerPollVoteHandler] Erro ao computar voto de enquete:', err?.message || err);
       }
     }
   });

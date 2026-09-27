@@ -1,14 +1,16 @@
 'use strict';
 
-const mongoose            = require('mongoose');
-const MedievalPersonagem = require('../models/MedievalPersonagem');
-const CarteiraGrupo      = require('../models/CarteiraGrupo');
-const { ARMADURAS, getArma } = require('../utils/medievalUtils');
-const {
-  somenteGrupo, getModoAtivo, verificarRecuperacaoDerrota, JANELA_SAQUE_MS,
-} = require('./medieval');
+// ─── Sistema de Saque entre Jogadores Derrotados ─────────────────────────────
 
-// Tempo que o vencedor tem pra responder com os números depois de abrir a lista.
+const mongoose           = require('mongoose');
+const MedievalPersonagem = require('../../models/MedievalPersonagem');
+const CarteiraGrupo      = require('../../models/CarteiraGrupo');
+const {
+  ARMADURAS, getArma,
+  somenteGrupo, getModoAtivo, verificarRecuperacaoDerrota, JANELA_SAQUE_MS,
+  getInventarioMap, itemKeyParaNome,
+} = require('../../utils/medievalUtils');
+
 const RESPOSTA_TIMEOUT_MS = 60 * 1000;
 
 // Map<"idGrupo:vencedorJid", { idGrupo, perdedorJid, opcoes, criadoEm, emProcessamento }>
@@ -22,8 +24,7 @@ function limparEstado(idGrupo, vencedorJid) {
   saqueState.delete(chaveSaque(idGrupo, vencedorJid));
 }
 
-// ── Limpeza periódica de estados esquecidos (vencedor nunca respondeu) ───────
-// Sem isso, !saquear sem resposta ficaria pra sempre ocupando memória.
+// ── Limpeza periódica de estados esquecidos ──────────────────────────────────
 if (!global._saqueCleanupAtivo) {
   global._saqueCleanupAtivo = true;
   setInterval(() => {
@@ -34,9 +35,7 @@ if (!global._saqueCleanupAtivo) {
   }, 5 * 60 * 1000);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── !saquear @perdedor ────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── !saquear @perdedor ──────────────────────────────────────────────────────
 
 async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
   if (!somenteGrupo(jid)) return;
@@ -59,8 +58,6 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
 
     await verificarRecuperacaoDerrota(perdedor);
 
-    // Qualquer pessoa do grupo pode saquear alguém derrotado, não só quem
-    // aplicou o golpe final — a única trava é a janela de 3 minutos.
     if (!perdedor.derrotadoEm) {
       return sock.sendMessage(jid, {
         text: `❌ *@${targetJid.split('@')[0]}* não está derrotado no momento (ou a janela já passou).`,
@@ -76,35 +73,26 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
       }, { quoted: msg });
     }
 
-    // ── Monta a lista numerada do que pode ser levado ─────────────────────────
     const carteiraPerdedor = await CarteiraGrupo.findOne({ idWhatsApp: targetJid, idGrupo: jid }).lean();
     const gold = carteiraPerdedor?.gold || 0;
 
-    const invMap = perdedor.inventarioMedieval instanceof Map
-      ? perdedor.inventarioMedieval
-      : new Map(Object.entries(perdedor.inventarioMedieval || {}));
+    const invMap = getInventarioMap(perdedor);
 
     const opcoes = [];
     if (gold > 0) {
       opcoes.push({ tipo: 'gold', valor: gold, label: `💰 ${gold} gold` });
     }
 
-    // ── CORREÇÃO: sem isso, arma/armadura equipada aparecia 2x na lista
-    // (uma vez como item do inventário, outra como "equipada"), permitindo
-    // levar o mesmo item em dobro. Agora ela aparece só uma vez, com a
-    // tag "(equipada)" junto do item do inventário.
     const nomesNoInventario = new Set();
     for (const [chave, qtd] of invMap.entries()) {
       if (qtd <= 0) continue;
-      const nome = chave.replace(/_/g, ' ');
+      const nome = itemKeyParaNome(chave);
       nomesNoInventario.add(nome);
       const tagEquipado = (perdedor.armaEquipada === nome || perdedor.armaduraEquipada === nome)
         ? ' (equipada)' : '';
       opcoes.push({ tipo: 'item', chave, nome, qtd, label: `📦 ${nome} x${qtd}${tagEquipado}` });
     }
 
-    // Fallback defensivo — só entra como opção separada se, por alguma
-    // inconsistência de dados, o equipado não tiver entrada no inventário.
     if (perdedor.armaEquipada && !nomesNoInventario.has(perdedor.armaEquipada)) {
       opcoes.push({ tipo: 'arma', nome: perdedor.armaEquipada, label: `⚔️ ${perdedor.armaEquipada} (equipada)` });
     }
@@ -119,7 +107,6 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
       }, { quoted: msg });
     }
 
-    // em handleSaquear
     saqueState.set(chaveSaque(jid, senderJid), {
       idGrupo: jid, perdedorJid: targetJid, opcoes, criadoEm: Date.now(), emProcessamento: false,
     });
@@ -144,24 +131,15 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ─── Resposta ao !saquear (números) ────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ─── Resposta ao !saquear (números) ───────────────────────────────────────────
 
 async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
-  // Não precisa mais checar idGrupo separadamente — já está embutido na chave
   const estado = saqueState.get(chaveSaque(jid, senderJid));
   if (!estado) return false;
 
   const limpo = textoResposta.trim();
-  if (!/^[\d\s,]+$/.test(limpo)) return false; // não parece resposta de saque — libera pra outros handlers
+  if (!/^[\d\s,]+$/.test(limpo)) return false;
 
-  // ── CORREÇÃO: trava síncrona contra saque duplicado ───────────────────────
-  // O bot processa mensagens em paralelo. Se o vencedor mandar duas respostas
-  // quase ao mesmo tempo, as duas podiam cair aqui antes de qualquer uma
-  // limpar o estado, executando o saque 2x. Como JS não interrompe código
-  // no meio de um trecho síncrono (sem "await"), checar e marcar a flag
-  // aqui — antes de qualquer await — garante que só uma passe.
   if (estado.emProcessamento) return true;
   estado.emProcessamento = true;
 
@@ -176,7 +154,7 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
     const validos = indices.filter(i => i >= 0 && i < estado.opcoes.length);
 
     if (!validos.length) {
-      estado.emProcessamento = false; // libera pra tentar de novo, estado continua vivo
+      estado.emProcessamento = false;
       await sock.sendMessage(jid, { text: '⚠️ Nenhum número válido. Tente de novo (ex: *0 2 3*).' }, { quoted: msg });
       return true;
     }
@@ -187,7 +165,6 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
       return true;
     }
 
-    // ── Revalida a janela de 3min no momento exato da execução ────────────────
     const perdedorAtual = await MedievalPersonagem.findOne({ idWhatsApp: estado.perdedorJid, idGrupo: jid });
     const aindaValido = perdedorAtual?.derrotadoEm
       && (Date.now() - new Date(perdedorAtual.derrotadoEm).getTime()) < JANELA_SAQUE_MS;
@@ -205,9 +182,6 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
     let removeuArmadura = false;
 
     for (const op of selecionados) {
-      // ── Cada item do saque agora é uma transação: débito do perdedor +
-      // crédito do vencedor acontecem juntos ou não acontecem — elimina o
-      // padrão manual de "debita → credita → estorna se falhar".
       const session = await mongoose.startSession();
       try {
         if (op.tipo === 'gold') {
@@ -274,14 +248,10 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
           }
           await session.endSession();
 
-          // Se o item levado era o equipado e não sobrou nenhuma unidade,
-          // desequipa e ajusta a mana máxima do derrotado.
           const eraArma     = perdedorAtual.armaEquipada     === op.nome;
           const eraArmadura = perdedorAtual.armaduraEquipada === op.nome;
           if (eraArma || eraArmadura) {
-            const invPreMap = preDoc.inventarioMedieval instanceof Map
-              ? preDoc.inventarioMedieval
-              : new Map(Object.entries(preDoc.inventarioMedieval || {}));
+            const invPreMap   = getInventarioMap(preDoc);
             const qtdAntes    = invPreMap.get(op.chave) || 0;
             const qtdRestante = qtdAntes - op.qtd;
 
@@ -301,9 +271,6 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
           continue;
         }
 
-        // ── Fallback: equipado sem entrada no inventário (dado inconsistente)
-        // Só escreve no vencedor — não há débito de outra coleção envolvido,
-        // então não precisa de transação aqui.
         await session.endSession();
 
         if (op.tipo === 'arma' && perdedorAtual.armaEquipada === op.nome) {
@@ -334,7 +301,6 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
       }
     }
 
-    // ── Desequipa do perdedor + ajusta mana máxima ────────────────────────────
     if (removeuArma || removeuArmadura || manaMaxDelta !== 0) {
       const setFields = {};
       if (removeuArma)     setFields.armaEquipada     = null;
@@ -350,7 +316,6 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
       ).catch(err => console.error('⚠️ Erro ao desequipar após saque:', err.message));
     }
 
-    // ── Já foi saqueado — limpa o estado de derrota ───────────────────────────
     await MedievalPersonagem.updateOne(
       { idWhatsApp: estado.perdedorJid, idGrupo: jid },
       { $unset: { derrotadoEm: '', derrotadoPor: '' } }
@@ -358,7 +323,6 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
 
     limparEstado(jid, senderJid);
 
-    // ── CORREÇÃO: evita mensagem "Você levou:" com lista vazia ───────────────
     const houveSucesso = resumo.some(r => !r.startsWith('⚠️'));
     if (!houveSucesso) {
       await sock.sendMessage(jid, {

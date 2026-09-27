@@ -37,7 +37,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
   const isAll      = /@all/.test(textCmd);
 
-  // ── Ban em massa (@all) ────────────────────────────────────
+  // ── Ban em massa (@all) — Proteção aos admins do grupo ────────
   if (isAll) {
     let meta;
     try {
@@ -51,6 +51,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     const targets = meta.participants
       .filter(p => {
         if (isBotJid(p.id, botJid)) return false;
+        if (p.admin) return false; // Proteção: ignora outros admins!
         const base    = normalizeJidBase(p.id);
         const baseLid = normalizeJidBase(p.lid || '');
         return base !== senderBase && baseLid !== senderBase;
@@ -58,12 +59,12 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
       .map(p => p.id);
 
     if (targets.length === 0) {
-      await sock.sendMessage(jid, { text: '⚠️ Nenhum membro para remover.' }, { quoted: msg });
+      await sock.sendMessage(jid, { text: '⚠️ Nenhum membro comum para remover.' }, { quoted: msg });
       return;
     }
 
     await sock.sendMessage(jid, {
-      text: `🔨 *Removendo ${targets.length} membro(s)...*\n_Aguarde um momento._`,
+      text: `🔨 *Removendo ${targets.length} membro(s) (admins preservados)...*\n_Aguarde um momento._`,
     }, { quoted: msg });
 
     let ok = 0, fail = 0;
@@ -95,7 +96,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
         `✅ *Ban em massa concluído!*\n\n` +
         `🔨 Removidos: *${ok}*` +
         `${fail > 0 ? `\n❌ Falhas: *${fail}*` : ''}\n` +
-        `_(O bot foi preservado)_`,
+        `_(Admins e o bot foram preservados)_`,
     }, { quoted: msg });
     return;
   }
@@ -165,7 +166,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
   const isAll      = /@all/.test(textCmd);
 
-  // ── Mute em massa (@all) ───────────────────────────────────
+  // ── Mute em massa (@all) — Proteção aos admins do grupo ──────
   if (isAll) {
     let meta;
     try {
@@ -179,6 +180,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     const targets = meta.participants
       .filter(p => {
         if (isBotJid(p.id, botJid)) return false;
+        if (p.admin) return false; // Proteção: ignora admins!
         const base    = normalizeJidBase(p.id);
         const baseLid = normalizeJidBase(p.lid || '');
         return base !== senderBase && baseLid !== senderBase;
@@ -187,7 +189,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
 
     if (targets.length === 0) {
       await sock.sendMessage(jid, {
-        text: '⚠️ Nenhum membro para mutar.',
+        text: '⚠️ Nenhum membro comum para mutar.',
       }, { quoted: msg });
       return;
     }
@@ -195,7 +197,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     for (const t of targets) muteUser(jid, t);
 
     await sock.sendMessage(jid, {
-      text: `🔇 *${targets.length} membro(s) mutados!*\n_Se falarem serão removidos em 20s._`,
+      text: `🔇 *${targets.length} membro(s) mutados (admins preservados)!*\n_Se falarem serão removidos em 20s._`,
     }, { quoted: msg });
     return;
   }
@@ -256,7 +258,7 @@ async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
       return;
     }
 
-    clearMuted(jid); // afeta apenas este grupo
+    clearMuted(jid);
     await sock.sendMessage(jid, {
       text: `🔊 *${count} membro(s) desmutados!* Podem falar! 🎤`,
     }, { quoted: msg });
@@ -281,7 +283,6 @@ async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  // Cancela o timer de ban automático se existir
   if (global._muteTimers) {
     const chaveTimer = `mute:${jid}:${normalizarJid(targetJid)}`;
     const timer = global._muteTimers.get(chaveTimer);
@@ -365,7 +366,6 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     await sock.sendMessage(jid, { text: '⚠️ Marque alguém ou use @all.' }, { quoted: msg }); return;
   }
 
-  // ─── Apenas o bot é protegido ────────────────────────────────
   if (isBotJid(targetJid, botJid)) {
     await sock.sendMessage(jid, {
       text: acao === 'promote'
@@ -403,22 +403,20 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
   }
   if (!await checkAdmin(sock, msg, jid, 'reportar')) return;
 
-  const quotedMsg      = content.extendedTextMessage?.contextInfo?.quotedMessage;
-  const reportedJidRaw = content.extendedTextMessage?.contextInfo?.participant;
-  const reportedJid    = reportedJidRaw ? normalizarJid(reportedJidRaw) : null;
+  // Aceita reply OU menção direta via resolveTargetJid para consistência de UX
+  const reportedJid = await resolveTargetJid(sock, msg, content, jid);
 
-  if (!quotedMsg || !reportedJid) {
+  if (!reportedJid) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Responda a uma mensagem com *!reportar* para advertir o usuário.',
+      text: '⚠️ Responda a uma mensagem ou mencione um usuário com *!reportar @pessoa* para adverti-lo.',
     }, { quoted: msg }); return;
   }
 
   const senderJid = normalizarJid(msg.key.participant || msg.key.remoteJid);
-  if (reportedJid === senderJid) {
+  if (normalizeJidBase(reportedJid) === normalizeJidBase(senderJid)) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se reportar.' }, { quoted: msg }); return;
   }
 
-  // ─── Apenas o bot é protegido ────────────────────────────────
   if (isBotJid(reportedJid, botJid)) {
     await sock.sendMessage(jid, { text: '🤖 Não é possível reportar o bot.' }, { quoted: msg }); return;
   }
@@ -485,11 +483,7 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
   const senderJid  = normalizarJid(msg.key.participant || msg.key.remoteJid);
   const senderBase = normalizeJidBase(senderJid);
 
-  const targetJidRaw =
-    content.extendedTextMessage?.contextInfo?.participant ??
-    content.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ??
-    null;
-  const targetJid = targetJidRaw ? normalizarJid(targetJidRaw) : null;
+  const targetJid = await resolveTargetJid(sock, msg, content, jid);
 
   if (!targetJid) {
     return sock.sendMessage(jid, {

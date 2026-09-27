@@ -186,16 +186,16 @@ carteiraGrupoSchema.index({ idGrupo: 1, quizPoints: -1 });
 
 // ─── Fórmulas de XP / Nível (fonte única de verdade) ──────────────────────────
 // XP total necessário para ALCANÇAR um determinado nível.
-// Ex: xpParaLevel(1) = 0, xpParaLevel(2) = 100, xpParaLevel(3) ≈ 282...
+// Ex: xpParaLevel(1) = 0, xpParaLevel(2) = 80, xpParaLevel(3) = 211...
 function xpParaLevel(level) {
   const lvl = Math.max(1, Math.floor(level));
-  return Math.floor(100 * Math.pow(lvl - 1, 1.5));
+  return Math.floor(80 * Math.pow(lvl - 1, 1.4));
 }
 
 // Nível correspondente a uma quantidade de XP (sempre >= 1)
 function levelFromXp(xp) {
   const xpSeguro = Math.max(0, xp || 0);
-  return Math.max(1, Math.floor(Math.pow(xpSeguro / 100, 1 / 1.5)) + 1);
+  return Math.max(1, Math.floor(Math.pow(xpSeguro / 80, 1 / 1.4)) + 1);
 }
 
 // Expor as fórmulas como statics — qualquer comando (!level, !ranklevel etc.)

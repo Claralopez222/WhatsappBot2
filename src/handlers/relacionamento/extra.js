@@ -1,8 +1,11 @@
-﻿const path = require('path');
+﻿'use strict';
+
+const path = require('path');
 
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-const { getNivelInfo }      = require(path.join(__dirname, '..', '..', 'utils', 'levelUtils'));
-const { ITENS_LOJA } = require(path.join(__dirname, '..', 'diversao', 'economia'));
+const { getNivelInfo } = require(path.join(__dirname, '..', '..', 'utils', 'levelUtils'));
+const { ITENS_LOJA }  = require(path.join(__dirname, '..', 'diversao', 'economia'));
+
 let _jidNormalizedUser = null;
 function jidNormalizedUser(jid) {
   if (!_jidNormalizedUser) {
@@ -21,1253 +24,432 @@ function rel() {
 function findRelByJid(jid, userJid, relacionamentos) { return rel().findRelByJid(jid, userJid, relacionamentos); }
 function temXpBonus(key)                    { return rel().temXpBonus(key); }
 function formatarTempo(ms)                  { return rel().formatarTempo(ms); }
-async function handleCarinh(...args)        { return rel().handleCarinh(...args); }
+function isBloqueado(jid)                   { return rel().isBloqueado(jid); }
+function minutosRestantes(jid)              { return rel().minutosRestantes(jid); }
+function handleCarinh(...args)              { return rel().handleCarinh(...args); }
+function handleRelacionamento(...args)      { return rel().handleRelacionamento(...args); }
+function handleCancelarCasamento(...args)   { return rel().handleCancelarCasamento(...args); }
 
-function getXpCasais()     { return rel().xpCasais; }
-function getXpBonus()      { return rel().xpBonus; }
-function getCiumentosMap() { return rel().ciumentosMap; }
-function getBloqueados()   { return rel().bloqueados; }
+// ═══════════════════════════════════════════════════════════════
+// ─── WRAPPERS DE COMANDOS DE RELACIONAMENTO ──────────────────
+// ═══════════════════════════════════════════════════════════════
 
-const ITEM_NECESSARIO = {
-  flores:   { key: 'flores',   nome: 'Flores 🌹'                },
-  doces:    { key: 'morango',  nome: 'Morango com Chocolate 🍓'  },
-  carta:    { key: 'carta',    nome: 'Carta de Amor 💌'          },
-  mimo:     { key: 'caixa',    nome: 'Caixa Presente Luxo 🎁'    },
-  // beijo removido — não requer item
-  jantar:   { key: 'taça',     nome: 'Taça para Vinho 🍷'        },
-  cinema:   { key: 'almofada', nome: 'Almofada Casal 🛋️'         },
-  viajar:   { key: 'garrafa',  nome: 'Garrafa Vinho Tinto 🍾'    },
-  serenata: { key: 'vela',     nome: 'Vela Aromática 🕯️'         },
-};
+async function handleCasar(sock, msg, content, jid, author, relacionamentos, pedidosPendentes, contactNames) {
+  return handleRelacionamento(sock, msg, content, jid, author, 'casamento', relacionamentos, pedidosPendentes, contactNames);
+}
 
-// ─── Helper: verifica E consome 1 unidade do item (atômico) ───
-async function _checkConsumeItem(sock, msg, jid, senderJid, comando) {
-  const itemInfo = ITEM_NECESSARIO[comando];
-  if (!itemInfo) return true;
+async function handleNamorar(sock, msg, content, jid, author, relacionamentos, pedidosPendentes, contactNames) {
+  return handleRelacionamento(sock, msg, content, jid, author, 'namoro', relacionamentos, pedidosPendentes, contactNames);
+}
 
-  const { key, nome } = itemInfo;
-
-  try {
-    const result = await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJid, [`inventory.${key}`]: { $gte: 1 } },
-      { $inc: { [`inventory.${key}`]: -1 } },
-      { new: true }
-    );
-
-    if (!result) {
-      await sock.sendMessage(jid, {
-        text:
-          `🚫 *Você precisa de ${nome} para usar este comando!*\n\n` +
-          `Compre na loja do casal: *!lojacasal*`,
-      }, { quoted: msg });
-      return false;
+async function handleCancelarPedido(sock, msg, jid, senderJid, pedidosPendentes) {
+  const senderNorm = jidNormalizedUser(senderJid);
+  let cancelado = false;
+  for (const [alvoJid, p] of pedidosPendentes.entries()) {
+    if (jidNormalizedUser(p.jidPedinte) === senderNorm || jidNormalizedUser(alvoJid) === senderNorm) {
+      pedidosPendentes.delete(alvoJid);
+      cancelado = true;
     }
-
-    return true;
-
-  } catch (e) {
-    console.error(`[CasalItem] Erro ao verificar inventário (${senderJid} / ${key}):`, e.message);
-    await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao verificar seu inventário. Tente novamente.',
-    }, { quoted: msg });
-    return false;
+  }
+  if (cancelado) {
+    await sock.sendMessage(jid, { text: '✅ Pedido pendente cancelado com sucesso!' }, { quoted: msg });
+  } else {
+    await sock.sendMessage(jid, { text: '⚠️ Você não possui pedidos pendentes para cancelar.' }, { quoted: msg });
   }
 }
 
-// ─── Tabela de carinho: comando → [emoji, descrição] ──────────
-const CARINH_CONFIG = {
-  flores:  ['🌹', 'enviou um buquê de rosas'],
-  doces:   ['🍬', 'mandou uma caixa de doces'],
-  carta:   ['💌', 'escreveu uma carta de amor'],
-  mimo:    ['🎁', 'fez um mimo especial'],
-  beijo:   ['💋', 'deu um beijão'],
-  abraco:  ['🤗', 'deu um abraço apertado'],
-};
-
-// ─── Factory: gera handler de carinho ─────────────────────────
-// A verificação e consumo do item do inventário é feita
-// dentro do próprio handleCarinh — não duplicar aqui.
-function _makeCarinhHandler(comando) {
-  const [emoji, descricao] = CARINH_CONFIG[comando];
-  return async function (sock, msg, jid, author, senderJid, relacionamentos) {
-    await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, comando, emoji, descricao);
-  };
+async function handleTerminar(sock, msg, jid, senderJid, relacionamentos) {
+  return handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos);
 }
 
-// ─── !presente ────────────────────────────────────────────────
-async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption = '') {
-  const parts = caption
-    .toLowerCase()
-    .trim()
-    .replace(/^!?presente\s*/i, '')
-    .split(/\s+/)
-    .filter(Boolean);
+// ─── CARINHOS ─────────────────────────────────────────────────
 
-  // ── Sem argumentos: presente surpresa aleatório (sem consumir item) ──
-  if (parts.length === 0) {
-    const found = findRelByJid(jid, senderJid, relacionamentos);
-    if (!found) {
-      return sock.sendMessage(jid, {
-        text: '💔 Você não está em um relacionamento! Não pode presentear ninguém agora! 😒',
-      }, { quoted: msg });
-    }
-
-    const PRESENTES_SURPRESA = [
-      'um anel de ouro 💍',
-      'um perfume importado 🌸',
-      'um ursinho de pelúcia 🧸',
-      'chocolates Ferrero 🍫',
-      'um colar lindo 📿',
-    ];
-    const presenteSorteado = PRESENTES_SURPRESA[Math.floor(Math.random() * PRESENTES_SURPRESA.length)];
-    return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'presente', '🎀', `presenteou com ${presenteSorteado}`);
-  }
-
-  // ── Com argumentos: presente específico com item do inventário ──
-
-  // ── Verifica relacionamento ──
-  const found = findRelByJid(jid, senderJid, relacionamentos);
-  if (!found) {
-    return sock.sendMessage(jid, {
-      text: '💔 Você não está em um relacionamento! Não pode presentear ninguém agora! 😒',
-    }, { quoted: msg });
-  }
-
-  const { key, rel: relData } = found;
-  const itemNome = parts[0];
-
-  // ── Valida se o item existe no catálogo da loja ──
-  if (!ITENS_LOJA[itemNome]) {
-    return sock.sendMessage(jid, {
-      text:
-        `❌ *${itemNome}* não é um item válido!\n\n` +
-        `🛍️ Veja os itens disponíveis: *!lojacasal*\n` +
-        `🎒 Ou use *!inventario* para ver o que você já tem.`,
-    }, { quoted: msg });
-  }
-
-  // ── Verifica menção ──
-  const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
-  if (mentions.length === 0) {
-    return sock.sendMessage(jid, {
-      text:
-        '⚠️ Você precisa mencionar a pessoa!\n' +
-        'Use: *!presente <item> @pessoa*\n' +
-        'Exemplo: *!presente flores @esposa*',
-    }, { quoted: msg });
-  }
-
-  const pessoaJid   = mentions[0];
-  const parceiroJid = relData.jidA === senderJid ? relData.jidB : relData.jidA;
-  const parceiro    = relData.nomeA === author    ? relData.nomeB : relData.nomeA;
-
-  // ── Só pode presentear o próprio parceiro ──
-  if (pessoaJid !== parceiroJid) {
-    return sock.sendMessage(jid, {
-      text: '😂 Ué! Você tá tentando presentear outra pessoa? Que história é essa?!',
-    }, { quoted: msg });
-  }
-
-  // ── Verifica e consome o item do inventário (atômico via MongoDB) ──
-  try {
-    const usuarioAtualizado = await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJid, [`inventory.${itemNome}`]: { $gte: 1 } },
-      { $inc: { [`inventory.${itemNome}`]: -1 } },
-      { new: true }
-    );
-
-    if (!usuarioAtualizado) {
-      return sock.sendMessage(jid, {
-        text:
-          `❌ Você não tem *${itemNome}* no inventário!\n\n` +
-          `🛍️ Compre na loja do casal: *!lojacasal*\n` +
-          `🎒 Ou use *!inventario* para ver seus itens.`,
-      }, { quoted: msg });
-    }
-
-    const nomeAmigavel = ITENS_LOJA[itemNome].nome;
-    const GANHO_XP = 5;
-
-    // ── Atualiza XP de ambos no banco e calcula o total real ──
-    let xpAtual = 0;
-
-    try {
-      const metadeA = Math.ceil(GANHO_XP / 2);
-      const metadeB = Math.floor(GANHO_XP / 2);
-
-      const updates = [];
-      if (relData.jidA) updates.push(Usuario.findOneAndUpdate({ idWhatsApp: relData.jidA }, { $inc: { xpCasal: metadeA } }, { new: true, upsert: false }));
-      if (relData.jidB) updates.push(Usuario.findOneAndUpdate({ idWhatsApp: relData.jidB }, { $inc: { xpCasal: metadeB } }, { new: true, upsert: false }));
-
-      const [resA, resB] = await Promise.all(updates);
-      xpAtual = (resA?.xpCasal ?? 0) + (resB?.xpCasal ?? 0);
-
-    } catch (xpErr) {
-      console.error('[handlePresente] Erro ao sincronizar XP com o banco:', xpErr.message);
-      xpAtual = (getXpCasais().get(key) ?? 0) + GANHO_XP;
-    }
-
-    getXpCasais().set(key, xpAtual);
-
-    // ── Mensagem final ──
-    await sock.sendMessage(jid, {
-      text:
-        `🎁 *${author}* presenteou *${parceiro}* com *${nomeAmigavel}*! 💕\n\n` +
-        `_"É pra você, meu amor!"_ 🥰\n\n` +
-        `💰 *+${GANHO_XP} XP de amor!* Total: *${xpAtual} XP* 💑`,
-      mentions: [pessoaJid],
-    }, { quoted: msg });
-
-  } catch (err) {
-    console.error('[handlePresente] Erro ao presentear:', err.message);
-    await sock.sendMessage(jid, {
-      text: '⚠️ Ocorreu um erro ao processar o presente. Tente novamente mais tarde.',
-    }, { quoted: msg });
-  }
+async function handleFlores(sock, msg, jid, author, senderJid, relacionamentos) {
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'flores', '🌹', 'deu flores para', 10);
 }
 
-// ─── Handlers de programa (com verificação de item e divisão por grupo) ───────────
-
-const OPCOES_ROMANCE = {
-  jantar: [
-    'num restaurante chique 🍷',
-    'num jantar a luz de vela 🕯️',
-    'num rodízio japonês 🍣',
-    'numa churrascaria premium 🥩',
-    'numa pizzaria italiana 🍕',
-  ],
-  cinema: [
-    'um romance 💕',
-    'um filme de terror e ficou com medo 😱',
-    'uma comédia e não parou de rir 😂',
-    'um filme de ação e roubou a pipoca 🍿',
-    'um drama e os dois choraram 😭',
-  ],
-  viajar: [
-    'Paris 🗼',
-    'Maldivas 🏝️',
-    'Roma 🏛️',
-    'Tokyo 🗾',
-    'Cancún 🌊',
-    'Gramado ❄️',
-  ],
-  serenata: [
-    'a música favorita deles 🎵',
-    '"Evidências" do Chitãozinho 🎸',
-    'uma balada romântica 🎶',
-    '"Pra Você" toda desafinada 😂',
-    '"Can\'t Help Falling in Love" ❤️',
-  ],
-};
-
-function sortear(lista) {
-  return lista[Math.floor(Math.random() * lista.length)];
+async function handleDoces(sock, msg, jid, author, senderJid, relacionamentos) {
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'doces', '🍓', 'deu morango com chocolate para', 10);
 }
 
-// handleJantar
+async function handleCarta(sock, msg, jid, author, senderJid, relacionamentos) {
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'carta', '💌', 'escreveu uma carta de amor para', 10);
+}
+
+async function handleMimo(sock, msg, jid, author, senderJid, relacionamentos) {
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'mimo', '🎁', 'deu um mimo especial para', 15);
+}
+
+async function handleBeijo(sock, msg, jid, author, senderJid, relacionamentos) {
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'beijo', '💋', 'deu um beijo apaixonado em', 8);
+}
+
+async function handleAbraco(sock, msg, jid, author, senderJid, relacionamentos) {
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'abraco', '🤗', 'deu um abraço aconchegante em', 5);
+}
+
+async function handlePresente(sock, msg, jid, author, senderJid, relacionamentos) {
+  // O handleCarinh já se encarrega de verificar o inventário (chave 'caixa'), abater 1 item e aplicar o XP
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'mimo', '🎁', 'deu um lindo presente para', 15);
+}
+
 async function handleJantar(sock, msg, jid, author, senderJid, relacionamentos) {
-  const opcao = sortear(OPCOES_ROMANCE.jantar);
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'jantar', '🍽️', `levou para jantar ${opcao}`, 5);
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'jantar', '🍷', 'preparou um jantar romântico para', 20);
 }
 
-// handleCinemaRel
-async function handleCinemaRel(sock, msg, jid, author, senderJid, relacionamentos) {
-  const opcao = sortear(OPCOES_ROMANCE.cinema);
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'cinema', '🎬', `levou ao cinema para assistir ${opcao}`, 5);
+async function handleCinema(sock, msg, jid, author, senderJid, relacionamentos) {
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'cinema', '🛋️', 'levou para um cinema juntinhos', 15);
 }
 
-// handleViajar
 async function handleViajar(sock, msg, jid, author, senderJid, relacionamentos) {
-  const opcao = sortear(OPCOES_ROMANCE.viajar);
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'viajar', '✈️', `planejou uma viagem para ${opcao}`, 10);
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'viajar', '🍾', 'levará seu par para uma viagem inesquecível', 25);
 }
 
-// handleSerenata
 async function handleSerenata(sock, msg, jid, author, senderJid, relacionamentos) {
-  const opcao = sortear(OPCOES_ROMANCE.serenata);
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'serenata', '🎤', `fez uma serenata cantando ${opcao}`, 8);
+  return handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'serenata', '🕯️', 'fez uma linda serenata à luz de velas para', 20);
 }
 
-// !declarar
-async function handleDeclarar(sock, msg, jid, author, senderJid, relacionamentos) {
-  // ── Normaliza o ID de quem enviou o comando ──
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
+// ═══════════════════════════════════════════════════════════════
+// ─── OUTROS COMANDOS DE CASAL ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
-  if (!found) {
-    await sock.sendMessage(jid, {
-      text: '💔 Só quem tem um relacionamento pode se declarar, seu(ua) romantudo(a) solteiro(a)! 😤',
-    }, { quoted: msg });
+async function handleRankCasais(sock, msg, jid, relacionamentos) {
+  const xpCasais = rel().xpCasais;
+  if (!relacionamentos || relacionamentos.size === 0) {
+    await sock.sendMessage(jid, { text: '💔 Nenhum casal registrado neste grupo ainda!' }, { quoted: msg });
     return;
   }
 
-  const { key, rel } = found;
-
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
-
-  const tagAuthor   = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
-
-  const declaracoes = [
-  `🔥 ${tagAuthor} se DECLARA APAIXONADO(A) para ${tagParceiro}:\n\n_"De qualquer jeito, é você que eu quero! Te amo demais!" 💘🔥_`,
-  `💋 ${tagAuthor} ABRAÇA ${tagParceiro} na frente de TODOS e diz:\n\n_"Essa pessoa aqui é meu fechamento! E eu sou feliz demais com nosso amor! 💪💕"_`,
-  `🌟 ${tagAuthor} faz uma DECLARAÇÃO ÉPICA para ${tagParceiro}:\n\n_"Você alegra o meu dia todo dia! É incrível estar contigo... Te amo!" 🥰_`,
-  `⚡ ${tagAuthor} para ${tagParceiro}:\n\n_"Se eu pudesse escolher novamente, eu AINDA escolheria você! Sem pestanejar! Sem volta! TE AMO!" 💯💕_`,
-  `🎸 ${tagAuthor} canta pro mundo:\n\n_"EU AMO ESSA PESSOA! É MEU AMOR E PRONTO!" 🎵🔥_`,
-  `🌹 ${tagAuthor} sussurra para ${tagParceiro}:\n\n_"Em meio a tantas estrelas, eu escolheria sempre a sua luz. Você é o meu lugar favorito no mundo." 🌌💞_`,
-  `🌊 ${tagAuthor} declara para ${tagParceiro}:\n\n_"Meu coração encontrou porto seguro em você. Cada dia ao seu lado é uma página nova da nossa história." 📖💙_`,
-  `🕊️ ${tagAuthor} olha nos olhos de ${tagParceiro} e diz:\n\n_"Não preciso de mais nada quando tenho você por perto. Você é calma, é lar, é tudo." 🤍✨_`,
-  `🌙 ${tagAuthor} para ${tagParceiro}, sob o céu estrelado:\n\n_"Se o amor fosse um lugar, eu moraria em você para sempre." 🌌💫_`,
-  `🍯 ${tagAuthor} sorri e diz para ${tagParceiro}:\n\n_"Você adoça meus dias como mel adoça o pão. Te amo mais que ontem, menos que amanhã." 🍞💛_`,
-  `🎻 ${tagAuthor} dedica uma melodia para ${tagParceiro}:\n\n_"Cada nota dessa canção fala de você. Meu amor é a trilha sonora da nossa vida." 🎶❤️_`,
-  `🌸 ${tagAuthor} entrega uma flor para ${tagParceiro} e fala:\n\n_"Assim como essa flor, nosso amor floresce um pouco mais a cada dia." 🌷💕_`,
-  `🔥 ${tagAuthor} grita para o mundo, abraçando ${tagParceiro}:\n\n_"ESSA AQUI É MINHA PESSOA! E EU NÃO TROCO POR NADA!" 🥳💖_`,
-  `🌈 ${tagAuthor} segura a mão de ${tagParceiro} e promete:\n\n_"Depois da tempestade, sempre vai ter você e eu, juntos, recomeçando." 🌦️💞_`,
-  `📜 ${tagAuthor} escreve uma carta para ${tagParceiro}:\n\n_"Se eu pudesse resumir minha felicidade em uma palavra, essa palavra seria seu nome." ✍️💗_`,
-];
-
-  const ganhoTotal = 5;
-  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente ganhoTotal ──
-  const metadeA = Math.ceil(ganhoTotal / 2);
-  const metadeB = Math.floor(ganhoTotal / 2);
-
-  // ── Busca e atualiza o XP direto do banco de dados ──
-  let xpAtual = 0;
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
-
-    const xpAntigo = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
-    xpAtual = xpAntigo + ganhoTotal;
-  } catch (err) {
-    console.error('⚠️ [handleDeclarar] Erro ao calcular XP do banco:', err.message);
-    xpAtual = (getXpCasais().get(key) || 0) + ganhoTotal;
+  const lista = [];
+  for (const [key, r] of relacionamentos.entries()) {
+    if (key.startsWith(jid + '|')) {
+      const xp = xpCasais.get(key) || 0;
+      lista.push({ ...r, key, xp });
+    }
   }
 
-  getXpCasais().set(key, xpAtual);
-
-  try {
-    const updates = [];
-    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
-    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
-    await Promise.all(updates);
-  } catch (e) {
-    console.error('⚠️ [handleDeclarar] Erro ao persistir XP no banco:', e.message);
-  }
-
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
-
-  await sock.sendMessage(jid, {
-    text: declaracoes[Math.floor(Math.random() * declaracoes.length)] + `\n\n💰 *+${ganhoTotal} XP DE AMOR!* Total: *${xpAtual} XP* 🚀`,
-    mentions: listaMentions,
-  }, { quoted: msg });
-}
-
-
-// ─── !ciumento ────────────────────────────────────────────────
-async function handleCiumento(sock, msg, content, jid, author, senderJid, relacionamentos) {
-  const senderJidNorm = jidNormalizedUser(senderJid);
-
-  // ── Verifica relacionamento ──
-  const found = findRelByJid(jid, senderJidNorm, relacionamentos);
-  if (!found) {
-    return sock.sendMessage(jid, {
-      text: '💔 Só quem tá em relacionamento pode ficar com ciúme, seu(ua) solteiro(a)! 😒',
-    }, { quoted: msg });
-  }
-
-  const { key, rel } = found;
-
-  const jidANorm = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNorm = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-  const parcJid  = jidANorm === senderJidNorm ? jidBNorm : jidANorm;
-
-  // ── Cooldown por grupo + usuário ──
-  const agora       = Date.now();
-  const cooldownKey = `${jid}:${senderJidNorm}`;
-  const expiracao   = getCiumentosMap().get(cooldownKey);
-
-  if (expiracao && expiracao > agora) {
-    return sock.sendMessage(jid, {
-      text: `⏰ CALMA LÁ! Você acabou de usar ciúme neste grupo! Próxima vez em *${formatarTempo(expiracao - agora)}*! 😤`,
-    }, { quoted: msg });
-  }
-
-  // ── Menção ──
-  const rawMentioned =
-    msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ??
-    content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-
-  const mentionedJid = rawMentioned ? jidNormalizedUser(rawMentioned) : null;
-
-  if (mentionedJid && mentionedJid === parcJid) {
-    return sock.sendMessage(jid, {
-      text: '😂 Ciúme do seu próprio par? Isso é amor demais! Mas não conta como ciúme não! 💕',
-    }, { quoted: msg });
-  }
-
-  // ── Registra cooldown após todas as validações ──
-  getCiumentosMap().set(cooldownKey, agora + 30 * 60 * 1000);
-
-  // ── Tags ──
-  const tagAuthor   = `@${senderJidNorm.split('@')[0]}`;
-  const tagParceiro = parcJid ? `@${parcJid.split('@')[0]}` : tagAuthor;
-  const tagSuspeito = mentionedJid ? `@${mentionedJid.split('@')[0]}` : 'alguém do grupo';
-
-  const CENAS = [
-    `😤 ${tagAuthor} EXPLODIU DE CIÚME VENDO ${tagParceiro} rindo com ${tagSuspeito}!\n\n_${tagParceiro}: "Você tá me controlando?" 💀_`,
-    `🔥 ${tagAuthor} ficou VERDE DE INVEJA com ${tagParceiro} conversando com ${tagSuspeito}!\n\n_${tagParceiro}: "Sério? SÉRIO MESMO?" 😒_`,
-    `😡 ${tagAuthor} FOÇOU O CELULAR DE ${tagParceiro} procurando coisas suspeitas com ${tagSuspeito}!\n\n_Resultado: Nada encontrado. ENVERGONHADO(A)! 💀_`,
-    `🥲 ${tagAuthor} FEZ BIRRA porque ${tagParceiro} deu mais atenção a ${tagSuspeito}!\n\n_${tagParceiro}: "Que drama! Você é meu amor, RELAXA!" 😤_`,
-    `💢 ${tagAuthor} IGNOROU ${tagParceiro} O DIA TODO por causa de ${tagSuspeito}!\n\n_Depois voltaram a namorar com um abraço apertado. 😔💕_`,
-  ];
-
-  const PERDA_XP = 2;
-  const metadeA  = Math.ceil(PERDA_XP / 2);
-  const metadeB  = Math.floor(PERDA_XP / 2);
-
-  // ── Atualiza XP no banco e calcula total real ──
-  let xpAtual = 0;
-  try {
-    const updates = [];
-    if (jidANorm) updates.push(Usuario.findOneAndUpdate({ idWhatsApp: jidANorm }, { $inc: { xpCasal: -metadeA } }, { new: true }));
-    if (jidBNorm) updates.push(Usuario.findOneAndUpdate({ idWhatsApp: jidBNorm }, { $inc: { xpCasal: -metadeB } }, { new: true }));
-
-    const [resA, resB] = await Promise.all(updates);
-    xpAtual = Math.max(0, (resA?.xpCasal ?? 0) + (resB?.xpCasal ?? 0));
-
-  } catch (err) {
-    console.error('[handleCiumento] Erro ao deduzir XP no banco:', err.message);
-    xpAtual = Math.max(0, (getXpCasais().get(key) ?? 0) - PERDA_XP);
-  }
-
-  getXpCasais().set(key, xpAtual);
-
-  // ── Monta lista de menções sem duplicatas ──
-  const mentions = [...new Set([senderJidNorm, parcJid, mentionedJid].filter(Boolean))];
-  const cena     = CENAS[Math.floor(Math.random() * CENAS.length)];
-
-  await sock.sendMessage(jid, {
-    text: `${cena}\n\n⚠️ *-${PERDA_XP} XP* por CIÚME CEGO! Total: *${xpAtual} XP* 😤`,
-    mentions,
-  }, { quoted: msg });
-}
-
-// !status / !statu
-async function handleStatu(sock, msg, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
-  if (!found) {
-    await sock.sendMessage(jid, {
-      text: '💔 Você não está num relacionamento!\n_Use *!casar @alguem* para encontrar o amor!_',
-    }, { quoted: msg });
+  if (lista.length === 0) {
+    await sock.sendMessage(jid, { text: '💔 Nenhum casal registrado neste grupo ainda!' }, { quoted: msg });
     return;
   }
 
-  const { key, rel } = found;
+  lista.sort((a, b) => b.xp - a.xp);
 
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+  const picos = ['👑', '🥈', '🥉'];
+  let text = `🏆 *RANKING DE CASAIS DO GRUPO* 🏆\n\n`;
 
-  let xp = 0;
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
-    xp = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
-  } catch (err) {
-    console.error('⚠️ [handleStatu] Erro ao buscar XP do banco:', err.message);
-    xp = getXpCasais().get(key) || 0;
-  }
+  lista.slice(0, 10).forEach((c, idx) => {
+    const medalha = idx < 3 ? picos[idx] : `*${idx + 1}º*`;
+    const tipo = c.tipo === 'namoro' ? '💕' : '💍';
+    text += `${medalha} ${tipo} *${c.nomeA}* & *${c.nomeB}* — *${c.xp} XP*\n`;
+  });
 
-  const desde = rel.desde ? Date.now() - rel.desde : 0;
-  const dias  = Math.floor(desde / (1000 * 60 * 60 * 24));
-  const horas = Math.floor((desde % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-
-  const niveis = [
-    { limite: 50,       nome: 'Recém-casados',   emoji: '🌱' },
-    { limite: 150,      nome: 'Casal apaixonado', emoji: '💕' },
-    { limite: 300,      nome: 'Casal sólido',     emoji: '💪' },
-    { limite: 500,      nome: 'Casal veterano',   emoji: '⭐' },
-    { limite: 800,      nome: 'Casal lendário',   emoji: '🏆' },
-    { limite: Infinity, nome: 'CASAL IMORTAL',    emoji: '👑' },
-  ];
-
-  const nivelAtual = niveis.find(n => xp < n.limite);
-  const proximo    = nivelAtual.limite;
-  const xpProximo  = proximo === Infinity ? '---' : proximo - xp;
-
-  let barraXp = '█'.repeat(10);
-  if (proximo !== Infinity) {
-    const blocosCheios = Math.floor(Math.min(Math.max(xp / proximo, 0), 1) * 10);
-    barraXp = '█'.repeat(blocosCheios) + '░'.repeat(10 - blocosCheios);
-  }
-
-  const conquistas = [];
-  if (dias >= 1)  conquistas.push('🌅 *1 dia* de romance');
-  if (dias >= 7)  conquistas.push('🌟 *1 SEMANA* de puro amor!');
-  if (dias >= 30) conquistas.push('🥇 *1 MÊS INTEIRO* juntos (VCS AGUENTAM!)');
-  if (xp >= 100)  conquistas.push('💰 *100 XP* acumulados (ELITE!)');
-  if (xp >= 500)  conquistas.push('👑 *500 XP* (LENDÁRIOS MESMO!)');
-
-  const bonusAtivo = temXpBonus(key) ? '\n🎉 *XP DUPLO ATIVADO! APROVEITEM!* 🎉' : '';
-
-  const tagSender = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParc   = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
-
-  let texto =
-    `💑 *STATUS ÉPICO DO CASAL*\n\n` +
-    `👥 ${tagSender} ${rel.tipo === 'namoro' ? '💕' : '💍'} ${tagParc}\n` +
-    `💎 Tipo: *${rel.tipo === 'namoro' ? 'NAMORANDO 🌟' : 'CASADOS 👰'}*\n` +
-    `⏰ Tempo junto: *${dias}d ${horas}h* (Não se largam!)\n\n` +
-    `${nivelAtual.emoji} NÍVEL: *${nivelAtual.nome}*\n` +
-    `⚡ XP: *${xp}/${proximo === Infinity ? '∞' : proximo}* [${barraXp}]\n` +
-    `🚀 Faltam *${xpProximo}* XP pro PRÓXIMO NÍVEL!` +
-    bonusAtivo;
-
-  if (conquistas.length > 0) {
-    texto += `\n\n🏆 *CONQUISTAS:*\n` + conquistas.map(c => `   ✅ ${c}`).join('\n');
-  }
-
-  await sock.sendMessage(jid, {
-    text: texto,
-    mentions: [senderJidNormalizado, parcJid].filter(Boolean),
-  }, { quoted: msg });
+  await sock.sendMessage(jid, { text }, { quoted: msg });
 }
 
-// !meupar
-async function handleMeuPar(sock, msg, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+async function handleDeclarar(sock, msg, content, jid, author, senderJid, relacionamentos) {
+  const senderNorm = jidNormalizedUser(senderJid);
+  const found = findRelByJid(jid, senderNorm, relacionamentos);
 
   if (!found) {
-    await sock.sendMessage(jid, {
-      text: '💔 Você está solteiro(a)!\n_Use *!casar @alguem* para encontrar o amor!_',
-    }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '💔 Você precisa estar em um relacionamento para se declarar!' }, { quoted: msg });
+    return;
+  }
+
+  const rawText = content.extendedTextMessage?.text || content.conversation || '';
+  const declaracao = rawText.replace(/^[!.,\/]declarar\s*/i, '').trim();
+
+  if (!declaracao) {
+    await sock.sendMessage(jid, { text: '✍️ Escreva sua declaração! Ex: *!declarar Você é o amor da minha vida!*' }, { quoted: msg });
     return;
   }
 
   const { rel } = found;
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+  const parcJid = jidNormalizedUser(rel.jidA === senderNorm ? rel.jidB : rel.jidA);
+  const tagSelf = `@${senderNorm.split('@')[0]}`;
+  const tagParc = `@${parcJid.split('@')[0]}`;
 
-  const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
+  await sock.sendMessage(jid, {
+    text: `📜 *DECLARAÇÃO DE AMOR* 📜\n\nDe ${tagSelf} para ${tagParc}:\n\n"${declaracao}"\n\n💖✨`,
+    mentions: [senderNorm, parcJid],
+  }, { quoted: msg });
+}
+
+async function handleCiumento(sock, msg, jid, senderJid, relacionamentos) {
+  const senderNorm = jidNormalizedUser(senderJid);
+  const ciumentosMap = rel().ciumentosMap;
+  const found = findRelByJid(jid, senderNorm, relacionamentos);
+
+  if (!found) {
+    await sock.sendMessage(jid, { text: '💔 Você precisa estar em um relacionamento para usar !ciumento!' }, { quoted: msg });
+    return;
+  }
+
+  const now = Date.now();
+  if (ciumentosMap.has(senderNorm) && now < ciumentosMap.get(senderNorm)) {
+    const mins = Math.ceil((ciumentosMap.get(senderNorm) - now) / 60000);
+    await sock.sendMessage(jid, { text: `⏰ Controle essa ciúme! Aguarde ${mins} minuto(s) para cobrar seu par de novo.` }, { quoted: msg });
+    return;
+  }
+
+  ciumentosMap.set(senderNorm, now + 60 * 60 * 1000);
+
+  const { rel } = found;
+  const parcJid = jidNormalizedUser(rel.jidA === senderNorm ? rel.jidB : rel.jidA);
+  const tagSelf = `@${senderNorm.split('@')[0]}`;
+  const tagParc = `@${parcJid.split('@')[0]}`;
 
   const frases = [
-    `💕 O par de ${tagRemetente} é ${tagParceiro}! Que casal lindo! 😍`,
-    `❤️ ${tagRemetente}, você está ${rel.tipo === 'namoro' ? 'namorando' : 'casado(a) com'} ${tagParceiro}! Cuida bem, hein!`,
-    `😍 O amor de ${tagRemetente} é ${tagParceiro}! Trata com carinho! ✨`,
-    `💑 ${tagParceiro} é seu(ua) ${rel.tipo === 'namoro' ? 'namorado(a)' : 'cônjuge'}, ${tagRemetente}! Não esquece não!`,
+    `👀 ${tagSelf} está de olho em você, ${tagParc}! Quem é essa pessoa que curtiu sua foto? 🤨`,
+    `📱 ${tagSelf} exige ver seu WhatsApp AGORA, ${tagParc}! Não tenta disfarçar! 😤`,
+    `🔪 ${tagSelf} ativou o modo detetive! Com quem você estava conversando, ${tagParc}? 🧐`,
   ];
-
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
 
   await sock.sendMessage(jid, {
     text: frases[Math.floor(Math.random() * frases.length)],
-    mentions: listaMentions,
-  }, { quoted: msg });
-}
-// !xpduplo
-async function handleXpDobro(sock, msg, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
-
-  if (!found) {
-    await sock.sendMessage(jid, { text: '💔 Você precisa estar num relacionamento!' }, { quoted: msg });
-    return;
-  }
-
-  const { key, rel } = found;
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
-
-  if (temXpBonus(key)) {
-    const restante = getXpBonus().get(key).expiry - Date.now();
-    await sock.sendMessage(jid, {
-      text: `⏰ O XP Duplo já está ativo! Expira em *${formatarTempo(restante)}*.`,
-    }, { quoted: msg });
-    return;
-  }
-
-  let xpTotalCasal = 0;
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
-    xpTotalCasal = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
-  } catch (err) {
-    console.error('⚠️ Erro ao ler XP para bônus:', err.message);
-    xpTotalCasal = getXpCasais().get(key) || 0;
-  }
-
-  if (xpTotalCasal < 30) {
-    await sock.sendMessage(jid, {
-      text: `❌ Você precisa de pelo menos *30 XP* para ativar o XP Duplo!\n_Vocês têm: *${xpTotalCasal} XP*_`,
-    }, { quoted: msg });
-    return;
-  }
-
-  const novoXp = xpTotalCasal - 30;
-  try {
-    await Usuario.updateMany(
-      { idWhatsApp: { $in: [jidANormalizado, jidBNormalizado].filter(Boolean) } },
-      { $inc: { xpCasal: -15 } }
-    );
-  } catch (e) {
-    console.error('⚠️ Erro ao cobrar XP do bônus:', e.message);
-  }
-
-  getXpCasais().set(key, novoXp);
-  getXpBonus().set(key, { ativo: true, expiry: Date.now() + 2 * 60 * 60 * 1000 });
-
-  const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
-
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
-
-  await sock.sendMessage(jid, {
-    text:
-      `🎯 *XP DUPLO ATIVADO!*\n\n` +
-      `${tagRemetente} ativou o XP duplo para o casal com ${tagParceiro}!\n\n` +
-      `💸 *-30 XP* (custo) | Restante: *${novoXp} XP*\n` +
-      `⏰ Dura *2 horas*! Use todos os comandos diários agora!`,
-    mentions: listaMentions,
+    mentions: [senderNorm, parcJid],
   }, { quoted: msg });
 }
 
-// !aniversariocasal
-async function handleAniversarioCasal(sock, msg, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+async function handleStatu(sock, msg, jid, senderJid, relacionamentos) {
+  const senderNorm = jidNormalizedUser(senderJid);
+  const found = findRelByJid(jid, senderNorm, relacionamentos);
 
   if (!found) {
-    await sock.sendMessage(jid, { text: '💔 Você não está num relacionamento!' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '💔 Você está solteiro(a)! Use *!casar @alguem* para mudar isso.' }, { quoted: msg });
     return;
   }
 
-  const { key, rel } = found;
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+  const { key, rel: r } = found;
+  const xpCasais = rel().xpCasais;
+  const xp = xpCasais.get(key) || 0;
+  const tempoMs = Date.now() - r.desde;
+  const tempoStr = formatarTempo(tempoMs);
 
-  const desde   = rel.desde || Date.now();
-  const dias    = Math.floor((Date.now() - desde) / (1000 * 60 * 60 * 24));
-  const semanas = Math.floor(dias / 7);
-  const meses   = Math.floor(dias / 30);
-  const anos    = Math.floor(dias / 365);
+  const parcJid = jidNormalizedUser(r.jidA === senderNorm ? r.jidB : r.jidA);
+  const tagParc = `@${parcJid.split('@')[0]}`;
+  const tipoEmoji = r.tipo === 'namoro' ? '💕' : '💍';
 
-  const marcos = [];
-  if (anos >= 1)    marcos.push(`🎂 *${anos} ano(s) juntos!* Isso é incrível!`);
-  if (meses >= 1)   marcos.push(`📅 *${meses} mês(es) juntos!*`);
-  if (semanas >= 1) marcos.push(`🗓️ *${semanas} semana(s) juntos!*`);
+  const nivelInfo = getNivelInfo ? getNivelInfo(xp) : { nivel: 1, titulo: 'Casal Iniciante' };
 
-  const ganhoTotal = 20;
-  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente ganhoTotal ──
-  const metadeA = Math.ceil(ganhoTotal / 2);
-  const metadeB = Math.floor(ganhoTotal / 2);
-
-  let xpAtual = 0;
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
-    xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + ganhoTotal;
-
-    const updates = [];
-    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
-    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
-    await Promise.all(updates);
-  } catch (err) {
-    console.error('⚠️ Erro ao persistir XP de aniversário:', err.message);
-    xpAtual = (getXpCasais().get(key) || 0) + ganhoTotal;
-  }
-
-  getXpCasais().set(key, xpAtual);
-
-  const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
-
-  let texto =
-    `🎉 *ANIVERSÁRIO DO CASAL* 🎉\n\n` +
-    `💑 ${tagRemetente} e ${tagParceiro}\n\n` +
-    `📅 *${dias} dia(s)* juntos!\n`;
-  if (marcos.length > 0) texto += marcos.join('\n') + '\n';
-  texto +=
-    `\n💰 *+${ganhoTotal} XP* de celebração! Total: *${xpAtual} XP*\n\n` +
-    `_Parabéns pelo tempo juntos! 🥂_`;
-
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
+  const texto =
+    `${tipoEmoji} *STATUS DO RELACIONAMENTO* ${tipoEmoji}\n\n` +
+    `👤 *Parceiro(a):* ${tagParc}\n` +
+    `📅 *Juntos há:* ${tempoStr}\n` +
+    `✨ *XP do Casal:* ${xp} XP\n` +
+    `🏅 *Nível do Casal:* Nível ${nivelInfo.nivel} (${nivelInfo.titulo})\n\n` +
+    `💪 _Continuem trocando carinhos diariamente para subir de nível!_`;
 
   await sock.sendMessage(jid, {
     text: texto,
-    mentions: listaMentions,
+    mentions: [senderNorm, parcJid],
   }, { quoted: msg });
 }
 
-// !duelodecasais
-async function handleDueloDeCasais(sock, msg, content, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-
-  const foundA = findRelByJid(jid, senderJidNormalizado, relacionamentos);
-  if (!foundA) {
-    await sock.sendMessage(jid, { text: '💔 Você precisa estar num relacionamento para duelar!' }, { quoted: msg });
-    return;
-  }
-
-  const rawMentioned =
-    msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
-    content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-
-  if (!rawMentioned) {
-    await sock.sendMessage(jid, {
-      text: '⚠️ Marque alguém do outro casal para duelar!\nExemplo: *!duelodecasais @fulano*',
-    }, { quoted: msg });
-    return;
-  }
-
-  const oponenteJidNormalizado = jidNormalizedUser(rawMentioned);
-  const foundB = findRelByJid(jid, oponenteJidNormalizado, relacionamentos);
-
-  if (!foundB) {
-    await sock.sendMessage(jid, {
-      text: `❌ @${oponenteJidNormalizado.split('@')[0]} não está num relacionamento! Só pode duelar casal contra casal!`,
-      mentions: [oponenteJidNormalizado],
-    }, { quoted: msg });
-    return;
-  }
-
-  if (foundA.key === foundB.key) {
-    await sock.sendMessage(jid, { text: '😂 Você não pode duelar com o próprio par!' }, { quoted: msg });
-    return;
-  }
-
-  const jidA1 = foundA.rel.jidA ? jidNormalizedUser(foundA.rel.jidA) : null;
-  const jidA2 = foundA.rel.jidB ? jidNormalizedUser(foundA.rel.jidB) : null;
-  const jidB1 = foundB.rel.jidA ? jidNormalizedUser(foundB.rel.jidA) : null;
-  const jidB2 = foundB.rel.jidB ? jidNormalizedUser(foundB.rel.jidB) : null;
-
-  let xpA = 0;
-  let xpB = 0;
-
-  try {
-    const [userA1, userA2, userB1, userB2] = await Promise.all([
-      jidA1 ? Usuario.findOne({ idWhatsApp: jidA1 }).select('xpCasal').lean() : null,
-      jidA2 ? Usuario.findOne({ idWhatsApp: jidA2 }).select('xpCasal').lean() : null,
-      jidB1 ? Usuario.findOne({ idWhatsApp: jidB1 }).select('xpCasal').lean() : null,
-      jidB2 ? Usuario.findOne({ idWhatsApp: jidB2 }).select('xpCasal').lean() : null,
-    ]);
-
-    xpA = (userA1?.xpCasal || 0) + (userA2?.xpCasal || 0);
-    xpB = (userB1?.xpCasal || 0) + (userB2?.xpCasal || 0);
-  } catch (err) {
-    console.error('⚠️ [Duelo] Erro ao buscar XP do banco:', err.message);
-    xpA = getXpCasais().get(foundA.key) || 0;
-    xpB = getXpCasais().get(foundB.key) || 0;
-  }
-
-  const tagA1 = jidA1 ? `@${jidA1.split('@')[0]}` : foundA.rel.nomeA;
-  const tagA2 = jidA2 ? `@${jidA2.split('@')[0]}` : foundA.rel.nomeB;
-  const tagB1 = jidB1 ? `@${jidB1.split('@')[0]}` : foundB.rel.nomeA;
-  const tagB2 = jidB2 ? `@${jidB2.split('@')[0]}` : foundB.rel.nomeB;
-
-  const casal1Mencoes = `${tagA1} & ${tagA2}`;
-  const casal2Mencoes = `${tagB1} & ${tagB2}`;
-
-  const scoreA = xpA + Math.floor(Math.random() * 50);
-  const scoreB = xpB + Math.floor(Math.random() * 50);
-
-  let resultado = '';
-  const mudancasBanco = [];
-
-  if (scoreA > scoreB) {
-    const ganho = Math.min(20, Math.floor(xpB * 0.1)) || 5;
-    mudancasBanco.push(
-      Usuario.updateMany({ idWhatsApp: { $in: [jidA1, jidA2].filter(Boolean) } }, { $inc: { xpCasal: Math.ceil(ganho / 2) } }),
-      Usuario.updateMany({ idWhatsApp: { $in: [jidB1, jidB2].filter(Boolean) } }, { $inc: { xpCasal: -Math.ceil(ganho / 2) } })
-    );
-    getXpCasais().set(foundA.key, xpA + ganho);
-    getXpCasais().set(foundB.key, Math.max(0, xpB - ganho));
-    resultado =
-      `🏆 *${casal1Mencoes}* VENCEU o duelo!\n\n` +
-      `💰 *+${ganho} XP* para os campeões!\n` +
-      `💔 *-${ganho} XP* para *${casal2Mencoes}*!\n\n` +
-      `_Que casal mais forte! 💪_`;
-  } else if (scoreB > scoreA) {
-    const ganho = Math.min(20, Math.floor(xpA * 0.1)) || 5;
-    mudancasBanco.push(
-      Usuario.updateMany({ idWhatsApp: { $in: [jidB1, jidB2].filter(Boolean) } }, { $inc: { xpCasal: Math.ceil(ganho / 2) } }),
-      Usuario.updateMany({ idWhatsApp: { $in: [jidA1, jidA2].filter(Boolean) } }, { $inc: { xpCasal: -Math.ceil(ganho / 2) } })
-    );
-    getXpCasais().set(foundB.key, xpB + ganho);
-    getXpCasais().set(foundA.key, Math.max(0, xpA - ganho));
-    resultado =
-      `🏆 *${casal2Mencoes}* VENCEU o duelo!\n\n` +
-      `💰 *+${ganho} XP* para os campeões!\n` +
-      `💔 *-${ganho} XP* para *${casal1Mencoes}*!\n\n` +
-      `_Que reviravolta! 😱_`;
-  } else {
-    // ── Empate: cada casal ganha +3 no total, dividido entre os dois membros ──
-    const ganhoEmpate = 3;
-    const metadeA1 = Math.ceil(ganhoEmpate / 2);
-    const metadeA2 = Math.floor(ganhoEmpate / 2);
-
-    if (jidA1) mudancasBanco.push(Usuario.updateOne({ idWhatsApp: jidA1 }, { $inc: { xpCasal: metadeA1 } }));
-    if (jidA2) mudancasBanco.push(Usuario.updateOne({ idWhatsApp: jidA2 }, { $inc: { xpCasal: metadeA2 } }));
-    if (jidB1) mudancasBanco.push(Usuario.updateOne({ idWhatsApp: jidB1 }, { $inc: { xpCasal: metadeA1 } }));
-    if (jidB2) mudancasBanco.push(Usuario.updateOne({ idWhatsApp: jidB2 }, { $inc: { xpCasal: metadeA2 } }));
-
-    getXpCasais().set(foundA.key, xpA + ganhoEmpate);
-    getXpCasais().set(foundB.key, xpB + ganhoEmpate);
-    resultado = `🤝 *EMPATE!* Ambos os casais são igualmente incríveis!\n\n💰 *+${ganhoEmpate} XP* para ambos!`;
-  }
-
-  if (mudancasBanco.length > 0) {
-    await Promise.all(mudancasBanco).catch(e => console.error('⚠️ [Duelo] Erro ao salvar XP no banco:', e.message));
-  }
-
-  const listaMentions = [jidA1, jidA2, jidB1, jidB2].filter(Boolean);
-
-  await sock.sendMessage(jid, {
-    text:
-      `⚔️ *DUELO DE CASAIS* ⚔️\n\n` +
-      `💑 *${casal1Mencoes}* (${xpA} XP)\n` +
-      `VS\n` +
-      `💑 *${casal2Mencoes}* (${xpB} XP)\n\n` +
-      `─────────────\n${resultado}`,
-    mentions: listaMentions,
-  }, { quoted: msg });
-}
-
-// !rankcasais
-async function handleRankCasais(sock, msg, jid, relacionamentos) {
-  if (!relacionamentos || relacionamentos.size === 0) {
-    await sock.sendMessage(jid, {
-      text: '📭 Nenhum casal cadastrado ainda!\n_Use *!casar @alguem* pra começar!_',
-    }, { quoted: msg });
-    return;
-  }
-
-  let membrosDoGrupo = null;
-  try {
-    const meta = await sock.groupMetadata(jid);
-    membrosDoGrupo = new Set(meta.participants.map(p => jidNormalizedUser(p.id)));
-  } catch {}
-
-  const casaisFiltrados = [...relacionamentos.entries()].filter(([, rel]) => {
-    if (!membrosDoGrupo) return true;
-    const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-    const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-    return membrosDoGrupo.has(jidANormalizado) && membrosDoGrupo.has(jidBNormalizado);
-  });
-
-  const lista = await Promise.all(
-    casaisFiltrados.map(async ([, rel]) => {
-      const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-      const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-
-      let xpTotalCasal = 0;
-      try {
-        const [userA, userB] = await Promise.all([
-          jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-          jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-        ]);
-        xpTotalCasal = (userA?.xpCasal || 0) + (userB?.xpCasal || 0);
-      } catch (err) {
-        console.error('⚠️ [handleRankCasais] Erro ao buscar XP do banco:', err.message);
-        xpTotalCasal = getXpCasais().get(rel.key || '') || 0;
-      }
-
-      const diasJuntos = rel.desde
-        ? Math.floor((Date.now() - rel.desde) / (1000 * 60 * 60 * 24))
-        : 0;
-
-      return { ...rel, xp: xpTotalCasal, diasJuntos, score: xpTotalCasal + diasJuntos * 2 };
-    })
-  );
-
-  lista.sort((a, b) => b.score - a.score);
-  const top10 = lista.slice(0, 10);
-
-  if (top10.length === 0) {
-    await sock.sendMessage(jid, {
-      text: '📭 Nenhum casal ativo neste grupo no momento!',
-    }, { quoted: msg });
-    return;
-  }
-
-  const medals  = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-  const mentions = [];
-  let texto = `🏆 *RANKING DOS CASAIS* 🏆\n\n`;
-
-  top10.forEach((c, i) => {
-    const tipoEmoji = c.tipo === 'namoro' ? '💝' : '💍';
-    const jidANormalizado = c.jidA ? jidNormalizedUser(c.jidA) : null;
-    const jidBNormalizado = c.jidB ? jidNormalizedUser(c.jidB) : null;
-    const tagA = jidANormalizado ? `@${jidANormalizado.split('@')[0]}` : c.nomeA;
-    const tagB = jidBNormalizado ? `@${jidBNormalizado.split('@')[0]}` : c.nomeB;
-    const barraXp  = '⭐'.repeat(Math.min(Math.floor(c.xp / 10), 5)) || '▫️';
-    const diasLabel = c.diasJuntos === 1 ? 'dia' : 'dias';
-
-    if (jidANormalizado) mentions.push(jidANormalizado);
-    if (jidBNormalizado) mentions.push(jidBNormalizado);
-
-    texto +=
-      `${medals[i]} ${tipoEmoji} ${tagA} 💕 ${tagB}\n` +
-      `${barraXp} *${c.xp} XP* · 📅 *${c.diasJuntos} ${diasLabel}* · 🏅 *${c.score} pts*\n\n`;
-  });
-
-  texto += `_Score = XP + (dias juntos × 2)_\n_Use *!status* pra ver o status completo!_`;
-
-  await sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
-}
-
-// !desafiocasal
-async function handleDesafioCasal(sock, msg, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+async function handleAniversarioCasal(sock, msg, jid, senderJid, relacionamentos) {
+  const senderNorm = jidNormalizedUser(senderJid);
+  const found = findRelByJid(jid, senderNorm, relacionamentos);
 
   if (!found) {
-    await sock.sendMessage(jid, { text: '❌ Vocês não são um casal ainda, seu(ua) solteiro(a)! 😭' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '💔 Você não está em nenhum relacionamento!' }, { quoted: msg });
     return;
   }
 
-  const { key, rel } = found;
+  const { rel: r } = found;
+  const dataInicio = new Date(r.desde).toLocaleDateString('pt-BR');
+  const tempoMs = Date.now() - r.desde;
+  const tempoStr = formatarTempo(tempoMs);
 
-  if (getBloqueados().has(senderJidNormalizado)) {
-    await sock.sendMessage(jid, { text: '⛔ Você está de castigo! Sem comando de desafio! 🚫' }, { quoted: msg });
-    return;
-  }
-
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
-
-  const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
-
-  const desafios = [
-    `💑 *DESAFIO: Cumprimento de 5 palavras* — ${tagRemetente} e ${tagParceiro} têm que dar um elogio de ATÉ 5 palavras pro outro! +15 XP 🎁`,
-    `🤐 *DESAFIO: Silêncio Apaixonado* — ${tagRemetente} e ${tagParceiro}, vocês têm 30 min SEM falar sobre NADA chato! +20 XP 📱`,
-    `🎵 *DESAFIO: Música do Casal* — Escolham uma música que define o relacionamento de vocês! +25 XP 🎧`,
-    `📸 *DESAFIO: Selfie no Espelho* — Tirem uma selfie juntos (ou descrevam)! +15 XP 🤳`,
-    `💬 *DESAFIO: Piada de Casal* — Um conta uma piada pro outro. Se o outro rir, +18 XP 😂`,
-    `🎭 *DESAFIO: Imitar o(a) Parceiro(a)* — Vocês IMITAM um ao outro exagerando! +12 XP 🤣`,
-    `🏃 *DESAFIO: Corrida de Abraços* — Quem abraçar mais forte em 30 segundos ganha! +17 XP 🤗`,
-  ];
-
-  const desafio  = desafios[Math.floor(Math.random() * desafios.length)];
-  const xpGanho  = parseInt(desafio.match(/\+(\d+)\s*XP/)?.[1] || '10');
-  const temBonus = temXpBonus(key);
-  const xpFinal  = temBonus ? xpGanho * 2 : xpGanho;
-
-  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente xpFinal ──
-  const metadeA = Math.ceil(xpFinal / 2);
-  const metadeB = Math.floor(xpFinal / 2);
-
-  let xpAtual = 0;
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
-    xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + xpFinal;
-
-    const updates = [];
-    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
-    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
-    await Promise.all(updates);
-  } catch (err) {
-    console.error('⚠️ [DesafioCasal] Erro ao sincronizar XP com o Banco:', err.message);
-    xpAtual = (getXpCasais().get(key) || 0) + xpFinal;
-  }
-
-  getXpCasais().set(key, xpAtual);
-  if (temBonus) getXpBonus().delete(key);
-
-  const extras = temBonus ? '\n\n🚀 *BÔNUS APLICADO!* Vocês ganharam XP DOBRADO nesse desafio! 🎉' : '';
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
+  const parcJid = jidNormalizedUser(r.jidA === senderNorm ? r.jidB : r.jidA);
+  const tagParc = `@${parcJid.split('@')[0]}`;
 
   await sock.sendMessage(jid, {
-    text: `${desafio}${extras}\n\n💰 *+${xpFinal} XP*! Total do casal: *${xpAtual} XP*`,
-    mentions: listaMentions,
+    text: `🎉 *ANIVERSÁRIO DO CASAL* 🎉\n\n` +
+          `👩‍❤️‍👨 Você e ${tagParc} começaram a namorar/casar em *${dataInicio}*!\n` +
+          `⏳ Vocês já estão juntos há *${tempoStr}*! Parabéns ao casal! 🥳🥂`,
+    mentions: [senderNorm, parcJid],
   }, { quoted: msg });
 }
 
-// !rankingcasais / !competicaocasais
-async function handleCompetiacaoCasais(sock, msg, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+async function handleMeuPar(sock, msg, jid, senderJid, relacionamentos) {
+  const senderNorm = jidNormalizedUser(senderJid);
+  const found = findRelByJid(jid, senderNorm, relacionamentos);
 
   if (!found) {
-    await sock.sendMessage(jid, { text: '❌ Vocês não são um casal! 😭' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '💔 Você não tem um par no momento!' }, { quoted: msg });
+    return;
+  }
+
+  const { rel: r } = found;
+  const parcJid = jidNormalizedUser(r.jidA === senderNorm ? r.jidB : r.jidA);
+  const tagParc = `@${parcJid.split('@')[0]}`;
+  const tipo = r.tipo === 'namoro' ? 'namorado(a)' : 'esposo(a)';
+
+  await sock.sendMessage(jid, {
+    text: `💖 Seu(ua) ${tipo} é ${tagParc}!`,
+    mentions: [parcJid],
+  }, { quoted: msg });
+}
+
+async function handleXpDobro(sock, msg, jid, senderJid, relacionamentos) {
+  const senderNorm = jidNormalizedUser(senderJid);
+  const found = findRelByJid(jid, senderNorm, relacionamentos);
+
+  if (!found) {
+    await sock.sendMessage(jid, { text: '💔 Você precisa estar em um relacionamento para ativar o XP Dobro!' }, { quoted: msg });
     return;
   }
 
   const { key } = found;
+  const xpBonus = rel().xpBonus;
 
-  if (relacionamentos.size === 0) {
-    await sock.sendMessage(jid, { text: '📭 Nenhum casal cadastrado ainda!' }, { quoted: msg });
+  if (temXpBonus(key)) {
+    const bonus = xpBonus.get(key);
+    const restMins = Math.ceil((bonus.expiry - Date.now()) / 60000);
+    await sock.sendMessage(jid, { text: `⚡ O bônus de XP Dobro já está ATIVO por mais ${restMins} minuto(s)!` }, { quoted: msg });
     return;
   }
 
-  const casaisLista = [...relacionamentos.entries()].map(([k, r]) => ({
-    key: k,
-    nomeA: r.nomeA || 'Desconhecido',
-    nomeB: r.nomeB || 'Desconhecido',
-    jidA: r.jidA ? jidNormalizedUser(r.jidA) : null,
-    jidB: r.jidB ? jidNormalizedUser(r.jidB) : null,
-  }));
+  // Custo para ativar bônus: 200 moedas
+  const userDoc = await Usuario.findOne({ idWhatsApp: senderNorm }, { moedas: 1 }).lean();
+  if ((userDoc?.moedas || 0) < 200) {
+    await sock.sendMessage(jid, { text: '🪙 Você precisa de 200 moedas para ativar o XP Dobro por 1 hora!' }, { quoted: msg });
+    return;
+  }
 
-  const ranking = await Promise.all(
-    casaisLista.map(async (casal) => {
-      try {
-        const [uA, uB] = await Promise.all([
-          casal.jidA ? Usuario.findOne({ idWhatsApp: casal.jidA }).select('xpCasal').lean() : null,
-          casal.jidB ? Usuario.findOne({ idWhatsApp: casal.jidB }).select('xpCasal').lean() : null
-        ]);
-        return { ...casal, xp: (uA?.xpCasal || 0) + (uB?.xpCasal || 0) };
-      } catch {
-        return { ...casal, xp: getXpCasais().get(casal.key) || 0 };
-      }
-    })
-  );
+  await Usuario.updateOne({ idWhatsApp: senderNorm }, { $inc: { moedas: -200 } });
 
-  ranking.sort((a, b) => b.xp - a.xp);
+  xpBonus.set(key, { ativo: true, expiry: Date.now() + 60 * 60 * 1000 });
 
-  const dadosMeuCasal = ranking.find(r => r.key === key);
-  const xpMeuCasal = dadosMeuCasal ? dadosMeuCasal.xp : 0;
-  const nivel   = getNivelInfo(xpMeuCasal);
-  const posicao = ranking.findIndex(r => r.key === key) + 1;
-
-  const medals  = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
-  const mentions = [];
-
-  let texto = '💑 *COMPETIÇÃO ENTRE CASAIS*\n\n🏆 *RANKING DE XP:*\n';
-
-  ranking.slice(0, 5).forEach((r, i) => {
-    const tagA     = r.jidA ? `@${r.jidA.split('@')[0]}` : r.nomeA;
-    const tagB     = r.jidB ? `@${r.jidB.split('@')[0]}` : r.nomeB;
-    const destaque = r.key === key ? ' 👈' : '';
-    if (r.jidA) mentions.push(r.jidA);
-    if (r.jidB) mentions.push(r.jidB);
-    texto += `${medals[i]} ${tagA} 💑 ${tagB} — *${r.xp} XP*${destaque}\n`;
-  });
-
-  texto += `\n👤 *VOCÊ ESTÁ EM #${posicao}* (${xpMeuCasal} XP — ${nivel.nome})\n`;
-  texto += `\n🎯 *O ranking acompanha suas pontuações em tempo real!*`;
-
-  await sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
+  await sock.sendMessage(jid, {
+    text: '⚡ *XP DOBRO ATIVADO!* ⚡\n\nTodos os carinhos de vocês renderão o dobro de XP pela próxima *1 hora*! 🎉',
+  }, { quoted: msg });
 }
 
-// !surpresa
+async function handleDueloCasais(sock, msg, content, jid, senderJid, relacionamentos) {
+  const senderNorm = jidNormalizedUser(senderJid);
+  const foundA = findRelByJid(jid, senderNorm, relacionamentos);
+
+  if (!foundA) {
+    await sock.sendMessage(jid, { text: '💔 Você precisa estar em um relacionamento para desafiar outro casal!' }, { quoted: msg });
+    return;
+  }
+
+  const contextInfo = content.extendedTextMessage?.contextInfo;
+  const mentionedJid = contextInfo?.mentionedJid || [];
+
+  if (mentionedJid.length === 0) {
+    await sock.sendMessage(jid, { text: '⚔️ Marque alguém do casal adversário!\nEx: *!duelodecasais @adversario*' }, { quoted: msg });
+    return;
+  }
+
+  const oponenteJid = jidNormalizedUser(mentionedJid[0]);
+  const foundB = findRelByJid(jid, oponenteJid, relacionamentos);
+
+  if (!foundB) {
+    await sock.sendMessage(jid, { text: '💔 O adversário marcado não está em um relacionamento!' }, { quoted: msg });
+    return;
+  }
+
+  if (foundA.key === foundB.key) {
+    await sock.sendMessage(jid, { text: '🤔 Você não pode duelar contra o seu próprio par!' }, { quoted: msg });
+    return;
+  }
+
+  const xpCasais = rel().xpCasais;
+  const xpA = xpCasais.get(foundA.key) || 0;
+  const xpB = xpCasais.get(foundB.key) || 0;
+
+  let vencedor, perdedor;
+  if (xpA >= xpB) {
+    vencedor = foundA.rel;
+    perdedor = foundB.rel;
+  } else {
+    vencedor = foundB.rel;
+    perdedor = foundA.rel;
+  }
+
+  await sock.sendMessage(jid, {
+    text: `⚔️ *DUELO DE CASAIS* ⚔️\n\n` +
+          `🥊 *${foundA.rel.nomeA} & ${foundA.rel.nomeB}* (${xpA} XP)\n` +
+          `            VS\n` +
+          `🥊 *${foundB.rel.nomeA} & ${foundB.rel.nomeB}* (${xpB} XP)\n\n` +
+          `🏆 *VENCEDOR:* ${vencedor.nomeA} & ${vencedor.nomeB}! 🎉`,
+  }, { quoted: msg });
+}
+
 async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+  const senderNorm = jidNormalizedUser(senderJid);
+  const found = findRelByJid(jid, senderNorm, relacionamentos);
 
   if (!found) {
-    await sock.sendMessage(jid, { text: '❌ Você não tem parceiro pra surpreender! 😭' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '💔 Você precisa estar em um relacionamento para dar uma surpresa!' }, { quoted: msg });
     return;
   }
 
-  if (getBloqueados().has(senderJidNormalizado)) {
-    await sock.sendMessage(jid, { text: '⛔ Vocês estão de castigo! 🚫' }, { quoted: msg });
+  // Custo da surpresa: 50 moedas
+  const userDoc = await Usuario.findOne({ idWhatsApp: senderNorm }, { moedas: 1 }).lean();
+  if ((userDoc?.moedas || 0) < 50) {
+    await sock.sendMessage(jid, { text: '🪙 Você precisa de 50 moedas para fazer uma surpresa!' }, { quoted: msg });
     return;
   }
 
-  const { key, rel } = found;
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
-
-  const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
+  await Usuario.updateOne({ idWhatsApp: senderNorm }, { $inc: { moedas: -50 } });
 
   const surpresas = [
-    `🎈 *SURPRESA MEGA*: ${tagParceiro} recebeu uma SURPRESA MEGA de ${tagRemetente}! Só pode ser coisa boa! 😏 +25 XP!`,
-    `🎥 *SURPRESA CINEMATOGRÁFICA*: Uma super cena de romance foi preparada por ${tagRemetente} para ${tagParceiro}! Velas, pétalas e música! +30 XP! 💕`,
-    `🌟 *SURPRESA NOTURNA*: ${tagRemetente} planejou um piquenique na madrugada com ${tagParceiro}! Que romântico! +35 XP! 🌙`,
-    `🎀 *SURPRESA FESTA*: Tem festa secreta organizada por ${tagRemetente} para celebrar ${tagParceiro}! Romantismo puro! +28 XP! 🎉`,
-    `🐻 *SURPRESA CARINHO TOTAL*: ${tagRemetente} preparou massagem e banho de espuma relaxante para ${tagParceiro}! Carinho total! +32 XP! 💦`,
+    { text: '🎁 Preparou um picnic surpresa no parque!', xp: 15 },
+    { text: '🍫 Comprou uma caixa gigante de bombons finos!', xp: 20 },
+    { text: '🎟️ Comprou ingressos VIP para o show favorito de vocês!', xp: 25 },
+    { text: '🧸 Deu um urso de pelúcia gigante!', xp: 15 },
   ];
 
-  const surp    = surpresas[Math.floor(Math.random() * surpresas.length)];
-  const xpGanho = parseInt(surp.match(/\+(\d+)\s*XP/)?.[1] || '20');
+  const s = surpresas[Math.floor(Math.random() * surpresas.length)];
+  const { key, rel: r } = found;
+  const parcJid = jidNormalizedUser(r.jidA === senderNorm ? r.jidB : r.jidA);
+  const tagSelf = `@${senderNorm.split('@')[0]}`;
+  const tagParc = `@${parcJid.split('@')[0]}`;
 
-  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente xpGanho ──
-  const metadeA = Math.ceil(xpGanho / 2);
-  const metadeB = Math.floor(xpGanho / 2);
+  const xpCasais = rel().xpCasais;
+  const xpAtual = (xpCasais.get(key) || 0) + s.xp;
+  xpCasais.set(key, xpAtual);
 
-  let xpAtual = 0;
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
-    xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + xpGanho;
+  const jidANorm = jidNormalizedUser(r.jidA);
+  const jidBNorm = jidNormalizedUser(r.jidB);
 
-    const updates = [];
-    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
-    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
-    await Promise.all(updates);
-  } catch (err) {
-    console.error('⚠️ [Surpresa] Erro ao salvar XP no banco:', err.message);
-    xpAtual = (getXpCasais().get(key) || 0) + xpGanho;
-  }
-
-  getXpCasais().set(key, xpAtual);
-
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
+  Usuario.updateMany(
+    { idWhatsApp: { $in: [jidANorm, jidBNorm] } },
+    { $inc: { xpCasal: s.xp } }
+  ).catch(e => console.error('[handleSurpresa] Erro ao salvar XP no DB:', e.message));
 
   await sock.sendMessage(jid, {
-    text: surp + `\n\n💰 *+${xpGanho} XP*! Total do casal: *${xpAtual} XP*`,
-    mentions: listaMentions,
+    text: `🎉 *SURPRESA ROMÂNTICA!* 🎉\n\n${tagSelf} fez uma surpresa para ${tagParc}!\n${s.text}\n\n💖 *+${s.xp} XP para o casal!* (Total: ${xpAtual} XP)`,
+    mentions: [senderNorm, parcJid],
   }, { quoted: msg });
-}
-
-// !domingo
-async function handleDomingo(sock, msg, jid, author, senderJid, relacionamentos) {
-  const senderJidNormalizado = jidNormalizedUser(senderJid);
-
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
-  if (!found) {
-    await sock.sendMessage(jid, { text: '❌ Você está sozinho(a)! 😭' }, { quoted: msg });
-    return;
-  }
-
-  if (getBloqueados().has(senderJidNormalizado)) {
-    await sock.sendMessage(jid, { text: '⛔ Castigo! Sem fun! 🚫' }, { quoted: msg });
-    return;
-  }
-
-  const { key, rel } = found;
-  const jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
-  const jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-  const parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
-
-  const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
-  const tagParceiro  = parcJid ? `@${parcJid.split('@')[0]}` : (rel.nomeA === author ? rel.nomeB : rel.nomeA);
-
-  const domingos = [
-    `☕ *DOMINGO DE CAFÉ E SÉRIE*: ${tagRemetente} e ${tagParceiro} vão passar o domingo inteiro comendo e assistindo série juntos! +22 XP! 📺`,
-    `🏠 *DOMINGO DE LIMPEZA*: ${tagRemetente} e ${tagParceiro} limpam a casa juntos (com música alta claro!) e depois descansam! +18 XP! 🧹`,
-    `👨‍🍳 *DOMINGO DE COZINHA*: ${tagRemetente} preparou um almoço gourmet especial para ${tagParceiro}! Que romântico! +26 XP! 🍝`,
-    `🛏️ *DOMINGO DE PREGUIÇA*: ${tagRemetente} e ${tagParceiro} ficam a manhã toda jogados sem fazer nada! +20 XP! 😴`,
-    `🎮 *DOMINGO GAMER*: ${tagRemetente} e ${tagParceiro} jogam um jogo cooperativo juntos! Maratona gamer! +24 XP! 🎮`,
-  ];
-
-  const domingo = domingos[Math.floor(Math.random() * domingos.length)];
-  const xpGanho = parseInt(domingo.match(/\+(\d+)\s*XP/)?.[1] || '20');
-
-  // ── Divide o ganho entre os dois parceiros para que o total real do casal suba exatamente xpGanho ──
-  const metadeA = Math.ceil(xpGanho / 2);
-  const metadeB = Math.floor(xpGanho / 2);
-
-  let xpAtual = 0;
-  try {
-    const [userA, userB] = await Promise.all([
-      jidANormalizado ? Usuario.findOne({ idWhatsApp: jidANormalizado }).select('xpCasal').lean() : null,
-      jidBNormalizado ? Usuario.findOne({ idWhatsApp: jidBNormalizado }).select('xpCasal').lean() : null
-    ]);
-    xpAtual = (userA?.xpCasal || 0) + (userB?.xpCasal || 0) + xpGanho;
-
-    const updates = [];
-    if (jidANormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidANormalizado }, { $inc: { xpCasal: metadeA } }));
-    if (jidBNormalizado) updates.push(Usuario.updateOne({ idWhatsApp: jidBNormalizado }, { $inc: { xpCasal: metadeB } }));
-    await Promise.all(updates);
-  } catch (err) {
-    console.error('⚠️ [Domingo] Erro ao salvar XP no banco:', err.message);
-    xpAtual = (getXpCasais().get(key) || 0) + xpGanho;
-  }
-
-  getXpCasais().set(key, xpAtual);
-
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
-
-  await sock.sendMessage(jid, {
-    text: domingo + `\n\n💰 *+${xpGanho} XP*! Total do casal: *${xpAtual} XP*`,
-    mentions: listaMentions,
-  }, { quoted: msg });
-}
-
-// handleAbraco
-async function handleAbraco(sock, msg, jid, author, senderJid, relacionamentos) {
-  const abracos = [
-    'um abraço apertado 🤗',
-    'um abraço de urso 🐻',
-    'um abraço cheio de carinho 💞',
-    'um abraço que durou minutos ⏳',
-    'um abraço surpresa por trás 😄',
-  ];
-  const a = abracos[Math.floor(Math.random() * abracos.length)];
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'abraco', '🤗', `deu ${a}`, 3);
-}
-
-// handleFlores
-async function handleFlores(sock, msg, jid, author, senderJid, relacionamentos) {
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'flores', '🌹', 'enviou um buquê de rosas');
-}
-
-// handleDoces
-async function handleDoces(sock, msg, jid, author, senderJid, relacionamentos) {
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'doces', '🍬', 'mandou uma caixa de doces');
-}
-
-// handleCarta
-async function handleCarta(sock, msg, jid, author, senderJid, relacionamentos) {
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'carta', '💌', 'escreveu uma carta de amor');
-}
-
-// handleMimo
-async function handleMimo(sock, msg, jid, author, senderJid, relacionamentos) {
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'mimo', '🎁', 'fez um mimo especial');
-}
-
-// handleBeijo
-async function handleBeijo(sock, msg, jid, author, senderJid, relacionamentos) {
-  await handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 'beijo', '💋', 'deu um beijão');
 }
 
 module.exports = {
-  handlePresente,
-  handleJantar,
-  handleCinemaRel,
-  handleViajar,
-  handleSerenata,
-  handleDeclarar,
-  handleCiumento,
-  handleStatu,
-  handleMeuPar,
-  handleXpDobro,
-  handleAniversarioCasal,
-  handleDueloDeCasais,
-  handleRankCasais,
-  handleDesafioCasal,
-  handleSurpresa,
-  handleDomingo,
-  handleAbraco,
+  handleCasar,
+  handleNamorar,
+  handleCancelarPedido,
+  handleTerminar,
   handleFlores,
   handleDoces,
   handleCarta,
   handleMimo,
   handleBeijo,
+  handleRankCasais,
+  handleAbraco,
+  handlePresente,
+  handleJantar,
+  handleCinema,
+  handleViajar,
+  handleSerenata,
+  handleDeclarar,
+  handleCiumento,
+  handleStatu,
+  handleAniversarioCasal,
+  handleMeuPar,
+  handleXpDobro,
+  handleDueloCasais,
+  handleSurpresa,
 };

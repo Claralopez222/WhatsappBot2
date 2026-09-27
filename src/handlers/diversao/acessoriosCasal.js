@@ -2,7 +2,7 @@
 
 const path = require('path');
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { resolveUsuarioInfo } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 
 // Itens de casal que podem ser EQUIPADOS (cada um é seu próprio "slot")
 const ACESSORIOS_CASAL = {
@@ -15,24 +15,41 @@ const ACESSORIOS_CASAL = {
 };
 
 /**
+ * Verifica se o usuário possui o item no inventário (Mixed) ou em casalItens (Array).
+ */
+function verificarPossuiItem(userData, itemKey) {
+  if (!userData) return false;
+
+  // 1. Verifica no inventory (objeto ou Map)
+  const qtdInventory = userData.inventory?.get?.(itemKey) ?? userData.inventory?.[itemKey] ?? 0;
+  if (qtdInventory > 0) return true;
+
+  // 2. Verifica em casalItens (Array de itens de casal)
+  if (Array.isArray(userData.casalItens)) {
+    const emCasalItens = userData.casalItens.some(
+      (it) => it && (it.itemKey === itemKey || it.itemKey?.toLowerCase() === itemKey.toLowerCase())
+    );
+    if (emCasalItens) return true;
+  }
+
+  return false;
+}
+
+/**
  * Equipa ou desequipa um acessório de casal.
  * Retorna `true` se o comando foi tratado (item válido), ou `false`
- * se o itemKey não corresponde a nenhum acessório (deixa o roteador
- * seguir para outros handlers).
+ * se o itemKey não corresponde a nenhum acessório.
  */
 async function handleEquiparAcessorio(sock, msg, jid, senderJid, itemKey) {
   const item = ACESSORIOS_CASAL[itemKey];
   if (!item) return false; // não é um acessório de casal, ignora
 
-  // Mesma normalização usada em relacionamento.js — evita que o mesmo
-  // usuário acabe com dois documentos Usuario diferentes.
-  const senderJidNorm = jidNormalizedUser(senderJid);
-
   try {
-    const userData = await Usuario.findOne({ idWhatsApp: senderJidNorm }).lean();
+    const { resolvedJid, userData: userLean } = await resolveUsuarioInfo(senderJid, sock);
+    const targetJid = userLean?.idWhatsApp || resolvedJid || senderJid;
 
-    // ── Verifica se o usuário possui o item no inventário ──
-    const possui = (userData?.inventory?.[itemKey] || 0) > 0;
+    // ── Verifica se o usuário possui o item no inventário / casalItens ──
+    const possui = verificarPossuiItem(userLean, itemKey);
     if (!possui) {
       await sock.sendMessage(jid, {
         text:
@@ -43,11 +60,11 @@ async function handleEquiparAcessorio(sock, msg, jid, senderJid, itemKey) {
     }
 
     // ── Alterna o estado de equipado ──
-    const equipadoAtual = userData?.acessoriosCasal?.[itemKey] || false;
+    const equipadoAtual = userLean?.acessoriosCasal?.get?.(itemKey) ?? userLean?.acessoriosCasal?.[itemKey] ?? false;
     const novoEstado = !equipadoAtual;
 
     await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJidNorm },
+      { idWhatsApp: targetJid },
       { $set: { [`acessoriosCasal.${itemKey}`]: novoEstado } },
       { upsert: true }
     );

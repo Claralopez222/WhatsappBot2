@@ -1,8 +1,7 @@
-'use strict';
-
 const path          = require('path');
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 const { prepareDailyMissionState } = require('./missoes');
 
@@ -72,12 +71,15 @@ const petCache = {
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 /**
- * Extrai o ID do usuário da mensagem (grupo ou privado).
+ * Extrai e resolve o ID do usuário para a mesma carteira do grupo.
  * @param {object} msg
- * @returns {string}
+ * @param {string} [idGrupo]
+ * @returns {Promise<string|null>}
  */
-function getUserId(msg) {
-  return msg.key.participant || msg.key.remoteJid;
+async function getUserId(msg, idGrupo) {
+  const raw = msg?.key?.participant || msg?.key?.remoteJid;
+  if (!raw) return null;
+  return resolverJidCarteira(raw, idGrupo);
 }
 
 /**
@@ -91,7 +93,7 @@ function reply(sock, jid, msg, text) {
   return sock.sendMessage(jid, { text }, { quoted: msg });
 }
 
-// Mapa de cooldowns isolado (sem ficar pendurado na função)
+// Mapa de cooldowns isolado
 const _cooldownMap = new Map();
 
 /**
@@ -106,6 +108,15 @@ function checkCooldown(userId, cmd, ms) {
   const last = _cooldownMap.get(key) ?? 0;
   const diff = Date.now() - last;
   if (diff < ms) return ms - diff;
+
+  // Limpeza de entradas velhas (> 2h) se o Map crescer muito
+  if (_cooldownMap.size > 500) {
+    const agora = Date.now();
+    for (const [k, ts] of _cooldownMap.entries()) {
+      if (agora - ts > 2 * 60 * 60 * 1000) _cooldownMap.delete(k);
+    }
+  }
+
   _cooldownMap.set(key, Date.now());
   return 0;
 }
@@ -272,7 +283,7 @@ const comTimestamp = (pet) => ({
  * Falha se o usuário já tiver um pet ou se não houver spawn ativo.
  */
 async function handleCapturarPet(sock, msg, jid) {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
   if (!userId) return;
 
   const spawn = spawnedPets.get(jid);
@@ -362,7 +373,7 @@ async function handleCapturarPet(sock, msg, jid) {
  * Aumenta fullness (+30) e happiness (+10).
  */
 async function handleAlimentarPet(sock, msg, jid) {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
   if (!userId) return;
 
   const espera = checkCooldown(`${userId}:${jid}`, 'alimentar', CONFIG.COOLDOWN_ALIMENTAR);
@@ -394,11 +405,11 @@ async function handleAlimentarPet(sock, msg, jid) {
     happiness: clamp(pet.happiness + 10),
   });
 
-  let carteiraAtualizada;
+  let userComComida;
   try {
     await prepareDailyMissionState(userId);
     // Consome comida do inventário global (Usuario) e salva pet na CarteiraGrupo
-    const userComComida = await Usuario.findOneAndUpdate(
+    userComComida = await Usuario.findOneAndUpdate(
       { idWhatsApp: userId, 'inventory.comida': { $gt: 0 } },
       { $inc: { 'inventory.comida': -1, 'dailyMissions.progress.pet10': 1 } },
       { new: true, upsert: false }
@@ -408,12 +419,11 @@ async function handleAlimentarPet(sock, msg, jid) {
         '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.'
       );
     }
-    carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
+    await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: userId, idGrupo: jid },
       { $set: { pet: petAtualizado } },
       { new: true }
     );
-    const qtdRestante = userComComida.inventory?.get?.('comida') ?? userComComida.inventory?.comida ?? 0;
   } catch (err) {
     console.error('[alimentar] Erro ao atualizar:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao alimentar o pet. Tente novamente!');
@@ -421,8 +431,9 @@ async function handleAlimentarPet(sock, msg, jid) {
 
   petCache.set(`${userId}:${jid}`, petAtualizado);
 
-  const userFinal = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
-  const qtdRestante = userFinal?.inventory?.get?.('comida') ?? userFinal?.inventory?.comida ?? 0;
+  const invMap = userComComida.inventory;
+  const qtdRestante = invMap instanceof Map ? (invMap.get('comida') ?? 0) : (invMap?.comida ?? 0);
+
   const aviso = qtdRestante === 0
     ? '\n\n⚠️ _Você ficou sem comida! Compre mais na *!loja*._'
     : qtdRestante <= 2
@@ -445,7 +456,7 @@ async function handleAlimentarPet(sock, msg, jid) {
  * mas consumindo energia e fome.
  */
 async function handleBrincarPet(sock, msg, jid) {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
   if (!userId) return;
 
   const espera = checkCooldown(`${userId}:${jid}`, 'brincar', CONFIG.COOLDOWN_BRINCAR);
@@ -564,7 +575,7 @@ function buildXpBar(xpAtual, xpTotal, tamanho = 10) {
  * Usa um remédio do inventário para recuperar energia (+50) e felicidade (+20) do pet.
  */
 async function handleCurarPet(sock, msg, jid) {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
   if (!userId) return;
 
   const espera = checkCooldown(`${userId}:${jid}`, 'curar', CONFIG.COOLDOWN_CURAR);
@@ -653,7 +664,7 @@ async function handleCurarPet(sock, msg, jid) {
 
 // !renomearpet / !nomearpet <nome>
 async function handleRenomearPet(sock, msg, jid, caption) {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
   if (!userId) return;
 
   const novoNome = caption
@@ -839,7 +850,7 @@ async function handlePets(sock, msg, jid, caption = '') {
 
 // handleAbrigo — !abrigo deixar / !abrigo <nome> pegar
 async function handleAbrigo(sock, msg, jid, caption = '') {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
   if (!userId) return;
 
   const prefixMatch = caption.match(/^([!.,/])/);
@@ -1032,7 +1043,16 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     try {
       await savePet(userId, jid, petAdotado);
     } catch (err) {
-      // ...
+      console.error('[abrigo:pegar] Erro ao salvar pet adotado:', err);
+      // Rollback: restaura o pet no abrigo do dono original se falhar ao salvar no adotante
+      try {
+        await Usuario.findOneAndUpdate(
+          { idWhatsApp: donoOriginal },
+          { $set: { 'petShelter.isSheltered': true, 'petShelter.shelteredPet': petAdotado } }
+        );
+      } catch (rbErr) {
+        console.error('[abrigo:pegar] Erro no rollback:', rbErr);
+      }
       return reply(sock, jid, msg, '❌ Erro interno ao adotar o pet. Tente novamente!');
     }
 
@@ -1325,10 +1345,12 @@ function initPetScheduler(sock) {
   // (em vez de exatamente o intervalo completo, pois o bot pode reiniciar no meio)
   const CHECK_INTERVAL = 5 * 60 * 1000; // verifica a cada 5min
 
+  if (initPetScheduler._timer) clearInterval(initPetScheduler._timer);
+
   // Primeira verificação após 1 minuto do boot
   setTimeout(() => {
     cicloSpawn();
-    setInterval(cicloSpawn, CHECK_INTERVAL);
+    initPetScheduler._timer = setInterval(cicloSpawn, CHECK_INTERVAL);
   }, 60 * 1000);
 
   console.log(`[PetScheduler] Iniciado. Intervalo de spawn: ${INTERVALO_MS / 60000}min.`);
@@ -1336,7 +1358,7 @@ function initPetScheduler(sock) {
 
 // !statuspet
 async function handleStatusPet(sock, msg, jid, caption = '') {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
   if (!userId) return;
 
   const prefixMatch = caption?.match(/^([!.,/])/);

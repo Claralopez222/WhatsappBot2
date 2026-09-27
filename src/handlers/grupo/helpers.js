@@ -170,7 +170,6 @@ function getMutedSet(groupJid) {
 module.exports = {
   bemVindoGroups,
   setBemVindo,
-  mutedUsers,
 
   getGroupMetadataCached,
   isAdmin,

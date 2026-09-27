@@ -1,6 +1,7 @@
 'use strict';
 
-const CarteiraGrupo = require('../../../models/CarteiraGrupo');
+const path = require('path');
+const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
 
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
@@ -20,20 +21,17 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
   }
 
   try {
-    // 1. Busca a lista de membros que realmente estão no grupo agora
     const metadata = await sock.groupMetadata(jid);
     const membrosAtuais = new Set(metadata.participants.map(p => p.id));
 
-    // 2. Busca uma amostragem maior no banco para garantir que, filtrando os banidos, ainda sobrem 10
     const candidatos = await CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
       .sort({ gold: -1 })
-      .limit(100) // Puxa até 100 jogadores ativos localmente
+      .limit(100)
       .lean();
 
-    // 3. Filtra mantendo apenas quem ainda está presente no chat
     const top = candidatos
       .filter(u => membrosAtuais.has(u.idWhatsApp))
-      .slice(0, 10); // Mantém o Top 10 real e ativo
+      .slice(0, 10);
 
     if (!top?.length) {
       await sock.sendMessage(jid, {
@@ -52,7 +50,6 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
       const numero = u.idWhatsApp.split('@')[0].split(':')[0];
       const medal  = MEDALS[i];
 
-      // Mudança para mencionar via @ em vez de injetar o nome de contato salvo
       return `${medal} @${numero}\n   ${bar} ${count} 💰 (${pct}%)`;
     }).join('\n\n');
 
@@ -71,7 +68,7 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
   } catch (err) {
     console.error('[handleRankGold] Erro:', err.message);
     await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao carregar o ranking. Tente novamente. ',
+      text: '⚠️ Erro ao carregar o ranking. Tente novamente.',
     }, { quoted: msg });
   }
 }

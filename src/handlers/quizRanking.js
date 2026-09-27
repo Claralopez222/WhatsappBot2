@@ -1,13 +1,4 @@
-'use strict';
-
-/**
- * Sistema de Premiação Semanal de Quiz
- * - Todo domingo às 15:30h
- * - Avisos: 1h antes, 10min antes, 5min antes
- * - Top 3 por grupo ganham gold
- * - quizPoints resetam após premiação
- */
-
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 
 const PREMIOS = [1000, 500, 350];
@@ -20,6 +11,7 @@ const MINUTO    = 30;
 // ─── Controle de avisos já enviados ──────────────────────────────────────────
 // Chave: `${anoSemana}` → Set de avisos já disparados ('60min','10min','5min','premio')
 const avisosEnviados = new Map();
+let activeTimeouts   = [];
 
 function getWeekKey() {
   const now = new Date();
@@ -30,8 +22,20 @@ function getWeekKey() {
 
 function getAvisosSet() {
   const key = getWeekKey();
+  // Limpeza de chaves antigas (> 2 semanas) para evitar vazamento de memória
+  if (avisosEnviados.size > 10) {
+    const keys = Array.from(avisosEnviados.keys());
+    for (let i = 0; i < keys.length - 2; i++) {
+      avisosEnviados.delete(keys[i]);
+    }
+  }
   if (!avisosEnviados.has(key)) avisosEnviados.set(key, new Set());
   return avisosEnviados.get(key);
+}
+
+function clearSchedulerTimeouts() {
+  for (const t of activeTimeouts) clearTimeout(t);
+  activeTimeouts = [];
 }
 
 // ─── Calcula quantos ms faltam para o próximo domingo 15:30 ──────────────────
@@ -49,8 +53,10 @@ function msParaProximoDomingo() {
 // ─── Premiação ────────────────────────────────────────────────────────────────
 async function executarPremiacao(sock, gruposAtivos) {
   console.log('[QuizRanking] Executando premiação semanal...');
+  const activeGroups = Array.isArray(gruposAtivos) ? gruposAtivos : [];
 
-  for (const groupJid of gruposAtivos) {
+  for (const groupJid of activeGroups) {
+    if (!groupJid) continue;
     try {
       const top3 = await CarteiraGrupo.find({ idGrupo: groupJid, quizPoints: { $gt: 0 } })
         .sort({ quizPoints: -1 })
@@ -66,7 +72,9 @@ async function executarPremiacao(sock, gruposAtivos) {
 
       for (let i = 0; i < top3.length; i++) {
         const u = top3[i];
+        if (!u || !u.idWhatsApp) continue;
         const gold = PREMIOS[i];
+        const jidNorm = jidNormalizedUser(u.idWhatsApp);
 
         await CarteiraGrupo.findOneAndUpdate(
           { idWhatsApp: u.idWhatsApp, idGrupo: groupJid },
@@ -74,8 +82,8 @@ async function executarPremiacao(sock, gruposAtivos) {
           { upsert: true }
         );
 
-        texto += `${MEDALS[i]} *@${u.idWhatsApp.split('@')[0]}* — ${u.quizPoints} pts → *+${gold} gold!*\n`;
-        mentions.push(u.idWhatsApp);
+        texto += `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → *+${gold} gold!*\n`;
+        mentions.push(jidNorm);
       }
 
       // Zera todos os outros do grupo também
@@ -104,7 +112,10 @@ async function enviarAviso(sock, gruposAtivos, tipo) {
     '5min':  `🚨 *ÚLTIMOS 5 MINUTOS!* A premiação começa já já!\n\n_Última chance de jogar *!quiz* e subir no ranking!_ 🏃`,
   };
 
-  for (const groupJid of gruposAtivos) {
+  const activeGroups = Array.isArray(gruposAtivos) ? gruposAtivos : [];
+
+  for (const groupJid of activeGroups) {
+    if (!groupJid) continue;
     try {
       await sock.sendMessage(groupJid, { text: textos[tipo] });
     } catch (e) {
@@ -116,6 +127,7 @@ async function enviarAviso(sock, gruposAtivos, tipo) {
 // ─── Scheduler principal ──────────────────────────────────────────────────────
 function initQuizRankingScheduler(sock, gruposAtivos) {
   console.log('[QuizRanking] Scheduler iniciado.');
+  clearSchedulerTimeouts();
 
   function agendar() {
     const msTotal   = msParaProximoDomingo();
@@ -126,37 +138,58 @@ function initQuizRankingScheduler(sock, gruposAtivos) {
     const avisos = getAvisosSet();
 
     if (ms60min > 0 && !avisos.has('60min')) {
-      setTimeout(async () => {
-        if (avisos.has('60min')) return;
-        avisos.add('60min');
-        await enviarAviso(sock, gruposAtivos, '60min');
+      const t = setTimeout(async () => {
+        try {
+          if (avisos.has('60min')) return;
+          avisos.add('60min');
+          await enviarAviso(sock, gruposAtivos, '60min');
+        } catch (err) {
+          console.error('[QuizRanking] Erro no aviso de 60min:', err);
+        }
       }, ms60min);
+      activeTimeouts.push(t);
     }
 
     if (ms10min > 0 && !avisos.has('10min')) {
-      setTimeout(async () => {
-        if (avisos.has('10min')) return;
-        avisos.add('10min');
-        await enviarAviso(sock, gruposAtivos, '10min');
+      const t = setTimeout(async () => {
+        try {
+          if (avisos.has('10min')) return;
+          avisos.add('10min');
+          await enviarAviso(sock, gruposAtivos, '10min');
+        } catch (err) {
+          console.error('[QuizRanking] Erro no aviso de 10min:', err);
+        }
       }, ms10min);
+      activeTimeouts.push(t);
     }
 
     if (ms5min > 0 && !avisos.has('5min')) {
-      setTimeout(async () => {
-        if (avisos.has('5min')) return;
-        avisos.add('5min');
-        await enviarAviso(sock, gruposAtivos, '5min');
+      const t = setTimeout(async () => {
+        try {
+          if (avisos.has('5min')) return;
+          avisos.add('5min');
+          await enviarAviso(sock, gruposAtivos, '5min');
+        } catch (err) {
+          console.error('[QuizRanking] Erro no aviso de 5min:', err);
+        }
       }, ms5min);
+      activeTimeouts.push(t);
     }
 
     if (!avisos.has('premio')) {
-      setTimeout(async () => {
-        if (avisos.has('premio')) return;
-        avisos.add('premio');
-        await executarPremiacao(sock, gruposAtivos);
-        // Agenda para a próxima semana
-        setTimeout(agendar, 60 * 1000);
+      const t = setTimeout(async () => {
+        try {
+          if (avisos.has('premio')) return;
+          avisos.add('premio');
+          await executarPremiacao(sock, gruposAtivos);
+          // Agenda para a próxima semana
+          const nextT = setTimeout(agendar, 60 * 1000);
+          activeTimeouts.push(nextT);
+        } catch (err) {
+          console.error('[QuizRanking] Erro na premiação:', err);
+        }
       }, msTotal);
+      activeTimeouts.push(t);
     }
 
     const horas = Math.floor(msTotal / 3600000);

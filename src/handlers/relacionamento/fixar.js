@@ -1,11 +1,11 @@
+'use strict';
 
-// !pinned
 const { jidNormalizedUser, proto } = require('@whiskeysockets/baileys');
 
 /**
  * !fixar (Comando Novo/Aprimorado)
  * Deve ser usado respondendo a uma mensagem que deseja fixar no topo do WhatsApp.
- * Exemplo de uso: Responder a uma mensagem com "!fixar" ou "!fixar 7" (para alterar os dias)
+ * Exemplo de uso: Responder a uma mensagem com "!fixar" ou "!fixar 24h" ou "!fixar 30"
  */
 async function handleFixar(sock, msg, jid, pinnedMessages) {
   const chatJid = jidNormalizedUser(jid);
@@ -39,14 +39,16 @@ async function handleFixar(sock, msg, jid, pinnedMessages) {
   if (args[1] === '30') durationInSeconds = 2592000;
 
   try {
-    // 🔥 PROTOCOLO REAL DO WHATSAPP PARA FIXAR UMA MENSAGEM NO CHAT
+    const quotedParticipantNorm = quotedParticipant ? jidNormalizedUser(quotedParticipant) : chatJid;
+
+    // PROTOCOLO REAL DO WHATSAPP PARA FIXAR UMA MENSAGEM NO CHAT
     await sock.sendMessage(chatJid, {
       pin: {
         key: {
           remoteJid: chatJid,
-          fromMe: quotedParticipant === jidNormalizedUser(sock.user?.id),
+          fromMe: quotedParticipantNorm === jidNormalizedUser(sock.user?.id),
           id: quotedSign,
-          participant: quotedParticipant
+          participant: quotedParticipantNorm
         },
         type: proto.Message.PinExtension.Type.PIN,
         duration: durationInSeconds
@@ -55,13 +57,13 @@ async function handleFixar(sock, msg, jid, pinnedMessages) {
 
     // Salva na memória do bot para consultas do comando !pinned posterior
     pinnedMessages.set(chatJid, {
-  text: msgText,
-  time: Date.now(),
-  by: `@${senderJid.split('@')[0]}`, // texto para exibição
-  byJid: senderJid,                  // ✅ JID completo (@lid ou @s.whatsapp.net) para mentions
-  orig: jidNormalizedUser(quotedParticipant),
-  messageId: quotedSign
-});
+      text: msgText,
+      time: Date.now(),
+      by: `@${senderJid.split('@')[0]}`,
+      byJid: senderJid,
+      orig: quotedParticipantNorm,
+      messageId: quotedSign
+    });
 
     await sock.sendMessage(chatJid, {
       text: `📌 Mensagem fixada com sucesso *no topo do WhatsApp*!\n⏱️ Duração: ${durationInSeconds === 86400 ? '24 Horas' : durationInSeconds === 2592000 ? '30 Dias' : '7 Dias'}.`,
@@ -92,20 +94,17 @@ async function handlePinned(sock, msg, jid, pinnedMessages) {
   }
 
   const when = new Date(pm.time).toLocaleString('pt-BR');
-  const tagFixador = pm.by; // texto formatado como @numero
-const jidOrigem = jidNormalizedUser(pm.orig);
-const tagOrigem = `@${jidOrigem.split('@')[0]}`;
+  const tagFixador = pm.by;
+  const jidOrigem = jidNormalizedUser(pm.orig);
+  const tagOrigem = `@${jidOrigem.split('@')[0]}`;
 
-const header = `📌 *Mensagem de:* ${tagOrigem}\n👤 *Fixada por:* ${tagFixador}\n📅 *Data:* ${when}`;
+  const header = `📌 *Mensagem de:* ${tagOrigem}\n👤 *Fixada por:* ${tagFixador}\n📅 *Data:* ${when}`;
 
-// Coleta as menções necessárias para os pings ficarem azuis
-const mentions = [jidOrigem];
+  const mentions = [jidOrigem];
 
-// ✅ Usa o JID completo salvo no momento do !fixar (preserva @lid ou
-// @s.whatsapp.net). Fallback para registros antigos sem byJid.
-const jidFixadorCompleto = pm.byJid?.toLowerCase()
-  || (pm.by.replace('@', '') + '@s.whatsapp.net');
-mentions.push(jidFixadorCompleto);
+  const jidFixadorCompleto = pm.byJid?.toLowerCase()
+    || (pm.by.replace('@', '') + '@s.whatsapp.net');
+  mentions.push(jidFixadorCompleto);
 
   await sock.sendMessage(chatJid, { 
     text: `${header}\n\n📝 *Conteúdo:*\n${pm.text}`,
@@ -122,7 +121,6 @@ async function handleDesfixar(sock, msg, jid, pinnedMessages) {
   const pm = pinnedMessages.get(chatJid);
 
   try {
-    // Se temos o ID da mensagem que foi fixada, mandamos o protocolo de desfixar (UNPIN) pro WhatsApp
     if (pm && pm.messageId) {
       await sock.sendMessage(chatJid, {
         pin: {
@@ -145,7 +143,6 @@ async function handleDesfixar(sock, msg, jid, pinnedMessages) {
 
   } catch (err) {
     console.error('⚠️ Erro ao desfixar mensagem no WhatsApp:', err);
-    // Força a remoção local mesmo se falhar no app
     pinnedMessages.delete(chatJid);
     await sock.sendMessage(chatJid, { text: '✅ Registro limpo localmente. Se a mensagem persistir no topo, o bot pode estar sem Admin.' }, { quoted: msg });
   }

@@ -1,36 +1,34 @@
 'use strict';
 
-const { getCarteira, transferirGold } = require('../../../utils/carteira');
-const { resolveUserFromMsg, resolveGlobalId, extrairNumero } = require('../../../utils/identity');
-const Usuario = require('../../../models/Usuario');
+const path = require('path');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { getCarteira, transferirGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { resolveUserFromMsg, resolveGlobalId, extrairNumero } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const Usuario = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const { LOOKUP_ITENS_LOJA, normalizarChaveItem } = require('./_shared');
-const { ITENS_LOJA } = require('../../../config/economia');
+const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
-// ─── !pix ───────────────────────────────────────────────────────────────
 /**
  * Extrai { targetJid, numeroPura, quantia } do contexto da mensagem.
- * Retorna null se não for possível resolver os parâmetros.
- * Tratado para suportar JIDs normais (@s.whatsapp.net) e novos identificadores (@lid).
+ * Tratado para suportar JIDs normais (@s.whatsapp.net) e identificadores LID (@lid).
  */
 function parsearPix(msg, caption) {
   const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
 
-  // ── Caso 1: menção via @tag (O Baileys já entrega o JID nativo correto)
   if (mentionedJid) {
     const parts   = caption.trim().split(/\s+/);
     const quantia = parseInt(parts[parts.length - 1], 10);
     if (isNaN(quantia) || quantia <= 0) return null;
 
-    const targetJid = resolveGlobalId(mentionedJid);
+    const targetJid = jidNormalizedUser(mentionedJid);
 
     return {
       targetJid,
-      numeroPura: extrairNumero(mentionedJid),
+      numeroPura: targetJid.split('@')[0],
       quantia,
     };
   }
 
-  // ── Caso 2: número digitado manualmente (!pix 5511999 50)
   const numMatch = caption.match(/(?:pix|transferir)\s+@?(\d+)\s+(\d+)/i);
   if (!numMatch) return null;
 
@@ -47,7 +45,7 @@ function parsearPix(msg, caption) {
 
 // !pix
 async function handlePix(sock, msg, jid, caption) {
-  const userId = resolveUserFromMsg(msg);
+  const userId = jidNormalizedUser(resolveUserFromMsg(msg));
   const parsed = parsearPix(msg, caption);
 
   if (!parsed) {
@@ -68,7 +66,6 @@ async function handlePix(sock, msg, jid, caption) {
 
   let resultado;
   try {
-    // Transfere o saldo local no grupo usando operações atômicas
     resultado = await transferirGold(
       userId,
       targetJid,
@@ -88,10 +85,9 @@ async function handlePix(sock, msg, jid, caption) {
       }, { quoted: msg });
       return;
     }
-    throw e; // Erros inesperados do banco de dados continuam subindo para o log
+    throw e;
   }
 
-  // Define um saldo visual caso o retorno atômico falte por algum motivo
   const saldoFinalRemetente = resultado?.de?.gold ?? 0;
 
   await sock.sendMessage(jid, {
@@ -104,10 +100,9 @@ async function handlePix(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// ─── !give ──────────────────────────────────────────────────────────────
-
+// !give
 async function handleGive(sock, msg, jid, caption) {
-  const userId       = resolveUserFromMsg(msg);
+  const userId       = jidNormalizedUser(resolveUserFromMsg(msg));
   const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
 
   if (!mentionedJid) {
@@ -117,15 +112,15 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  if (mentionedJid.split('@')[0] === userId.split('@')[0]) {
+  const targetNorm = jidNormalizedUser(mentionedJid);
+
+  if (targetNorm === userId) {
     await sock.sendMessage(jid, {
       text: '😂 Você não pode dar item pra si mesmo!',
     }, { quoted: msg });
     return;
   }
 
-  // Captura o RESTO da string (não só uma palavra), pois o nome de exibição
-  // pode ter espaços (ex: "PC Gamer Lendário", "Garrafa Vinho Tinto").
   const match = caption.match(/give\s+@\S+\s+(.+)/i) || caption.match(/give\s+(.+)/i);
   if (!match) {
     await sock.sendMessage(jid, {
@@ -135,9 +130,6 @@ async function handleGive(sock, msg, jid, caption) {
   }
 
   const itemDigitado = match[1].trim();
-
-  // Aceita tanto a chave técnica (ex: "linguica") quanto o nome de exibição
-  // (ex: "Linguiça", "PC Gamer Lendário"), ignorando acentos e espaços.
   const itemKey  = LOOKUP_ITENS_LOJA[normalizarChaveItem(itemDigitado)] || null;
   const itemInfo = itemKey ? ITENS_LOJA[itemKey] : null;
 
@@ -150,7 +142,6 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Checar se o remetente tem o item ──
   const remetente = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
   const qtd       = remetente?.inventory?.[itemKey] ?? 0;
 
@@ -163,12 +154,11 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Remover do remetente — guarda atômica contra estoque negativo em
-  // caso de dois !give quase simultâneos do mesmo item ──
   const remetenteAtualizado = await Usuario.findOneAndUpdate(
     { idWhatsApp: userId, [`inventory.${itemKey}`]: { $gte: 1 } },
     { $inc: { [`inventory.${itemKey}`]: -1 } }
   );
+
   if (!remetenteAtualizado) {
     await sock.sendMessage(jid, {
       text: `⚠️ *${itemInfo.nome}* não estava mais disponível no seu inventário. Tente novamente.`,
@@ -176,16 +166,13 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Adicionar ao destinatário ──
-  const mentionedNorm = resolveGlobalId(mentionedJid);
-
   await Usuario.findOneAndUpdate(
-    { idWhatsApp: mentionedNorm },
+    { idWhatsApp: targetNorm },
     { $inc: { [`inventory.${itemKey}`]: 1 } },
     { upsert: true }
   );
 
-  const numeroAlvo = extrairNumero(mentionedJid);
+  const numeroAlvo = targetNorm.split('@')[0];
 
   await sock.sendMessage(jid, {
     text:
@@ -194,7 +181,7 @@ async function handleGive(sock, msg, jid, caption) {
       `➡️ Para: *@${numeroAlvo}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `_Use !inventario pra conferir seus itens._`,
-    mentions: [mentionedJid],
+    mentions: [targetNorm],
   }, { quoted: msg });
 }
 

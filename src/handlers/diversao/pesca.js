@@ -315,7 +315,7 @@ function formatarTempo(ms) {
 // ─── !pescar ──────────────────────────────────────────────────────────────────
 
 async function handlePescar(sock, msg, jid) {
-  const { userId, groupId } = resolverContexto(msg);
+  let { userId, groupId } = resolverContexto(msg);
 
   if (!userId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   if (!groupId) {
@@ -324,6 +324,8 @@ async function handlePescar(sock, msg, jid) {
       'Entre em um grupo e use *!pescar* por lá.'
     );
   }
+
+  userId = await resolverJidCarteira(userId, groupId);
 
   try {
     const carteira = await getCarteira(userId, groupId);
@@ -357,8 +359,18 @@ async function handlePescar(sock, msg, jid) {
     }
 
     // ── Registrar cooldown + consumir isca de forma atômica e segura ──────
-    // Evita exploits de iscas negativas caso o usuário execute comandos simultâneos
-    const queryUpdate = { idWhatsApp: userId, idGrupo: groupId };
+    // Evita exploits de iscas negativas ou bypass de cooldown caso o usuário execute comandos simultâneos
+    const limiteData = new Date(agora - cooldownLimite);
+    const queryUpdate = {
+      idWhatsApp: userId,
+      idGrupo: groupId,
+      $or: [
+        { ultimaPesca: { $exists: false } },
+        { ultimaPesca: null },
+        { ultimaPesca: { $lte: limiteData } },
+      ],
+    };
+
     if (iscaKey) {
       queryUpdate[`itensPesca.${iscaKey}`] = { $gt: 0 };
     }
@@ -366,24 +378,37 @@ async function handlePescar(sock, msg, jid) {
     const atualizacaoConsumo = await CarteiraGrupo.findOneAndUpdate(
       queryUpdate,
       {
-        $set: { ultimaPesca: new Date() },
+        $set: { ultimaPesca: new Date(agora) },
         ...(iscaKey ? { $inc: { [`itensPesca.${iscaKey}`]: -1 } } : {}),
       },
       { new: true }
     );
 
-    // Se o update com iscaKey falhar (retornou null), a isca acabou bem na hora do clique.
-    // Nesse caso, registramos o cooldown sem a condição da isca, separadamente.
-    // upsert: true garante que o cooldown é salvo mesmo se o usuário ainda
-    // não tiver registro no banco neste momento.
+    // Se o update falhou mas a conta não tinha a isca necessária, tenta registrar cooldown atômico sem isca
     const usouIscaEfetivamente = !!(iscaKey && atualizacaoConsumo);
 
-    if (iscaKey && !atualizacaoConsumo) {
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: groupId },
-        { $set: { ultimaPesca: new Date() } },
-        { upsert: true }  // ← correção: garante persistência do cooldown
+    if (!atualizacaoConsumo) {
+      const tentouSemIsca = await CarteiraGrupo.findOneAndUpdate(
+        {
+          idWhatsApp: userId,
+          idGrupo: groupId,
+          $or: [
+            { ultimaPesca: { $exists: false } },
+            { ultimaPesca: null },
+            { ultimaPesca: { $lte: limiteData } },
+          ],
+        },
+        { $set: { ultimaPesca: new Date(agora) } },
+        { upsert: true, new: true }
       );
+
+      if (!tentouSemIsca) {
+        return reply(sock, jid, msg,
+          `⏳ *AGUARDE PARA PESCAR!*\n\n` +
+          `🎣 Você pescou recentemente neste grupo.\n` +
+          `⏰ Próxima pesca em: *${formatarTempo(cooldownLimite)}*`
+        );
+      }
     }
 
     const varaNome = VARAS_PESCA[varaKey].nome;
@@ -558,12 +583,14 @@ async function handleIscas(sock, msg, jid) {
  * Iscas são consumíveis — aceitam quantidade.
  */
 async function handleComprarPesca(sock, msg, jid, caption) {
-  const { userId, groupId } = resolverContexto(msg);
+  let { userId, groupId } = resolverContexto(msg);
 
   if (!userId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   if (!groupId) {
     return reply(sock, jid, msg, '🎣 A loja de pesca só funciona em grupos!');
   }
+
+  userId = await resolverJidCarteira(userId, groupId);
 
   // ── Remove o prefixo do comando antes de parsear os argumentos ──
   // Sem isso, partes[0] capturaria "!buypesca" como nome do item.
@@ -681,12 +708,14 @@ async function handleComprarPesca(sock, msg, jid, caption) {
 // ─── !inventariopesca ─────────────────────────────────────────────────────────
 
 async function handleInventarioPesca(sock, msg, jid) {
-  const { userId, groupId } = resolverContexto(msg);
+  let { userId, groupId } = resolverContexto(msg);
 
   if (!userId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   if (!groupId) {
     return reply(sock, jid, msg, '🎣 O inventário de pesca é por grupo!\nUse este comando em um grupo.');
   }
+
+  userId = await resolverJidCarteira(userId, groupId);
 
   try {
     const carteira = await CarteiraGrupo
@@ -796,10 +825,12 @@ const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.
  * Vende itens pescados (70% do gold base) ou equipamentos (50% do preco base).
  */
 async function handleVenderPesca(sock, msg, jid, caption) {
-  const { userId, groupId } = resolverContexto(msg);
+  let { userId, groupId } = resolverContexto(msg);
 
   if (!userId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   if (!groupId) return reply(sock, jid, msg, '🎣 Venda de pesca só funciona em grupos!');
+
+  userId = await resolverJidCarteira(userId, groupId);
 
   const args    = (caption ?? '').replace(/^[!.,\/]sellpesca\s*/i, '').trim().split(/\s+/);
   const itemKey = (args[0] ?? '').toLowerCase() || null;
@@ -1040,12 +1071,14 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
  * Mostra equipamento atual, cooldown restante, chance de falha e bônus de raridade.
  */
 async function handleStatsPesca(sock, msg, jid) {
-  const { userId, groupId } = resolverContexto(msg);
+  let { userId, groupId } = resolverContexto(msg);
 
   if (!userId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   if (!groupId) {
     return reply(sock, jid, msg, '🎣 Stats de pesca só funcionam em grupos!');
   }
+
+  userId = await resolverJidCarteira(userId, groupId);
 
   try {
     const carteira = await CarteiraGrupo
@@ -1141,9 +1174,9 @@ async function handleGivePesca(sock, msg, jid, caption) {
     return reply(sock, jid, msg, '🎣 Transferência de itens de pesca só funciona em grupos!');
   }
 
-  const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const rawMentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
 
-  if (!mentionedJid) {
+  if (!rawMentioned) {
     return reply(sock, jid, msg,
       `⚠️ *TRANSFERIR ITEM DE PESCA*\n\n` +
       `Marque quem vai receber!\n\n` +
@@ -1155,6 +1188,8 @@ async function handleGivePesca(sock, msg, jid, caption) {
       `📦 Ver seus itens: *!inventariopesca*`
     );
   }
+
+  const mentionedJid = await resolverJidCarteira(rawMentioned, groupId);
 
   // Compara apenas o número (parte antes do @), ignorando domínio diferente
   // entre @s.whatsapp.net e @lid para evitar falso positivo no auto-give

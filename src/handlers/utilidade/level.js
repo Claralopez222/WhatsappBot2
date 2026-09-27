@@ -1,7 +1,8 @@
 'use strict';
 
-const path          = require('path');
-const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const path                  = require('path');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const CarteiraGrupo         = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -23,12 +24,12 @@ const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils'
 // ─── Faixas temáticas de nível ────────────────────────────────────────────────
 const FAIXAS_NIVEL = [
   { xp: 0,    nome: '🌱 Recém-saído do forno',    titulo: 'Iniciante', emoji: '🌱' },
-  { xp: 50,   nome: '💕 Apaixonado de verdade',   titulo: 'Romântico', emoji: '💕' },
-  { xp: 150,  nome: '💪 Sólido feito rocha',      titulo: 'Sólido',    emoji: '💪' },
-  { xp: 300,  nome: '⭐ Veterano com calo',        titulo: 'Veterano',  emoji: '⭐' },
-  { xp: 500,  nome: '🏆 Lenda viva',              titulo: 'Lendário',  emoji: '🏆' },
-  { xp: 800,  nome: '👑 IMORTAL DO AMOR',         titulo: 'Imortal',   emoji: '👑' },
-  { xp: 1200, nome: '💎 DEUS DO RELACIONAMENTO',  titulo: 'Divino',    emoji: '💎' },
+  { xp: 80,   nome: '💕 Apaixonado de verdade',   titulo: 'Romântico', emoji: '💕' },
+  { xp: 210,  nome: '💪 Sólido feito rocha',      titulo: 'Sólido',    emoji: '💪' },
+  { xp: 550,  nome: '⭐ Veterano com calo',        titulo: 'Veterano',  emoji: '⭐' },
+  { xp: 1200, nome: '🏆 Lenda viva',              titulo: 'Lendário',  emoji: '🏆' },
+  { xp: 2300, nome: '👑 IMORTAL DO AMOR',         titulo: 'Imortal',   emoji: '👑' },
+  { xp: 4500, nome: '💎 DEUS DO RELACIONAMENTO',  titulo: 'Divino',    emoji: '💎' },
 ];
 
 function getNivelInfo(xp) {
@@ -49,14 +50,14 @@ function buildBarra(progresso, tamanho = 10) {
  * Retorna { fullJid, numero } ou null se inválido.
  */
 function normalizarRemetente(msg) {
+  if (!msg || !msg.key) return null;
   const rawSender = (msg.key.participant || msg.key.remoteJid)?.toLowerCase();
   if (!rawSender) return null;
 
-  // Mantém o sufixo original (@lid ou @s.whatsapp.net) — não converte!
   const numero = rawSender.split('@')[0].split(':')[0].replace(/\D/g, '');
   if (!numero) return null;
 
-  return { fullJid: rawSender, numero };
+  return { fullJid: jidNormalizedUser(rawSender), numero };
 }
 
 // ─── Helpers de guarda ────────────────────────────────────────────────────────
@@ -125,6 +126,14 @@ async function handleLevel(sock, msg, jid) {
   }
 }
 
+function normalizarJidBase(id) {
+  if (!id || typeof id !== 'string') return '';
+  const clean = id.toLowerCase();
+  const [user, domain] = clean.split('@');
+  if (!user || !domain) return clean;
+  return `${user.split(':')[0]}@${domain}`;
+}
+
 // ─── !ranklevel ───────────────────────────────────────────────────────────────
 /**
  * Top 10 usuários com mais XP ativos no grupo.
@@ -133,22 +142,24 @@ async function handleRankLevel(sock, msg, jid) {
   if (!await exigirGrupo(sock, msg, jid)) return;
 
   try {
-    const metadata = await sock.groupMetadata(jid);
-
-    // Inclui p.id E p.lid — a carteira de um membro pode estar salva sob
-    // qualquer um dos dois formatos; faltando um deles, esse membro sumia
-    // do ranking por engano.
-    const membrosSet = new Set(
-      metadata.participants
-        .flatMap(p => [p.id, p.lid])
-        .filter(Boolean)
-        .map(id => id.toLowerCase())
-    );
-
-    if (membrosSet.size === 0) {
-      return sock.sendMessage(jid, {
-        text: '❌ Não foi possível obter os membros deste grupo.',
-      }, { quoted: msg });
+    let membrosSet = null;
+    try {
+      const metadata = await sock.groupMetadata(jid);
+      if (metadata?.participants?.length) {
+        membrosSet = new Set();
+        for (const p of metadata.participants) {
+          if (p.id) {
+            membrosSet.add(p.id.toLowerCase());
+            membrosSet.add(normalizarJidBase(p.id));
+          }
+          if (p.lid) {
+            membrosSet.add(p.lid.toLowerCase());
+            membrosSet.add(normalizarJidBase(p.lid));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[handleRankLevel] Aviso: Não foi possível obter groupMetadata, exibindo candidatos da base:', e.message);
     }
 
     const todosCandidatos = await CarteiraGrupo
@@ -158,7 +169,13 @@ async function handleRankLevel(sock, msg, jid) {
 
     // Remove quem já saiu/foi banido e limita ao top 10
     const candidatos = todosCandidatos
-      .filter(u => u.idWhatsApp && membrosSet.has(u.idWhatsApp.toLowerCase()))
+      .filter(u => {
+        if (!u.idWhatsApp) return false;
+        if (!membrosSet) return true;
+        const idLower = u.idWhatsApp.toLowerCase();
+        const idBase  = normalizarJidBase(u.idWhatsApp);
+        return membrosSet.has(idLower) || membrosSet.has(idBase);
+      })
       .slice(0, 10);
 
     if (candidatos.length === 0) {

@@ -10,7 +10,6 @@ const {
   getGroupMetadataCached,
   isMuted,
   mutedCount,
-  bemVindoGroups,
 } = require('./helpers');
 
 // ═══════════════════════════════════════════════════════════════
@@ -49,9 +48,12 @@ async function handleGrupInfo(sock, msg, jid) {
   const floodCfg = cfgGrupo?.antiFloodAtivo
     ? `✅ *${cfgGrupo.antiFloodLimite} msgs/${cfgGrupo.antiFloodJanelaMs / 1000}s*`
     : '❌ Inativo';
-  const bvCfg    = bemVindoGroups.has(jid) && bemVindoGroups.get(jid).ativo
+  
+  // Correção: Leitura do status de Boas-Vindas diretamente do MongoDB (GrupoConfig)
+  const bvCfg    = cfgGrupo?.bemVindoAtivo !== false && cfgGrupo?.bemVindoAtivo
     ? '✅ Ativo'
     : '❌ Inativo';
+    
   const muteCfg  = mutedCount(jid) > 0
     ? `✅ *${mutedCount(jid)} mutado(s)*`
     : '❌ Nenhum';
@@ -317,7 +319,7 @@ async function handleRanking(sock, msg, jid, msgCount = new Map()) {
     if (!entradas.length) {
       await sock.sendMessage(jid, {
         text:
-          `📊 *RANKING DE MENSAGENS — ESTE GRUPO*\n\n` +
+          `📊 *RANKING GERAL DE MENSAGENS*\n\n` +
           `📭 Nenhuma mensagem registrada ainda!\n\n` +
           `_Comece a conversar para aparecer no ranking!_`,
       }, { quoted: msg });
@@ -336,9 +338,10 @@ async function handleRanking(sock, msg, jid, msgCount = new Map()) {
 
     const mentions = entradas.map(e => e.idWhatsApp);
 
+    // Ajuste no cabeçalho para refletir com precisão a contagem global de mensagens
     await sock.sendMessage(jid, {
       text:
-        `📊 *RANKING DE MENSAGENS — ESTE GRUPO* 📊\n\n` +
+        `📊 *RANKING GERAL DE MENSAGENS* 📊\n\n` +
         `${linhas.join('\n\n')}\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `💬 Total: *${totalMsgs}* mensagens\n` +

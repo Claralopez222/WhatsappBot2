@@ -14,7 +14,7 @@ const CarteiraGrupo = require('../models/CarteiraGrupo');
 
 function xpParaLevel(level) {
   const lvl = Math.max(1, Math.floor(level));
-  return Math.floor(100 * Math.pow(lvl - 1, 1.5));
+  return Math.floor(80 * Math.pow(lvl - 1, 1.4));
 }
 
 function randInt(min, max) {

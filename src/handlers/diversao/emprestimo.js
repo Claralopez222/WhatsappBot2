@@ -185,8 +185,14 @@ async function enviarErro(sock, msg, jid, texto) {
  * alterarGold usam (via LidMapping) — sem isso, o empréstimo podia ficar
  * numa carteira diferente da usada por !gold, !banco etc.
  */
+/**
+ * Extrai e resolve o ID do usuário para o MESMO jid que getCarteira/
+ * alterarGold usam (via LidMapping) — sem isso, o empréstimo podia ficar
+ * numa carteira diferente da usada por !gold, !banco etc.
+ */
 async function getUserId(msg, idGrupo) {
-  const raw = msg.key.participant || msg.key.remoteJid;
+  const raw = msg?.key?.participant || msg?.key?.remoteJid;
+  if (!raw) return null;
   return resolverJidCarteira(raw, idGrupo);
 }
 
@@ -200,7 +206,7 @@ async function _criarEmprestimo(userId, idGrupo, valor, prazoArg) {
   const vencimento = new Date(Date.now() + prazoArg * MS_POR_DIA);
 
   return CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: userId, idGrupo },
+    { idWhatsApp: userId, idGrupo, 'emprestimo.ativo': { $ne: true } },
     {
       $inc: { gold: valor },
       $set: {
@@ -257,6 +263,7 @@ async function _quitarEmprestimo(userId, idGrupo, divida, item = 'Quitação de 
  * @param {string} idGrupo
  */
 async function verificarInadimplente(userId, idGrupo) {
+  if (!userId || !idGrupo) return false;
   try {
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).lean();
     if (!carteira?.emprestimo?.ativo) return false;
@@ -277,6 +284,7 @@ async function verificarInadimplente(userId, idGrupo) {
  * @param {string} idGrupo
  */
 async function verificarDescontoAutomatico(userId, idGrupo) {
+  if (!userId || !idGrupo) return null;
   try {
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).lean();
     if (!carteira?.emprestimo?.ativo) return null;
@@ -300,8 +308,13 @@ async function verificarDescontoAutomatico(userId, idGrupo) {
  * Processa o comando `!emprestimo <valor> [prazo]`.
  */
 async function handleEmprestimo(sock, msg, jid, caption) {
-  const userId = getUserId(msg);
-  const args   = caption.trim().split(/\s+/);
+  const userId = await getUserId(msg, jid);
+  if (!userId) {
+    await enviarErro(sock, msg, jid, 'Não foi possível identificar seu usuário.');
+    return;
+  }
+
+  const args = (caption || '').trim().split(/\s+/);
 
   // Exibe ajuda se não houver argumentos
   if (args.length < 2 || !args[1]) {
@@ -347,7 +360,6 @@ async function handleEmprestimo(sock, msg, jid, caption) {
     const level  = CarteiraGrupo.levelFromXp(carteira?.xp ?? 0);
     const limite = getLimitePorNivel(level);
 
-
     // 3. Cooldown pós-quitação
     if (carteira?.emprestimo?.proximoEmprestimo) {
       const liberacao = new Date(carteira.emprestimo.proximoEmprestimo).getTime();
@@ -373,7 +385,11 @@ async function handleEmprestimo(sock, msg, jid, caption) {
     }
 
     // 6. Criar empréstimo
-    await _criarEmprestimo(userId, jid, valor, prazoArg);
+    const docCriado = await _criarEmprestimo(userId, jid, valor, prazoArg);
+    if (!docCriado) {
+      await sock.sendMessage(jid, { text: MSGS.emprestimoAtivo(valor) }, { quoted: msg });
+      return;
+    }
 
     const vencimento = new Date(Date.now() + prazoArg * MS_POR_DIA);
     const juros      = Math.floor(valor * EMPRESTIMO_CONFIG.jurosTaxa);
@@ -395,7 +411,11 @@ async function handleEmprestimo(sock, msg, jid, caption) {
  * Processa o comando `!pay emprestimo`.
  */
 async function handlePayEmprestimo(sock, msg, jid) {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
+  if (!userId) {
+    await enviarErro(sock, msg, jid, 'Não foi possível identificar seu usuário.');
+    return;
+  }
 
   try {
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
@@ -438,7 +458,11 @@ async function handlePayEmprestimo(sock, msg, jid) {
  * Exibe a situação atual do empréstimo ativo do usuário.
  */
 async function handleDivida(sock, msg, jid) {
-  const userId = getUserId(msg);
+  const userId = await getUserId(msg, jid);
+  if (!userId) {
+    await enviarErro(sock, msg, jid, 'Não foi possível identificar seu usuário.');
+    return;
+  }
 
   try {
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();

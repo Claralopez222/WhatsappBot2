@@ -53,6 +53,8 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
       `${P}vender [item] — vender item\n` +
       `${P}inventario — ver inventário\n` +
       `${P}pix [@] [valor] — transferir gold\n` +
+      `${P}pixmulti [@1] [@2] [valor] — transferir para vários\n` +
+      `${P}pixdoar [valor] — doar gold para um membro\n` +
       `${P}apostar [valor] — apostar gold\n` +
       `${P}slots [valor] — jogar slots\n` +
       `${P}corrida [valor] — corrida de bichos\n` +
@@ -61,7 +63,7 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
       `${P}banco [valor] — investir no banco\n` +
       `${P}resgatar — resgatar do banco\n` +
       `${P}rankgold — ranking de gold\n` +
-      `${P}give [@] [valor] — dar gold`,
+      `${P}give [@] [item] — dar item do inventário`,
   }, { quoted: msg });
 }
 

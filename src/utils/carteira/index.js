@@ -3,7 +3,7 @@
 const { getCarteira, alterarGold, alterarGoldSeguro } = require('./gold');
 const { rankingGold, rankingXp }                       = require('./ranking');
 const { transferirGold }                               = require('./transferencia');
-const { comprarComGold }                               = require('./compras');
+const { comprarComGold, venderComGold }                = require('./compras');
 const { resolveJidComLid }                             = require('../identity');
 
 module.exports = {
@@ -14,6 +14,7 @@ module.exports = {
   rankingXp,
   transferirGold,
   comprarComGold,
+  venderComGold,
 
   // Compat: quem ainda importar resolverJidCarteira daqui continua
   // funcionando. Migre pra require('../identity').resolveJidComLid

@@ -1,12 +1,23 @@
 'use strict';
+
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const PinnedMessage = require('../../models/PinnedMessage');
 
 // ── helpers ──────────────────────────────────────────────────
+function getNumeroPuro(jid) {
+  if (!jid) return '';
+  return jid.split('@')[0].split(':')[0];
+}
+
 function parseDuration(arg) {
-  if (arg === '24h' || arg === '1') return 86400;
-  if (arg === '30')                 return 2592000;
-  return 604800; // 7 dias padrão
+  if (!arg) return 604800; // 7 dias padrão
+  const clean = String(arg).toLowerCase().trim();
+
+  if (['24h', '24', '1d', '1'].includes(clean)) return 86400; // 24 Horas
+  if (['30d', '30', '1m'].includes(clean))      return 2592000; // 30 Dias
+  if (['7d', '7'].includes(clean))              return 604800; // 7 Dias
+
+  return 604800;
 }
 
 function duracaoLabel(s) {
@@ -27,7 +38,13 @@ async function handleFixar(sock, msg, jid) {
 
   if (!quotedMsg || !quotedSign) {
     return sock.sendMessage(chatJid, {
-      text: '⚠️ Responda a mensagem que deseja fixar e use *!fixar* (ou *!fixar 24h* / *!fixar 30*).',
+      text:
+        `📌 *COMO FIXAR MENSAGENS:*\n\n` +
+        `Responda à mensagem que deseja fixar e use:\n` +
+        `• *!fixar 24h* — Fixa por 24 Horas\n` +
+        `• *!fixar 7d* — Fixa por 7 Dias (padrão)\n` +
+        `• *!fixar 30d* — Fixa por 30 Dias\n\n` +
+        `_Requer que o bot seja administrador do grupo._`,
     }, { quoted: msg });
   }
 
@@ -45,7 +62,6 @@ async function handleFixar(sock, msg, jid) {
   const args     = fullText.trim().split(/\s+/);
   const duration = parseDuration(args[1]);
 
-  // ── CORREÇÃO DA KEY: Identifica se a mensagem marcada é do próprio bot ──
   const isFromMe = quotedPart
     ? jidNormalizedUser(quotedPart) === jidNormalizedUser(sock.user?.id ?? '')
     : false;
@@ -56,13 +72,11 @@ async function handleFixar(sock, msg, jid) {
     id:        quotedSign,
   };
 
-  // REGRA DE OURO: O participant SÓ vai na key se a mensagem NÃO for nossa e for em grupo
   if (!isFromMe && chatJid.endsWith('@g.us') && quotedPart) {
     targetKey.participant = quotedPart;
   }
 
   try {
-    // Envia o comando de fixação nativo correto para o WhatsApp
     await sock.sendMessage(chatJid, {
       pin: {
         key:      targetKey,
@@ -71,7 +85,6 @@ async function handleFixar(sock, msg, jid) {
       },
     });
 
-    // Salva no banco para o comando !pinned funcionar depois
     await PinnedMessage.findOneAndUpdate(
       { chatJid },
       {
@@ -85,7 +98,7 @@ async function handleFixar(sock, msg, jid) {
     );
 
     return sock.sendMessage(chatJid, {
-      text: `📌 Mensagem fixada no WhatsApp!\n⏱️ Duração: *${duracaoLabel(duration)}*.`,
+      text: `📌 *Mensagem fixada com sucesso!*\n⏱️ Duração: *${duracaoLabel(duration)}*.`,
     }, { quoted: msg });
 
   } catch (err) {
@@ -110,16 +123,16 @@ async function handlePinned(sock, msg, jid) {
     }
 
     const quando   = new Date(pm.fixadoEm).toLocaleString('pt-BR');
-    const tagOrig  = pm.orig      ? `@${pm.orig.split('@')[0]}`      : 'desconhecido';
-    const tagFixou = pm.fixadoPor ? `@${pm.fixadoPor.split('@')[0]}` : 'desconhecido';
+    const tagOrig  = pm.orig      ? `@${getNumeroPuro(pm.orig)}`      : 'desconhecido';
+    const tagFixou = pm.fixadoPor ? `@${getNumeroPuro(pm.fixadoPor)}` : 'desconhecido';
     const mentions = [pm.orig, pm.fixadoPor].filter(Boolean);
 
     return sock.sendMessage(chatJid, {
       text:
-        `📌 *Mensagem fixada*\n\n`  +
-        `👤 *De:* ${tagOrig}\n`     +
+        `📌 *MENSAGEM FIXADA NO GRUPO*\n\n`  +
+        `👤 *Autor:* ${tagOrig}\n`     +
         `📌 *Fixada por:* ${tagFixou}\n` +
-        `📅 *Em:* ${quando}\n\n`    +
+        `📅 *Data:* ${quando}\n\n`    +
         `📝 *Conteúdo:*\n${pm.text}`,
       mentions,
     }, { quoted: msg });
@@ -136,19 +149,50 @@ async function handlePinned(sock, msg, jid) {
 async function handleDesfixar(sock, msg, jid) {
   const chatJid = jidNormalizedUser(jid);
 
+  const ctx        = msg.message?.extendedTextMessage?.contextInfo;
+  const quotedSign = ctx?.stanzaId;
+  const quotedPart = ctx?.participant;
+
   let pm;
   try {
     pm = await PinnedMessage.findOne({ chatJid }).lean();
   } catch (err) {
     console.error('[handleDesfixar] Erro ao buscar no banco:', err);
+  }
+
+  // 1. Caso o usuário responda diretamente à mensagem que deseja desfixar
+  if (quotedSign) {
+    const isFromMe = quotedPart
+      ? jidNormalizedUser(quotedPart) === jidNormalizedUser(sock.user?.id ?? '')
+      : false;
+
+    const unpinKey = {
+      remoteJid: chatJid,
+      fromMe:    isFromMe,
+      id:        quotedSign,
+    };
+    if (!isFromMe && chatJid.endsWith('@g.us') && quotedPart) {
+      unpinKey.participant = quotedPart;
+    }
+
+    try {
+      await sock.sendMessage(chatJid, {
+        pin: { key: unpinKey, type: 2 /* UNPIN */ },
+      });
+    } catch {}
+
+    if (pm?.messageId === quotedSign) {
+      await PinnedMessage.deleteOne({ chatJid });
+    }
+
     return sock.sendMessage(chatJid, {
-      text: '⚠️ Erro ao acessar o banco de dados. Tente novamente.',
+      text: '✅ Mensagem desfixada com sucesso!',
     }, { quoted: msg });
   }
 
+  // 2. Caso desfixe o registro ativo guardado no banco
   try {
     if (pm?.messageId) {
-      // Também precisamos da validação do fromMe aqui para desfixar certo
       const isFromMe = pm.orig
         ? jidNormalizedUser(pm.orig) === jidNormalizedUser(sock.user?.id ?? '')
         : false;
@@ -179,8 +223,28 @@ async function handleDesfixar(sock, msg, jid) {
   return sock.sendMessage(chatJid, {
     text: pm
       ? '✅ Mensagem desfixada com sucesso!'
-      : 'ℹ️ Não havia mensagem fixada registrada.',
+      : 'ℹ️ Não havia mensagem fixada registrada neste chat.',
   }, { quoted: msg });
 }
 
-module.exports = { handleFixar, handlePinned, handleDesfixar };
+// ── !fixarinfo ───────────────────────────────────────────────
+async function handleFixarInfo(sock, msg, jid) {
+  const chatJid = jidNormalizedUser(jid);
+
+  const menu =
+    `📌 *SISTEMA DE MENSAGENS FIXADAS* 📌\n\n` +
+    `Como utilizar os comandos de fixação:\n\n` +
+    `• *!fixar [24h|7d|30d]* — Fixa a mensagem respondida pelo tempo desejado.\n` +
+    `• *!desfixar* — Desfixa a mensagem fixada atual (ou a mensagem respondida).\n` +
+    `• *!pinned* — Exibe a mensagem fixada e seus detalhes no grupo.\n\n` +
+    `💡 *Dica:* O bot precisa ser Administrador para poder fixar mensagens!`;
+
+  return sock.sendMessage(chatJid, { text: menu }, { quoted: msg });
+}
+
+module.exports = {
+  handleFixar,
+  handlePinned,
+  handleDesfixar,
+  handleFixarInfo,
+};

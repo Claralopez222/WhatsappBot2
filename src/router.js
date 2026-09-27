@@ -439,6 +439,10 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleVender(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'inventario') || matchCmd(cmdWord, 'inv'))
     { await diversaoHandler.handleInventario(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'pixmulti') || matchCmd(cmdWord, 'pixtodos') || matchCmdStart(cmd, 'pixmulti ') || matchCmdStart(cmd, 'pixtodos '))
+    { await diversaoHandler.handlePixMulti(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'pixdoar') || matchCmd(cmdWord, 'doargold') || matchCmdStart(cmd, 'pixdoar ') || matchCmdStart(cmd, 'doargold '))
+    { await diversaoHandler.handlePixDoar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir') || matchCmdStart(cmd, 'pix ') || matchCmdStart(cmd, 'transferir '))
     { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'apostar') || matchCmdStart(cmd, 'apostar '))
@@ -743,8 +747,10 @@ async function handleMessage(sock, msg) {
   }
 
   // ── PINNED ──────────────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'fixarinfo') || matchCmd(cmdWord, 'ajudafixar'))
+    { await pinnedHandler.handleFixarInfo(sock, msg, jid); return; }
   if (matchCmdStart(cmd, 'fixar'))
-    { await pinnedHandler.handleFixar(sock, msg, jid, pinnedMessages); return; }
+    { await pinnedHandler.handleFixar(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'desfixar'))
     { await pinnedHandler.handleDesfixar(sock, msg, jid, pinnedMessages); return; }
   if (matchCmd(cmdWord, 'pinned') || matchCmd(cmdWord, 'mensagemfixada'))

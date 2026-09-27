@@ -8,39 +8,89 @@ const Usuario = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuari
 const { LOOKUP_ITENS_LOJA, normalizarChaveItem } = require('./_shared');
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
+function getNumeroPuro(jid) {
+  if (!jid) return '';
+  return jid.split('@')[0].split(':')[0];
+}
+
 /**
  * Extrai { targetJid, numeroPura, quantia } do contexto da mensagem.
- * Tratado para suportar JIDs normais (@s.whatsapp.net) e identificadores LID (@lid).
+ * Suporta menções (@pessoa quantia / quantia @pessoa), respostas (reply) e número direto.
  */
 function parsearPix(msg, caption) {
-  const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const ctx = msg.message?.extendedTextMessage?.contextInfo;
+  const mentionedJid = ctx?.mentionedJid?.[0];
+  const quotedParticipant = ctx?.participant;
 
+  // 1. Caso haja menção explícita (@fulano)
   if (mentionedJid) {
-    const parts   = caption.trim().split(/\s+/);
-    const quantia = parseInt(parts[parts.length - 1], 10);
-    if (isNaN(quantia) || quantia <= 0) return null;
-
     const targetJid = jidNormalizedUser(mentionedJid);
+    const parts     = caption.trim().split(/\s+/).map(p => p.replace(/[^\d]/g, ''));
+    const numbers   = parts.filter(p => p.length > 0 && !isNaN(parseInt(p, 10)));
 
-    return {
-      targetJid,
-      numeroPura: targetJid.split('@')[0],
-      quantia,
-    };
+    let quantia = 0;
+    for (const numStr of numbers) {
+      const parsed = parseInt(numStr, 10);
+      if (parsed > 0 && numStr !== targetJid.split('@')[0].replace(/\D/g, '')) {
+        quantia = parsed;
+        break;
+      }
+    }
+
+    if (quantia > 0) {
+      return {
+        targetJid,
+        numeroPura: getNumeroPuro(targetJid),
+        quantia,
+      };
+    }
   }
 
-  const numMatch = caption.match(/(?:pix|transferir)\s+@?(\d+)\s+(\d+)/i);
-  if (!numMatch) return null;
+  // 2. Caso seja resposta a uma mensagem (reply)
+  if (quotedParticipant) {
+    const targetJid = jidNormalizedUser(quotedParticipant);
+    const parts     = caption.trim().split(/\s+/);
+    let quantia     = 0;
+    for (const p of parts) {
+      const num = parseInt(p.replace(/\D/g, ''), 10);
+      if (!isNaN(num) && num > 0) {
+        quantia = num;
+        break;
+      }
+    }
 
-  const numeroPura = numMatch[1].replace(/\D/g, '');
-  const quantia    = parseInt(numMatch[2], 10);
-  if (!numeroPura || isNaN(quantia) || quantia <= 0) return null;
+    if (quantia > 0) {
+      return {
+        targetJid,
+        numeroPura: getNumeroPuro(targetJid),
+        quantia,
+      };
+    }
+  }
 
-  return {
-    targetJid:  `${numeroPura}@s.whatsapp.net`,
-    numeroPura,
-    quantia,
-  };
+  // 3. Caso seja número por extenso (!pix 5511999999999 50 ou !pix @5511999999999 50)
+  const numMatch = caption.match(/(?:pix|transferir)\s+@?(\d{8,15})\s+(\d+)/i) ||
+                   caption.match(/(?:pix|transferir)\s+(\d+)\s+@?(\d{8,15})/i);
+  if (numMatch) {
+    let numeroPura, quantia;
+    if (numMatch[1].length >= 8) {
+      numeroPura = numMatch[1].replace(/\D/g, '');
+      quantia    = parseInt(numMatch[2], 10);
+    } else {
+      quantia    = parseInt(numMatch[1], 10);
+      numeroPura = numMatch[2].replace(/\D/g, '');
+    }
+
+    if (numeroPura && !isNaN(quantia) && quantia > 0) {
+      return {
+        targetJid:  `${numeroPura}@s.whatsapp.net`,
+        numeroPura,
+        quantia,
+      };
+    }
+  }
+
+  return null;
 }
 
 // !pix
@@ -50,14 +100,18 @@ async function handlePix(sock, msg, jid, caption) {
 
   if (!parsed) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!pix @pessoa quantia*\nExemplo: *!pix @Felipe 30*',
+      text:
+        `⚠️ *COMO USAR O PIX:*\n\n` +
+        `• Marcação: *!pix @pessoa quantia*\n` +
+        `• Resposta: *!pix quantia* (respondendo à mensagem)\n` +
+        `• Exemplo: *!pix @Felipe 30*`,
     }, { quoted: msg });
     return;
   }
 
   const { targetJid, numeroPura, quantia } = parsed;
 
-  if (userId === targetJid) {
+  if (getNumeroPuro(userId) === getNumeroPuro(targetJid)) {
     await sock.sendMessage(jid, {
       text: '⚠️ Você não pode fazer PIX para si mesmo!',
     }, { quoted: msg });
@@ -100,36 +154,184 @@ async function handlePix(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// !give
-async function handleGive(sock, msg, jid, caption) {
-  const userId       = jidNormalizedUser(resolveUserFromMsg(msg));
-  const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+// !pixmulti @alvo1 @alvo2 quantia
+async function handlePixMulti(sock, msg, jid, caption) {
+  const userId = jidNormalizedUser(resolveUserFromMsg(msg));
+  const ctx    = msg.message?.extendedTextMessage?.contextInfo;
+  const mentions = ctx?.mentionedJid || [];
 
-  if (!mentionedJid) {
+  if (mentions.length === 0) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Marca quem vai receber!\nExemplo: *!give @fulano pizza*',
+      text: '⚠️ Marque pelo menos uma pessoa e informe a quantia!\nExemplo: *!pixmulti @membro1 @membro2 50*',
     }, { quoted: msg });
     return;
   }
 
-  const targetNorm = jidNormalizedUser(mentionedJid);
+  const parts = caption.trim().split(/\s+/);
+  const quantiaPorPessoa = parseInt(parts[parts.length - 1], 10);
+  if (isNaN(quantiaPorPessoa) || quantiaPorPessoa <= 0) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Informe uma quantia válida por pessoa no final do comando.\nExemplo: *!pixmulti @membro1 @membro2 50*',
+    }, { quoted: msg });
+    return;
+  }
 
-  if (targetNorm === userId) {
+  const targets = Array.from(new Set(mentions.map(m => jidNormalizedUser(m))))
+    .filter(t => getNumeroPuro(t) !== getNumeroPuro(userId));
+
+  if (targets.length === 0) {
+    await sock.sendMessage(jid, { text: '⚠️ Nenhum destinatário válido selecionado.' }, { quoted: msg });
+    return;
+  }
+
+  const totalNecessario = quantiaPorPessoa * targets.length;
+  const carteiraRemetente = await getCarteira(userId, jid);
+  const saldoAtual = carteiraRemetente?.gold ?? 0;
+
+  if (saldoAtual < totalNecessario) {
+    await sock.sendMessage(jid, {
+      text:
+        `⚠️ *SALDO INSUFICIENTE PARA PIX MÚLTIPLO!*\n\n` +
+        `👥 Alvos: *${targets.length}* pessoas (${quantiaPorPessoa} gold/cada)\n` +
+        `💸 Total necessário: *${totalNecessario}* gold\n` +
+        `💰 Seu saldo: *${saldoAtual}* gold`,
+    }, { quoted: msg });
+    return;
+  }
+
+  let enviados = 0;
+  const mentionsList = [userId];
+
+  for (const target of targets) {
+    try {
+      await transferirGold(userId, target, jid, quantiaPorPessoa, 'PIX Múltiplo');
+      enviados++;
+      mentionsList.push(target);
+    } catch (e) {
+      console.error(`[handlePixMulti] Erro ao enviar para ${target}:`, e.message);
+    }
+  }
+
+  const carteiraFinal = await getCarteira(userId, jid);
+
+  await sock.sendMessage(jid, {
+    text:
+      `✅ *PIX MÚLTIPLO CONCLUÍDO!* ✅\n\n` +
+      `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} gold* cada!\n` +
+      `💸 Total distribuído: *${enviados * quantiaPorPessoa} gold*\n` +
+      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* gold`,
+    mentions: mentionsList,
+  }, { quoted: msg });
+}
+
+// !pixdoar quantia
+async function handlePixDoar(sock, msg, jid, caption) {
+  const userId = jidNormalizedUser(resolveUserFromMsg(msg));
+  const parts  = caption.trim().split(/\s+/);
+  const quantia = parseInt(parts[1], 10);
+
+  if (isNaN(quantia) || quantia <= 0) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Informe a quantia que deseja doar!\nExemplo: *!pixdoar 100*',
+    }, { quoted: msg });
+    return;
+  }
+
+  if (!jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ O comando !pixdoar só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+
+  let groupMeta;
+  try {
+    groupMeta = await sock.groupMetadata(jid);
+  } catch {
+    await sock.sendMessage(jid, { text: '❌ Não consegui buscar a lista de membros do grupo.' }, { quoted: msg });
+    return;
+  }
+
+  const userBase = getNumeroPuro(userId);
+  const botBase  = getNumeroPuro(sock.user?.id || '');
+
+  const participantes = groupMeta.participants
+    .map(p => jidNormalizedUser(p.id))
+    .filter(p => {
+      const base = getNumeroPuro(p);
+      return base !== userBase && base !== botBase;
+    });
+
+  if (participantes.length === 0) {
+    await sock.sendMessage(jid, { text: '⚠️ Nenhum membro elegível para receber a doação.' }, { quoted: msg });
+    return;
+  }
+
+  const sorteado = participantes[Math.floor(Math.random() * participantes.length)];
+  const numSorteado = getNumeroPuro(sorteado);
+
+  try {
+    const res = await transferirGold(userId, sorteado, jid, quantia, 'Doação de Gold');
+    await sock.sendMessage(jid, {
+      text:
+        `🎉 *DOAÇÃO ANÔNIMA DE GOLD!* 🎉\n\n` +
+        `🎁 *@${userBase}* doou *${quantia} gold* para *@${numSorteado}*!\n\n` +
+        `💰 Novo saldo do doador: *${res?.de?.gold ?? 0}* gold`,
+      mentions: [userId, sorteado],
+    }, { quoted: msg });
+  } catch (e) {
+    if (e instanceof RangeError) {
+      await sock.sendMessage(jid, {
+        text: `⚠️ Você não possui *${quantia} gold* suficientes para doar.`,
+      }, { quoted: msg });
+      return;
+    }
+    await sock.sendMessage(jid, { text: '❌ Ocorreu um erro ao realizar a doação.' }, { quoted: msg });
+  }
+}
+
+// !give [@pessoa | reply] [quantidade] <item>
+async function handleGive(sock, msg, jid, caption) {
+  const userId = jidNormalizedUser(resolveUserFromMsg(msg));
+  const ctx    = msg.message?.extendedTextMessage?.contextInfo;
+
+  let targetNorm = ctx?.mentionedJid?.[0]
+    ? jidNormalizedUser(ctx.mentionedJid[0])
+    : (ctx?.participant ? jidNormalizedUser(ctx.participant) : null);
+
+  if (!targetNorm) {
+    await sock.sendMessage(jid, {
+      text:
+        `⚠️ *COMO DAR ITENS:*\n\n` +
+        `• Com menção: *!give @fulano pizza*\n` +
+        `• Com quantidade: *!give @fulano 3 pizza*\n` +
+        `• Com resposta: *!give 2 pizza* (respondendo à mensagem)`,
+    }, { quoted: msg });
+    return;
+  }
+
+  if (getNumeroPuro(targetNorm) === getNumeroPuro(userId)) {
     await sock.sendMessage(jid, {
       text: '😂 Você não pode dar item pra si mesmo!',
     }, { quoted: msg });
     return;
   }
 
-  const match = caption.match(/give\s+@\S+\s+(.+)/i) || caption.match(/give\s+(.+)/i);
-  if (!match) {
-    await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!give @fulano <item>*\nExemplo: *!give @João pizza*',
-    }, { quoted: msg });
-    return;
+  // Remove menção e comando da caption pra isolar [quantidade] [item]
+  const textoLimpo = caption
+    .replace(/^[!.,\/#]give\s*/i, '')
+    .replace(/@\d+\b/gi, '')
+    .trim();
+
+  const parts = textoLimpo.split(/\s+/);
+  let quantidade = 1;
+  let itemDigitado = textoLimpo;
+
+  if (parts.length > 1 && !isNaN(parseInt(parts[0], 10))) {
+    quantidade = parseInt(parts[0], 10);
+    itemDigitado = parts.slice(1).join(' ').trim();
   }
 
-  const itemDigitado = match[1].trim();
+  if (isNaN(quantidade) || quantidade <= 0) quantidade = 1;
+
   const itemKey  = LOOKUP_ITENS_LOJA[normalizarChaveItem(itemDigitado)] || null;
   const itemInfo = itemKey ? ITENS_LOJA[itemKey] : null;
 
@@ -143,20 +345,21 @@ async function handleGive(sock, msg, jid, caption) {
   }
 
   const remetente = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
-  const qtd       = remetente?.inventory?.[itemKey] ?? 0;
+  const qtdPossuida = remetente?.inventory?.[itemKey] ?? 0;
 
-  if (qtd <= 0) {
+  if (qtdPossuida < quantidade) {
     await sock.sendMessage(jid, {
       text:
-        `⚠️ Você não possui *${itemInfo.nome}* no inventário!\n\n` +
+        `⚠️ Você não possui *${quantidade}x ${itemInfo.nome}* no inventário!\n\n` +
+        `🎒 Você possui: *${qtdPossuida}x*\n` +
         `Use *!inventario* pra ver seus itens ou *!buy ${itemKey}* pra comprar.`,
     }, { quoted: msg });
     return;
   }
 
   const remetenteAtualizado = await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId, [`inventory.${itemKey}`]: { $gte: 1 } },
-    { $inc: { [`inventory.${itemKey}`]: -1 } }
+    { idWhatsApp: userId, [`inventory.${itemKey}`]: { $gte: quantidade } },
+    { $inc: { [`inventory.${itemKey}`]: -quantidade } }
   );
 
   if (!remetenteAtualizado) {
@@ -168,16 +371,16 @@ async function handleGive(sock, msg, jid, caption) {
 
   await Usuario.findOneAndUpdate(
     { idWhatsApp: targetNorm },
-    { $inc: { [`inventory.${itemKey}`]: 1 } },
+    { $inc: { [`inventory.${itemKey}`]: quantidade } },
     { upsert: true }
   );
 
-  const numeroAlvo = targetNorm.split('@')[0];
+  const numeroAlvo = getNumeroPuro(targetNorm);
 
   await sock.sendMessage(jid, {
     text:
       `🎁 *PRESENTE ENVIADO!* 🎁\n\n` +
-      `📦 Item: *${itemInfo.nome}*\n` +
+      `📦 Item: *${quantidade}x ${itemInfo.nome}*\n` +
       `➡️ Para: *@${numeroAlvo}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `_Use !inventario pra conferir seus itens._`,
@@ -185,4 +388,9 @@ async function handleGive(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-module.exports = { handlePix, handleGive };
+module.exports = {
+  handlePix,
+  handlePixMulti,
+  handlePixDoar,
+  handleGive,
+};

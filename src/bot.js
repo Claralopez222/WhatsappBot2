@@ -292,13 +292,21 @@ async function main() {
     process.exit(1);
   }
 
-  const acquired = await acquireLock();
+  let acquired = await acquireLock();
+  if (!acquired) {
+    console.warn('⚠️ Outra instância do bot está segurando o lock. Aguardando liberação (até 30s)...');
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      acquired = await acquireLock();
+      if (acquired) break;
+    }
+  }
+
   if (acquired) {
     startHeartbeat();
     startBot().catch(console.error);
   } else {
-    console.error('🚨 Outra instância do bot já está rodando. Encerrando...');
-    process.exit(1);
+    console.warn('⚠️ Não foi possível adquirir o lock do WhatsApp após aguardar. O servidor API Web continua rodando.');
   }
 }
 

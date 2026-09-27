@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // ─── Estado persistido (data.json — cache local; Mongo é a fonte de verdade) ─
 const {
@@ -802,8 +803,6 @@ async function handleMessage(sock, msg) {
     { await relacionamentoHandler.handleAniversarioCasal(sock, msg, jid, senderJid, relacionamentos); return; }
   if (matchCmdStart(cmd, 'duelodecasais'))   { await relacionamentoHandler.handleDueloCasais(sock, msg, content, jid, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleRankCasais(sock, msg, jid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'surpresa'))
-    { await relacionamentoHandler.handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'surpresa'))
     { await relacionamentoHandler.handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'tentarfilho'))  { await diversaoHandler.handleTentarFilho(sock, msg, jid); return; }

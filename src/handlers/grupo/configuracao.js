@@ -74,13 +74,13 @@ async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, sav
 
   if (textMsg.includes('on') || textMsg.includes('ativ')) {
     autoStickerGroups.add(jid);
-    saveData();
+    try { saveData?.(); } catch {}
     await sock.sendMessage(jid, {
       text: '🖼️✅ *Auto-Sticker ATIVADO!*\n_Imagens/vídeos viram figurinhas automaticamente._',
     }, { quoted: msg });
   } else if (textMsg.includes('off') || textMsg.includes('desativ')) {
     autoStickerGroups.delete(jid);
-    saveData();
+    try { saveData?.(); } catch {}
     await sock.sendMessage(jid, { text: '🖼️❌ *Auto-Sticker DESATIVADO!*' }, { quoted: msg });
   } else {
     const status = autoStickerGroups.has(jid) ? '✅ *Ativado*' : '❌ *Desativado*';
@@ -95,12 +95,14 @@ async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, sav
 // ═══════════════════════════════════════════════════════════════
 
 if (!global._slowModeLastMsg) global._slowModeLastMsg = new Map();
+if (!global._slowModeCache)   global._slowModeCache   = new Map();
 
 function limparSlowModeDoGrupo(jid) {
   const prefixo = `${jid}:`;
   for (const chave of global._slowModeLastMsg.keys()) {
     if (chave.startsWith(prefixo)) global._slowModeLastMsg.delete(chave);
   }
+  global._slowModeCache.delete(jid);
 }
 
 async function handleSlowMode(sock, msg, jid, caption) {
@@ -110,7 +112,7 @@ async function handleSlowMode(sock, msg, jid, caption) {
   }
   if (!await checkAdmin(sock, msg, jid, 'slowmode')) return;
 
-  const arg = caption.replace(/^[!.,\/]slowmode\s*/i, '').trim().toLowerCase();
+  const arg = caption.replace(/^[!.,\/#]slowmode\s*/i, '').trim().toLowerCase();
 
   if (arg === 'off' || arg === '0') {
     const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
@@ -164,8 +166,6 @@ async function handleSlowMode(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-if (!global._slowModeCache) global._slowModeCache = new Map();
-
 async function verificarSlowMode(jid, userJid) {
   const agora = Date.now();
   let cfgCache = global._slowModeCache.get(jid);
@@ -206,7 +206,7 @@ async function handleAntiFlood(sock, msg, jid, caption) {
   }
   if (!await checkAdmin(sock, msg, jid, 'antiflood')) return;
 
-  const arg = caption.replace(/^[!.,\/]antiflood\s*/i, '').trim().toLowerCase();
+  const arg = caption.replace(/^[!.,\/#]antiflood\s*/i, '').trim().toLowerCase();
 
   if (arg === 'off') {
     const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
@@ -338,7 +338,7 @@ async function handleBemVindo(sock, msg, jid, caption) {
   }
   if (!await checkAdmin(sock, msg, jid, 'bemvindo')) return;
 
-  const args      = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim();
+  const args      = caption.replace(/^[!.,\/#]bemvindo\s*/i, '').trim();
   const argsLower = args.toLowerCase();
 
   const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
@@ -416,17 +416,23 @@ async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
     const joinImagePath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagejoin3.jpg');
 
     if (fs.existsSync(joinImagePath)) {
-      await sock.sendMessage(jid, {
-        image:    fs.readFileSync(joinImagePath),
-        caption:  mensagem,
-        mentions: [novoMembro],
-      });
-    } else {
-      await sock.sendMessage(jid, {
-        text:     mensagem,
-        mentions: [novoMembro],
-      });
+      try {
+        const imageBuf = fs.readFileSync(joinImagePath);
+        await sock.sendMessage(jid, {
+          image:    imageBuf,
+          caption:  mensagem,
+          mentions: [novoMembro],
+        });
+        return;
+      } catch (imgErr) {
+        console.error('[processarBemVindo] Erro ao ler imagem:', imgErr.message);
+      }
     }
+
+    await sock.sendMessage(jid, {
+      text:     mensagem,
+      mentions: [novoMembro],
+    });
   } catch (e) {
     console.error('[processarBemVindo] Erro ao enviar:', e.message);
   }

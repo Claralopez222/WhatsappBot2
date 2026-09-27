@@ -1,19 +1,28 @@
 'use strict';
 
 const path = require('path');
-const { fetchBuffer } = require(path.join(__dirname, '..', '..', 'fetchurl'));
+
+async function safeReact(sock, jid, msgKey, emoji) {
+  try {
+    await sock.sendMessage(jid, { react: { text: emoji, key: msgKey } });
+  } catch {}
+}
 
 async function handleCep(sock, msg, jid, caption) {
-  const cep = caption.replace(/^[!.,\/]cep\s*/i, '').trim().replace(/\D/g, '');
+  const cep = caption.replace(/^[!.,\/#]cep\s*/i, '').trim().replace(/\D/g, '');
   if (!cep || cep.length !== 8) {
     await sock.sendMessage(jid, { text: '⚠️ Digite um CEP válido (8 dígitos).' }, { quoted: msg });
     return;
   }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+  await safeReact(sock, jid, msg.key, '⏳');
   try {
-    const respBuf = await fetchBuffer(`https://viacep.com.br/ws/${cep}/json/`);
-    const data = JSON.parse(respBuf.toString('utf8'));
+    const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`, {
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
     if (data.erro) {
+      await safeReact(sock, jid, msg.key, '❌');
       await sock.sendMessage(jid, { text: `❌ CEP *${cep}* não encontrado.` }, { quoted: msg });
       return;
     }
@@ -25,22 +34,23 @@ async function handleCep(sock, msg, jid, caption) {
       `📞 *DDD:* ${data.ddd || '—'}`,
     ].join('\n');
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    await safeReact(sock, jid, msg.key, '✅');
   } catch {
+    await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: '❌ Não consegui consultar este CEP.' }, { quoted: msg });
   }
 }
 
 async function handleClima(sock, msg, jid, caption) {
-  const cidade = caption.replace(/^[!.,\/]clima\s*/i, '').trim();
+  const cidade = caption.replace(/^[!.,\/#]clima\s*/i, '').trim();
   if (!cidade) {
     await sock.sendMessage(jid, { text: '⚠️ Digite a cidade.\nExemplo: *!clima São Paulo*' }, { quoted: msg });
     return;
   }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+  await safeReact(sock, jid, msg.key, '⏳');
   try {
     const url = `https://wttr.in/${encodeURIComponent(cidade)}?format=j1&lang=pt`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const cur  = data.current_condition?.[0];
@@ -82,14 +92,15 @@ async function handleClima(sock, msg, jid, caption) {
     ].join('\n');
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    await safeReact(sock, jid, msg.key, '✅');
   } catch (err) {
+    await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: `❌ Não consegui obter o clima de *${cidade}*.` }, { quoted: msg });
   }
 }
 
 async function handleMoeda(sock, msg, jid, caption) {
-  const input = caption.replace(/^[!.,\/]moeda\s*/i, '').trim();
+  const input = caption.replace(/^[!.,\/#]moeda\s*/i, '').trim();
   const parts = input.split(/\s+/);
   if (parts.length < 3) {
     await sock.sendMessage(jid, { text: '⚠️ Uso: *!moeda [valor] [de] [para]*\nExemplo: *!moeda 100 USD BRL*' }, { quoted: msg });
@@ -104,11 +115,11 @@ async function handleMoeda(sock, msg, jid, caption) {
     return;
   }
 
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+  await safeReact(sock, jid, msg.key, '⏳');
 
   try {
     const url = `https://api.exchangerate-api.com/v4/latest/${de}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const taxa = data.rates?.[para];
@@ -132,14 +143,15 @@ async function handleMoeda(sock, msg, jid, caption) {
     ].join('\n');
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    await safeReact(sock, jid, msg.key, '✅');
   } catch {
+    await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: `❌ Não consegui converter *${de}* para *${para}*.` }, { quoted: msg });
   }
 }
 
 async function handleCalcular(sock, msg, jid, caption) {
-  const expr = caption.replace(/^[!.,\/]calcular\s*/i, '').trim();
+  const expr = caption.replace(/^[!.,\/#]calcular\s*/i, '').trim();
   if (!expr || !/^[\d\s+\-*/().%^,]+$/.test(expr)) {
     await sock.sendMessage(jid, { text: '⚠️ Digite uma expressão válida. Ex: *!calcular 15 * 3 + 2*' }, { quoted: msg });
     return;
@@ -160,28 +172,52 @@ async function handleTraduzir(sock, msg, jid, caption) {
     en: 'Inglês', es: 'Espanhol', fr: 'Francês', de: 'Alemão', it: 'Italiano',
     ja: 'Japonês', zh: 'Chinês', ru: 'Russo', ar: 'Árabe', pt: 'Português',
   };
-  const raw = caption.replace(/^[!.,\/]traduzir\s*/i, '').trim();
+  const raw = caption.replace(/^[!.,\/#]traduzir\s*/i, '').trim();
   const parts = raw.split(/\s+/);
-  let idioma = 'en', texto = raw;
-  if (parts.length >= 2 && /^[a-z]{2,3}$/i.test(parts[0])) {
+
+  let idioma = 'en';
+  let texto = '';
+
+  if (parts.length >= 1 && /^[a-z]{2,3}$/i.test(parts[0])) {
     idioma = parts[0].toLowerCase();
-    texto  = parts.slice(1).join(' ').trim();
+    texto = parts.slice(1).join(' ').trim();
+  } else {
+    texto = raw;
   }
+
+  // Suporte a mensagem citada (reply) se nenhum texto direto foi fornecido
   if (!texto) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!traduzir [idioma] [texto]*\nExemplo: *!traduzir en Olá mundo*' }, { quoted: msg });
+    const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    if (quotedMsg) {
+      texto =
+        quotedMsg.conversation ||
+        quotedMsg.extendedTextMessage?.text ||
+        quotedMsg.imageMessage?.caption ||
+        quotedMsg.videoMessage?.caption ||
+        '';
+    }
+  }
+
+  if (!texto) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Use: *!traduzir [idioma] [texto]* ou responda a uma mensagem com *!traduzir [idioma]*.\nExemplo: *!traduzir en Olá mundo*',
+    }, { quoted: msg });
     return;
   }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+  await safeReact(sock, jid, msg.key, '⏳');
   try {
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(texto)}&langpair=pt|${idioma}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const traduzido = data?.responseData?.translatedText?.trim();
     if (!traduzido) throw new Error('Sem tradução');
     const nomeIdioma = NOMES_IDIOMA[idioma] ?? idioma.toUpperCase();
     await sock.sendMessage(jid, { text: `🌐 *Tradução (${nomeIdioma}):*\n\n*${traduzido}*` }, { quoted: msg });
-    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    await safeReact(sock, jid, msg.key, '✅');
   } catch {
+    await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: '❌ Erro ao traduzir o texto.' }, { quoted: msg });
   }
 }

@@ -31,9 +31,11 @@ async function handleSorteio(sock, msg, content, jid, botJid, contactNames) {
   if (participantes.length === 0 && somenteGrupo(jid)) {
     try {
       const meta = await getGroupMetadataCached(sock, jid);
-      participantes = meta.participants
-        .map(p => p.id)
-        .filter(id => !isBotJid(id, botJid));
+      if (meta?.participants) {
+        participantes = meta.participants
+          .map(p => p.id)
+          .filter(id => !isBotJid(id, botJid));
+      }
     } catch (err) {
       console.error('[handleSorteio] Erro ao buscar metadata:', err.message);
     }
@@ -84,13 +86,13 @@ function limparPollsAntigos() {
   }
 }
 
-// Fix #6: Limpeza agendada automática a cada 30 minutos (evita vazamento de memória)
+// Limpeza agendada automática a cada 30 minutos (evita vazamento de memória)
 setInterval(limparPollsAntigos, 30 * 60 * 1000);
 
 async function handleEnquete(sock, msg, jid, caption) {
   limparPollsAntigos();
 
-  const texto = caption.replace(/^[!.,\/]enquete\s*/i, '').trim();
+  const texto = caption.replace(/^[!.,\/#]enquete\s*/i, '').trim();
   if (!texto) {
     await sock.sendMessage(jid, {
       text: '⚠️ Digite a pergunta!\nExemplo: *!enquete Pizza ou hambúrguer?*',
@@ -176,7 +178,6 @@ async function handleEnquete(sock, msg, jid, caption) {
 }
 
 // ─── Vote tallying ────────────────────────────────────────────
-// Fix #7: try/catch seguro por item para evitar que um voto malformado aborte o batch inteiro
 function registerPollVoteHandler(sock) {
   sock.ev.on('messages.update', (updates) => {
     for (const { key, update } of updates) {
@@ -213,15 +214,19 @@ async function handleTodos(sock, msg, jid, caption) {
 
   let meta;
   try {
-    meta = await sock.groupMetadata(jid);
+    meta = await getGroupMetadataCached(sock, jid);
   } catch (err) {
     console.error('[handleTodos] Erro:', err.message);
     await sock.sendMessage(jid, { text: '❌ Não consegui buscar os membros.' }, { quoted: msg }); return;
   }
 
+  if (!meta?.participants) {
+    await sock.sendMessage(jid, { text: '❌ Não consegui buscar os membros.' }, { quoted: msg }); return;
+  }
+
   const members = meta.participants.map(p => p.id);
-  const texto   = caption.replace(/^[!.,\/]todos\s*/i, '').trim() || '📢 *Atenção galera!*';
-  const mencoes = members.map(m => `@${m.split('@')[0]}`).join(' ');
+  const texto   = caption.replace(/^[!.,\/#]todos\s*/i, '').trim() || '📢 *Atenção galera!*';
+  const mencoes = members.map(m => `@${normalizeJidBase(m)}`).join(' ');
 
   await sock.sendMessage(jid, {
     text: `${texto}\n\n${mencoes}`,
@@ -240,7 +245,7 @@ async function handleAvisar(sock, msg, jid, caption) {
   }
   if (!await checkAdmin(sock, msg, jid, 'avisar')) return;
 
-  const aviso = caption.replace(/^[!.,\/]*avisar\s*/i, '').trim();
+  const aviso = caption.replace(/^[!.,\/#]*avisar\s*/i, '').trim();
   if (!aviso) {
     await sock.sendMessage(jid, {
       text:
@@ -257,8 +262,10 @@ async function handleAvisar(sock, msg, jid, caption) {
 
   let members = [];
   try {
-    const meta = await sock.groupMetadata(jid);
-    members = meta.participants.map(p => p.id);
+    const meta = await getGroupMetadataCached(sock, jid);
+    if (meta?.participants) {
+      members = meta.participants.map(p => p.id);
+    }
   } catch (err) {
     console.error('[handleAvisar] Erro ao buscar membros:', err.message);
   }
@@ -268,7 +275,7 @@ async function handleAvisar(sock, msg, jid, caption) {
   const horaStr  = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const numAviso = lista.length;
 
-  const mencoes = members.map(m => `@${m.split('@')[0].split(':')[0]}`).join(' ');
+  const mencoes = members.map(m => `@${normalizeJidBase(m)}`).join(' ');
 
   await sock.sendMessage(jid, {
     text:
@@ -292,7 +299,7 @@ async function handleFixarGrupo(sock, msg, content, jid, caption) {
   }
   if (!await checkAdmin(sock, msg, jid, 'fixargrupo')) return;
 
-  const args = caption.replace(/^[!.,\/]fixargrupo\s*/i, '').trim();
+  const args = caption.replace(/^[!.,\/#]fixargrupo\s*/i, '').trim();
 
   if (args === 'ver') {
     const lista = grupoAvisosMap.get(jid) || [];
@@ -302,12 +309,12 @@ async function handleFixarGrupo(sock, msg, content, jid, caption) {
     const ultimo = lista[lista.length - 1];
     const data   = new Date(ultimo.data).toLocaleString('pt-BR');
     await sock.sendMessage(jid, {
-      text: `📌 *AVISO FIXADO*\n\n${ultimo.texto}\n\n_Publicado em: ${data}_`,
+      text: `📌 *AVISO FIXADO*\n\n${ultimo.texto}\n\_Publicado em: ${data}_`,
     }, { quoted: msg });
     return;
   }
 
-  const quotedMsg = content.extendedTextMessage?.contextInfo?.quotedMessage;
+  const quotedMsg = content?.extendedTextMessage?.contextInfo?.quotedMessage;
   if (!quotedMsg) {
     await sock.sendMessage(jid, {
       text:
@@ -316,7 +323,14 @@ async function handleFixarGrupo(sock, msg, content, jid, caption) {
     }, { quoted: msg }); return;
   }
 
-  const texto = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || '<mídia>';
+  const texto =
+    quotedMsg.conversation ||
+    quotedMsg.extendedTextMessage?.text ||
+    quotedMsg.imageMessage?.caption ||
+    quotedMsg.videoMessage?.caption ||
+    quotedMsg.documentMessage?.caption ||
+    '<mídia>';
+
   if (!grupoAvisosMap.has(jid)) grupoAvisosMap.set(jid, []);
   const lista = grupoAvisosMap.get(jid);
   lista.push({ texto, data: Date.now() });

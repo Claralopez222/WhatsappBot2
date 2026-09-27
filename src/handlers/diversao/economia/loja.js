@@ -2,11 +2,11 @@
 
 const Usuario       = require('../../../models/Usuario');
 const CarteiraGrupo = require('../../../models/CarteiraGrupo');
-const { getCarteira, alterarGold } = require('../../../utils/carteira');
+const { getCarteira, alterarGold, comprarComGold } = require('../../../utils/carteira');
 const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero } = require('../../../utils/identity');
 const { ITENS_LOJA } = require('../../../config/economia');
 const { VARAS_PESCA, ISCAS } = require('../pesca');
-const { resolverItemKey, getSaldoGrupo, debitarGold } = require('./_shared');
+const { resolverItemKey } = require('./_shared');
 
 // !gold
 async function handleGold(sock, msg, jid, getPrefix, contactNames) {
@@ -235,55 +235,43 @@ async function handleComprar(sock, msg, jid, caption) {
     return;
   }
 
-  const preco      = itemInfo.preco;
-  const saldoAtual = await getSaldoGrupo(userId, idGrupo);
+  const preco   = itemInfo.preco;
+  const ehPesca = !!(VARAS_PESCA?.[itemNome] || ISCAS?.[itemNome]);
 
-  if (saldoAtual < preco) {
-    await sock.sendMessage(jid, {
-      text:
-        `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${preco}* gold neste grupo!\n\n` +
-        `━━━━━━━━━━━━━━━━\n*SEU SALDO:*\n` +
-        `  💰 Disponível: *${saldoAtual}* gold\n` +
-        `  💎 Precisa de: *${preco}* gold`,
-    }, { quoted: msg });
-    return;
-  }
+  const resultado = await comprarComGold({
+    idWhatsApp: userId,
+    idGrupo,
+    preco,
+    descricaoGold: `Compra: ${itemInfo.nome}`,
+    modeloInventario: ehPesca ? CarteiraGrupo : Usuario,
+    filtroInventario: ehPesca
+      ? { idWhatsApp: userId, idGrupo }
+      : { idWhatsApp: userId },
+    campoInventario: ehPesca
+      ? `itensPesca.${itemNome}`
+      : `inventory.${itemNome}`,
+  });
 
-  // 1) Debitar gold PRIMEIRO (atômico) para evitar item sem pagamento
-  const carteiraAtualizada = await debitarGold(userId, idGrupo, preco, `Compra: ${itemInfo.nome}`);
-  if (!carteiraAtualizada) {
-    await sock.sendMessage(jid, {
-      text: '⚠️ *SALDO INSUFICIENTE*\n\nNão foi possível debitar o gold. Tente novamente.',
-    }, { quoted: msg });
-    return;
-  }
-
-  // 2) Adicionar ao inventário correto
-  try {
-    const ehPesca = !!(VARAS_PESCA?.[itemNome] || ISCAS?.[itemNome]);
-
-    if (ehPesca) {
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo },
-        { $inc: { [`itensPesca.${itemNome}`]: 1 } },
-        { upsert: true }
-      );
-    } else {
-      await Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
-        { $inc: { [`inventory.${itemNome}`]: 1 } },
-        { upsert: true }
-      );
+  if (!resultado.ok) {
+    if (resultado.motivo === 'GOLD_INSUFICIENTE') {
+      const carteiraAtual = await getCarteira(userId, idGrupo);
+      const saldoAtual    = carteiraAtual?.gold ?? 0;
+      await sock.sendMessage(jid, {
+        text:
+          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${preco}* gold neste grupo!\n\n` +
+          `━━━━━━━━━━━━━━━━\n*SEU SALDO:*\n` +
+          `  💰 Disponível: *${saldoAtual}* gold\n` +
+          `  💎 Precisa de: *${preco}* gold`,
+      }, { quoted: msg });
+      return;
     }
-  } catch (e) {
-    console.error('⚠️ Erro ao adicionar inventário:', e.message);
-    // Tenta devolver o gold em caso de falha no inventário
-    await alterarGold(userId, jid, preco, `Estorno: ${itemInfo.nome}`).catch(() => {});
-    await sock.sendMessage(jid, { text: '⚠️ Erro ao processar a compra! Gold devolvido. Tente novamente.' }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao processar a compra. Nada foi debitado. Tente novamente.',
+    }, { quoted: msg });
     return;
   }
 
-  const saldoFinal = carteiraAtualizada?.gold ?? (saldoAtual - preco);
+  const saldoFinal = resultado.carteira?.gold ?? 0;
 
   await sock.sendMessage(jid, {
     text:

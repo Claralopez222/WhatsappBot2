@@ -71,7 +71,7 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
   } catch (err) {
     console.error('[handleRankGold] Erro:', err.message);
     await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao carregar o ranking. Tente novamente.',
+      text: '⚠️ Erro ao carregar o ranking. Tente novamente. ',
     }, { quoted: msg });
   }
 }

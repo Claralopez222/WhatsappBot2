@@ -46,4 +46,4 @@ Write-Host "  Corrigido: extra.js (Usuario, levelUtils)"
 Write-Host "  (diversao/economia NAO foi tocado - ja estava correto)"
 
 Write-Host "`n== CONCLUIDO ==" -ForegroundColor Green
-Write-Host "Rode 'node src\bot.js' para testar." -ForegroundColor Yellow
+Write-Host "Rode 'node src\bot.js' para testar." -ForegroundColor Yellow 

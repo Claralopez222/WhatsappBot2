@@ -11,9 +11,6 @@ dns.setServers(['8.8.8.8', '1.1.1.1']);
 const path = require('path');
 const fs   = require('fs');
 
-// ─── Identidade / JID ─────────────────────────────────────────────────────
-const { normalizarJid } = require('./utils/jid');
-
 // ─── Dependências externas ────────────────────────────────────────────────────
 const {
   default: makeWASocket,
@@ -30,9 +27,9 @@ const mongoose  = require('mongoose');
 
 // ─── Scripts ───────────────────────────────────────────────────────────────────
 const { rodarAtualizacao } = require('./scripts/atualizarGrupos.js');
-const { acquireLock, startHeartbeat, releaseLock } = require('./utils/instanceLock');
 
 // ─── Models ───────────────────────────────────────────────────────────────────
+const Usuario       = require(path.join(__dirname, 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
 const LidMapping    = require(path.join(__dirname, 'models', 'LidMapping'));
 
@@ -46,6 +43,30 @@ async function salvarLidMapping(lid, pn) {
     console.error('⚠️ Erro ao salvar LID mapping:', e.message);
   }
 }
+
+            const nomeDoCara = msg.pushName || 'Usuário do Zap';
+
+            await prepareDailyMissionState(remetenteNorm);
+
+            // ── Bônus diário de 100 gold (primeira mensagem do dia no grupo) ──
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+
+            let remetenteReal = remetenteNorm;
+
+// Se for @s.whatsapp.net, verifica se existe carteira com @lid no mesmo grupo
+if (!remetenteNorm.endsWith('@lid')) {
+  const lidMap = await LidMapping.findOne({ pn: remetenteNorm }).lean();
+  if (lidMap?.lid) {
+    const carteiraLid = await CarteiraGrupo.findOne({ idWhatsApp: lidMap.lid, idGrupo: _jid }).lean();
+    if (carteiraLid) remetenteReal = lidMap.lid;
+  }
+}
+
+const carteiraAtual = await CarteiraGrupo.findOne(
+  { idWhatsApp: remetenteReal, idGrupo: _jid },
+  { ultimoBonusDiario: 1, gold: 1 }
+).lean();
 
 function gerarVariantesNumero(termo) {
   const digitos = String(termo || '').replace(/\D/g, '');
@@ -67,7 +88,6 @@ function gerarVariantesNumero(termo) {
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 const { prepareDailyMissionState, incrementMission } = require(path.join(__dirname, 'handlers', 'diversao', 'missoes'));
-const { addUserXp } = require('./utils/xp');
 
 const figurinhaHandler      = require(path.join(__dirname, 'handlers', 'figurinha'));
 const diversaoHandler       = require(path.join(__dirname, 'handlers', 'diversao'));
@@ -149,6 +169,7 @@ function loadData() {
     cmdCount:       {},
     pinnedMessages: {},
     groupConfig:    {},
+    warnings:       {},
     relacionamentos:          {},
     relacionamentoXp:         {},
     relacionamentoBloqueados: {},
@@ -161,6 +182,12 @@ const _savedData   = loadData();
 const msgCount     = new Map(Object.entries(_savedData.msgCount     || {}));
 const stickerCount = new Map(Object.entries(_savedData.stickerCount || {}));
 const cmdCount     = new Map(Object.entries(_savedData.cmdCount     || {}));
+
+// Warnings: Map<groupJid, Map<userJid, count>>
+const warnings = new Map();
+for (const [gJid, usersObj] of Object.entries(_savedData.warnings || {})) {
+  if (typeof usersObj === 'object') warnings.set(gJid, new Map(Object.entries(usersObj)));
+}
 
 // ── Restaura relacionamentos e estados associados ──
 const relacionamentos = new Map(Object.entries(_savedData.relacionamentos || {}));
@@ -186,11 +213,17 @@ function saveData() {
       ? JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) || {}
       : {};
 
+    const warningsObj = {};
+    for (const [gJid, usersMap] of warnings.entries()) {
+      warningsObj[gJid] = Object.fromEntries([...usersMap.entries()]);
+    }
+
     const data = {
       ...existingData,
       msgCount:       Object.fromEntries([...msgCount.entries()]),
       stickerCount:   Object.fromEntries([...stickerCount.entries()]),
       cmdCount:       Object.fromEntries([...cmdCount.entries()]),
+      warnings:       warningsObj,
       groupConfig: {
         autoSticker: [...autoStickerGroups],
         prefixos:    Object.fromEntries([...prefixMap.entries()]),
@@ -207,8 +240,8 @@ function saveData() {
 }
 
 setInterval(saveData, 60 * 1000);
-process.on('SIGINT',  async () => { saveData(); await releaseLock(); process.exit(); });
-process.on('SIGTERM', async () => { saveData(); await releaseLock(); process.exit(); });
+process.on('SIGINT',  () => { saveData(); process.exit(); });
+process.on('SIGTERM', () => { saveData(); process.exit(); });
 
 // ── Configuração de grupo salva ───────────────────────────────────────────────
 const _cfg = _savedData.groupConfig || {};
@@ -223,6 +256,7 @@ function getPrefix(jid) { return prefixMap.get(jid) || '!'; }
 
 // ─── Estado Global adicional (faltante) ────────────────────────────────────
 const contactNames     = {};
+const mutedUsers       = new Map();
 const pendingMusic     = new Map();
 const activeGroups     = new Set();
 const pedidosPendentes = new Map();
@@ -230,7 +264,102 @@ const pinnedMessages   = new Map(Object.entries(_savedData.pinnedMessages || {})
 const lastTexts        = new Map();
 let botJid              = null; // ✅ evita ReferenceError antes da 1ª conexão abrir
 
-// addUserXp agora vive em utils/xp.js (compartilhado com router.js).
+// ─── Limpeza de arquivos temporários ───────────────────────────────────────
+const TMP_DIR = path.resolve(__dirname, '../tmp');
+
+function limparTmpAntigos(maxAgeMs = 10 * 60 * 1000) {
+  try {
+    if (!fs.existsSync(TMP_DIR)) return;
+
+    const agora = Date.now();
+    const arquivos = fs.readdirSync(TMP_DIR);
+
+    for (const nome of arquivos) {
+      const caminho = path.join(TMP_DIR, nome);
+      try {
+        const stat = fs.statSync(caminho);
+        if (!stat.isFile()) continue;
+
+        const idadeMs = agora - stat.mtimeMs;
+        if (idadeMs > maxAgeMs) {
+          fs.unlinkSync(caminho);
+          console.log(`🧹 Removido tmp antigo: ${nome}`);
+        }
+      } catch (e) {
+        console.log(`⚠️ Erro ao processar tmp "${nome}":`, e.message);
+      }
+    }
+  } catch (e) {
+    console.log('⚠️ Erro ao limpar pasta tmp:', e.message);
+  }
+}
+
+// ── XP do usuário ─────────────────────────────────────────────────────────────
+// Única fonte de verdade para XP/mensagens/level/missões do Usuario global.
+// Chamada uma vez por mensagem (privada ou de grupo) em handleMessage().
+// NUNCA incremente xp/mensagens do Usuario em outro lugar — sempre passe por aqui.
+async function addUserXp(userId, xp = 1, pushName = null) {
+  if (!userId) return null;
+
+  const userIdNorm = normalizarJid(userId);
+  if (!userIdNorm) return null;
+
+  try {
+    // Resolve para @lid se houver mapeamento e já existir Usuario salvo nesse @lid
+    let idAlvo = userIdNorm;
+    if (!userIdNorm.endsWith('@lid')) {
+      const lidMap = await LidMapping.findOne({ pn: userIdNorm }).lean();
+      if (lidMap?.lid && await Usuario.exists({ idWhatsApp: lidMap.lid })) {
+        idAlvo = lidMap.lid;
+      }
+    }
+
+    await prepareDailyMissionState(idAlvo);
+
+    const hojeISO = new Date().toISOString().slice(0, 10);
+
+    // xp100 e msg50 saíram do $inc abaixo — iam direto pro banco sem
+    // nunca travar no alvo (100/50), então o !missao podia mostrar
+    // "1500/100" pra quem manda muita mensagem no dia. Agora passam por
+    // incrementMission(), que usa $inc atômico + trava no alvo com $min
+    // e marca completed:true uma única vez, sem escrita extra nas
+    // mensagens seguintes (a query já ignora quem já completou a missão).
+    const update = {
+      $inc: {
+        xp,
+        mensagens: 1,
+        [`xpHistory.${hojeISO}`]: xp,
+      },
+      $setOnInsert: { level: 1, idWhatsApp: idAlvo, createdAt: new Date() },
+    };
+    if (pushName) update.$set = { nome: pushName };
+
+    const updated = await Usuario.findOneAndUpdate(
+      { idWhatsApp: idAlvo },
+      update,
+      { new: true, upsert: true }
+    );
+
+    await incrementMission(idAlvo, 'xp100', xp);
+    await incrementMission(idAlvo, 'msg50', 1);
+
+    const xpAtual   = updated?.xp ?? 0;
+    const levelNovo = Math.floor(Math.pow(xpAtual / 100, 1 / 1.5)) + 1;
+
+    if ((updated?.level ?? 1) !== levelNovo) {
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: idAlvo }, // ✅ agora usa o mesmo id resolvido, nunca o "cru"
+        { $set: { level: levelNovo } }
+      );
+      updated.level = levelNovo;
+    }
+
+    return updated;
+  } catch (e) {
+    console.error('⚠️ Erro ao atualizar XP do usuário:', e.message);
+    return null;
+  }
+}
 
 // ── Carregar relacionamentos do MongoDB ───────────────────────────────────────
 // NOTA: desativada. `Usuario.casadoCom` é um campo GLOBAL por pessoa, mas
@@ -265,6 +394,10 @@ function matchCmdStart(raw, cmdName) {
   return false;
 }
 // â”€â”€â”€ Contadores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function contarSticker(jid) {
+  stickerCount.set(jid, (stickerCount.get(jid) || 0) + 1);
+  saveData();
+}
 function contarCmd(jid) {
   cmdCount.set(jid, (cmdCount.get(jid) || 0) + 1);
   if (cmdCount.get(jid) % 5 === 0) saveData();
@@ -584,8 +717,6 @@ const carteiraAtual = await CarteiraGrupo.findOne(
         setTimeout(() => startBot(), delay);
       } else {
         console.log('🚪 Sessão encerrada definitivamente (loggedOut).');
-        saveData();
-        await releaseLock();
         process.exit(0);
       }
     }
@@ -653,24 +784,14 @@ async function handleMessage(sock, msg) {
     const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
     const args  = caption.replace(/^[!.,\/]bot\s*/i, '').trim();
     await grupoHandler.handleBotToggle(sock, msg, jid, args, isAdm);
-    global._botAtivoCache?.delete(jid);
     return;
   }
 
-  // ── Guard bot ativo no grupo (cache de 30s — evita 1 query por mensagem) ──
+  // ── Guard bot ativo no grupo ──────────────────────────────────
   if (isGroup) {
     const GrupoConfig = require('./models/GrupoConfig');
-    const agora = Date.now();
-    let cache = global._botAtivoCache?.get(jid);
-
-    if (!cache || agora - cache.fetchedAt > 30_000) {
-      const cfgGrupo = await GrupoConfig.findOne({ idGrupo: jid }, { botAtivo: 1 }).lean();
-      cache = { ativo: cfgGrupo?.botAtivo !== false, fetchedAt: agora };
-      if (!global._botAtivoCache) global._botAtivoCache = new Map();
-      global._botAtivoCache.set(jid, cache);
-    }
-
-    if (!cache.ativo) return;
+    const cfgGrupo    = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (cfgGrupo?.botAtivo === false) return;
   }
 
   // ── Mute check ───────────────────────────────────────────────
@@ -728,9 +849,7 @@ async function handleMessage(sock, msg) {
         });
         return;
       }
-    } catch (e) {
-      console.error('⚠️ Erro no anti-flood:', e.message);
-    }
+    } catch {}
   }
 
   // ── Substituição estilo vim (s/antigo/novo/) ─────────────────
@@ -787,11 +906,7 @@ async function handleMessage(sock, msg) {
   // ── Auto-Sticker ─────────────────────────────────────────────
   if (isGroup && autoStickerGroups.has(jid) && !isAnyCmd(raw)) {
     if (imageMsg || videoMsg) {
-      try {
-        await figurinhaHandler.processMedia(sock, msg, content, jid, author, stickerCount);
-      } catch (e) {
-        console.error('⚠️ Erro no auto-sticker:', e.message);
-      }
+      try { await figurinhaHandler.processMedia(sock, msg, content, jid, author, stickerCount); } catch {}
       return;
     }
   }
@@ -1299,11 +1414,11 @@ if (matchCmd(cmdWord, 'worldcup'))       { await diversaoHandler.handleWorldCup(
 
  // ── GRUPO ────────────────────────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'ban'))           { await grupoHandler.handleBan(sock, msg, content, jid, botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'mute'))          { await grupoHandler.handleMute(sock, msg, content, jid, botJid, contactNames); return; }
-  if (matchCmdStart(cmd, 'desmute'))       { await grupoHandler.handleDesmute(sock, msg, content, jid, botJid, contactNames); return; }
+  if (matchCmdStart(cmd, 'mute'))          { await grupoHandler.handleMute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
+  if (matchCmdStart(cmd, 'desmute'))       { await grupoHandler.handleDesmute(sock, msg, content, jid, botJid, mutedUsers, contactNames); return; }
   if (matchCmdStart(cmd, 'ranking'))       { await grupoHandler.handleRanking(sock, msg, jid, msgCount); return; }
   if (matchCmd(cmdWord, 'rankgold'))       { await handleRankGold(sock, msg, jid, contactNames); return; }
-  if (matchCmdStart(cmd, 'sorteio'))       { await grupoHandler.handleSorteio(sock, msg, content, jid, botJid, contactNames); return; }
+  if (matchCmdStart(cmd, 'sorteio'))       { await grupoHandler.handleSorteio(sock, msg, content, jid, contactNames); return; }
   if (matchCmdStart(cmd, 'enquete'))       { await grupoHandler.handleEnquete(sock, msg, jid, caption); return; }
   if (matchCmdStart(cmd, 'todos'))         { await grupoHandler.handleTodos(sock, msg, jid, caption); return; }
   if (matchCmdStart(cmd, 'fechar'))        { await grupoHandler.handleFecharAbrir(sock, msg, jid, true); return; }
@@ -1313,7 +1428,7 @@ if (matchCmd(cmdWord, 'worldcup'))       { await diversaoHandler.handleWorldCup(
   if (matchCmdStart(cmd, 'tempo'))         { await grupoHandler.handleTempo(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'antilink'))      { await grupoHandler.handleAntiLink(sock, msg, content, jid); return; }
   if (matchCmdStart(cmd, 'autosticker'))   { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
-  if (matchCmdStart(cmd, 'reportar'))      { await grupoHandler.handleReportar(sock, msg, content, jid, contactNames, botJid); return; }
+  if (matchCmdStart(cmd, 'reportar'))      { await grupoHandler.handleReportar(sock, msg, content, jid, warnings, contactNames, saveData, botJid); return; }
   if (matchCmdStart(cmd, 'removerreporte')){ await grupoHandler.handleRemoverReporte(sock, msg, content, jid, contactNames, botJid); return; }
   if (matchCmd(cmdWord, 'adv') || matchCmd(cmdWord, 'advertencia'))
   { await grupoHandler.handleAdvertencia(sock, msg, jid); return; }
@@ -1457,18 +1572,6 @@ async function main() {
   mongoose.set('strictQuery', false);
   await mongoose.connect(mongoUri);
   console.log('✅ MongoDB conectado');
-
-  const conseguiuLock = await acquireLock();
-  if (!conseguiuLock) {
-    console.error(
-      '\n🚫 Outra instância deste bot já está rodando com o mesmo MONGO_URI!\n' +
-      '   (Render + local ao mesmo tempo? Dois terminais locais abertos?)\n' +
-      '   Encerrando este processo para não brigar pela sessão do WhatsApp.\n'
-    );
-    process.exit(1);
-  }
-  startHeartbeat();
-  console.log('🔒 Instance lock adquirido — este processo é o dono da sessão.');
 
   await diversaoHandler.initializePersistedData();
   await loadRelationshipsFromDb();

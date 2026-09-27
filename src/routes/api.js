@@ -25,13 +25,17 @@ const ADMIN_KEY       = process.env.ADMIN_KEY;
 const CONTAS_KEY      = process.env.CONTAS_KEY || ADMIN_KEY;
 if (!ADMIN_KEY) console.warn('⚠️  ADMIN_KEY não definida — rotas /admin/* vão recusar acesso.');
 
-const FRONTEND = 'https://piroquinhasbot.github.io';
-
 // ─── CORS ────────────────────────────────────────────────────────────────────
 router.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin',  FRONTEND);
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });

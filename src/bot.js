@@ -232,6 +232,54 @@ async function startBot() {
   });
 }
 
+// ─── Servidor Web ─────────────────────────────────────────────────────────────
+const express = require('express');
+const app     = express();
+const port    = process.env.PORT || 3000;
+
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+app.use(express.json({ limit: '1mb' }));
+
+app.get('/', (req, res) => res.send('Bot Online!'));
+
+try {
+  const apiRouter = require('./routes/api');
+  app.use('/api', apiRouter);
+  console.log('✅ API router carregado com sucesso');
+} catch (err) {
+  console.error('❌ ERRO AO CARREGAR API ROUTER:', err);
+}
+
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Rota não encontrada.' });
+});
+
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'JSON inválido no corpo da requisição.' });
+  }
+  console.error('[Servidor Web] Erro não tratado:', err);
+  return res.status(500).json({ error: 'Erro interno do servidor.' });
+});
+
+app.listen(port, () => console.log(`🌐 Servidor web do bot rodando na porta ${port}`));
+
 // ── Iniciar ───────────────────────────────────────────────────────────────────
 async function main() {
   const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/piroquinhas';

@@ -244,18 +244,40 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
     saldoFinal = carteiraAtualizada.gold;
   }
 
+  const FRASES_VITORIA_CORRIDA = [
+    'Disparou na reta final e ninguém alcançou! 🏆',
+    'Passou os outros bichos como se estivessem parados!',
+    'Chegou raspando, mas chegou primeiro — e é isso que importa!',
+    'Dominou a pista do início ao fim! 🔥',
+    'Uma corrida perfeita — seu corredor não deu chance aos outros!',
+  ];
+
+  const FRASES_DERROTA_CORRIDA = [
+    'Seu bicho até tentou, mas não teve pernas pra vencer hoje.',
+    'Ficou pra trás logo na largada... 😔',
+    'Foi uma corrida disputada, mas a sorte não ajudou dessa vez.',
+    'Quase lá! Só faltou um pouco mais de fôlego.',
+    'A pista foi cruel dessa vez — tenta outro bicho na próxima!',
+  ];
+
   const statusTxt = venceu
-    ? `🎉 *VITÓRIA!* Seu ${bichoEscolha.nome} venceu! Ganhou *+${premio} gold*!`
-    : `❌ *DERROTA!* O vencedor foi ${bichoVencedor.nome}. Perdeu *${aposta} gold*.`;
+    ? `🎉 *VITÓRIA!*\n${FRASES_VITORIA_CORRIDA[Math.floor(Math.random() * FRASES_VITORIA_CORRIDA.length)]}`
+    : `❌ *DERROTA!*\n${FRASES_DERROTA_CORRIDA[Math.floor(Math.random() * FRASES_DERROTA_CORRIDA.length)]}`;
+
+  const resultadoLinha = venceu
+    ? `📈 Ganho líquido: *+${lucroLiq} gold* _(prêmio de ${premio} gold pelas odds ${bichoEscolha.odds}x)_`
+    : `📉 Perda: *-${aposta} gold*`;
 
   await sock.sendMessage(jid, {
     text:
       `🏁 *CORRIDA DE BICHOS* 🏁\n\n` +
       `🎯 Sua aposta: *${bichoEscolha.nome}* (odds ${bichoEscolha.odds}x)\n` +
-      `🏆 Vencedor:   *${bichoVencedor.nome}*\n\n` +
+      `🏆 Vencedor da corrida: *${bichoVencedor.nome}*\n\n` +
       `${statusTxt}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `💰 Saldo final: *${saldoFinal} gold*`,
+      `${resultadoLinha}\n` +
+      `💰 Saldo final: *${saldoFinal} gold*\n\n` +
+      `_Quer correr de novo? !corrida [bicho] [valor]_`,
   }, { quoted: msg });
 }
 
@@ -285,22 +307,51 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
     return;
   }
 
+  const FRASES_VITORIA = [
+    'A moeda girou no ar e caiu do seu lado! 🪙',
+    'Sorte grande dessa vez — a banca chorou! 😎',
+    'CARA! A sorte tava mesmo com você hoje.',
+    'A moeda bateu no chão e... vitória absoluta!',
+    'Você sentiu que ia ganhar, e ganhou! 🔥',
+  ];
+
+  const FRASES_DERROTA = [
+    'A moeda caiu do lado errado dessa vez... 😔',
+    'Quase! A sorte não sorriu pra você agora.',
+    'A banca levou essa rodada. Volte com tudo na próxima!',
+    'Foi por pouco — tenta de novo!',
+    'A moeda rolou, rolou... e não deu essa.',
+  ];
+
   const venceu = Math.random() < 0.5;
+
   if (venceu) {
+    const frase = FRASES_VITORIA[Math.floor(Math.random() * FRASES_VITORIA.length)];
     const carteiraAtualizada = await alterarGold(senderNorm, jid, aposta, 'Aposta (Vitória)');
+    const novoSaldo = carteiraAtualizada?.gold ?? (saldo + aposta);
+
     await sock.sendMessage(jid, {
       text:
         `🎉 *APOSTA GANHA!* 🎉\n\n` +
-        `🎲 Você apostou *${aposta} gold* e DUPLICOU seu valor!\n` +
-        `💰 Novo saldo: *${carteiraAtualizada?.gold ?? (saldo + aposta)} gold*`,
+        `🪙 ${frase}\n\n` +
+        `💵 Valor apostado: *${aposta} gold*\n` +
+        `📈 Ganho: *+${aposta} gold*\n` +
+        `💰 Novo saldo: *${novoSaldo} gold*\n\n` +
+        `_Quer arriscar de novo? !apostar <valor>_`,
     }, { quoted: msg });
   } else {
+    const frase = FRASES_DERROTA[Math.floor(Math.random() * FRASES_DERROTA.length)];
     const carteiraAtualizada = await alterarGold(senderNorm, jid, -aposta, 'Aposta (Derrota)');
+    const novoSaldo = carteiraAtualizada?.gold ?? (saldo - aposta);
+
     await sock.sendMessage(jid, {
       text:
         `💔 *APOSTA PERDIDA!* 💔\n\n` +
-        `🎲 Você apostou *${aposta} gold* e perdeu tudo nesta rodada.\n` +
-        `💰 Novo saldo: *${carteiraAtualizada?.gold ?? (saldo - aposta)} gold*`,
+        `🪙 ${frase}\n\n` +
+        `💵 Valor apostado: *${aposta} gold*\n` +
+        `📉 Perda: *-${aposta} gold*\n` +
+        `💰 Novo saldo: *${novoSaldo} gold*\n\n` +
+        `_Não desanima — tenta de novo! !apostar <valor>_`,
     }, { quoted: msg });
   }
 }

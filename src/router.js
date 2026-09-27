@@ -17,6 +17,16 @@ const {
   saveData,
 } = require('./utils/persistence');
 
+// ─── Gerenciador de Prefixos Centralizado ─────────────────────────
+const {
+  DEFAULT_PREFIXES,
+  getGroupPrefix,
+  setGroupPrefix,
+  isAnyCmd: isAnyCmdPrefix,
+  matchCmd: matchPrefixCmd,
+  extractArgs: extractPrefixArgs,
+} = require('./utils/prefixos');
+
 // ─── Identidade / JID ─────────────────────────────────────────────────────
 const { normalizarJid, extrairNumero, registrarLidEMapping } = require('./utils/identity');
 
@@ -120,10 +130,10 @@ async function handleMessage(sock, msg) {
     activeGroups.add(jid);
   }
 
-  // ── Guard !bot on/off ──────────────────────────────────────────
-  if (isGroup && (matchCmd(cmdWord, 'bot') || matchCmdStart(cmd, 'bot '))) {
+  // ── Guard bot on/off (funciona com qualquer prefixo !, ., /, ,, # ou customizado) ──
+  if (isGroup && matchPrefixCmd(caption, 'bot', jid)) {
     const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
-    const args  = caption.replace(/^[!.,\/]bot\s*/i, '').trim();
+    const args  = extractPrefixArgs(caption, 'bot', jid);
     await grupoHandler.handleBotToggle(sock, msg, jid, args, isAdm);
     return;
   }

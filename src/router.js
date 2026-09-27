@@ -279,7 +279,10 @@ async function handleMessage(sock, msg) {
   }
 
   // ── Pedido de casamento (sim/não) ────────────────────────────
-  if (pedidosPendentes.has(senderJid)) {
+  // pedidosPendentes é indexado por JID normalizado (jidNormalizedUser),
+  // mas senderJid aqui vem cru (com sufixo de dispositivo em multi-device),
+  // então precisa normalizar antes de consultar o Map.
+  if (senderJid && pedidosPendentes.has(jidNormalizedUser(senderJid))) {
     const resp = raw.trim();
     if (resp === 'sim') {
       await relacionamentoHandler.handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames);
@@ -416,7 +419,7 @@ async function handleMessage(sock, msg) {
     { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'promote', botJid, contactNames); return; }
   if (matchCmd(cmdWord, 'rebaixar') || matchCmdStart(cmd, 'rebaixar '))
     { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'demote', botJid, contactNames); return; }
-  if (matchCmd(cmdWord, 'grupinfo'))
+  if (matchCmd(cmdWord, 'grupinfo') || matchCmd(cmdWord, 'grupoinfo'))
     { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'listaadm'))
     { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }
@@ -785,17 +788,24 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'abraco'))           { await relacionamentoHandler.handleAbraco(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'presente'))         { await relacionamentoHandler.handlePresente(sock, msg, jid, author, senderJid, relacionamentos, caption); return; }
   if (matchCmd(cmdWord, 'jantar'))           { await relacionamentoHandler.handleJantar(sock, msg, jid, author, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'cinematel'))        { await relacionamentoHandler.handleCinema(sock, msg, jid, author, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'cinematel') || matchCmd(cmdWord, 'cinema'))
+    { await relacionamentoHandler.handleCinema(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'viajar'))           { await relacionamentoHandler.handleViajar(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'serenata'))         { await relacionamentoHandler.handleSerenata(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'declarar'))         { await relacionamentoHandler.handleDeclarar(sock, msg, content, jid, author, senderJid, relacionamentos); return; }
   if (matchCmdStart(cmd, 'ciumento'))        { await relacionamentoHandler.handleCiumento(sock, msg, jid, senderJid, relacionamentos); return; }
-  if (matchCmd(cmdWord, 'statu'))            { await relacionamentoHandler.handleStatu(sock, msg, jid, senderJid, relacionamentos); return; }
-if (matchCmd(cmdWord, 'meupar'))           { await relacionamentoHandler.handleMeuPar(sock, msg, jid, senderJid, relacionamentos); return; }
-if (matchCmd(cmdWord, 'xpdobro'))          { await relacionamentoHandler.handleXpDobro(sock, msg, jid, senderJid, relacionamentos); return; }
-if (matchCmd(cmdWord, 'aniversario_casal')){ await relacionamentoHandler.handleAniversarioCasal(sock, msg, jid, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'statu') || matchCmd(cmdWord, 'status'))
+    { await relacionamentoHandler.handleStatu(sock, msg, jid, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'meupar'))           { await relacionamentoHandler.handleMeuPar(sock, msg, jid, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'xpdobro'))          { await relacionamentoHandler.handleXpDobro(sock, msg, jid, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'aniversario_casal') || matchCmd(cmdWord, 'aniversariocasal'))
+    { await relacionamentoHandler.handleAniversarioCasal(sock, msg, jid, senderJid, relacionamentos); return; }
   if (matchCmdStart(cmd, 'duelodecasais'))   { await relacionamentoHandler.handleDueloCasais(sock, msg, content, jid, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleRankCasais(sock, msg, jid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'surpresa'))
+    { await relacionamentoHandler.handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'surpresa'))
+    { await relacionamentoHandler.handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'tentarfilho'))  { await diversaoHandler.handleTentarFilho(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'filho'))        { await diversaoHandler.handleVerFilho(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'cuidarfilho'))  { await diversaoHandler.handleCuidarFilho(sock, msg, jid); return; }

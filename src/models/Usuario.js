@@ -74,9 +74,14 @@ const usuarioSchema = new mongoose.Schema({
   bio:          { type: String, default: null,  trim: true, maxlength: 150 },
 
   // ── Conta do painel (login com usuário e senha) ──────────────
-  username:     { type: String, default: null, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
+  // Sem `default: null` aqui de propósito: com sparse:true no índice, o Mongo
+  // só ignora o campo quando ele está AUSENTE do documento — um null explícito
+  // ainda conta como "existe" e quebra o unique index assim que o segundo
+  // usuário sem username/email é criado. Sem default, o Mongoose não grava
+  // o campo quando ele não é informado, e o sparse index volta a funcionar.
+  username:     { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
   passwordHash: { type: String, default: null },
-  email:        { type: String, default: null, trim: true, lowercase: true },
+  email:        { type: String, trim: true, lowercase: true },
 
   // ── Banimento global ─────────────────────────────────────────
   // Necessário para PATCH /api/admin/usuario/:id/ban funcionar.

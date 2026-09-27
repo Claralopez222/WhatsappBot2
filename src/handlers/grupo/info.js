@@ -48,7 +48,18 @@ async function handleGrupInfo(sock, msg, jid) {
   const criado  = meta.creation
     ? new Date(meta.creation * 1000).toLocaleDateString('pt-BR')
     : '?';
-  const desc    = meta.desc ? meta.desc.slice(0, 200) : '_Sem descrição_';
+
+  // WhatsApp aceita textos de até ~65.000 caracteres; 200 era um limite
+  // arbitrário demais e cortava a descrição sem avisar. Agora só corta
+  // se for realmente enorme, e avisa quando corta.
+  const DESC_MAX  = 1024;
+  const descBruta = meta.desc || '';
+  const desc = descBruta
+    ? (descBruta.length > DESC_MAX
+        ? `${descBruta.slice(0, DESC_MAX)}…\n\n_(descrição truncada — está muito longa)_`
+        : descBruta)
+    : '_Sem descrição_';
+
   const fechado = meta.announce ? '🔒 Fechado' : '🔓 Aberto';
 
   const ownerJid = await getGroupOwner(sock, jid);
@@ -62,7 +73,7 @@ async function handleGrupInfo(sock, msg, jid) {
   const floodCfg = cfgGrupo?.antiFloodAtivo
     ? `✅ *${cfgGrupo.antiFloodLimite} msgs/${cfgGrupo.antiFloodJanelaMs / 1000}s*`
     : '❌ Inativo';
-  const bvCfg    = cfgGrupo?.bemVindoAtivo !== false && cfgGrupo?.bemVindoAtivo
+  const bvCfg    = cfgGrupo?.bemVindoAtivo
     ? '✅ Ativo'
     : '❌ Inativo';
   const antiLinkCfg = cfgGrupo?.antiLink ? '✅ Ativo' : '❌ Inativo';

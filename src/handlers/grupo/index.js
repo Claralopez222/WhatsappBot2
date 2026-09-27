@@ -81,7 +81,7 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     `▸ ${P}tempo [@fulano] — Tempo no grupo\n\n` +
 
     `📋 *GRUPO & REGRAS*\n` +
-    `▸ ${P}grupinfo — Informações do grupo\n` +
+    `▸ ${P}grupinfo (ou !grupoinfo) — Informações do grupo\n` +
     `▸ ${P}statsgrupo — Estatísticas completas\n` +
     `▸ ${P}regras — Ver regras do grupo\n` +
     `▸ ${P}setregras [texto] — Definir regras do grupo\n` +

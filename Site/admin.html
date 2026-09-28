@@ -350,7 +350,10 @@
       <section id="aba-grupos" class="aba-conteudo hidden">
         <div class="secao-header">
           <h2>Gerenciador de Grupos <span class="contagem-badge" id="grupos-contagem"></span></h2>
-          <button class="btn-icon" id="btn-refresh-grupos" title="Recarregar">↺</button>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button class="btn-primary" id="btn-sync-grupos" title="Sincronizar e limpar grupos antigos" style="padding:0.4rem 0.8rem;font-size:0.8rem;">🧹 Sincronizar Grupos</button>
+            <button class="btn-icon" id="btn-refresh-grupos" title="Recarregar">↺</button>
+          </div>
         </div>
 
         <p class="secao-hint">
@@ -1359,6 +1362,24 @@ const titulosAbas  = {
 
     $('btn-refresh-grupos').addEventListener('click', carregarGrupos);
     $('btn-retry-grupos').addEventListener('click',   carregarGrupos);
+    $('btn-sync-grupos')?.addEventListener('click', async () => {
+      toast('Sincronizando e limpando grupos...', 'ok');
+      try {
+        const res = await fetch(`${API}/admin/grupos/sincronizar`, {
+          method: 'POST',
+          headers: adminHeaders()
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast(data.mensagem || 'Grupos sincronizados!', 'ok');
+          await carregarGrupos();
+        } else {
+          toast(data.error || 'Erro ao sincronizar grupos.', 'erro');
+        }
+      } catch (err) {
+        toast('Erro ao conectar com o servidor.', 'erro');
+      }
+    });
     $('grupos-busca').addEventListener('input', atualizarListaGrupos);
     $('grupos-sort').addEventListener('change', () => {
       grupoSortAtual = $('grupos-sort').value;

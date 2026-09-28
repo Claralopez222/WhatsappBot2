@@ -414,13 +414,16 @@ if (!carteiras.length) {
   }
 }
 
-const usuario = await Usuario.findOne({ idWhatsApp }).lean();
+    const usuario = await Usuario.findOne({ idWhatsApp }).lean();
 
     if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
-    const xpTotal        = carteiras.reduce((s, c) => s + (c.xp        ?? 0), 0);
-    const goldTotal      = carteiras.reduce((s, c) => s + (c.gold      ?? 0), 0);
-    const mensagensTotal = carteiras.reduce((s, c) => s + (c.mensagens ?? 0), 0);
+    // Filtra APENAS carteiras de grupos válidos (terminados em @g.us)
+    const carteirasGruposValidos = carteiras.filter(c => c.idGrupo && typeof c.idGrupo === 'string' && c.idGrupo.endsWith('@g.us'));
+
+    const xpTotal        = carteirasGruposValidos.reduce((s, c) => s + (c.xp        ?? 0), 0);
+    const goldTotal      = carteirasGruposValidos.reduce((s, c) => s + (c.gold      ?? 0), 0);
+    const mensagensTotal = carteirasGruposValidos.reduce((s, c) => s + (c.mensagens ?? 0), 0);
 
     const levelGlobal = calcularLevel(xpTotal);
 
@@ -432,14 +435,12 @@ const usuario = await Usuario.findOne({ idWhatsApp }).lean();
       : 100;
 
     const posicaoResult = await CarteiraGrupo.aggregate([
+      { $match: { idGrupo: { $regex: /@g\.us$/ } } },
       { $group: { _id: '$idWhatsApp', xpTotal: { $sum: '$xp' } } },
       { $match: { xpTotal: { $gt: xpTotal } } },
       { $count: 'acima' },
     ]);
     const posicaoRanking = (posicaoResult[0]?.acima ?? 0) + 1;
-
-    // Filtra APENAS carteiras de grupos válidos (terminados em @g.us)
-    const carteirasGruposValidos = carteiras.filter(c => c.idGrupo && typeof c.idGrupo === 'string' && c.idGrupo.endsWith('@g.us'));
 
     const jidsGruposMe = carteirasGruposValidos.map(c => c.idGrupo);
     const nomesGruposMe = {};
@@ -615,6 +616,9 @@ router.get('/user/grupos', auth, async (req, res) => {
           .lean();
       }
     }
+
+    // Filtra apenas carteiras de grupos válidos (@g.us)
+    carteiras = carteiras.filter(c => c.idGrupo && typeof c.idGrupo === 'string' && c.idGrupo.endsWith('@g.us'));
 
     // Busca nomes reais dos grupos a partir de qualquer carteira que tenha o campo
     const jidsGruposUser = carteiras.map(c => c.idGrupo);
@@ -2308,6 +2312,37 @@ router.post('/admin/grupo/:jid/remover-membro', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('[API] POST /admin/grupo/remover-membro:', err);
     return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/grupos/sincronizar
+// Força a sincronização e limpeza de grupos inativos ou antigos.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/admin/grupos/sincronizar', adminAuth, async (req, res) => {
+  try {
+    const { rodarAtualizacao } = require('../scripts/atualizarGrupos');
+    const { getBotSock }       = require('../bot');
+    const sock = getBotSock ? getBotSock() : null;
+
+    if (sock) {
+      await rodarAtualizacao(sock);
+      return res.json({ ok: true, mensagem: 'Sincronização e limpeza executadas com sucesso via WhatsApp.' });
+    } else {
+      const CarteiraGrupoModel = require('../models/CarteiraGrupo');
+      const GrupoConfigModel   = require('../models/GrupoConfig');
+      const resCarteira = await CarteiraGrupoModel.deleteMany({ idGrupo: { $not: /@g\.us$/ } });
+      const resConfig   = await GrupoConfigModel.deleteMany({ idGrupo: { $not: /@g\.us$/ } });
+      return res.json({
+        ok: true,
+        mensagem: 'Socket offline. Limpeza de JIDs inválidos concluída no MongoDB.',
+        carteirasRemovidas: resCarteira.deletedCount,
+        configsRemovidas: resConfig.deletedCount,
+      });
+    }
+  } catch (err) {
+    console.error('[API] POST /admin/grupos/sincronizar:', err);
+    return res.status(500).json({ error: 'Erro ao sincronizar grupos: ' + err.message });
   }
 });
 

@@ -43,8 +43,19 @@ async function rodarAtualizacao(sock) {
   // ── 2. Busca a lista REAL de grupos em que o bot participa ativamente ──────
   let activeGroupJids = [];
   try {
-    const participatingMap = await sock.groupFetchAllParticipating();
-    activeGroupJids = Object.keys(participatingMap || {});
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+      try {
+        const participatingMap = await sock.groupFetchAllParticipating();
+        const jids = Object.keys(participatingMap || {}).filter(j => j && typeof j === 'string' && j.endsWith('@g.us'));
+        if (jids.length > 0 || tentativa === 3) {
+          activeGroupJids = jids;
+          break;
+        }
+      } catch (e) {
+        if (tentativa === 3) throw e;
+        await sleep(2500);
+      }
+    }
     console.log(`📋 O bot está participando ativamente de ${activeGroupJids.length} grupo(s).`);
 
     // Remove do banco todos os grupos que o bot NÃO faz mais parte

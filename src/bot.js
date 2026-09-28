@@ -292,11 +292,21 @@ async function startBot() {
         schedulersIniciados = true;
         console.log('[Schedulers] Iniciados.');
 
-        setTimeout(() => rodarAtualizacao(sock), 8000);
+        setTimeout(() => rodarAtualizacao(sock), 10000);
+        setInterval(() => {
+          rodarAtualizacao(sock).catch(e => console.error('⚠️ Erro na sincronização periódica de grupos:', e.message));
+        }, 15 * 60 * 1000);
       }
     }
   });
 }
+
+// Exporta getBotSock para que a API possa disparar ações do socket no bot
+function getBotSock() {
+  return _botSock;
+}
+
+module.exports = { getBotSock };
 
 // ─── Servidor Web ─────────────────────────────────────────────────────────────
 const express = require('express');

@@ -637,6 +637,24 @@ $('btn-enviar-broadcast')?.addEventListener('click', async () => {
 /* ── Listeners de sort/busca ─────────────────────────────── */
 $('btn-refresh-grupos')?.addEventListener('click', window.carregarGrupos);
 $('btn-retry-grupos')?.addEventListener('click',   window.carregarGrupos);
+$('btn-sync-grupos')?.addEventListener('click', async () => {
+  toast('Sincronizando e limpando grupos...', 'ok');
+  try {
+    const res = await fetch(`${API()}/admin/grupos/sincronizar`, {
+      method: 'POST',
+      headers: adminHeaders()
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast(data.mensagem || 'Grupos sincronizados!', 'ok');
+      await window.carregarGrupos();
+    } else {
+      toast(data.error || 'Erro ao sincronizar grupos.', 'erro');
+    }
+  } catch (err) {
+    toast('Erro ao conectar com o servidor.', 'erro');
+  }
+});
 $('grupos-busca')?.addEventListener('input', window.atualizarListaGrupos);
 $('grupos-sort')?.addEventListener('change', () => {
   window.grupoSortAtual = $('grupos-sort').value;

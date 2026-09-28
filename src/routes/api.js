@@ -146,6 +146,33 @@ async function resolverIdWhatsApp(termo, idGrupo) {
   return variantesPn.sort((a, b) => b.length - a.length)[0];
 }
 
+// Resolve todas as variantes de JIDs (PN e LID) de forma bidirecional e segura
+async function resolverJidsBusca(termoOriginal) {
+  if (!termoOriginal || typeof termoOriginal !== 'string') return [];
+  const jidNorm = normalizarJid(termoOriginal);
+  let digitos = termoOriginal.split('@')[0].replace(/\D/g, '');
+
+  let lidMap = null;
+  if (jidNorm.endsWith('@lid')) {
+    lidMap = await LidMapping.findOne({ lid: jidNorm }).lean();
+    if (lidMap?.pn) {
+      digitos = lidMap.pn.split('@')[0].replace(/\D/g, '');
+    }
+  } else {
+    const vars = digitos ? gerarVariantesNumero(digitos).map(d => `${d}@s.whatsapp.net`) : [];
+    lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: vars } }, { lid: jidNorm }] }).lean();
+  }
+
+  const variantesPn = digitos ? gerarVariantesNumero(digitos).map(d => `${d}@s.whatsapp.net`) : [];
+  const jids = [...new Set([
+    jidNorm,
+    ...(lidMap ? [lidMap.lid, lidMap.pn] : []),
+    ...variantesPn
+  ].filter(Boolean))];
+
+  return jids;
+}
+
 // Calcula nível a partir do XP (mesma fórmula usada no bot e no frontend)
 function calcularLevel(xp) {
   return Math.max(1, Math.floor(Math.pow((xp || 0) / 80, 1 / 1.4)) + 1);
@@ -892,10 +919,8 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     if (!['dar', 'remover', 'definir', 'set'].includes(op))
       return res.status(400).json({ error: 'operacao deve ser "dar", "remover" ou "definir".' });
 
-    const jidNorm = normalizarJid(termoOriginal);
-    const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+    const jidsBusca = await resolverJidsBusca(termoOriginal);
+    const jidNorm   = jidsBusca[0] || normalizarJid(termoOriginal);
 
     if (!eGlobal) {
       let update = {};
@@ -919,7 +944,7 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
       );
 
       if (resUpdate.matchedCount === 0) {
-        const primaryJid = lidMap?.lid || jidNorm;
+        const primaryJid = jidsBusca[0] || jidNorm;
         await CarteiraGrupo.findOneAndUpdate(
           { idWhatsApp: primaryJid, idGrupo },
           update,

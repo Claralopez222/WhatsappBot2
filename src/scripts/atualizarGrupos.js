@@ -137,16 +137,18 @@ async function rodarAtualizacao(sock) {
       );
 
       try {
-        const docRef = doc(db, 'configuracoes_grupo', jid);
-        await setDoc(
-          docRef,
-          {
-            idGrupo   : jid,
-            nomeGrupo : nomeReal,
-            updatedAt : new Date(),
-          },
-          { merge: true }
-        );
+        if (db) {
+          const docRef = doc(db, 'configuracoes_grupo', jid);
+          await setDoc(
+            docRef,
+            {
+              idGrupo   : jid,
+              nomeGrupo : nomeReal,
+              updatedAt : new Date(),
+            },
+            { merge: true }
+          ).catch(() => {});
+        }
       } catch (e) {
         // Firebase sync fallback
       }

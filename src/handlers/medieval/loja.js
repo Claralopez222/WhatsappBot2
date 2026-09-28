@@ -788,36 +788,49 @@ async function handleRankMedieval(sock, msg, jid) {
 
 // ─── !menumediev ───────────────────────────────────────────────────────────────
 
-async function handleMenuMedieval(sock, msg, jid) {
+async function handleMenuMedieval(sock, msg, jid, getPrefix) {
   try {
-    await sock.sendMessage(jid, {
-      text:
-        `⚔️🏰 *MENU MEDIEVAL* 🏰⚔️\n\n` +
-        `👤 *PERSONAGEM*\n` +
-        `▸ *!ficha* — Ver sua ficha de herói\n` +
-        `▸ *!recargamana* — Recuperar HP e mana (10min)\n\n` +
-        `⚔️ *COMBATE*\n` +
-        `▸ *!atacar @alguém* — Atacar com arma (2min)\n` +
-        `▸ *!magia @alguém* — Habilidade elemental (5min)\n\n` +
-        `🗺️ *AVENTURA*\n` +
-        `▸ *!missaomed* — Embarcar em missão (30min)\n\n` +
-        `🏪 *LOJA E ITENS*\n` +
-        `▸ *!lojamedieval* — Ver loja de armas, armaduras e poções\n` +
-        `▸ *!comprar [item]* — Comprar um item\n` +
-        `▸ *!equipar [item]* — Equipar arma ou armadura\n` +
-        `▸ *!desequipar arma/armadura* — Remover item equipado\n` +
-        `▸ *!usarpocao [nome]* — Usar poção do inventário\n` +
-        `▸ *!invmed* — Ver seus itens\n` +
-        `▸ *!sistemmedieval* — Como funciona o sistema\n\n` +
-        `📊 *RANKING E HISTÓRICO*\n` +
-        `▸ *!rankmedieval* — Ranking de guerreiros\n` +
-        `▸ *!historico* — Suas últimas batalhas\n\n` +
-        `⚙️ *ADMIN*\n` +
-        `▸ *!medieval on/off* — Ativar/desativar modo\n\n` +
-        `━━━━━━━━━━━━━━━━━━━\n` +
-        `🔥 *Elementos:* Fogo 💧 Água 🌍 Terra 🌪️ Ar ⚡ Trovão 🌑 Sombra ✨ Luz 🖤 Magia Negra\n` +
-        `_Cada elemento tem vantagens e fraquezas!_`,
-    }, { quoted: msg });
+    const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+    const menu =
+`╔══════════════════════╗
+      🏰 MENU MEDIEVAL
+╚══════════════════════╝
+
+👤 *PERSONAGEM*
+  ▸ ${P}ficha — Ver sua ficha de herói
+  ▸ ${P}recargamana — Recuperar HP e mana (10min)
+
+⚔️ *COMBATE*
+  ▸ ${P}atacar @alguém — Atacar com arma (2min)
+  ▸ ${P}magia @alguém — Habilidade elemental (5min)
+  ▸ ${P}saquear @alguém — Levar pertences de inimigos derrotados
+
+🗺️ *AVENTURA*
+  ▸ ${P}missaomed — Embarcar em missão (30min)
+
+🏪 *LOJA & ITENS*
+  ▸ ${P}lojamedieval — Ver loja de armas, armaduras e poções
+  ▸ ${P}comprar _(item)_ — Comprar um item
+  ▸ ${P}equipar _(item)_ — Equipar arma ou armadura
+  ▸ ${P}desequipar _(arma/armadura)_ — Remover item equipado
+  ▸ ${P}usarpocao _(nome)_ — Usar poção do inventário
+  ▸ ${P}invmed — Ver seus itens
+  ▸ ${P}sellmed _(item)_ — Vender item
+  ▸ ${P}givemed @alguém _(item)_ — Entregar item a alguém
+  ▸ ${P}sistemmedieval — Como funciona o sistema
+
+📊 *RANKING & HISTÓRICO*
+  ▸ ${P}rankmedieval — Ranking de guerreiros
+  ▸ ${P}historico — Suas últimas batalhas
+
+⚙️ *ADMIN*
+  ▸ ${P}medieval on/off — Ativar/desativar modo
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+🔥 *Elementos:* Fogo 💧 Água 🌍 Terra 🌪️ Ar ⚡ Trovão 🌑 Sombra ✨ Luz 🖤 Magia Negra
+_Cada elemento tem vantagens e fraquezas!_`;
+
+    await sock.sendMessage(jid, { text: menu }, { quoted: msg });
   } catch (err) {
     console.error('⚠️ [Medieval:Menu] Erro:', err.message);
   }

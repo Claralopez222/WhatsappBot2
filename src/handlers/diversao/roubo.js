@@ -118,25 +118,34 @@ async function incrementarItem(idWhatsApp, idGrupo, campo, itemSlug, delta = 1) 
 // ─── !menuroubar ──────────────────────────────────────────────────────────────
 
 async function handleMenuRoubo(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
 
-  let texto = `🎭 ═══ LOJA DE ROUBO ═══ 🎭\n\n`;
-  texto += `*EQUIPAMENTOS DISPONÍVEIS:*\n`;
+  let texto =
+`╔══════════════════════╗
+     🎭 LOJA DE ROUBO
+╚══════════════════════╝
+
+🧰 *EQUIPAMENTOS DISPONÍVEIS*
+`;
 
   for (const [key, item] of Object.entries(ITENS_ROUBO)) {
-    texto += `  ${item.nome} — *${item.preco}* gold\n`;
-    texto += `    └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
+    texto += `  ▸ ${item.nome} — *${item.preco}* gold\n`;
+    texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
   }
 
-  texto += `\n━━━━━━━━━━━━━━━━\n`;
-  texto += `*COMANDOS:*\n`;
-  texto += `  ${P}buyroubo <item>     — Comprar item\n`;
-  texto += `  ${P}equiparroubo <item> — Equipar item\n`;
-  texto += `  ${P}invroubo            — Ver inventário de ataque\n`;
-  texto += `  ${P}roubar @pessoa      — Roubar alguém\n\n`;
-  texto += `⚠️ *Item equipado é obrigatório para roubar!*\n`;
-  texto += `⏱️ *Cooldown:* ${formatarTempo(COOLDOWN_ROUBO_MS)} entre tentativas\n`;
-  texto += `🎲 *Taxa base de sucesso:* ${TAXA_SUCESSO_BASE}%`;
+  texto += `
+📜 *COMANDOS*
+  ▸ ${P}buyroubo _(item)_ — Comprar item
+  ▸ ${P}equiparroubo _(item)_ — Equipar item
+  ▸ ${P}invroubo — Ver inventário de ataque
+  ▸ ${P}roubar @pessoa — Roubar alguém
+
+⚠️ *REGRAS*
+  • Item equipado é obrigatório para roubar!
+  • Cooldown: *${formatarTempo(COOLDOWN_ROUBO_MS)}* entre tentativas
+  • Taxa base de sucesso: *${TAXA_SUCESSO_BASE}%*
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
@@ -144,22 +153,32 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 // ─── !menusec ─────────────────────────────────────────────────────────────────
 
 async function handleMenuSec(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
 
-  let texto = `🔐 ═══ LOJA DE SEGURANÇA ═══ 🔐\n\n`;
-  texto += `*EQUIPAMENTOS DE DEFESA:*\n`;
+  let texto =
+`╔══════════════════════╗
+    🔐 LOJA DE SEGURANÇA
+╚══════════════════════╝
+
+🛡️ *EQUIPAMENTOS DE DEFESA*
+`;
 
   for (const [key, item] of Object.entries(ITENS_SEGURANCA)) {
-    texto += `  ${item.nome} — *${item.preco}* gold\n`;
-    texto += `    └ Proteção: *+${item.defesa}%* | chave: \`${key}\`\n`;
+    texto += `  ▸ ${item.nome} — *${item.preco}* gold\n`;
+    texto += `     └ Proteção: *+${item.defesa}%* | chave: \`${key}\`\n`;
   }
 
-  texto += `\n━━━━━━━━━━━━━━━━\n`;
-  texto += `*COMANDOS:*\n`;
-  texto += `  ${P}buysec <item>      — Comprar item\n`;
-  texto += `  ${P}equiparsec <item>  — Equipar defesa\n`;
-  texto += `  ${P}invsec             — Ver inventário de segurança\n\n`;
-  texto += `🛡️ *Sem defesa, há ${TAXA_SUCESSO_BASE}% de chance de ser roubado com sucesso!*`;
+  texto += `
+📜 *COMANDOS*
+  ▸ ${P}buysec _(item)_ — Comprar item
+  ▸ ${P}equiparsec _(item)_ — Equipar defesa
+  ▸ ${P}invsec — Ver inventário de segurança
+  ▸ ${P}meiosec — Ver meio de segurança
+
+⚠️ *ATENÇÃO*
+  • Sem defesa, há *${TAXA_SUCESSO_BASE}%* de chance de ser roubado com sucesso!
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }

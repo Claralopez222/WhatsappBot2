@@ -70,21 +70,36 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
 // ─── handleMenuPet ────────────────────────────────────────────────────────────
 async function handleMenuPet(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
-  await sock.sendMessage(jid, {
-    text:
-      `🐾 *SISTEMA DE PETS* 🐾\n\n` +
-      `${P}capturar — capturar pet selvagem\n` +
-      `${P}statuspet — ver status do seu pet\n` +
-      `${P}alimentar — alimentar o pet\n` +
-      `${P}brincar — brincar com o pet\n` +
-      `${P}curar — curar o pet\n` +
-      `${P}renomearpet [nome] — renomear\n` +
-      `${P}abrigo — colocar pet no abrigo\n` +
-      `${P}pets — ver todos os pets\n` +
-      `${P}petrank — ranking de pets\n` +
-      `${P}lojapet — loja de pets\n` +
-      `${P}sistempet — como funciona`,
-  }, { quoted: msg });
+  const menu =
+`╔══════════════════════╗
+        🐾 MENU PETS
+╚══════════════════════╝
+
+🎯 *CAPTURA & COLEÇÃO*
+  ▸ ${P}capturar — capturar pet selvagem
+  ▸ ${P}pets — ver todos os pets
+  ▸ ${P}abrigo — colocar pet no abrigo
+  ▸ ${P}renomearpet _(nome)_ — renomear
+
+❤️ *CUIDADOS*
+  ▸ ${P}alimentar — alimentar o pet
+  ▸ ${P}brincar — brincar com o pet
+  ▸ ${P}curar — curar o pet
+
+📊 *STATUS & RANKING*
+  ▸ ${P}statuspet — ver status do seu pet
+  ▸ ${P}petrank — ranking de pets
+
+🛒 *LOJA & AJUDA*
+  ▸ ${P}lojapet — loja de pets
+  ▸ ${P}sistempet — como funciona
+
+⚙️ *GRUPO*
+  ▸ ${P}pet _(on/off/status)_ — ligar ou desligar os pets
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
 // ─── handleSistemaGold ───────────────────────────────────────────────────────
@@ -114,24 +129,35 @@ async function handleSistemaGold(sock, msg, jid, getPrefix) {
 // ─── handleSistemaPet ────────────────────────────────────────────────────────
 async function handleSistemaPet(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
-  await sock.sendMessage(jid, {
-    text:
-      `📖 *COMO FUNCIONA OS PETS* 📖\n\n` +
-      `🐾 *O que são Pets?*\n` +
-      `Pets são companheiros virtuais que você pode capturar e cuidar!\n\n` +
-      `📊 *Atributos do Pet:*\n` +
-      `• ❤️ Energia — diminui com o tempo\n` +
-      `• 🍖 Fome — precisa alimentar\n` +
-      `• 😊 Felicidade — brinque com ele\n` +
-      `• ⚡ XP e Level — sobe com interações\n\n` +
-      `🎯 *Raridades:*\n` +
-      `• ⚪ Comum → 🟢 Incomum → 🔵 Raro\n` +
-      `• 🟣 Épico → 🟡 Lendário\n\n` +
-      `⚠️ *Atenção:*\n` +
-      `• Pet sem cuidados pode fugir\n` +
-      `• Use ${P}abrigo para deixar no abrigo\n\n` +
-      `💡 *Dica:* Use ${P}menupet para ver todos os comandos!`,
-  }, { quoted: msg });
+  const menu =
+`╔══════════════════════╗
+     🐾 COMO FUNCIONAM
+          OS PETS
+╚══════════════════════╝
+
+🐾 *O QUE SÃO PETS?*
+Pets são companheiros virtuais que você pode capturar e cuidar!
+
+📊 *ATRIBUTOS*
+  • ❤️ Energia — diminui com o tempo
+  • 🍖 Fome — precisa alimentar
+  • 😊 Felicidade — brinque com ele
+  • ⚡ XP e Level — sobe com interações
+
+🎯 *RARIDADES*
+  ⚪ Comum → 🟢 Incomum → 🔵 Raro
+  🟣 Épico → 🟡 Lendário
+
+⚠️ *ATENÇÃO*
+  • Pet sem cuidados pode fugir
+  • Use ${P}abrigo para deixar no abrigo
+
+💡 *DICA*
+  ▸ ${P}menupet — todos os comandos
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
 // ─── handleMenuAuxiliar ──────────────────────────────────────────────────────
@@ -160,92 +186,106 @@ async function handleMenuAuxiliar(sock, msg, jid, getPrefix) {
 // ─── handleSistemaMedieval ───────────────────────────────────────────────────
 async function handleSistemaMedieval(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
-  await sock.sendMessage(jid, {
-    text:
-      `⚔️🏰 *SISTEMA MEDIEVAL* 🏰⚔️\n\n` +
-      `O modo medieval é um RPG completo dentro do grupo!\n` +
-      `Crie seu personagem, batalhe, evolua e domine o reino.\n\n` +
-      `👤 *PERSONAGEM*\n` +
-      `  • Ao usar *${P}ficha* pela primeira vez, um personagem\n` +
-      `    é criado automaticamente com classe e elemento aleatórios\n` +
-      `  • Há 7 classes: Guerreiro, Mago, Arqueiro, Paladino,\n` +
-      `    Assassino, Druida e Necromante\n` +
-      `  • Cada classe tem ataque, defesa, HP e mana únicos\n\n` +
-      `🔥 *ELEMENTOS*\n` +
-      `  • Seu personagem recebe um elemento aleatório\n` +
-      `  • São 8 elementos: Fogo, Água, Terra, Ar, Trovão,\n` +
-      `    Sombra, Luz e Magia Negra\n` +
-      `  • Cada elemento tem vantagem (+50% dano) contra alguns\n` +
-      `    e fraqueza (-30% dano) contra outros\n\n` +
-      `⚔️ *COMBATE*\n` +
-      `  • *${P}atacar @alguém* — Ataque físico (cooldown 2min)\n` +
-      `    Ganha 10 XP (15 se crítico). Crítico tem 15% de chance\n` +
-      `    e multiplica o dano por 1.8x\n` +
-      `  • *${P}magia @alguém* — Habilidade elemental (cooldown 5min)\n` +
-      `    Consome 30 de mana. Dano 2.2x maior que ataque normal\n` +
-      `    Ganha 20 XP. Não pode críticar\n` +
-      `  • Derrotar um inimigo dá +30 XP (!atacar) ou +40 XP (!magia)\n` +
-      `  • Inimigo derrotado fica com HP 0 até usar *${P}recargamana*\n\n` +
-      `🗺️ *MISSÕES*\n` +
-      `  • *${P}missaomed* — Embarca em missão aleatória (cooldown 30min)\n` +
-      `  • Requer HP mínimo de 20 para participar\n` +
-      `  • 3 dificuldades: fácil, médio e difícil\n` +
-      `  • Sucesso: XP + Gold | Falha: dano + 10 XP de consolação\n\n` +
-      `❤️ *RECUPERAÇÃO*\n` +
-      `  • *${P}recargamana* — Recupera 60% do HP e 100% da mana\n` +
-      `    Cooldown de 10 minutos\n` +
-      `  • *Regeneração passiva* — Todo personagem recupera automaticamente\n` +
-      `    +10% HP e +15% Mana a cada 1 hora (apenas grupos com medieval ativo)\n\n` +
-      `🏪 *LOJA E EQUIPAMENTOS*\n` +
-      `  • *${P}lojamedieval* — Ver armas, armaduras e poções\n` +
-      `  • *${P}comprar [item]* — Comprar com gold do grupo\n` +
-      `  • *${P}equipar [item]* — Equipar arma ou armadura\n` +
-      `  • *${P}desequipar arma/armadura* — Remover item equipado\n` +
-      `  • *${P}invmed* — Ver seu inventário medieval\n` +
-      `  • *${P}usarpocao [nome]* — Usar poção (sem cooldown!)\n` +
-      `  • Armas aumentam o ataque | Armaduras aumentam a defesa\n` +
-      `  • Poções recuperam HP e/ou mana instantaneamente\n` +
-      `  • Raridades: comum → incomum → raro → lendário\n\n` +
-      `⭐ *PROGRESSÃO*\n` +
-      `  • XP acumulado em batalhas e missões sobe seu nível\n` +
-      `  • Cada level up aumenta HP máx, mana máx, ataque e defesa\n` +
-      `  • Missões têm nível mínimo — quanto mais difícil, maior a recompensa\n` +
-      `  • Itens raros e lendários exigem nível mínimo para comprar e equipar\n` +
-      `  • *${P}rankmedieval* — Top 10 guerreiros por vitórias\n` +
-      `  • *${P}historico* — Ver suas últimas 5 batalhas\n\n` +
-      `📜 *COMANDOS RÁPIDOS*\n` +
-      `  👤 *${P}ficha* — Ver/criar seu personagem\n` +
-      `  ⚔️ *${P}atacar @* — Atacar alguém\n` +
-      `  🔮 *${P}magia @* — Usar habilidade elemental\n` +
-      `  🗺️ *${P}missaomed* — Embarcar em missão\n` +
-      `  🌟 *${P}recargamana* — Recuperar HP e mana\n` +
-      `  🧪 *${P}usarpocao [nome]* — Usar poção\n` +
-      `  🎒 *${P}invmed* — Ver inventário\n` +
-      `  🏪 *${P}lojamedieval* — Ver loja\n` +
-      `  🏆 *${P}rankmedieval* — Ranking\n` +
-      `  📖 *${P}menumediev* — Menu de comandos`,
-  }, { quoted: msg });
+  const menu =
+`╔══════════════════════╗
+      🏰 MODO MEDIEVAL
+╚══════════════════════╝
+
+O modo medieval é um RPG completo dentro do grupo!
+Crie seu personagem, batalhe, evolua e domine o reino.
+
+👤 *PERSONAGEM*
+  • Ao usar ${P}ficha pela primeira vez, um personagem
+    é criado automaticamente com classe e elemento aleatórios
+  • 7 classes: Guerreiro, Mago, Arqueiro, Paladino,
+    Assassino, Druida e Necromante
+  • Cada classe tem ataque, defesa, HP e mana únicos
+
+🔥 *ELEMENTOS*
+  • 8 elementos: Fogo, Água, Terra, Ar, Trovão,
+    Sombra, Luz e Magia Negra
+  • Vantagem elemental: +50% de dano
+  • Fraqueza elemental: -30% de dano
+
+⚔️ *COMBATE*
+  ▸ ${P}atacar @alguém — ataque físico (cooldown 2min)
+     +10 XP (+15 se crítico). Crítico: 15% de chance, dano x1.8
+  ▸ ${P}magia @alguém — habilidade elemental (cooldown 5min)
+     Consome 30 de mana. Dano x2.2 e +20 XP. Não critica
+  • Derrotar um inimigo dá +30 XP (${P}atacar) ou +40 XP (${P}magia)
+  • Inimigo derrotado fica com HP 0 até usar ${P}recargamana
+
+🗺️ *MISSÕES*
+  ▸ ${P}missaomed — missão aleatória (cooldown 30min)
+  • Requer HP mínimo de 20
+  • 3 dificuldades: fácil, médio e difícil
+  • Sucesso: XP + Gold | Falha: dano + 10 XP de consolação
+
+❤️ *RECUPERAÇÃO*
+  ▸ ${P}recargamana — recupera 60% do HP e 100% da mana
+     Cooldown de 10 minutos
+  • Regeneração passiva: +10% HP e +15% mana por hora
+    (apenas em grupos com o modo medieval ativo)
+
+🏪 *LOJA & EQUIPAMENTOS*
+  ▸ ${P}lojamedieval — ver armas, armaduras e poções
+  ▸ ${P}comprar _(item)_ — comprar com o gold do grupo
+  ▸ ${P}equipar _(item)_ — equipar arma ou armadura
+  ▸ ${P}desequipar _(arma/armadura)_ — remover item equipado
+  ▸ ${P}invmed — ver seu inventário medieval
+  ▸ ${P}usarpocao _(nome)_ — usar poção (sem cooldown!)
+  • Armas aumentam o ataque | Armaduras aumentam a defesa
+  • Poções recuperam HP e/ou mana na hora
+  • Raridades: comum → incomum → raro → lendário
+
+⭐ *PROGRESSÃO*
+  • XP de batalhas e missões sobe seu nível
+  • Cada level up aumenta HP máx, mana máx, ataque e defesa
+  • Missões têm nível mínimo: mais difícil, mais recompensa
+  • Itens raros e lendários exigem nível mínimo
+  ▸ ${P}rankmedieval — top 10 guerreiros por vitórias
+  ▸ ${P}historico — suas últimas 5 batalhas
+
+📜 *COMANDOS RÁPIDOS*
+  👤 ${P}ficha  •  ⚔️ ${P}atacar @  •  🔮 ${P}magia @
+  🗺️ ${P}missaomed  •  🌟 ${P}recargamana
+  🧪 ${P}usarpocao  •  🎒 ${P}invmed
+  🏪 ${P}lojamedieval  •  🏆 ${P}rankmedieval
+  📖 ${P}menumediev — menu de comandos
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
 // ─── handleMenuMarket ────────────────────────────────────────────────────────
 async function handleMenuMarket(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
-  await sock.sendMessage(jid, {
-    text:
-      `🏪 *MARKETPLACE* 🏪\n\n` +
-      `Compre e venda itens com outros jogadores!\n\n` +
-      `📤 *Anunciar / Vender:*\n` +
-      `▸ ${P}ofertar [item] [preço] [quantidade] — anunciar item à venda\n` +
-      `▸ ${P}cancelaroferta [item] — cancelar seu anúncio (pelo nome do item)\n` +
-      `▸ ${P}minhasofertas — ver seus anúncios ativos\n\n` +
-      `📥 *Navegar / Comprar:*\n` +
-      `▸ ${P}avenda [página] — navegar pelos itens à venda no mercado\n` +
-      `▸ ${P}buscaroferta [item] — buscar ofertas de um item específico\n` +
-      `▸ ${P}buyoferta [vendedor] [item] [quantidade] — comprar de um anúncio\n\n` +
-      `📊 *Histórico:*\n` +
-      `▸ ${P}historicomarket — histórico de vendas\n\n` +
-      `_Obs: ${P}aceitaroferta foi descontinuado — use ${P}buyoferta para comprar diretamente._`,
-  }, { quoted: msg });
+  const menu =
+`╔══════════════════════╗
+      🏪 MARKETPLACE
+╚══════════════════════╝
+
+Compre e venda itens com outros jogadores!
+
+📤 *ANUNCIAR & VENDER*
+  ▸ ${P}ofertar _(item) (preço) (quantidade)_ — anunciar item à venda
+  ▸ ${P}cancelaroferta _(item)_ — cancelar seu anúncio pelo nome do item
+  ▸ ${P}minhasofertas — ver seus anúncios ativos
+
+📥 *NAVEGAR & COMPRAR*
+  ▸ ${P}avenda _(página)_ — navegar pelos itens à venda
+  ▸ ${P}buscaroferta _(item)_ — buscar ofertas de um item
+  ▸ ${P}buyoferta _(vendedor) (item) (quantidade)_ — comprar de um anúncio
+
+📊 *HISTÓRICO*
+  ▸ ${P}historicomarket — histórico de vendas
+
+_Obs: ${P}aceitaroferta foi descontinuado. Use ${P}buyoferta para comprar diretamente._
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
 // ─── Exports ──────────────────────────────────────────────────────────────────

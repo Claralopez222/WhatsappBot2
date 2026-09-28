@@ -11,7 +11,9 @@
 const path = require('path');
 const fs   = require('fs');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const Usuario     = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const CasalEstado = require(path.join(__dirname, '..', '..', 'models', 'CasalEstado'));
+const { getGroupPrefix } = require(path.join(__dirname, '..', '..', 'utils', 'prefixos'));
 
 // ═══════════════════════════════════════════════════════════════
 // ─── ESTADO GLOBAL ────────────────────────────────────────────
@@ -29,9 +31,21 @@ const xpBonus       = new Map(); // relKey → { ativo: bool, expiry: number }
 // ─── HELPERS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+const FUSO = 'America/Sao_Paulo';
+
+/** Número puro de um JID (sem sufixo de dispositivo nem domínio). */
+function numeroDe(jid) {
+  return String(jid || '').split(':')[0].split('@')[0];
+}
+
+/** Data de hoje (YYYY-MM-DD) no fuso de Brasília, independente do fuso do servidor. */
 function hoje() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  try {
+    return new Date().toLocaleDateString('sv-SE', { timeZone: FUSO });
+  } catch {
+    // Fallback se o Node estiver sem suporte a fuso: UTC-3 fixo (o Brasil não usa horário de verão).
+    return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
 }
 
 // ─── Limpeza periódica de memória ─────────────────────────────
@@ -123,10 +137,11 @@ async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.no
 async function clearCasamentoDb(jidA, jidB) {
   const normA = jidNormalizedUser(jidA);
   const normB = jidNormalizedUser(jidB);
+  const limpar = { $set: { casadoCom: null, casadoTipo: null, casadoDesde: null, casadoGrupo: null, xpCasal: 0 } };
   try {
     await Promise.all([
-      Usuario.updateOne({ idWhatsApp: normA }, { $set: { casadoCom: null, casadoTipo: null } }),
-      Usuario.updateOne({ idWhatsApp: normB }, { $set: { casadoCom: null, casadoTipo: null } }),
+      Usuario.updateOne({ idWhatsApp: normA }, limpar),
+      Usuario.updateOne({ idWhatsApp: normB }, limpar),
     ]);
   } catch (e) {
     console.error('⚠️ Erro ao limpar casamento no MongoDB:', e.message);
@@ -134,10 +149,12 @@ async function clearCasamentoDb(jidA, jidB) {
 }
 
 function findRelByJid(jid, userJid, relacionamentos) {
-  const norm = jidNormalizedUser(userJid);
-  const num  = norm.split('@')[0];
+  const num = numeroDe(userJid);
+  if (!num) return null;
   for (const [key, rel] of relacionamentos) {
-    if (key.startsWith(jid + '|') && key.includes(num)) return { key, rel };
+    if (!key.startsWith(jid + '|')) continue;
+    const [, a, b] = key.split('|'); // chave = grupo|jidA|jidB
+    if (numeroDe(a) === num || numeroDe(b) === num) return { key, rel };
   }
   return null;
 }
@@ -158,6 +175,59 @@ function formatarTempo(ms) {
   return `${mins} minuto(s)`;
 }
 
+/** Prefixo configurado no grupo (com fallback seguro para "!"). */
+function prefixo(jid) {
+  try {
+    const p = getGroupPrefix(jid);
+    return typeof p === 'string' && p ? p : '!';
+  } catch {
+    return '!';
+  }
+}
+
+/**
+ * Recarrega do Mongo o estado dos casais que estava só em memória.
+ * Chamar UMA vez depois que `relacionamentos` já foi carregado (ver bot.js).
+ *  - xpCasais: usa o maior Usuario.xpCasal entre os dois parceiros
+ *  - xpBonus:  restaura o XP Dobro que ainda não expirou
+ */
+async function hidratarEstadoCasais(relacionamentos) {
+  try {
+    const jids = new Set();
+    for (const [, r] of relacionamentos.entries()) {
+      if (r.jidA) jids.add(jidNormalizedUser(r.jidA));
+      if (r.jidB) jids.add(jidNormalizedUser(r.jidB));
+    }
+
+    let casaisRestaurados = 0;
+    if (jids.size > 0) {
+      const docs = await Usuario.find(
+        { idWhatsApp: { $in: [...jids] } },
+        { idWhatsApp: 1, xpCasal: 1 }
+      ).lean();
+      const xpPorJid = new Map(docs.map(d => [d.idWhatsApp, d.xpCasal || 0]));
+
+      for (const [key, r] of relacionamentos.entries()) {
+        if (xpCasais.has(key)) continue; // já tem valor em memória: não sobrescreve
+        const xpA = xpPorJid.get(jidNormalizedUser(r.jidA)) || 0;
+        const xpB = xpPorJid.get(jidNormalizedUser(r.jidB)) || 0;
+        xpCasais.set(key, Math.max(xpA, xpB));
+        casaisRestaurados++;
+      }
+    }
+
+    const bonus = await CasalEstado.find({ tipo: 'xpBonus', expiry: { $gt: new Date() } }).lean();
+    for (const b of bonus) {
+      const key = b.chave.replace(/^bonus:/, '');
+      xpBonus.set(key, { ativo: true, expiry: new Date(b.expiry).getTime() });
+    }
+
+    console.log(`♻️ [relacionamento] XP restaurado para ${casaisRestaurados} casal(is); ${bonus.length} XP Dobro ativo(s) restaurado(s).`);
+  } catch (e) {
+    console.error('⚠️ [relacionamento] Erro ao hidratar estado dos casais:', e.message);
+  }
+}
+
 // ─── Mapa: comando → item obrigatório no inventário ────────────
 const ITEM_NECESSARIO = {
   flores:   { key: 'flores',   nome: 'Flores 🌹'                },
@@ -176,22 +246,24 @@ const CARINHOS_SEM_RELACIONAMENTO = new Set(['abraco']);
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
   const senderJidNormalizado = jidNormalizedUser(senderJid);
   const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+  const P = prefixo(jid); // prefixo configurado no grupo
 
   let key, rel;
   let jidANormalizado = null;
   let jidBNormalizado = null;
   let parcJid = null;
-  let temRelacionamento = !!found;
+  const temRelacionamento = !!found;
 
   if (found) {
     ({ key, rel } = found);
     jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
     jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-    parcJid = jidANormalizado === senderJidNormalizado ? jidBNormalizado : jidANormalizado;
+    // Compara pelo número: tolera diferenças de domínio/dispositivo no JID.
+    parcJid = numeroDe(jidANormalizado) === numeroDe(senderJidNormalizado) ? jidBNormalizado : jidANormalizado;
   } else {
     if (!CARINHOS_SEM_RELACIONAMENTO.has(cmd)) {
       await sock.sendMessage(jid, {
-        text: `💔 Você precisa estar em um relacionamento para usar *!${cmd}*!\n_Use *!casar @alguem* ou *!namorar @alguem* primeiro._`,
+        text: `💔 Você precisa estar em um relacionamento para usar *${P}${cmd}*!\n_Use *${P}casar @alguem* ou *${P}namorar @alguem* primeiro._`,
       }, { quoted: msg });
       return;
     }
@@ -203,16 +275,16 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
     if (!mentionedJid) {
       await sock.sendMessage(jid, {
-        text: `🤗 Marque a pessoa que vai receber o abraço!\n_Ex: *!abraco @alguem*_`,
+        text: `🤗 Marque a pessoa que vai receber o abraço!\n_Ex: *${P}abraco @alguem*_`,
       }, { quoted: msg });
       return;
     }
 
     parcJid = jidNormalizedUser(mentionedJid);
 
-    if (parcJid === senderJidNormalizado) {
+    if (numeroDe(parcJid) === numeroDe(senderJidNormalizado)) {
       await sock.sendMessage(jid, {
-        text: `🤔 Você não pode dar *!${cmd}* em você mesmo(a)!`,
+        text: `🤔 Você não pode dar *${P}${cmd}* em você mesmo(a)!`,
       }, { quoted: msg });
       return;
     }
@@ -224,14 +296,42 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
   // ── 1. Verifica Cooldown Diário PRIMEIRO (Evita consumo/consultas desnecessárias) ──
   const diarioKey = `${key}:${cmd}:${hoje()}`;
-  if (diariosUsados.has(diarioKey)) {
-    const msgCooldown = cmd === 'abraco'
-      ? `⏰ Vocês já trocaram um abraço hoje! Volte amanhã para mais um carinho. 🤗`
-      : `⏰ Você já usou *!${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`;
 
-    await sock.sendMessage(jid, { text: msgCooldown }, { quoted: msg });
+  const avisarCooldown = () => sock.sendMessage(jid, {
+    text: cmd === 'abraco'
+      ? `⏰ Vocês já trocaram um abraço hoje! Volte amanhã para mais um carinho. 🤗`
+      : `⏰ Você já usou *${P}${cmd}* hoje! Volte amanhã, ansioso(a)! 😊`,
+  }, { quoted: msg });
+
+  // Cache em memória (rápido)
+  if (diariosUsados.has(diarioKey)) {
+    await avisarCooldown();
     return;
   }
+
+  // Reserva o uso diário no Mongo (índice único em "chave"): sobrevive a restart e
+  // impede que duas mensagens simultâneas consumam o item duas vezes.
+  try {
+    await CasalEstado.create({
+      chave:  `diario:${diarioKey}`,
+      tipo:   'diario',
+      expiry: new Date(Date.now() + 48 * 60 * 60 * 1000), // o TTL do Mongo limpa depois
+    });
+  } catch (e) {
+    if (e?.code === 11000) { // chave duplicada → já usou hoje (mesmo após restart)
+      diariosUsados.set(diarioKey, true);
+      await avisarCooldown();
+      return;
+    }
+    // Se o Mongo falhar por outro motivo, segue só com a trava em memória.
+    console.error(`[handleCarinh:${cmd}] Erro ao reservar uso diário no DB:`, e.message);
+  }
+
+  diariosUsados.set(diarioKey, true);
+  const liberarUso = () => {
+    diariosUsados.delete(diarioKey);
+    CasalEstado.deleteOne({ chave: `diario:${diarioKey}` }).catch(() => {});
+  };
 
   // ── 2. Define e consome item (se o comando exigir) ──
   const itemInfo  = ITEM_NECESSARIO[cmd] || null;
@@ -242,39 +342,43 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   let consumo = null;
 
   if (exigeItem) {
-    const userDoc = await Usuario.findOne(
-      { idWhatsApp: senderJidNormalizado },
-      { [`inventory.${itemKey}`]: 1 }
-    ).lean();
+    try {
+      const userDoc = await Usuario.findOne(
+        { idWhatsApp: senderJidNormalizado },
+        { [`inventory.${itemKey}`]: 1 }
+      ).lean();
 
-    const qtdItem = userDoc?.inventory?.[itemKey] ?? 0;
+      const qtdItem = userDoc?.inventory?.[itemKey] ?? 0;
 
-    if (qtdItem < 1) {
-      await sock.sendMessage(jid, {
-        text: `🛒 Você não tem *${itemNome}* para dar!\nCompre na *!lojacasal* e surpreenda seu par! 💝`,
-      }, { quoted: msg });
-      return;
-    }
+      if (qtdItem < 1) {
+        liberarUso();
+        await sock.sendMessage(jid, {
+          text: `🛒 Você não tem *${itemNome}* para dar!\nCompre na *${P}lojacasal* e surpreenda seu par! 💝`,
+        }, { quoted: msg });
+        return;
+      }
 
-    consumo = await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJidNormalizado, [`inventory.${itemKey}`]: { $gte: 1 } },
-      { $inc: { [`inventory.${itemKey}`]: -1 } },
-      { new: true }
-    );
+      consumo = await Usuario.findOneAndUpdate(
+        { idWhatsApp: senderJidNormalizado, [`inventory.${itemKey}`]: { $gte: 1 } },
+        { $inc: { [`inventory.${itemKey}`]: -1 } },
+        { new: true }
+      );
 
-    if (!consumo) {
-      await sock.sendMessage(jid, {
-        text: `⚠️ Não foi possível usar o item agora. Tente novamente.`,
-      }, { quoted: msg });
-      return;
+      if (!consumo) {
+        liberarUso();
+        await sock.sendMessage(jid, {
+          text: `⚠️ Não foi possível usar o item agora. Tente novamente.`,
+        }, { quoted: msg });
+        return;
+      }
+    } catch (e) {
+      liberarUso();
+      throw e;
     }
   }
 
-  // Registra uso diário após sucesso na verificação/consumo
-  diariosUsados.set(diarioKey, true);
-
   // ── 3. Cálculo e Persistência de XP ──
-  const temBonus = temRelacionamento && typeof temXpBonus === 'function' && temXpBonus(key);
+  const temBonus = temRelacionamento && temXpBonus(key);
   const ganho    = temBonus ? xpValor * 2 : xpValor;
   const xpAtual  = (xpCasais.get(key) || 0) + ganho;
 
@@ -290,9 +394,9 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao persistir XP no DB:`, e.message));
 
   // ── 4. Formatação da Resposta ──
-  const tagRemetente = `@${senderJidNormalizado.split('@')[0]}`;
+  const tagRemetente = `@${numeroDe(senderJidNormalizado)}`;
   const tagParceiro  = parcJid
-    ? `@${parcJid.split('@')[0]}`
+    ? `@${numeroDe(parcJid)}`
     : (rel?.nomeA === author ? rel?.nomeB : rel?.nomeA);
 
   const bonusStr = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
@@ -327,7 +431,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
       ? ['Marca aí, seu(ua) indeciso(a)! 😤', 'MARCA UM JUIZ AGORA! 💍']
       : ['Bora! Não tem tímido aqui! 😏', 'Marca agora ou tá com medo? 👀'];
     await sock.sendMessage(jid, {
-      text: `${exemplos[Math.floor(Math.random() * exemplos.length)]}\nExemplo: *!${tipo === 'casamento' ? 'casar' : 'namorar'} @fulano*`,
+      text: `${exemplos[Math.floor(Math.random() * exemplos.length)]}\nExemplo: *${prefixo(jid)}${tipo === 'casamento' ? 'casar' : 'namorar'} @fulano*`,
     }, { quoted: msg });
     return;
   }
@@ -386,7 +490,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   const jaSender = findRelByJid(jid, senderJid, relacionamentos);
   if (jaSender) {
     const frases = [
-      `💔 TRAIDOR(A)! Você já tem alguém! Quer derramar todo o drama com *!cancelarcasamento*? 😤`,
+      `💔 TRAIDOR(A)! Você já tem alguém! Quer derramar todo o drama com *${prefixo(jid)}terminar*? 😤`,
       `🤡 Boa tentativa de bigamia! Termina seu relacionamento primeiro, seu(ua) miserável!`,
       `😒 Seu(ua) parceiro(a) tá aqui vendo isso... prepare-se para a guerra! 💀`,
     ];
@@ -418,14 +522,26 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  pedidosPendentes.set(alvoJid, { tipo, jidPedinte: senderJid, nomePedinte: author, jid });
+  const pedido = { tipo, jidPedinte: senderJid, nomePedinte: author, jid };
+  pedidosPendentes.set(alvoJid, pedido);
+
+  // O timer fica guardado no próprio pedido (pedido.timer): aceitar, recusar e cancelar
+  // conseguem cancelá-lo. E ele só expira ESTE pedido — nunca um pedido novo feito depois.
+  pedido.timer = setTimeout(() => {
+    if (pedidosPendentes.get(alvoJid) !== pedido) return;
+    pedidosPendentes.delete(alvoJid);
+    sock.sendMessage(jid, {
+      text: `⌛ O pedido de *${author}* para @${alvoJid.split('@')[0]} expirou sem resposta. Que falta de respeito!`,
+      mentions: [alvoJid],
+    }).catch(() => {});
+  }, 5 * 60 * 1000);
 
   const tipoEmoji = tipo === 'casamento' ? '💍' : '💝';
   const tipoVerbo = tipo === 'casamento' ? 'casar' : 'namorar';
   const caption =
     `${tipoEmoji} *${author}* está pedindo @${alvoJid.split('@')[0]} em ${tipo}!\n\n` +
     `@${alvoJid.split('@')[0]}, você aceita ${tipoVerbo} com *${author}*? 🥺\n\n` +
-    `Use *!euaceito* ou *!eurecuso*\n_⏰ Expira em 5 minutos_`;
+    `Use *${prefixo(jid)}euaceito* ou *${prefixo(jid)}eurecuso*\n_⏰ Expira em 5 minutos_`;
 
   const imagemNome = Date.now() % 2 === 0 ? 'imagecasal.jpg' : 'imagecasal2.jpg';
   const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', imagemNome);
@@ -443,16 +559,6 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
       mentions: [alvoJid],
     }, { quoted: msg });
   }
-
-  setTimeout(() => {
-    if (pedidosPendentes.has(alvoJid)) {
-      pedidosPendentes.delete(alvoJid);
-      sock.sendMessage(jid, {
-        text: `⌛ O pedido de *${author}* para @${alvoJid.split('@')[0]} expirou sem resposta. Que falta de respeito!`,
-        mentions: [alvoJid],
-      }).catch(() => {});
-    }
-  }, 5 * 60 * 1000);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -466,13 +572,25 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
     await sock.sendMessage(jid, { text: '⚠️ Você não tem nenhum pedido pendente.' }, { quoted: msg });
     return;
   }
+  if (pedido.timer) clearTimeout(pedido.timer);
   pedidosPendentes.delete(senderNorm);
   pedidosPendentes.delete(senderJid);
 
   const nomeAlvo = msg.pushName || contactNames[senderNorm] || senderNorm.split('@')[0];
   const { jidPedinte, nomePedinte, jid: jidOrigem, tipo } = pedido;
   const pedinteNorm = jidNormalizedUser(jidPedinte);
-  const key   = relKey(jidOrigem || jid, senderNorm, pedinteNorm);
+  const grupoOrigem = jidOrigem || jid;
+
+  // Durante os 5 minutos de espera, um dos dois pode ter entrado em outro relacionamento.
+  if (findRelByJid(grupoOrigem, senderNorm, relacionamentos) ||
+      findRelByJid(grupoOrigem, pedinteNorm, relacionamentos)) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Um de vocês já está em outro relacionamento. O pedido foi cancelado.',
+    }, { quoted: msg });
+    return;
+  }
+
+  const key   = relKey(grupoOrigem, senderNorm, pedinteNorm);
   const agora = Date.now();
 
   relacionamentos.set(key, {
@@ -482,10 +600,10 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
     jidA:    pedinteNorm,
     jidB:    senderNorm,
     desde:   agora,
-    idGrupo: jidOrigem || jid,
+    idGrupo: grupoOrigem,
   });
   xpCasais.set(key, 0);
-  await syncCasamentoToDb(pedinteNorm, senderNorm, tipo || 'casamento', agora, jidOrigem || jid);
+  await syncCasamentoToDb(pedinteNorm, senderNorm, tipo || 'casamento', agora, grupoOrigem);
 
   const frases = [
     `💍 CARALHOOOOO! *${nomePedinte}* e *${nomeAlvo}* são CASADOS AGORA! Corre gritando que ninguém acreditava! 😂💍`,
@@ -501,13 +619,13 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
 
   try {
     const imageBuffer = fs.readFileSync(imagemPath);
-    await sock.sendMessage(jidOrigem || jid, {
+    await sock.sendMessage(grupoOrigem, {
       image: imageBuffer,
       caption,
       mentions: [senderNorm, pedinteNorm],
     });
   } catch {
-    await sock.sendMessage(jidOrigem || jid, {
+    await sock.sendMessage(grupoOrigem, {
       text: caption,
       mentions: [senderNorm, pedinteNorm],
     });
@@ -521,6 +639,7 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
     await sock.sendMessage(jid, { text: '⚠️ Você não tem nenhum pedido pendente.' }, { quoted: msg });
     return;
   }
+  if (pedido.timer) clearTimeout(pedido.timer);
   pedidosPendentes.delete(senderNorm);
   pedidosPendentes.delete(senderJid);
 
@@ -563,12 +682,14 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
   }
 
   const { key, rel } = found;
-  const parcJid = jidNormalizedUser(rel.jidA === senderNorm ? rel.jidB : rel.jidA);
-  const tagSelf = `@${senderNorm.split('@')[0]}`;
-  const tagParc = `@${parcJid.split('@')[0]}`;
+  const parcJid = jidNormalizedUser(numeroDe(rel.jidA) === numeroDe(senderNorm) ? rel.jidB : rel.jidA);
+  const tagSelf = `@${numeroDe(senderNorm)}`;
+  const tagParc = `@${numeroDe(parcJid)}`;
 
   relacionamentos.delete(key);
   xpCasais.delete(key);
+  xpBonus.delete(key); // o XP Dobro pertence ao casal: não deve sobrar depois do término
+  CasalEstado.deleteOne({ chave: `bonus:${key}` }).catch(() => {});
   await clearCasamentoDb(senderNorm, parcJid);
 
   const expiry = Date.now() + 10 * 60 * 1000;
@@ -617,6 +738,8 @@ module.exports = Object.assign(
     findRelByJid,
     temXpBonus,
     formatarTempo,
+    prefixo,
+    hidratarEstadoCasais,
 
     // ── handlers deste arquivo ──
     handleCarinh,

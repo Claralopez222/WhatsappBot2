@@ -3,13 +3,13 @@ const mongoose = require('mongoose');
 
 const grupoConfigSchema = new mongoose.Schema(
   {
-    idGrupo: { type: String, required: true, unique: true, trim: true, index: true },
+    idGrupo: { type: String, required: true, unique: true, trim: true },
 
     // ── Prefixo ──────────────────────────────────────────────────
     prefixo: {
       type:      String,
       default:   '!',
-      enum:      ['!', '.', '/', ','],
+      enum:      ['!', '.', '/', ',', '#'],
       trim:      true,
     },
 

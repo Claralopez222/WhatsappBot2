@@ -76,7 +76,10 @@ function setBotJid(id) { botJid = id; }
 function getBotJid() { return botJid; }
 
 // ─── Helpers de prefixo ─────────────────────────────────────────────────────
-const VALID_PREFIXES = ['!', '.', '/', ','];
+// Fonte única: utils/prefixos (fallback para a lista antiga se não vier um array).
+const VALID_PREFIXES = (Array.isArray(DEFAULT_PREFIXES) && DEFAULT_PREFIXES.length)
+  ? DEFAULT_PREFIXES
+  : ['!', '.', '/', ','];
 
 function isAnyCmd(text) {
   return VALID_PREFIXES.some(p => text.startsWith(p));
@@ -250,7 +253,8 @@ async function handleMessage(sock, msg) {
   if (isPrivate && textMsg && !isAnyCmd(raw)) lastTexts.set(jid, textMsg);
 
   // ── Anti-Link ────────────────────────────────────────────────
-  if (isGroup && !isAnyCmd(raw)) {
+  // Roda inclusive em mensagens que começam com prefixo: senão "!http://spam" escapava.
+  if (isGroup) {
     const hasLink = /(https?:\/\/|wa\.me\/|chat\.whatsapp\.com)/i.test(caption);
     if (hasLink) {
       const GrupoConfig = require('./models/GrupoConfig');
@@ -309,7 +313,7 @@ async function handleMessage(sock, msg) {
 
   // ── Anagrama ativo ───────────────────────────────────────────
   if (diversaoHandler.anagramaState?.has(senderJid)) {
-    await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid);
+    await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid, caption);
     return;
   }
 
@@ -610,7 +614,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'rankmedieval'))
     { await medievalHandler.handleRankMedieval(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'menumediev'))
-    { await medievalHandler.handleMenuMedieval(sock, msg, jid); return; }
+    { await medievalHandler.handleMenuMedieval(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'sistemmedieval') || matchCmd(cmdWord, 'comomediev'))
     { await diversaoHandler.handleSistemaMedieval(sock, msg, jid, getPrefix); return; }
 
@@ -905,7 +909,7 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'baterfalta'))    { await diversaoHandler.handleBaterFalta(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'falta'))         { await diversaoHandler.handleFalta(sock, msg, content, jid); return; }
   if (matchCmdStart(cmd, 'eununca'))       { await diversaoHandler.handleEuNunca(sock, msg, content, jid); return; }
-  if (matchCmdStart(cmd, 'anagrama'))      { await diversaoHandler.handleAnagrama(sock, msg, jid, caption.replace(/^[!.,\/]anagrama\s*/i, '').trim()); return; }
+  if (matchCmdStart(cmd, 'anagrama'))      { await diversaoHandler.handleAnagrama(sock, msg, jid, author, senderJid, caption.replace(/^[!.,\/]anagrama\s*/i, '').trim()); return; }
   if (matchCmdStart(cmd, 'ppt'))           { await diversaoHandler.handlePpt(sock, msg, jid, caption.replace(/^[!.,\/]ppt\s*/i, '').trim()); return; }
   if (matchCmdStart(cmd, 'verdadeoudesafio')) { await diversaoHandler.handleVerdadeOuDesafio(sock, msg, jid); return; }
   if (matchCmdStart(cmd, 'confissao'))     { await diversaoHandler.handleConfissao(sock, msg, jid); return; }

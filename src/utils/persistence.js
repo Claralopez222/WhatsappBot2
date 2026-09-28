@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs   = require('fs');
+const { getGroupPrefix } = require('./prefixos');
 
 // handlers/relacionamento expõe os Maps de estado (xpCasais, bloqueados,
 // diariosUsados, xpBonus) que este módulo restaura/persiste no data.json.
@@ -109,7 +110,12 @@ if (_cfg.prefixos) {
   for (const [k, v] of Object.entries(_cfg.prefixos)) prefixMap.set(k, v);
 }
 
-function getPrefix(jid) { return prefixMap.get(jid) || '!'; }
+function getPrefix(jid) {
+  // Fonte única: cache de utils/prefixos (atualizado por setGroupPrefix e hidratado do Mongo).
+  // Se ele ainda estiver no padrão, cai no valor legado do data.json.
+  const p = getGroupPrefix(jid);
+  return p !== '!' ? p : (prefixMap.get(jid) || '!');
+}
 
 const pinnedMessages = new Map(Object.entries(_savedData.pinnedMessages || {}));
 

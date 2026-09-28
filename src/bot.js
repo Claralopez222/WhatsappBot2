@@ -274,6 +274,14 @@ async function startBot() {
       console.log(`✅ Bot conectado! JID: ${bJid}\n`);
 
       if (!schedulersIniciados) {
+        // Restaura XP dos casais e XP Dobro ativo (estavam só em memória)
+        try {
+          const { relacionamentos } = require('./utils/persistence');
+          await require('./handlers/relacionamento').hidratarEstadoCasais(relacionamentos);
+        } catch (err) {
+          console.error('⚠️ Erro ao hidratar estado dos casais:', err.message);
+        }
+
         initPetScheduler(sock);
         initQuizRankingScheduler(sock, new Set());
         initFilhosScheduler();
@@ -345,6 +353,7 @@ async function main() {
     console.log('⏳ Conectando ao MongoDB...');
     await mongoose.connect(mongoUri);
     console.log('✅ MongoDB conectado com sucesso!');
+    await require('./utils/prefixos').hydratePrefixCache();
   } catch (err) {
     console.error('❌ Erro ao conectar ao MongoDB:', err.message);
     process.exit(1);

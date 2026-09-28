@@ -670,7 +670,7 @@ async function handleMenuWork(sock, msg, jid, getPrefix) {
 
 ⏱️ *TRABALHAR*
   ▸ ${P}trabalhar — Bater o ponto e receber salário
-  ▸ ${P}work — Atalho para !trabalhar
+  ▸ ${P}work — Atalho para ${P}trabalhar
 
 📈 *PROGRESSÃO*
   ▸ ${P}promocao — Subir de cargo (se tiver turnos suficientes)

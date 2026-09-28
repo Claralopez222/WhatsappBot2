@@ -874,6 +874,23 @@ async function handleMessage(sock, msg) {
     return;
   }
 
+  // ── JOGOS EXTRAS ──────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'forca'))     { await diversaoHandler.handleForca(sock, msg, jid, caption, getPrefix); return; }
+  if (matchCmd(cmdWord, 'letra'))     { await diversaoHandler.handleLetra(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'chutar'))    { await diversaoHandler.handleChutar(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'adivinha'))  { await diversaoHandler.handleAdivinha(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'palpite'))   { await diversaoHandler.handlePalpite(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'velha'))     { await diversaoHandler.handleVelha(sock, msg, content, jid, caption, getPrefix); return; }
+  if (matchCmd(cmdWord, 'jogar'))     { await diversaoHandler.handleJogar(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'contas'))    { await diversaoHandler.handleContas(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'resp'))      { await diversaoHandler.handleResp(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'charada'))   { await diversaoHandler.handleCharada(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'termo'))     { await diversaoHandler.handleTermo(sock, msg, jid, caption, getPrefix); return; }
+  if (matchCmd(cmdWord, 'tentar'))    { await diversaoHandler.handleTentar(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'batata'))    { await diversaoHandler.handleBatata(sock, msg, jid, caption, getPrefix); return; }
+  if (matchCmd(cmdWord, 'passar'))    { await diversaoHandler.handlePassar(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'duelo'))     { await diversaoHandler.handleDuelo(sock, msg, content, jid); return; }
+
   // ── DIVERSÃO ──────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'gay'))           { await diversaoHandler.handleGay(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'sexo'))          { await diversaoHandler.handleSexo(sock, msg, content, jid, author, contactNames); return; }

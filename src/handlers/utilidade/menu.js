@@ -133,6 +133,22 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
   ▸ ${P}eununca
   ▸ ${P}brincadeiras
 
+🕹️ *JOGOS DE GRUPO*
+  ▸ ${P}forca — adivinhe a palavra
+  ▸ ${P}letra _(a)_ / ${P}chutar _(palavra)_ — jogar a forca
+  ▸ ${P}adivinha — adivinhe o número (1-100)
+  ▸ ${P}palpite _(número)_ — dar um palpite
+  ▸ ${P}velha @pessoa — jogo da velha
+  ▸ ${P}jogar _(1-9)_ — marcar casa na velha
+  ▸ ${P}contas — conta rápida valendo 30s
+  ▸ ${P}charada — charada valendo 60s
+  ▸ ${P}resp _(resposta)_ — responder conta ou charada
+  ▸ ${P}termo — descubra a palavra de 5 letras
+  ▸ ${P}tentar _(palavra)_ — palpite no termo
+  ▸ ${P}batata — batata quente (explode sozinha)
+  ▸ ${P}passar @pessoa — passar a batata
+  ▸ ${P}duelo @pessoa — duelo de dados
+
 🎰 *APOSTAS & SORTE*
   ▸ ${P}apostar _(quantia)_
   ▸ ${P}slots

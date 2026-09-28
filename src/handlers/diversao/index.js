@@ -84,6 +84,15 @@ const {
   handleMissao, prepareDailyMissionState, findDailyMission, dailyMissionDefinitions
 } = require('./missoes');
 
+// Jogos extras
+const {
+  handleForca, handleLetra, handleChutar,
+  handleAdivinha, handlePalpite,
+  handleVelha, handleJogar,
+  handleContas, handleResp,
+  handleCharada, handleTermo, handleTentar,
+  handleBatata, handlePassar, handleDuelo,
+} = require('./jogosExtras');
 
 const {
   handleCapturarPet, handleAlimentarPet, handleBrincarPet,
@@ -223,6 +232,21 @@ module.exports = {
   handleQuiz,
   handlePontos,
   handleRankJogos,
+  handleForca,
+  handleLetra,
+  handleChutar,
+  handleAdivinha,
+  handlePalpite,
+  handleVelha,
+  handleJogar,
+  handleContas,
+  handleResp,
+  handleCharada,
+  handleTermo,
+  handleTentar,
+  handleBatata,
+  handlePassar,
+  handleDuelo,
   handleBanco,
   handleResgatar,
   quizState,

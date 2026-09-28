@@ -9,12 +9,15 @@
 // ─── !menu ────────────────────────────────────────────────────────────────────
 
 async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
-  const P = getPrefix(jid);
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
 
-  const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  const [data, hora] = agora.split(', ');
-  const [hour] = hora.split(':').map(Number);
-  const timeStr = hora.slice(0, 5);
+  const timeStr = new Date().toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  const hour = parseInt(timeStr.slice(0, 2), 10);
 
   let greeting = 'Olá';
   if (hour >= 5  && hour < 12) greeting = '🌅 Bom dia';
@@ -43,6 +46,9 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
   ▸ ${P}menujogos
   ▸ ${P}brincadeiras
   ▸ ${P}alteradores
+  ▸ ${P}menugold
+  ▸ ${P}menumarket
+  ▸ ${P}menumediev
   ▸ ${P}menuroubar
   ▸ ${P}menusec
   ▸ ${P}menupet
@@ -57,6 +63,7 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
 
 🔧 *UTILIDADES*
   ▸ ${P}menuutil
+  ▸ ${P}menubaixar
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
@@ -65,7 +72,7 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
 // ─── !menuutil ────────────────────────────────────────────────────────────────
 
 async function handleMenuUtil(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const menu =
 `╔══════════════════════╗
      🔧 MENU UTILIDADES
@@ -86,9 +93,16 @@ async function handleMenuUtil(sock, msg, jid, getPrefix) {
   ▸ ${P}morse _(texto)_
   ▸ ${P}demorse _(código)_
 
+👤 *PERFIL*
+  ▸ ${P}perfil
+  ▸ ${P}bio _(texto)_
+  ▸ ${P}level
+  ▸ ${P}ranklevel
+
 🔗 *OUTROS & DIVERSÃO*
   ▸ ${P}encurtar _(link)_
   ▸ ${P}qrcode _(texto)_
+  ▸ ${P}alteradores
   ▸ ${P}piada
   ▸ ${P}fato
 
@@ -100,7 +114,7 @@ async function handleMenuUtil(sock, msg, jid, getPrefix) {
 // ─── !menujogos ───────────────────────────────────────────────────────────────
 
 async function handleMenuJogos(sock, msg, jid, getPrefix) {
-  const P = getPrefix(jid);
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const menu =
 `╔══════════════════════╗
    🎮 MENU JOGOS & DIVERSÃO
@@ -147,7 +161,8 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 
 // ─── !alteradores ─────────────────────────────────────────────────────────────
 
-async function handleAlteradores(sock, msg, jid) {
+async function handleAlteradores(sock, msg, jid, getPrefix) {
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const menu =
 `╔══════════════════════╗
      🎛️ MENU ALTERADORES
@@ -156,36 +171,36 @@ async function handleAlteradores(sock, msg, jid) {
 _Responda uma mídia com o comando desejado_
 
 🎬 *VÍDEO*
-  ▸ .videolento
-  ▸ .videorapido
-  ▸ .videocontrario
-  ▸ .reversevideo
+  ▸ ${P}videolento
+  ▸ ${P}videorapido
+  ▸ ${P}videocontrario
+  ▸ ${P}reversevideo
 
 🎵 *ÁUDIO*
-  ▸ .audiolento
-  ▸ .audiorapido
-  ▸ .audioreverse
-  ▸ .grave
-  ▸ .esquilo
-  ▸ .bass
+  ▸ ${P}audiolento
+  ▸ ${P}audiorapido
+  ▸ ${P}audioreverse
+  ▸ ${P}grave
+  ▸ ${P}esquilo
+  ▸ ${P}bass
 
 🎭 *VOZ*
-  ▸ .vozmenino
-  ▸ .vozgrossa
-  ▸ .vozmulher
-  ▸ .vozrobo
-  ▸ .vozalien
-  ▸ .vozvelho
-  ▸ .vozcrianca
-  ▸ .vozdemonio
+  ▸ ${P}vozmenino
+  ▸ ${P}vozgrossa
+  ▸ ${P}vozmulher
+  ▸ ${P}vozrobo
+  ▸ ${P}vozalien
+  ▸ ${P}vozvelho
+  ▸ ${P}vozcrianca
+  ▸ ${P}vozdemonio
 
 🔊 *AMBIENTE*
-  ▸ .eco
-  ▸ .caverna
-  ▸ .telefone
-  ▸ .radio
-  ▸ .megafone
-  ▸ .underwater
+  ▸ ${P}eco
+  ▸ ${P}caverna
+  ▸ ${P}telefone
+  ▸ ${P}radio
+  ▸ ${P}megafone
+  ▸ ${P}underwater
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -203,6 +218,7 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
 
 💍 *RELACIONAMENTO*
   ▸ ${P}casar @pessoa — Pedir em casamento
+  ▸ ${P}namorar @pessoa — Pedir em namoro
   ▸ ${P}euaceito — Aceitar pedido
   ▸ ${P}eurecuso — Recusar pedido
   ▸ ${P}cancelarpedido — Cancelar pedido enviado
@@ -224,6 +240,7 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
   ▸ ${P}serenata — Fazer uma serenata
   ▸ ${P}declarar — Declaração de amor
   ▸ ${P}ciumento — Demonstrar ciúme
+  ▸ ${P}surpresa — Fazer uma surpresa
 
 🏆 *ESPECIAIS*
   ▸ ${P}statu — Status do casal
@@ -254,6 +271,7 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
   ▸ ${P}tentarfilho — Tentar ter um filho _(40% chance)_
   ▸ ${P}filho — Ver seus filhos e status
   ▸ ${P}cuidarfilho — Cuidar dos filhos _(cooldown 20h)_
+  ▸ ${P}renomearfilho _(nome)_ — Renomear um filho
 
 💊 *SAÚDE*
   ▸ ${P}remediofil — Curar filho doente _(300 gold)_

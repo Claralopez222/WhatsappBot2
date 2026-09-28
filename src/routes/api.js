@@ -63,8 +63,9 @@ function nomeGrupoFallback(jid) {
 function nomeGrupo(doc, jid) {
   const custom = doc && typeof doc.nomeCustom === 'string' ? doc.nomeCustom.trim() : '';
   if (custom) return custom;
-  const realDoWhatsApp = doc && typeof doc.nomeReal === 'string' ? doc.nomeReal.trim() : '';
-  return realDoWhatsApp || nomeGrupoFallback(jid);
+  const real = doc && typeof doc.nomeGrupo === 'string' ? doc.nomeGrupo.trim()
+    : (doc && typeof doc.nomeReal === 'string' ? doc.nomeReal.trim() : '');
+  return real || nomeGrupoFallback(jid);
 }
 
 // Normaliza número/JID para JID completo
@@ -235,8 +236,8 @@ router.get('/grupos', async (req, res) => {
           _id:        '$idGrupo',
           membros:    { $sum: 1 },
           xpTotal:    { $sum: '$xp' },
-          nomeCustom: { $first: '$nomeCustom' },
-          nomeReal:   { $first: '$nome' },
+          nomeCustom: { $max: '$nomeCustom' },
+          nomeGrupo:  { $max: '$nomeGrupo' },
           mensagens:  { $first: '$mensagens' },
         },
       },
@@ -250,11 +251,15 @@ router.get('/grupos', async (req, res) => {
 
     const resultado = grupos.map(g => {
       const cfg = configMap[g._id] || {};
+      const docCombined = {
+        nomeCustom: cfg.nomeCustom || g.nomeCustom,
+        nomeGrupo:  cfg.nomeGrupo  || g.nomeGrupo,
+      };
       return {
         jid:        g._id,
         idGrupo:    g._id,
-        nome:       nomeGrupo(g, g._id),
-        nomeCustom: g.nomeCustom || null,
+        nome:       nomeGrupo(docCombined, g._id),
+        nomeCustom: docCombined.nomeCustom || null,
         membros:    g.membros,
         xpTotal:    g.xpTotal,
         mensagens:  g.mensagens || {},
@@ -284,8 +289,11 @@ router.get('/user/ranking', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
 
+    const matchGrupo = { $match: { idGrupo: { $regex: /@g\.us$/ } } };
+
     const [agregados, totaisGlobais] = await Promise.all([
       CarteiraGrupo.aggregate([
+        matchGrupo,
         {
           $group: {
             _id:       '$idWhatsApp',
@@ -298,6 +306,7 @@ router.get('/user/ranking', async (req, res) => {
         { $limit: limit },
       ]),
       CarteiraGrupo.aggregate([
+        matchGrupo,
         {
           $group: {
             _id:            null,
@@ -309,19 +318,32 @@ router.get('/user/ranking', async (req, res) => {
     ]);
 
     const jids = agregados.map(a => a._id);
-    const usuariosMap = {};
-    if (jids.length) {
-      const usuarios = await Usuario.find({ idWhatsApp: { $in: jids } })
-        .select('idWhatsApp nome telefone')
-        .lean();
-      for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
-    }
+    const lids = jids.filter(j => j?.endsWith('@lid'));
+    const lidMaps = lids.length ? await LidMapping.find({ lid: { $in: lids } }).lean() : [];
+    const lidParaPn = Object.fromEntries(lidMaps.map(l => [l.lid, l.pn]));
+    const pnsResolvidos = Object.values(lidParaPn);
+
+    const todosJidsBusca = [...new Set([...jids, ...pnsResolvidos])];
+    const usuarios = todosJidsBusca.length
+      ? await Usuario.find({ idWhatsApp: { $in: todosJidsBusca } }).select('idWhatsApp nome telefone username').lean()
+      : [];
+    const usuariosMap = Object.fromEntries(usuarios.map(u => [u.idWhatsApp, u]));
+
+    const carteirasNome = jids.length
+      ? await CarteiraGrupo.find({ idWhatsApp: { $in: jids }, nome: { $exists: true, $ne: null } }).select('idWhatsApp nome').lean()
+      : [];
+    const pushNamesMap = Object.fromEntries(carteirasNome.map(c => [c.idWhatsApp, c.nome]));
 
     const ranking = agregados.map((a, i) => {
-      const u = usuariosMap[a._id] || {};
+      const pn = lidParaPn[a._id];
+      const u = usuariosMap[a._id] || (pn ? usuariosMap[pn] : {}) || {};
+      const numRaw = (pn || a._id).split('@')[0].replace(/\D/g, '');
+      const telFormatado = numRaw.length >= 8 ? `+${numRaw}` : null;
+      const nomeFinal = u.nome || u.username || u.telefone || pushNamesMap[a._id] || telFormatado || 'Anônimo';
+
       return {
         idWhatsApp: a._id,
-        nome:       u.nome || u.telefone || a._id?.split('@')[0] || 'Anônimo',
+        nome:       nomeFinal,
         xp:         a.xp        ?? 0,
         gold:       a.gold      ?? 0,
         mensagens:  a.mensagens ?? 0,
@@ -360,34 +382,57 @@ router.get('/user/ranking/grupo', async (req, res) => {
     const membros = await CarteiraGrupo
       .find({ idGrupo: jid })
       .sort({ xp: -1 })
-      .limit(limit)
       .lean();
 
-    const jidsUsuarios = membros.map(m => m.idWhatsApp);
-    const usuariosMap = {};
-    if (jidsUsuarios.length) {
-      const usuarios = await Usuario.find({ idWhatsApp: { $in: jidsUsuarios } })
-        .select('idWhatsApp nome telefone')
-        .lean();
-      for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
+    const jidsUsuarios  = membros.map(m => m.idWhatsApp);
+    const lids          = jidsUsuarios.filter(j => j?.endsWith('@lid'));
+    const lidMaps       = lids.length ? await LidMapping.find({ lid: { $in: lids } }).lean() : [];
+    const lidParaPn     = Object.fromEntries(lidMaps.map(l => [l.lid, l.pn]));
+    const pnsResolvidos = Object.values(lidParaPn);
+
+    const todosJidsBusca = [...new Set([...jidsUsuarios, ...pnsResolvidos])];
+    const usuarios = todosJidsBusca.length
+      ? await Usuario.find({ idWhatsApp: { $in: todosJidsBusca } }).select('idWhatsApp nome telefone username').lean()
+      : [];
+    const usuariosMap = Object.fromEntries(usuarios.map(u => [u.idWhatsApp, u]));
+
+    const mapaDeduplicado = new Map();
+    for (const m of membros) {
+      const pn = lidParaPn[m.idWhatsApp] || (m.idWhatsApp.endsWith('@s.whatsapp.net') ? m.idWhatsApp : null);
+      const chave = pn || m.idWhatsApp;
+
+      const u = usuariosMap[m.idWhatsApp] || (pn ? usuariosMap[pn] : {}) || {};
+      const numRaw = (pn || m.idWhatsApp).split('@')[0].replace(/\D/g, '');
+      const telFormatado = numRaw.length >= 8 ? `+${numRaw}` : null;
+      const nomeFinal = u.nome || u.username || u.telefone || m.nome || telFormatado || 'Anônimo';
+
+      if (!mapaDeduplicado.has(chave)) {
+        mapaDeduplicado.set(chave, {
+          idWhatsApp: m.idWhatsApp,
+          nome:       nomeFinal,
+          xp:         m.xp        ?? 0,
+          gold:       m.gold      ?? 0,
+          mensagens:  m.mensagens ?? 0,
+        });
+      } else {
+        const item = mapaDeduplicado.get(chave);
+        item.xp        += (m.xp ?? 0);
+        item.gold      += (m.gold ?? 0);
+        item.mensagens += (m.mensagens ?? 0);
+        if (nomeFinal !== 'Anônimo' && item.nome === 'Anônimo') item.nome = nomeFinal;
+      }
     }
 
-    const ranking = membros.map((m, i) => {
-      const u = usuariosMap[m.idWhatsApp] || {};
-      return {
-        idWhatsApp: m.idWhatsApp,
-        nome:       u.nome || u.telefone || m.idWhatsApp?.split('@')[0] || 'Anônimo',
-        xp:         m.xp        ?? 0,
-        gold:       m.gold      ?? 0,
-        mensagens:  m.mensagens ?? 0,
-        level:      m.level ?? calcularLevel(m.xp),
-        posicao:    i + 1,
-      };
-    });
+    const rankingSemOrdem = Array.from(mapaDeduplicado.values());
+    rankingSemOrdem.sort((a, b) => b.xp - a.xp);
 
-    const total = await CarteiraGrupo.countDocuments({ idGrupo: jid });
+    const ranking = rankingSemOrdem.slice(0, limit).map((r, i) => ({
+      ...r,
+      level:   calcularLevel(r.xp),
+      posicao: i + 1,
+    }));
 
-    return res.json({ ranking, total });
+    return res.json({ ranking, total: rankingSemOrdem.length });
   } catch (err) {
     console.error('[API] GET /user/ranking/grupo:', err);
     return res.status(500).json({ error: 'Erro interno.' });

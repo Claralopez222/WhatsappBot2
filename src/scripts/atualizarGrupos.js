@@ -72,42 +72,27 @@ async function rodarAtualizacao(sock) {
     console.error('⚠️ Erro ao obter lista de grupos ativos do WhatsApp:', err.message);
   }
 
-  // ── 3. Busca JIDs únicos com nome ausente ou genérico no MongoDB ────────────
-  let jidsPendentes;
-  try {
-    jidsPendentes = await CarteiraGrupoModel.distinct('idGrupo', {
-      $or: [
-        { nome: { $exists: false } },
-        { nome: null },
-        { nome: '' },
-        { nome: /^Grupo /i },
-      ],
-    });
-  } catch (err) {
-    console.error('💥 Erro ao consultar o MongoDB:', err.message);
-    return;
-  }
-
-  const total = jidsPendentes.length;
+  // ── 3. Itera sobre a lista de grupos ativos do bot para atualizar nomes e remover fantasmas ──
+  const total = activeGroupJids.length;
 
   if (total === 0) {
-    console.log('✅ Nenhum grupo pendente. Todos os nomes já estão atualizados.');
+    console.log('ℹ️ O bot não participou de nenhum grupo ativo.');
     console.log('━'.repeat(60));
     return;
   }
 
-  console.log(`📦 ${total} grupo(s) pendente(s) encontrado(s).\n`);
+  console.log(`📦 Processando ${total} grupo(s) ativo(s)...\n`);
 
   let atualizados = 0;
   let falhas      = 0;
 
-  // ── 4. Itera sobre cada JID pendente ───────────────────────────────────────
-  for (let i = 0; i < jidsPendentes.length; i++) {
-    const jid     = jidsPendentes[i];
+  for (let i = 0; i < activeGroupJids.length; i++) {
+    const jid     = activeGroupJids[i];
     const prefixo = `[${i + 1}/${total}]`;
 
     if (!jid || !jid.endsWith('@g.us')) {
       await CarteiraGrupoModel.deleteMany({ idGrupo: jid });
+      await GrupoConfigModel.deleteOne({ idGrupo: jid });
       falhas++;
       continue;
     }
@@ -120,7 +105,7 @@ async function rodarAtualizacao(sock) {
         throw new Error('Campo "subject" vazio ou ausente nos metadados.');
       }
 
-      // ── 3b. Limpa membros fantasmas (que não estão mais no grupo) ─────────
+      // ── 3a. Limpa membros fantasmas (que não estão mais no grupo) ─────────
       const participantesAtuais = metadata?.participants || [];
       if (participantesAtuais.length > 0) {
         const jidsAtivosGrupo = [];
@@ -139,27 +124,37 @@ async function rodarAtualizacao(sock) {
         }
       }
 
+      // ── 3b. Atualiza o nome real do grupo no GrupoConfig e CarteiraGrupo ──
       const resultadoMongo = await CarteiraGrupoModel.updateMany(
         { idGrupo: jid },
-        { $set: { nome: nomeReal } }
+        { $set: { nomeGrupo: nomeReal } }
       );
 
-      const docRef = doc(db, 'configuracoes_grupo', jid);
-      await setDoc(
-        docRef,
-        {
-          idGrupo   : jid,
-          nomeGrupo : nomeReal,
-          updatedAt : new Date(),
-        },
-        { merge: true }
+      await GrupoConfigModel.findOneAndUpdate(
+        { idGrupo: jid },
+        { $set: { nomeGrupo: nomeReal } },
+        { upsert: true }
       );
+
+      try {
+        const docRef = doc(db, 'configuracoes_grupo', jid);
+        await setDoc(
+          docRef,
+          {
+            idGrupo   : jid,
+            nomeGrupo : nomeReal,
+            updatedAt : new Date(),
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        // Firebase sync fallback
+      }
 
       atualizados++;
       console.log(
-        `${prefixo} ✅ "${nomeReal}"\n` +
-        `         MongoDB   → ${resultadoMongo.modifiedCount} registro(s) atualizado(s)\n` +
-        `         Firestore → configuracoes_grupo/${jid}`
+        `${prefixo} ✅ "${nomeReal}" (${jid})\n` +
+        `         MongoDB → ${resultadoMongo.modifiedCount} registro(s) atualizado(s)`
       );
 
     } catch (err) {
@@ -177,14 +172,14 @@ async function rodarAtualizacao(sock) {
       }
     }
 
-    await sleep(1200);
+    await sleep(800);
   }
 
   console.log('\n' + '━'.repeat(60));
   console.log('📊 SINCRONIZAÇÃO E LIMPEZA CONCLUÍDAS');
   console.log('━'.repeat(60));
-  console.log(`   ✅ Atualizados com sucesso : ${atualizados}`);
-  console.log(`   ❌ Falhas / removidos      : ${falhas}`);
+  console.log(`   ✅ Sincronizados com sucesso : ${atualizados}`);
+  console.log(`   ❌ Removidos / com erro       : ${falhas}`);
   console.log('━'.repeat(60) + '\n');
 }
 

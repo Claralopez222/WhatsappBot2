@@ -68,6 +68,7 @@ const carteiraGrupoSchema = new mongoose.Schema(
     idWhatsApp: { type: String, required: true, trim: true, lowercase: true },
     idGrupo:    { type: String, required: true, trim: true, lowercase: true },
     nome:       { type: String, default: null,  trim: true },
+    nomeGrupo:  { type: String, default: null,  trim: true },
 
     // ── Nome customizado do grupo (definido pelo admin no painel) ─
     // Necessário para PATCH /api/admin/grupo/:jid/nome funcionar.

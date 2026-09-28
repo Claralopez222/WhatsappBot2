@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const grupoConfigSchema = new mongoose.Schema(
   {
     idGrupo: { type: String, required: true, unique: true, trim: true },
+    nomeGrupo: { type: String, default: null, trim: true },
+    nomeCustom: { type: String, default: null, trim: true },
 
     // ── Prefixo ──────────────────────────────────────────────────
     prefixo: {

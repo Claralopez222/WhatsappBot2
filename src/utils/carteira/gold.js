@@ -43,13 +43,30 @@ async function getCarteira(idWhatsApp, idGrupo) {
       const principal   = carteiras[0];
       const secundarias = carteiras.slice(1);
       const secIds      = secundarias.map(c => c._id);
-      const maxGold     = Math.max(...carteiras.map(c => c.gold || 0));
-      const maxXp       = Math.max(...carteiras.map(c => c.xp || 0));
+
+      const maxGold  = Math.max(...carteiras.map(c => c.gold || 0));
+      const maxXp    = Math.max(...carteiras.map(c => c.xp || 0));
+      const maxMsgs  = Math.max(...carteiras.map(c => c.mensagens || 0));
+      const maxQuiz  = Math.max(...carteiras.map(c => c.quizPoints || 0));
+
+      const empAtivo   = carteiras.find(c => c.emprestimo?.ativo)?.emprestimo;
+      const petAtivo   = carteiras.find(c => c.pet?.name)?.pet;
+      const bancoAtivo = carteiras.find(c => (c.banco?.amount || 0) > 0)?.banco;
+
+      const updateSet = {
+        gold: maxGold,
+        xp: maxXp,
+        mensagens: maxMsgs,
+        quizPoints: maxQuiz,
+      };
+      if (empAtivo)   updateSet.emprestimo = empAtivo;
+      if (petAtivo)   updateSet.pet = petAtivo;
+      if (bancoAtivo) updateSet.banco = bancoAtivo;
 
       await CarteiraGrupo.deleteMany({ _id: { $in: secIds } });
       const unificada = await CarteiraGrupo.findByIdAndUpdate(
         principal._id,
-        { $set: { gold: maxGold, xp: maxXp } },
+        { $set: updateSet },
         { new: true }
       );
       return unificada;

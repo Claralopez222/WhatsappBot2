@@ -192,9 +192,24 @@ async function startBot() {
           if (lm.lid) targetJids.push(lm.lid);
         }
 
+        const setJids = new Set(targetJids);
+        for (const jid of targetJids) {
+          const num = jid.split('@')[0].replace(/\D/g, '');
+          if (num && num.length >= 10 && num.length <= 15) {
+            const digitos = String(num || '').replace(/\D/g, '');
+            setJids.add(`${digitos}@s.whatsapp.net`);
+            if (digitos.startsWith('55') && digitos.length >= 12) {
+              const ddd = digitos.slice(2, 4);
+              const resto = digitos.slice(4);
+              if (resto.length === 8) setJids.add(`55${ddd}9${resto}@s.whatsapp.net`);
+              else if (resto.length === 9 && resto.startsWith('9')) setJids.add(`55${ddd}${resto.slice(1)}@s.whatsapp.net`);
+            }
+          }
+        }
+
         const deletados = await CarteiraGrupo.deleteMany({
           idGrupo: id,
-          idWhatsApp: { $in: targetJids }
+          idWhatsApp: { $in: Array.from(setJids) }
         });
 
         if (deletados.deletedCount > 0) {

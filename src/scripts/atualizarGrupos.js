@@ -105,19 +105,59 @@ async function rodarAtualizacao(sock) {
         throw new Error('Campo "subject" vazio ou ausente nos metadados.');
       }
 
+const LidMappingModel    = require(path.join(__dirname, '..', 'models', 'LidMapping'));
+
+function gerarVariantesNumero(termo) {
+  const digitos = String(termo || '').replace(/\D/g, '');
+  const variantes = new Set([digitos]);
+  if (digitos.startsWith('55') && digitos.length >= 12) {
+    const ddd = digitos.slice(2, 4);
+    const resto = digitos.slice(4);
+    if (resto.length === 8) variantes.add(`55${ddd}9${resto}`);
+    else if (resto.length === 9 && resto.startsWith('9')) variantes.add(`55${ddd}${resto.slice(1)}`);
+  }
+  return [...variantes];
+}
+
       // ── 3a. Limpa membros fantasmas (que não estão mais no grupo) ─────────
       const participantesAtuais = metadata?.participants || [];
       if (participantesAtuais.length > 0) {
-        const jidsAtivosGrupo = [];
+        const rawJids = [];
         for (const p of participantesAtuais) {
+          if (!p.id) continue;
+          rawJids.push(p.id);
           const rawNum = p.id.split(':')[0].split('@')[0];
-          jidsAtivosGrupo.push(p.id);
-          jidsAtivosGrupo.push(`${rawNum}@s.whatsapp.net`);
-          jidsAtivosGrupo.push(`${rawNum}@lid`);
+          rawJids.push(`${rawNum}@s.whatsapp.net`);
+          rawJids.push(`${rawNum}@lid`);
         }
+
+        const lidMaps = await LidMappingModel.find({
+          $or: [
+            { pn: { $in: rawJids } },
+            { lid: { $in: rawJids } }
+          ]
+        }).lean();
+
+        const jidsAtivosGrupo = new Set(rawJids);
+        for (const m of lidMaps) {
+          if (m.pn)  jidsAtivosGrupo.add(m.pn);
+          if (m.lid) jidsAtivosGrupo.add(m.lid);
+          const digitos = m.pn?.split('@')[0]?.replace(/\D/g, '');
+          if (digitos) {
+            gerarVariantesNumero(digitos).forEach(v => jidsAtivosGrupo.add(`${v}@s.whatsapp.net`));
+          }
+        }
+
+        for (const jidRaw of rawJids) {
+          const num = jidRaw.split('@')[0].replace(/\D/g, '');
+          if (num && num.length >= 10 && num.length <= 15) {
+            gerarVariantesNumero(num).forEach(v => jidsAtivosGrupo.add(`${v}@s.whatsapp.net`));
+          }
+        }
+
         const delFantasmas = await CarteiraGrupoModel.deleteMany({
           idGrupo: jid,
-          idWhatsApp: { $nin: jidsAtivosGrupo }
+          idWhatsApp: { $nin: Array.from(jidsAtivosGrupo) }
         });
         if (delFantasmas.deletedCount > 0) {
           console.log(`         🧹 Removidos ${delFantasmas.deletedCount} membro(s) fantasma(s) do grupo "${nomeReal}".`);

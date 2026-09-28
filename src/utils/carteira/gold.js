@@ -52,6 +52,7 @@ async function getCarteira(idWhatsApp, idGrupo) {
       const empAtivo   = carteiras.find(c => c.emprestimo?.ativo)?.emprestimo;
       const petAtivo   = carteiras.find(c => c.pet?.name)?.pet;
       const bancoAtivo = carteiras.find(c => (c.banco?.amount || 0) > 0)?.banco;
+      const empregoEmpregado = carteiras.find(c => c.empregoAtual && c.empregoAtual !== 'desempregado');
 
       const updateSet = {
         gold: maxGold,
@@ -62,6 +63,13 @@ async function getCarteira(idWhatsApp, idGrupo) {
       if (empAtivo)   updateSet.emprestimo = empAtivo;
       if (petAtivo)   updateSet.pet = petAtivo;
       if (bancoAtivo) updateSet.banco = bancoAtivo;
+      if (empregoEmpregado) {
+        updateSet.empregoAtual             = empregoEmpregado.empregoAtual;
+        updateSet.totalTrabalhosComSucesso = empregoEmpregado.totalTrabalhosComSucesso || 0;
+        updateSet.ultimoTrabalho           = empregoEmpregado.ultimoTrabalho || null;
+        updateSet.historicoSujo            = empregoEmpregado.historicoSujo || false;
+        updateSet.demissaoVoluntariaAte    = empregoEmpregado.demissaoVoluntariaAte || null;
+      }
 
       await CarteiraGrupo.deleteMany({ _id: { $in: secIds } });
       const unificada = await CarteiraGrupo.findByIdAndUpdate(

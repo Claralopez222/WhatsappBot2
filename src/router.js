@@ -682,10 +682,10 @@ async function handleMessage(sock, msg) {
     { await pescaHandler.handleStatsPesca(sock, msg, jid); return; }
 
   // ── EMPREGO ───────────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'procuraremprego') || matchCmd(cmdWord, 'buscaemprego'))
-    { await diversaoHandler.handleProcurarEmprego(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'trabalhar') || matchCmd(cmdWord, 'work'))
-    { await diversaoHandler.handleTrabalhar(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'procuraremprego') || matchCmd(cmdWord, 'buscaemprego') || matchCmdStart(cmd, 'procuraremprego ') || matchCmdStart(cmd, 'escolheremprego'))
+    { await diversaoHandler.handleProcurarEmprego(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'trabalhar') || matchCmd(cmdWord, 'work') || matchCmdStart(cmd, 'trabalhar ') || matchCmdStart(cmd, 'work '))
+    { await diversaoHandler.handleTrabalhar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'promocao') || matchCmd(cmdWord, 'promcao'))
     { await diversaoHandler.handlePromocao(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'emprego') || matchCmd(cmdWord, 'meuemprego'))

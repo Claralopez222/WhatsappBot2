@@ -739,6 +739,9 @@ if (pnEquivalente) {
     if (!usuario && !carteiras.length)
       return res.status(404).json({ error: 'Usuário não encontrado.' });
 
+    // Filtra carteiras apenas de grupos válidos (@g.us)
+    carteiras = carteiras.filter(c => c.idGrupo && typeof c.idGrupo === 'string' && c.idGrupo.endsWith('@g.us'));
+
     const xpTotal        = carteiras.reduce((s, c) => s + (c.xp        ?? 0), 0);
     const goldTotal      = carteiras.reduce((s, c) => s + (c.gold      ?? 0), 0);
     const mensagensTotal = carteiras.reduce((s, c) => s + (c.mensagens ?? 0), 0);
@@ -880,44 +883,71 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
     const { idGrupo, valor, operacao } = req.body || {};
 
-    if (!idGrupo)
-      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
-    if (!Number.isFinite(valor) || valor <= 0)
-      return res.status(400).json({ error: 'valor deve ser um número positivo.' });
-    if (!['dar', 'remover'].includes(operacao))
-      return res.status(400).json({ error: 'operacao deve ser "dar" ou "remover".' });
+    if (!Number.isFinite(valor) || valor < 0)
+      return res.status(400).json({ error: 'valor deve ser um número não negativo.' });
+    const op = (operacao || 'dar').toLowerCase();
+    if (!['dar', 'remover', 'definir', 'set'].includes(op))
+      return res.status(400).json({ error: 'operacao deve ser "dar", "remover" ou "definir".' });
 
-    // Resolve qual variante do JID já existe nesse grupo
-    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+    const eGlobal = !idGrupo || idGrupo === 'global';
 
-    // Verifica se a carteira realmente existe antes de qualquer operação
-    const carteiraExistente = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo }).lean();
-    if (!carteiraExistente)
-      return res.status(404).json({ error: 'Carteira não encontrada para esse usuário nesse grupo.' });
+    if (!eGlobal) {
+      const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      let update = {};
+      if (op === 'dar') {
+        update = {
+          $inc: { gold: valor },
+          $push: { goldHistory: { $each: [{ type: 'recebido', item: 'Ajuste Admin', amount: valor, date: new Date() }], $slice: -50 } }
+        };
+      } else if (op === 'remover') {
+        update = {
+          $inc: { gold: -valor },
+          $push: { goldHistory: { $each: [{ type: 'gasto', item: 'Ajuste Admin', amount: valor, date: new Date() }], $slice: -50 } }
+        };
+      } else {
+        update = { $set: { gold: valor } };
+      }
 
-    if (operacao === 'remover' && (carteiraExistente.gold ?? 0) < valor)
-      return res.status(400).json({ error: `Saldo insuficiente. Usuário tem ${carteiraExistente.gold ?? 0} gold.` });
+      const carteira = await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp, idGrupo },
+        update,
+        { new: true, upsert: true }
+      ).lean();
 
-    const incremento = operacao === 'dar' ? valor : -valor;
+      return res.json({ ok: true, idWhatsApp, goldAtual: carteira.gold });
+    } else {
+      const jidNorm = normalizarJid(termoOriginal);
+      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
 
-    const carteira = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp, idGrupo },
-      {
-        $inc: { gold: incremento },
-        $push: {
-          goldHistory: {
-            $each: [{ type: operacao === 'dar' ? 'recebido' : 'gasto', item: 'Ajuste Admin', amount: valor, date: new Date() }],
-            $slice: -50,
-          },
-        },
-      },
-      { new: true }
-    ).lean();
+      let updateCarteira = {};
+      let updateUsuario  = {};
 
-    if (!carteira)
-      return res.status(404).json({ error: 'Carteira não encontrada.' });
+      if (op === 'dar') {
+        updateCarteira = { $inc: { gold: valor } };
+        updateUsuario  = { $inc: { gold: valor } };
+      } else if (op === 'remover') {
+        updateCarteira = { $inc: { gold: -valor } };
+        updateUsuario  = { $inc: { gold: -valor } };
+      } else {
+        updateCarteira = { $set: { gold: valor } };
+        updateUsuario  = { $set: { gold: valor } };
+      }
 
-    return res.json({ ok: true, idWhatsApp, goldAtual: carteira.gold });
+      const [resCarteiras] = await Promise.all([
+        CarteiraGrupo.updateMany(
+          { idWhatsApp: { $in: jidsBusca }, idGrupo: { $regex: /@g\.us$/ } },
+          updateCarteira
+        ),
+        Usuario.updateMany(
+          { idWhatsApp: { $in: jidsBusca } },
+          updateUsuario
+        )
+      ]);
+
+      return res.json({ ok: true, idWhatsApp: jidNorm, gruposAtualizados: resCarteiras.modifiedCount });
+    }
   } catch (err) {
     console.error('[API] PATCH /admin/usuario/gold:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -1260,8 +1290,11 @@ router.get('/admin/logs', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/admin/economia', adminAuth, async (req, res) => {
   try {
+    const matchGrupoValido = { $match: { idGrupo: { $regex: /@g\.us$/ } } };
+
     const [agregacao, topGoldRaw, topXpRaw, topMsgsRaw] = await Promise.all([
       CarteiraGrupo.aggregate([
+        matchGrupoValido,
         {
           $group: {
             _id: null,
@@ -1272,16 +1305,19 @@ router.get('/admin/economia', adminAuth, async (req, res) => {
         }
       ]),
       CarteiraGrupo.aggregate([
+        matchGrupoValido,
         { $group: { _id: '$idWhatsApp', gold: { $sum: '$gold' }, xp: { $sum: '$xp' } } },
         { $sort: { gold: -1 } },
         { $limit: 10 },
       ]),
       CarteiraGrupo.aggregate([
+        matchGrupoValido,
         { $group: { _id: '$idWhatsApp', xp: { $sum: '$xp' }, gold: { $sum: '$gold' } } },
         { $sort: { xp: -1 } },
         { $limit: 10 },
       ]),
       CarteiraGrupo.aggregate([
+        matchGrupoValido,
         { $group: { _id: '$idWhatsApp', mensagens: { $sum: '$mensagens' } } },
         { $sort: { mensagens: -1 } },
         { $limit: 10 },
@@ -1315,7 +1351,7 @@ router.get('/admin/economia', adminAuth, async (req, res) => {
     });
 
     const totalUsuariosComGold = await CarteiraGrupo
-      .distinct('idWhatsApp', { gold: { $gt: 0 } })
+      .distinct('idWhatsApp', { idGrupo: { $regex: /@g\.us$/ }, gold: { $gt: 0 } })
       .then(r => r.length);
 
     const mediaGold = totalUsuariosComGold > 0
@@ -1717,25 +1753,48 @@ router.patch('/admin/usuario/:idWhatsApp/level', adminAuth, async (req, res) => 
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
     const { idGrupo, level, xp } = req.body || {};
 
-    if (!idGrupo)
-      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
-    if (!Number.isInteger(level) || level < 1)
+    if (level != null && (!Number.isInteger(level) || level < 1))
       return res.status(400).json({ error: 'level deve ser um inteiro >= 1.' });
-    if (!Number.isFinite(xp) || xp < 0)
+    if (xp != null && (!Number.isFinite(xp) || xp < 0))
       return res.status(400).json({ error: 'xp deve ser um número >= 0.' });
 
-    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+    const updateData = {};
+    if (level != null) updateData.level = level;
+    if (xp != null) updateData.xp = xp;
 
-    const carteira = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp, idGrupo },
-      { $set: { level, xp } },
-      { new: true }
-    ).lean();
+    if (!Object.keys(updateData).length)
+      return res.status(400).json({ error: 'Informe level ou xp para atualizar.' });
 
-    if (!carteira)
-      return res.status(404).json({ error: 'Carteira não encontrada para esse usuário nesse grupo.' });
+    const eGlobal = !idGrupo || idGrupo === 'global';
 
-    return res.json({ ok: true, idWhatsApp, idGrupo, level: carteira.level, xp: carteira.xp });
+    if (!eGlobal) {
+      const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      const carteira = await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp, idGrupo },
+        { $set: updateData },
+        { new: true, upsert: true }
+      ).lean();
+
+      return res.json({ ok: true, idWhatsApp, idGrupo, level: carteira.level, xp: carteira.xp });
+    } else {
+      const jidNorm = normalizarJid(termoOriginal);
+      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+
+      const [resCarteiras] = await Promise.all([
+        CarteiraGrupo.updateMany(
+          { idWhatsApp: { $in: jidsBusca }, idGrupo: { $regex: /@g\.us$/ } },
+          { $set: updateData }
+        ),
+        Usuario.updateMany(
+          { idWhatsApp: { $in: jidsBusca } },
+          { $set: updateData }
+        )
+      ]);
+
+      return res.json({ ok: true, idWhatsApp: jidNorm, gruposAtualizados: resCarteiras.modifiedCount });
+    }
   } catch (err) {
     console.error('[API] PATCH /admin/usuario/level:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -1744,44 +1803,47 @@ router.patch('/admin/usuario/:idWhatsApp/level', adminAuth, async (req, res) => 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/usuario/:idWhatsApp/inventario?idGrupo=xxx
-// Retorna o inventário do usuário em um grupo específico.
+// Retorna o inventário do usuário (do grupo ou global).
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
   try {
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
     const idGrupo       = req.query.idGrupo;
+    const eGlobal       = !idGrupo || idGrupo === 'global';
 
-    if (!idGrupo)
-      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+    if (!eGlobal) {
+      const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      const carteira   = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
+        .select('inventario')
+        .lean();
 
-    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      let inventario = carteira?.inventario || [];
+      if (!Array.isArray(inventario)) {
+        const obj = inventario instanceof Map ? Object.fromEntries(inventario) : (inventario || {});
+        inventario = Object.entries(obj).map(([nome, quantidade]) => ({
+          nome,
+          quantidade: Number(quantidade) || 1,
+        }));
+      }
+      return res.json({ inventario });
+    } else {
+      const jidNorm = normalizarJid(termoOriginal);
+      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
 
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
-      .select('inventario')
-      .lean();
+      const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsBusca } })
+        .select('inventory')
+        .lean();
 
-    if (!carteira)
-      return res.status(404).json({ error: 'Carteira não encontrada.' });
-
-    // Normaliza inventário — aceita Map, objeto ou array
-    let inventario = carteira.inventario;
-
-    if (!inventario) {
-      return res.json({ inventario: [] });
-    }
-
-    // Se for Map ou objeto simples (chave→quantidade)
-    if (!Array.isArray(inventario)) {
-      const obj = inventario instanceof Map
-        ? Object.fromEntries(inventario)
-        : inventario;
-      inventario = Object.entries(obj).map(([nome, quantidade]) => ({
+      const invObj = mapParaObjeto(usuario?.inventory || {});
+      const inventario = Object.entries(invObj).map(([nome, quantidade]) => ({
         nome,
         quantidade: Number(quantidade) || 1,
       }));
-    }
 
-    return res.json({ inventario });
+      return res.json({ inventario });
+    }
   } catch (err) {
     console.error('[API] GET /admin/usuario/inventario:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -1790,66 +1852,71 @@ router.get('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/usuario/:idWhatsApp/inventario
-// Adiciona um item ao inventário do usuário em um grupo.
+// Adiciona um item ao inventário do usuário em um grupo ou globalmente.
 // Body: { idGrupo, item, quantidade }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
   try {
-    const termoOriginal        = decodeURIComponent(req.params.idWhatsApp);
+    const termoOriginal                 = decodeURIComponent(req.params.idWhatsApp);
     const { idGrupo, item, quantidade } = req.body || {};
 
-    if (!idGrupo)
-      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
     if (!item || typeof item !== 'string' || !item.trim())
       return res.status(400).json({ error: 'item deve ser uma string não vazia.' });
     const qtd = parseInt(quantidade, 10) || 1;
     if (qtd < 1)
       return res.status(400).json({ error: 'quantidade deve ser >= 1.' });
 
-    const nomeItem   = item.trim();
-    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+    const nomeItem = item.trim();
+    const eGlobal  = !idGrupo || idGrupo === 'global';
 
-    // Tenta achar a carteira pra saber o formato atual do inventário
-    const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
-      .select('inventario')
-      .lean();
+    if (!eGlobal) {
+      const idWhatsApp    = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
+        .select('inventario')
+        .lean();
 
-    if (!carteiraAtual)
-      return res.status(404).json({ error: 'Carteira não encontrada.' });
+      const invAtual = carteiraAtual?.inventario;
+      const ehArray  = Array.isArray(invAtual);
 
-    const invAtual = carteiraAtual.inventario;
-    const ehArray  = Array.isArray(invAtual);
-
-    let carteira;
-
-    if (ehArray) {
-      // Formato array: [{nome, quantidade}]
-      const idx = (invAtual || []).findIndex(i => i.nome === nomeItem);
-      if (idx >= 0) {
-        // Incrementa quantidade do item existente
-        carteira = await CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp, idGrupo, 'inventario.nome': nomeItem },
-          { $inc: { 'inventario.$.quantidade': qtd } },
-          { new: true }
-        ).lean();
+      let carteira;
+      if (ehArray) {
+        const idx = (invAtual || []).findIndex(i => i.nome === nomeItem);
+        if (idx >= 0) {
+          carteira = await CarteiraGrupo.findOneAndUpdate(
+            { idWhatsApp, idGrupo, 'inventario.nome': nomeItem },
+            { $inc: { 'inventario.$.quantidade': qtd } },
+            { new: true }
+          ).lean();
+        } else {
+          carteira = await CarteiraGrupo.findOneAndUpdate(
+            { idWhatsApp, idGrupo },
+            { $push: { inventario: { nome: nomeItem, quantidade: qtd } } },
+            { new: true, upsert: true }
+          ).lean();
+        }
       } else {
-        // Insere novo item no array
         carteira = await CarteiraGrupo.findOneAndUpdate(
           { idWhatsApp, idGrupo },
-          { $push: { inventario: { nome: nomeItem, quantidade: qtd } } },
-          { new: true }
+          { $inc: { [`inventario.${nomeItem}`]: qtd } },
+          { new: true, upsert: true }
         ).lean();
       }
+
+      return res.json({ ok: true, inventario: carteira?.inventario });
     } else {
-      // Formato objeto/Map: { "nomeItem": quantidade }
-      carteira = await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp, idGrupo },
-        { $inc: { [`inventario.${nomeItem}`]: qtd } },
+      const jidNorm = normalizarJid(termoOriginal);
+      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+
+      const u = await Usuario.findOneAndUpdate(
+        { idWhatsApp: { $in: jidsBusca } },
+        { $inc: { [`inventory.${nomeItem}`]: qtd } },
         { new: true }
       ).lean();
-    }
 
-    return res.json({ ok: true, inventario: carteira?.inventario });
+      return res.json({ ok: true, inventory: mapParaObjeto(u?.inventory ?? {}) });
+    }
   } catch (err) {
     console.error('[API] POST /admin/usuario/inventario:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -1858,49 +1925,59 @@ router.post('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/admin/usuario/:idWhatsApp/inventario
-// Remove um item do inventário do usuário em um grupo.
+// Remove um item do inventário do usuário em um grupo ou globalmente.
 // Body: { idGrupo, item }
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
   try {
-    const termoOriginal  = decodeURIComponent(req.params.idWhatsApp);
+    const termoOriginal     = decodeURIComponent(req.params.idWhatsApp);
     const { idGrupo, item } = req.body || {};
 
-    if (!idGrupo)
-      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
     if (!item || typeof item !== 'string' || !item.trim())
       return res.status(400).json({ error: 'item deve ser uma string não vazia.' });
 
-    const nomeItem   = item.trim();
-    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+    const nomeItem = item.trim();
+    const eGlobal  = !idGrupo || idGrupo === 'global';
 
-    const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
-      .select('inventario')
-      .lean();
+    if (!eGlobal) {
+      const idWhatsApp    = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
+        .select('inventario')
+        .lean();
 
-    if (!carteiraAtual)
-      return res.status(404).json({ error: 'Carteira não encontrada.' });
+      const invAtual = carteiraAtual?.inventario;
+      const ehArray  = Array.isArray(invAtual);
 
-    const invAtual = carteiraAtual.inventario;
-    const ehArray  = Array.isArray(invAtual);
+      let carteira;
+      if (ehArray) {
+        carteira = await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp, idGrupo },
+          { $pull: { inventario: { nome: nomeItem } } },
+          { new: true }
+        ).lean();
+      } else {
+        carteira = await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp, idGrupo },
+          { $unset: { [`inventario.${nomeItem}`]: '' } },
+          { new: true }
+        ).lean();
+      }
 
-    let carteira;
-
-    if (ehArray) {
-      carteira = await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp, idGrupo },
-        { $pull: { inventario: { nome: nomeItem } } },
-        { new: true }
-      ).lean();
+      return res.json({ ok: true, inventario: carteira?.inventario });
     } else {
-      carteira = await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp, idGrupo },
-        { $unset: { [`inventario.${nomeItem}`]: '' } },
+      const jidNorm = normalizarJid(termoOriginal);
+      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+
+      const u = await Usuario.findOneAndUpdate(
+        { idWhatsApp: { $in: jidsBusca } },
+        { $unset: { [`inventory.${nomeItem}`]: '' } },
         { new: true }
       ).lean();
-    }
 
-    return res.json({ ok: true, inventario: carteira?.inventario });
+      return res.json({ ok: true, inventory: mapParaObjeto(u?.inventory ?? {}) });
+    }
   } catch (err) {
     console.error('[API] DELETE /admin/usuario/inventario:', err);
     return res.status(500).json({ error: 'Erro interno.' });

@@ -749,41 +749,13 @@ router.get('/admin/usuarios', adminAuth, async (req, res) => {
 router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
   try {
     const termo = decodeURIComponent(req.params.idWhatsApp);
-    let jid = normalizarJid(termo);
+    const jidNorm = normalizarJid(termo);
+    const variantesPn = gerarVariantesNumero(termo.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
 
-    // Se não achar carteiras pelo pn, tenta resolver via LidMapping
-    let carteiras = await CarteiraGrupo.find({ idWhatsApp: jid }).sort({ xp: -1 }).lean();
-
-// Busca também pelo PN equivalente
-const pnEquivalente = jid.endsWith('@lid')
-  ? (await LidMapping.findOne({ lid: jid }).lean())?.pn
-  : null;
-
-if (pnEquivalente) {
-  const carteirasPn = await CarteiraGrupo.find({ idWhatsApp: pnEquivalente }).sort({ xp: -1 }).lean();
-  carteiras = [...carteiras, ...carteirasPn];
-}
-
-    if (!carteiras.length && !jid.endsWith('@lid')) {
-      const digitos = jid.split('@')[0].replace(/\D/g, '');
-      const variantesPn = [];
-      variantesPn.push(`${digitos}@s.whatsapp.net`);
-      if (digitos.startsWith('55') && digitos.length >= 12) {
-        const ddd = digitos.slice(2, 4);
-        const resto = digitos.slice(4);
-        if (resto.length === 8) variantesPn.push(`55${ddd}9${resto}@s.whatsapp.net`);
-        else if (resto.length === 9 && resto.startsWith('9')) variantesPn.push(`55${ddd}${resto.slice(1)}@s.whatsapp.net`);
-      }
-
-      const mapeamento = await LidMapping.findOne({ pn: { $in: variantesPn } }).lean();
-      if (mapeamento) {
-        jid = mapeamento.lid;
-        carteiras = await CarteiraGrupo.find({ idWhatsApp: jid }).sort({ xp: -1 }).lean();
-      }
-    }
-
-    const usuario = await Usuario.findOne({ idWhatsApp: jid }).lean()
-      || await Usuario.findOne({ idWhatsApp: normalizarJid(termo) }).lean();
+    let carteiras = await CarteiraGrupo.find({ idWhatsApp: { $in: jidsBusca } }).sort({ xp: -1 }).lean();
+    const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsBusca } }).lean();
 
     if (!usuario && !carteiras.length)
       return res.status(404).json({ error: 'Usuário não encontrado.' });
@@ -817,11 +789,11 @@ if (pnEquivalente) {
     }));
 
     const nomeAdmin     = usuario?.nome     || carteiras[0]?.nome || '(sem nome)';
-    const telefoneAdmin = usuario?.telefone || jid.replace('@s.whatsapp.net', '').replace('@lid', '');
+    const telefoneAdmin = usuario?.telefone || (lidMap?.pn || jidNorm).replace('@s.whatsapp.net', '').replace('@lid', '');
 
     return res.json({
       usuario: {
-        idWhatsApp: jid,
+        idWhatsApp: usuario?.idWhatsApp || jidsBusca[0],
         nome:       nomeAdmin,
         telefone:   telefoneAdmin,
         xp:         xpTotal,
@@ -842,46 +814,32 @@ if (pnEquivalente) {
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
   try {
-    const { idWhatsApp } = req.params;
+    const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
     const { grupo }      = req.query;
 
-    // Tenta achar o usuário com variantes de número brasileiro (com/sem 9)
-const jidNorm = normalizarJid(idWhatsApp);
-const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
-  .map(d => `${d}@s.whatsapp.net`);
+    const jidNorm = normalizarJid(termoOriginal);
+    const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
 
-const lidMap = await LidMapping.findOne({ $or: [
-  { pn:  { $in: variantesPn } },
-  { lid: jidNorm }
-]}).lean();
+    const usuarios = await Usuario.find({ idWhatsApp: { $in: jidsBusca } });
+    if (!usuarios.length)
+      return res.status(404).json({ error: 'Perfil não encontrado.' });
 
-const jidsParaBuscar = [...new Set([
-  jidNorm,
-  ...(lidMap ? [lidMap.lid, lidMap.pn] : []),
-  ...variantesPn,
-].filter(Boolean))];
-
-const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsParaBuscar } });
-if (!usuario)
-  return res.status(404).json({ error: 'Perfil não encontrado. Mande uma mensagem no grupo primeiro.' });
-
-// Usa o idWhatsApp real do banco pra salvar o username/hash
-const idWhatsAppReal = usuario.idWhatsApp;
-
-    const warns = mapParaObjeto(usuario.warnings);
-
-    if (grupo) {
-      const atual = Number(warns[grupo] || 0);
-      if (atual <= 1) delete warns[grupo];
-      else warns[grupo] = atual - 1;
-    } else {
-      for (const k of Object.keys(warns)) delete warns[k];
+    for (const usuario of usuarios) {
+      const warns = mapParaObjeto(usuario.warnings);
+      if (grupo) {
+        const atual = Number(warns[grupo] || 0);
+        if (atual <= 1) delete warns[grupo];
+        else warns[grupo] = atual - 1;
+      } else {
+        for (const k of Object.keys(warns)) delete warns[k];
+      }
+      usuario.warnings = new Map(Object.entries(warns));
+      await usuario.save();
     }
 
-    usuario.warnings = new Map(Object.entries(warns));
-    await usuario.save();
-
-    return res.json({ ok: true, warns: mapParaObjeto(usuario.warnings) });
+    return res.json({ ok: true, warns: mapParaObjeto(usuarios[0].warnings) });
   } catch (err) {
     console.error('[API] DELETE /admin/warn/:id:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -893,30 +851,25 @@ const idWhatsAppReal = usuario.idWhatsApp;
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
   try {
-    const { idWhatsApp } = req.params;
+    const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
     const { banido }     = req.body || {};
 
     if (typeof banido !== 'boolean')
       return res.status(400).json({ error: '"banido" deve ser true ou false.' });
 
-    const jidNorm = normalizarJid(idWhatsApp);
-    const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
-      .map(d => `${d}@s.whatsapp.net`);
-    const lidMap = await LidMapping.findOne({ $or: [
-      { pn: { $in: variantesPn } },
-      { lid: jidNorm }
-    ]}).lean();
+    const jidNorm = normalizarJid(termoOriginal);
+    const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
     const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
 
-    const usuario = await Usuario.findOneAndUpdate(
+    const result = await Usuario.updateMany(
       { idWhatsApp: { $in: jidsBusca } },
-      { $set: { banido } },
-      { new: true }
-    ).lean();
+      { $set: { banido } }
+    );
 
-    if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    if (!result.matchedCount) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
-    return res.json({ ok: true, idWhatsApp, banido: !!usuario.banido });
+    return res.json({ ok: true, idWhatsApp: jidNorm, banido });
   } catch (err) {
     console.error('[API] PATCH /admin/usuario/ban:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -931,6 +884,7 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
   try {
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
     const { idGrupo, valor, operacao } = req.body || {};
+    const eGlobal = !idGrupo || idGrupo === 'global';
 
     if (!Number.isFinite(valor) || valor < 0)
       return res.status(400).json({ error: 'valor deve ser um número não negativo.' });
@@ -983,11 +937,6 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
 
       return res.json({ ok: true, idWhatsApp: jidsBusca[0], goldAtual: carteira?.gold ?? valor });
     } else {
-      const jidNorm = normalizarJid(termoOriginal);
-      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
-
       let updateCarteira = {};
       let updateUsuario  = {};
 
@@ -1027,17 +976,27 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/admin/usuario/:idWhatsApp/gold/reset', adminAuth, async (req, res) => {
   try {
-    const idWhatsApp = normalizarJid(decodeURIComponent(req.params.idWhatsApp));
+    const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
+    const jidNorm = normalizarJid(termoOriginal);
+    const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
 
-    const resultado = await CarteiraGrupo.updateMany(
-      { idWhatsApp },
-      { $set: { gold: 0 } }
-    );
+    const [resultadoCarteira, resultadoUsuario] = await Promise.all([
+      CarteiraGrupo.updateMany(
+        { idWhatsApp: { $in: jidsBusca } },
+        { $set: { gold: 0 } }
+      ),
+      Usuario.updateMany(
+        { idWhatsApp: { $in: jidsBusca } },
+        { $set: { gold: 0 } }
+      )
+    ]);
 
-    if (!resultado.matchedCount)
+    if (!resultadoCarteira.matchedCount && !resultadoUsuario.matchedCount)
       return res.status(404).json({ error: 'Nenhuma carteira encontrada para esse usuário.' });
 
-    return res.json({ ok: true, gruposAtualizados: resultado.modifiedCount });
+    return res.json({ ok: true, gruposAtualizados: resultadoCarteira.modifiedCount });
   } catch (err) {
     console.error('[API] DELETE /admin/usuario/gold/reset:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -1061,30 +1020,34 @@ router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
     if (!Number.isFinite(valor) || valor <= 0)
       return res.status(400).json({ error: 'valor deve ser um número positivo.' });
 
-    const jidOrigem  = normalizarJid(idOrigem);
-    const jidDestino = normalizarJid(idDestino);
+    const getJidsBusca = async (term) => {
+      const norm = normalizarJid(term);
+      const vars = gerarVariantesNumero(term.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+      const map = await LidMapping.findOne({ $or: [{ pn: { $in: vars } }, { lid: norm }] }).lean();
+      return [...new Set([norm, ...(map ? [map.lid, map.pn] : []), ...vars].filter(Boolean))];
+    };
 
-    if (jidOrigem === jidDestino)
+    const [jidsOrigem, jidsDestino] = await Promise.all([getJidsBusca(idOrigem), getJidsBusca(idDestino)]);
+
+    if (jidsOrigem.some(j => jidsDestino.includes(j)))
       return res.status(400).json({ error: 'Origem e destino não podem ser o mesmo usuário.' });
 
     // Verifica saldo da origem
-    const carteiraOrigem = await CarteiraGrupo.findOne({ idWhatsApp: jidOrigem, idGrupo }).lean();
+    const carteiraOrigem = await CarteiraGrupo.findOne({ idWhatsApp: { $in: jidsOrigem }, idGrupo }).lean();
     if (!carteiraOrigem)
       return res.status(404).json({ error: 'Carteira de origem não encontrada.' });
     if ((carteiraOrigem.gold || 0) < valor)
       return res.status(400).json({ error: `Saldo insuficiente. Origem tem ${carteiraOrigem.gold || 0} gold.` });
 
-    // Verifica se o destino existe no grupo (cria se não existir via upsert)
     const [, carteiraDestinoAtual] = await Promise.all([
-      CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: jidOrigem,  idGrupo },
-        { $inc: { gold: -valor } },
-        { new: true }
+      CarteiraGrupo.updateMany(
+        { idWhatsApp: { $in: jidsOrigem }, idGrupo },
+        { $inc: { gold: -valor } }
       ),
       CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: jidDestino, idGrupo },
+        { idWhatsApp: { $in: jidsDestino }, idGrupo },
         { $inc: { gold: valor } },
-        { new: true, upsert: true }
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       ),
     ]);
 

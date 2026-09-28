@@ -822,7 +822,10 @@ async function handleMenuEfeitos(sock, msg, jid, prefix) {
   ].join(', ');
 
   const menu =
-`🎨 *MENU DE EFEITOS DE IMAGEM* 🎨
+`╔══════════════════════╗
+     🎨 MENU DE EFEITOS
+╚══════════════════════╝
+
 _Responda uma foto ou vídeo com o comando_
 
 🌫️ *DESFOQUE & FOCO*

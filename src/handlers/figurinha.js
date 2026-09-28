@@ -1072,28 +1072,37 @@ async function handlePesquisaFig(sock, msg, jid, caption, getPrefix, stickerCoun
 async function handleMenuFig(sock, msg, jid, getPrefix) {
   const P = getPrefix(jid);
 
-  const menu = [
-    `╭━━━━━━━━━━━━━━━━━╮`,
-    `│  🎭 *MENU FIGURINHAS* 🎭`,
-    `│`,
-    `│ ▸ ${P}s _— imagem/vídeo → sticker_`,
-    `│ ▸ ${P}f _— alias do ${P}s_`,
-    `│ ▸ ${P}attp _<texto>_`,
-    `│ ▸ ${P}attp2 _<texto>_`,
-    `│ ▸ ${P}brat _<texto>_`,
-    `│ ▸ ${P}figtexto _<texto>_`,
-    `│ ▸ ${P}qc _<texto>_`,
-    `│ ▸ ${P}qc2 _<texto>_`,
-    `│ ▸ ${P}emojimix _😀+😎_`,
-    `│ ▸ ${P}emoji _😀_`,
-    `│ ▸ ${P}desfig _— sticker → imagem/vídeo_`,
-    `│ ▸ ${P}toimg _— alias do ${P}desfig_`,
-    `│ ▸ ${P}togif _— sticker → gif_`,
-    `│ ▸ ${P}estourar _— amplifica áudio_`,
-    `│ ▸ ${P}figemoji / ${P}figroblox / ${P}figmeme`,
-    `│ ▸ ${P}pesquisafig _<tema>_`,
-    `╰━━━━━━━⊰ ✧ ⊱━━━━━━━╯`,
-  ].join('\n');
+  const menu =
+`╔══════════════════════╗
+     🎭 MENU FIGURINHAS
+╚══════════════════════╝
+
+🖼️ *CRIAR*
+  ▸ ${P}s — imagem/vídeo → sticker
+  ▸ ${P}f — alias do ${P}s
+  ▸ ${P}attp _(texto)_ — texto animado
+  ▸ ${P}attp2 _(texto)_ — texto animado v2
+  ▸ ${P}brat _(texto)_
+  ▸ ${P}figtexto _(texto)_
+  ▸ ${P}qc _(texto)_
+  ▸ ${P}qc2 _(texto)_
+  ▸ ${P}emojimix _(😀+😎)_
+  ▸ ${P}emoji _(😀)_
+
+🔄 *CONVERTER*
+  ▸ ${P}desfig — sticker → imagem/vídeo
+  ▸ ${P}toimg — alias do ${P}desfig
+  ▸ ${P}togif — sticker → gif
+  ▸ ${P}estourar — amplifica áudio
+
+🔎 *PACOTES & BUSCA*
+  ▸ ${P}fig — sticker aleatório
+  ▸ ${P}figemoji • ${P}figroblox • ${P}figmeme
+  ▸ ${P}figcoreana • ${P}figraiva
+  ▸ ${P}figengracada • ${P}figdesenho
+  ▸ ${P}pesquisafig _(tema)_
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
   console.log('🎭 Menu figurinhas enviado');

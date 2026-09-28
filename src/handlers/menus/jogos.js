@@ -48,38 +48,50 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 
 async function handleBrincadeiras(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
-  await sock.sendMessage(jid, {
-    text:
-      `🎮 *BRINCADEIRAS* 🎮\n\n` +
-      `${P}gay [@] — % de gay\n` +
-      `${P}sexo [@] — % de sexo\n` +
-      `${P}lesbica [@] — % lésbica\n` +
-      `${P}trans [@] — % trans\n` +
-      `${P}aura [@] — sua aura\n` +
-      `${P}ship [@] [@] — shippar\n` +
-      `${P}compatibilidade [@] — compatibilidade\n` +
-      `${P}dado [lados] — jogar dado\n` +
-      `${P}moeda — cara ou coroa\n` +
-      `${P}8ball [pergunta] — bola 8\n` +
-      `${P}rolar [min] [max] — número aleatório\n` +
-      `${P}ppt — pedra papel tesoura\n` +
-      `${P}quiz — quiz aleatório\n` +
-      `${P}anagrama — jogo de anagrama\n` +
-      `${P}roletarussa — roleta russa\n` +
-      `${P}eununca — eu nunca\n` +
-      `${P}verdadeoudesafio — verdade ou desafio\n` +
-      `${P}xingar [@] — xingar alguém\n` +
-      `${P}elogio [@] — elogiar alguém\n` +
-      `${P}cantada [@] — cantada\n` +
-      `${P}crush [@] — crush\n` +
-      `${P}julgamento [@] — julgar\n` +
-      `${P}fortuna — fortuna\n` +
-      `${P}maldizer [@] — maldizer\n` +
-      `${P}confissao — confissão\n` +
-      `${P}fofoca [@] — contar fofoca\n` +
-      `${P}inverter [texto] — inverter texto\n` +
-      `${P}gerarnome — gerador de nicknames`,
-  }, { quoted: msg });
+  const menu =
+`╔══════════════════════╗
+      🎮 BRINCADEIRAS
+╚══════════════════════╝
+
+📊 *PORCENTAGENS*
+  ▸ ${P}gay @ — % de gay
+  ▸ ${P}sexo @ — % de sexo
+  ▸ ${P}lesbica @ — % lésbica
+  ▸ ${P}trans @ — % trans
+  ▸ ${P}aura @ — sua aura
+  ▸ ${P}compatibilidade @ — compatibilidade
+
+💘 *SOCIAL*
+  ▸ ${P}ship @ @ — shippar
+  ▸ ${P}crush @ — crush
+  ▸ ${P}cantada @ — cantada
+  ▸ ${P}elogio @ — elogiar alguém
+  ▸ ${P}xingar @ — xingar alguém
+  ▸ ${P}julgamento @ — julgar
+  ▸ ${P}maldizer @ — maldizer
+  ▸ ${P}fofoca @ — contar fofoca
+
+🎲 *SORTE & JOGOS*
+  ▸ ${P}dado _(lados)_ — jogar dado
+  ▸ ${P}moeda — cara ou coroa
+  ▸ ${P}8ball _(pergunta)_ — bola 8
+  ▸ ${P}rolar _(min) (max)_ — número aleatório
+  ▸ ${P}ppt — pedra papel tesoura
+  ▸ ${P}quiz — quiz aleatório
+  ▸ ${P}anagrama — jogo de anagrama
+  ▸ ${P}roletarussa — roleta russa
+  ▸ ${P}eununca — eu nunca
+  ▸ ${P}verdadeoudesafio — verdade ou desafio
+
+🔮 *OUTROS*
+  ▸ ${P}fortuna — fortuna
+  ▸ ${P}confissao — confissão
+  ▸ ${P}inverter _(texto)_ — inverter texto
+  ▸ ${P}gerarnome — gerador de nicknames
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
 module.exports = { handleMenuJogos, handleBrincadeiras };

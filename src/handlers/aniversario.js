@@ -247,29 +247,29 @@ async function handleMenuAniversario(sock, msg, jid, getPrefix) {
   const P       = typeof getPrefix === 'function' ? getPrefix(chatJid) : '!';
 
   const menu =
-    `╭━━━━━━━━━━━━━━━━━╮\n` +
-    `│  🎂 *MENU DE ANIVERSÁRIOS* 🎂\n` +
-    `│\n` +
-    `│ 📝 *REGISTRO:*\n` +
-    `│ ▸ ${P}reganiversario [DD/MM/AAAA]\n` +
-    `│    Exemplo: ${P}reganiversario 20/01/1997\n` +
-    `│ ▸ ${P}excluiraniversario — Remover\n` +
-    `│\n` +
-    `│ 📊 *CONSULTAS:*\n` +
-    `│ ▸ ${P}meuaniversario — Ver sua data\n` +
-    `│ ▸ ${P}listaniversarios — Listar todos\n` +
-    `│\n` +
-    `│ ⚙️ *SISTEMA:*\n` +
-    `│ ▸ ${P}sistemaniversario — Ativar/desativar\n` +
-    `│    (apenas admin)\n` +
-    `│\n` +
-    `│ 🎉 *FUNCIONAMENTO:*\n` +
-    `│ • Bot parabeniza automaticamente\n` +
-    `│ • Mostra idade e mensagem especial\n` +
-    `│ • Qualquer membro pode registrar\n` +
-    `│ • Data entre 1900 e ${getAnoAtual()}\n` +
-    `│\n` +
-    `╰━━━━━⊰ ✧ ⊱━━━━━╯`;
+`╔══════════════════════╗
+    🎂 MENU ANIVERSÁRIOS
+╚══════════════════════╝
+
+📝 *REGISTRO*
+  ▸ ${P}reganiversario _(DD/MM/AAAA)_
+     Exemplo: ${P}reganiversario 20/01/1997
+  ▸ ${P}excluiraniversario — Remover
+
+📊 *CONSULTAS*
+  ▸ ${P}meuaniversario — Ver sua data
+  ▸ ${P}listaniversarios — Listar todos
+
+⚙️ *SISTEMA*
+  ▸ ${P}sistemaniversario — Ativar/desativar _(apenas admin)_
+
+🎉 *FUNCIONAMENTO*
+  • Bot parabeniza automaticamente
+  • Mostra idade e mensagem especial
+  • Qualquer membro pode registrar
+  • Data entre 1900 e ${getAnoAtual()}
+
+━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   return reply(sock, chatJid, msg, menu);
 }

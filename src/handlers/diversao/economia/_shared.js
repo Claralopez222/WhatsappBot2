@@ -38,8 +38,3 @@ module.exports = {
   resolverItemKey,
   getSaldoGrupo,
 };
-
-
-
-
-

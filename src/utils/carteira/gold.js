@@ -1,7 +1,8 @@
 'use strict';
 
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
-const { resolveJidComLid } = require('../identity');
+const LidMapping    = require('../../models/LidMapping');
+const { normalizarJid } = require('../identity');
 
 const GOLD_HISTORY_LIMITE = 50;
 
@@ -11,14 +12,55 @@ function assertJid(jid, nome) {
   }
 }
 
+function gerarVariantesNumero(termo) {
+  const digitos = String(termo || '').replace(/\D/g, '');
+  const variantes = new Set([digitos]);
+  if (digitos.startsWith('55') && digitos.length >= 12) {
+    const ddd = digitos.slice(2, 4);
+    const resto = digitos.slice(4);
+    if (resto.length === 8) variantes.add(`55${ddd}9${resto}`);
+    else if (resto.length === 9 && resto.startsWith('9')) variantes.add(`55${ddd}${resto.slice(1)}`);
+  }
+  return [...variantes];
+}
+
+async function resolverJidsEquivalentes(idWhatsApp) {
+  const jidNorm = normalizarJid(idWhatsApp);
+  const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+  const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+  return [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+}
+
 async function getCarteira(idWhatsApp, idGrupo) {
   assertJid(idWhatsApp, 'idWhatsApp');
   assertJid(idGrupo,    'idGrupo');
-  const idNorm = await resolveJidComLid(idWhatsApp, idGrupo);
 
+  const jidsBusca = await resolverJidsEquivalentes(idWhatsApp);
+  const carteiras = await CarteiraGrupo.find({ idWhatsApp: { $in: jidsBusca }, idGrupo }).sort({ gold: -1, xp: -1 }).lean();
+
+  if (carteiras.length > 0) {
+    if (carteiras.length > 1) {
+      const principal   = carteiras[0];
+      const secundarias = carteiras.slice(1);
+      const secIds      = secundarias.map(c => c._id);
+      const maxGold     = Math.max(...carteiras.map(c => c.gold || 0));
+      const maxXp       = Math.max(...carteiras.map(c => c.xp || 0));
+
+      await CarteiraGrupo.deleteMany({ _id: { $in: secIds } });
+      const unificada = await CarteiraGrupo.findByIdAndUpdate(
+        principal._id,
+        { $set: { gold: maxGold, xp: maxXp } },
+        { new: true }
+      );
+      return unificada;
+    }
+    return carteiras[0];
+  }
+
+  const primaryJid = jidsBusca[0];
   return CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: idNorm, idGrupo },
-    { $setOnInsert: { idWhatsApp: idNorm, idGrupo } },
+    { idWhatsApp: primaryJid, idGrupo },
+    { $setOnInsert: { idWhatsApp: primaryJid, idGrupo } },
     { upsert: true, new: true }
   );
 }
@@ -26,7 +68,8 @@ async function getCarteira(idWhatsApp, idGrupo) {
 async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
   assertJid(idWhatsApp, 'idWhatsApp');
   assertJid(idGrupo,    'idGrupo');
-  idWhatsApp = await resolveJidComLid(idWhatsApp, idGrupo);
+
+  const jidsBusca = await resolverJidsEquivalentes(idWhatsApp);
 
   if (typeof valor !== 'number' || isNaN(valor)) {
     throw new TypeError('carteira/gold.alterarGold: "valor" deve ser um número.');
@@ -44,15 +87,23 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
   };
 
   if (valor >= 0) {
-    return CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp, idGrupo },
-      { $inc: { gold: valor }, ...pushGoldHistory },
-      { upsert: true, new: true }
+    const res = await CarteiraGrupo.updateMany(
+      { idWhatsApp: { $in: jidsBusca }, idGrupo },
+      { $inc: { gold: valor }, ...pushGoldHistory }
     );
+    if (res.matchedCount === 0) {
+      const primaryJid = jidsBusca[0];
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: primaryJid, idGrupo },
+        { $inc: { gold: valor }, ...pushGoldHistory },
+        { upsert: true, new: true }
+      );
+    }
+    return getCarteira(idWhatsApp, idGrupo);
   }
 
   const atualizado = await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp, idGrupo, gold: { $gte: absValor } },
+    { idWhatsApp: { $in: jidsBusca }, idGrupo, gold: { $gte: absValor } },
     { $inc: { gold: valor }, ...pushGoldHistory },
     { new: true }
   );

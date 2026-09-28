@@ -938,10 +938,12 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     if (!['dar', 'remover', 'definir', 'set'].includes(op))
       return res.status(400).json({ error: 'operacao deve ser "dar", "remover" ou "definir".' });
 
-    const eGlobal = !idGrupo || idGrupo === 'global';
+    const jidNorm = normalizarJid(termoOriginal);
+    const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
+    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
+    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
 
     if (!eGlobal) {
-      const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
       let update = {};
       if (op === 'dar') {
         update = {
@@ -957,13 +959,29 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
         update = { $set: { gold: valor } };
       }
 
-      const carteira = await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp, idGrupo },
-        update,
-        { new: true, upsert: true }
-      ).lean();
+      const resUpdate = await CarteiraGrupo.updateMany(
+        { idWhatsApp: { $in: jidsBusca }, idGrupo },
+        update
+      );
 
-      return res.json({ ok: true, idWhatsApp, goldAtual: carteira.gold });
+      if (resUpdate.matchedCount === 0) {
+        const primaryJid = lidMap?.lid || jidNorm;
+        await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp: primaryJid, idGrupo },
+          update,
+          { upsert: true, new: true }
+        );
+      }
+
+      let updateUsuario = {};
+      if (op === 'dar') updateUsuario = { $inc: { gold: valor } };
+      else if (op === 'remover') updateUsuario = { $inc: { gold: -valor } };
+      else updateUsuario = { $set: { gold: valor } };
+      await Usuario.updateMany({ idWhatsApp: { $in: jidsBusca } }, updateUsuario);
+
+      const carteira = await CarteiraGrupo.findOne({ idWhatsApp: { $in: jidsBusca }, idGrupo }).lean();
+
+      return res.json({ ok: true, idWhatsApp: jidsBusca[0], goldAtual: carteira?.gold ?? valor });
     } else {
       const jidNorm = normalizarJid(termoOriginal);
       const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);

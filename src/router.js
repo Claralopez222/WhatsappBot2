@@ -48,6 +48,7 @@ const utilidadeHandler      = require('./handlers/utilidade');
 const aniversarioHandler    = require('./handlers/aniversario');
 const alteradoresHandler    = require('./handlers/alteradores');
 const downloadsHandler      = require('./handlers/utilidade/downloads');
+const appLinkHandler        = require('./handlers/appLink');
 const pinnedHandler         = require('./handlers/diversao/pinned');
 const pescaHandler          = require('./handlers/diversao/pesca');
 
@@ -132,6 +133,17 @@ async function handleMessage(sock, msg) {
   if (isGroup) {
     registerActiveGroup(jid);
     activeGroups.add(jid);
+  }
+
+  if (matchPrefixCmd(caption, 'vincular', jid)) {
+    await appLinkHandler.handleAppLink(
+      sock,
+      msg,
+      jid,
+      senderJid,
+      extractPrefixArgs(caption, 'vincular', jid),
+    );
+    return;
   }
 
   // ── Guard bot on/off (funciona com qualquer prefixo !, ., /, ,, # ou customizado) ──

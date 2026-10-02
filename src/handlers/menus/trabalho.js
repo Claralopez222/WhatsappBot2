@@ -16,12 +16,12 @@ async function handleMenuWork(sock, msg, jid, getPrefix) {
 
 💰 *TRABALHO*
   ▸ ${P}trabalhar / ${P}work — Bater o ponto e receber seu salário
-  💡 _Cargos de gerência e executivos desempenham múltiplas funções por turno!_
+  💡 _Cada cargo possui funções específicas desempenhadas a cada turno!_
 
 ⏰ *REGRAS DO EXPEDIENTE*
   ▸ Horário comercial: *08:00 às 23:00 (Brasília)*
-  ▸ Cooldown entre turnos: *2 horas*
-  ▸ Tolerância: *2 horas* no horário comercial (congelada à noite)
+  ▸ Cooldown entre turnos: *40 minutos*
+  ▸ Tolerância para bater ponto: *30 minutos* (congelada à noite)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 

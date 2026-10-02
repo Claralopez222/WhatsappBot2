@@ -24,6 +24,29 @@ function gerarVariantesNumero(termo) {
   return [...variantes];
 }
 
+function mesclarQuantidades(carteiras, campo) {
+  const mesclado = {};
+  for (const carteira of carteiras) {
+    const inventario = carteira[campo];
+    const entradas = inventario instanceof Map
+      ? inventario.entries()
+      : Object.entries(inventario || {});
+    for (const [item, valor] of entradas) {
+      const quantidade = Number(valor);
+      if (Number.isFinite(quantidade) && quantidade > 0) {
+        mesclado[item] = (mesclado[item] || 0) + quantidade;
+      }
+    }
+  }
+  return mesclado;
+}
+
+function equipamentoValido(carteiras, campo, inventario) {
+  return carteiras.find(carteira =>
+    carteira[campo] && inventario[carteira[campo]] > 0
+  )?.[campo] ?? null;
+}
+
 async function resolverJidsEquivalentes(idWhatsApp) {
   const jidNorm = normalizarJid(idWhatsApp);
   const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
@@ -48,6 +71,9 @@ async function getCarteira(idWhatsApp, idGrupo) {
       const maxXp    = Math.max(...carteiras.map(c => c.xp || 0));
       const maxMsgs  = Math.max(...carteiras.map(c => c.mensagens || 0));
       const maxQuiz  = Math.max(...carteiras.map(c => c.quizPoints || 0));
+      const itensRoubo = mesclarQuantidades(carteiras, 'itensRoubo');
+      const itensSec = mesclarQuantidades(carteiras, 'itensSec');
+      const itensRouboBanco = mesclarQuantidades(carteiras, 'itensRouboBanco');
 
       const empAtivo   = carteiras.find(c => c.emprestimo?.ativo)?.emprestimo;
       const petAtivo   = carteiras.find(c => c.pet?.name)?.pet;
@@ -59,6 +85,12 @@ async function getCarteira(idWhatsApp, idGrupo) {
         xp: maxXp,
         mensagens: maxMsgs,
         quizPoints: maxQuiz,
+        itensRoubo,
+        equiparoubo: equipamentoValido(carteiras, 'equiparoubo', itensRoubo),
+        itensSec,
+        equiparsec: equipamentoValido(carteiras, 'equiparsec', itensSec),
+        itensRouboBanco,
+        equiparouboBanco: equipamentoValido(carteiras, 'equiparouboBanco', itensRouboBanco),
       };
       if (empAtivo)   updateSet.emprestimo = empAtivo;
       if (petAtivo)   updateSet.pet = petAtivo;

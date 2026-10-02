@@ -148,7 +148,7 @@ async function handleBanco(sock, msg, jid, caption) {
           `  💵 Exemplo: *!banco 500*\n\n` +
           `*RENDIMENTOS:*\n` +
           `  📈 Juros: ${BANCO_CONFIG.JUROS_MIN}–${BANCO_CONFIG.JUROS_MAX}%\n` +
-          `  ⏰ Prazo: *3 horas*\n\n` +
+          `  ⏰ Prazo: *20 minutos*\n\n` +
           `*RESGATE:*\n` +
           `  💎 Use: *!resgatar* (neste grupo)\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
@@ -307,7 +307,7 @@ async function handleBanco(sock, msg, jid, caption) {
         `*RESUMO DO INVESTIMENTO:*\n` +
         `  💵 Valor investido: *${amount}* gold\n` +
         `  📈 Taxa de juros: *${interest}%*\n` +
-        `  ⏰ Prazo: *3 horas*\n\n` +
+        `  ⏰ Prazo: *20 minutos*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*RETORNO ESPERADO:*\n` +
         `  💎 Resgate em: *${futureAmount}* gold\n` +

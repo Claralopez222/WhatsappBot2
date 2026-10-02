@@ -1,8 +1,8 @@
 /**
  * Handler de Empregos — Bot WhatsApp
  * Sistema de carreira com 35 empregos (7 opções por nível), escolha livre de vagas,
- * salários valorizados, múltiplas funções em cargos de gerência/executivos,
- * e tolerância ajustada sem demissões injustas fora do horário comercial.
+ * salários valorizados, funções únicas e específicas para CADA emprego,
+ * cooldown de 40min e tolerância de 30min sem demissões injustas à noite.
  */
 
 'use strict';
@@ -24,7 +24,7 @@ try {
 // ─── TABELA DE EMPREGOS (7 POR NÍVEL / TIER) ──────────────────────────────────
 
 const CATALGO_EMPREGOS = [
-  // ── TIER 1: Nível 1+ (Iniciante) — Salários: 400 a 800 gold (1 Função) ────────
+  // ── TIER 1: Nível 1+ (Iniciante) — Salários: 400 a 800 gold (3 Funções Únicas) ────────
   {
     tier: 1,
     nivelMin: 1,
@@ -33,17 +33,66 @@ const CATALGO_EMPREGOS = [
     salarioMax: 800,
     exigenciaTurnos: 12,
     cargos: [
-      { id: 1, slug: 'entregador_pizza', nome: '🛵 Entregador de Pizza', desc: 'Entregar pizzas quentes pela cidade', funcoes: ['Realizou entregas rápidas no bairro'] },
-      { id: 2, slug: 'ajudante_limpeza', nome: '🧹 Ajudante de Limpeza', desc: 'Manter escritórios e lojas limpos', funcoes: ['Organizou e higienizou o estabelecimento'] },
-      { id: 3, slug: 'repositor_estoque', nome: '📦 Repositor de Estoque', desc: 'Organizar prateleiras e caixas', funcoes: ['Repôs mercadorias e organizou gôndolas'] },
-      { id: 4, slug: 'passeador_caes', nome: '🐕 Passeador de Cães', desc: 'Passear com pets dos moradores', funcoes: ['Passeou e cuidou dos pets da região'] },
-      { id: 5, slug: 'atendente_cafe', nome: '☕ Atendente de Cafeteria', desc: 'Servir cafés expresso e salgados', funcoes: ['Atendeu clientes no balcão e preparou lanches'] },
-      { id: 6, slug: 'lavador_carros', nome: '🚗 Lavador de Carros', desc: 'Lavar e encerar veículos de clientes', funcoes: ['Lavou e aspirou veículos no lava-rápido'] },
-      { id: 7, slug: 'panfleteiro', nome: '📜 Panfleteiro de Rua', desc: 'Distribuir panfletos comerciais', funcoes: ['Distribuiu panfletos em pontos movimentados'] },
+      {
+        id: 1, slug: 'entregador_pizza', nome: '🛵 Entregador de Pizza', desc: 'Entregar pizzas quentes pela cidade',
+        funcoes: [
+          'Conferência dos pedidos e caixas térmicas na pizzaria',
+          'Pilotagem ágil na rota de entrega pelo bairro',
+          'Entrega presencial ao cliente com recebimento correto'
+        ]
+      },
+      {
+        id: 2, slug: 'ajudante_limpeza', nome: '🧹 Ajudante de Limpeza', desc: 'Manter escritórios e lojas limpos',
+        funcoes: [
+          'Varrição e aspiração de salas e corredores',
+          'Higienização completa dos banheiros e superfícies',
+          'Recolhimento e descarte adequado dos resíduos'
+        ]
+      },
+      {
+        id: 3, slug: 'repositor_estoque', nome: '📦 Repositor de Estoque', desc: 'Organizar prateleiras e caixas',
+        funcoes: [
+          'Conferência de caixas recebidas dos fornecedores',
+          'Etiquetagem e checagem de validade dos produtos',
+          'Organização de produtos nas gôndolas e prateleiras'
+        ]
+      },
+      {
+        id: 4, slug: 'passeador_caes', nome: '🐕 Passeador de Cães', desc: 'Passear com pets dos moradores',
+        funcoes: [
+          'Recepção dos cães na residência dos tutores',
+          'Passeio orientado pela praça e parque do bairro',
+          'Hidratação e higienização das patas após a caminhada'
+        ]
+      },
+      {
+        id: 5, slug: 'atendente_cafe', nome: '☕ Atendente de Cafeteria', desc: 'Servir cafés expresso e salgados',
+        funcoes: [
+          'Moagem de grãos e extração de cafés expressos',
+          'Aquecimento de salgados e montagem de balcão',
+          'Atendimento cortês aos clientes e controle do caixa'
+        ]
+      },
+      {
+        id: 6, slug: 'lavador_carros', nome: '🚗 Lavador de Carros', desc: 'Lavar e encerar veículos de clientes',
+        funcoes: [
+          'Enxágue e lavagem com xampu automotivo na lataria',
+          'Aspiração de estofados e limpeza dos vidros',
+          'Aplicação de pretinho nos pneus e polimento final'
+        ]
+      },
+      {
+        id: 7, slug: 'panfleteiro', nome: '📜 Panfleteiro de Rua', desc: 'Distribuir panfletos comerciais',
+        funcoes: [
+          'Contagem e loteamento dos panfletos informativos',
+          'Abordagem educada de pedestres no centro comercial',
+          'Distribuição direta aos motoristas nos semáforos'
+        ]
+      },
     ]
   },
 
-  // ── TIER 2: Nível 10+ (Intermediário) — Salários: 1.500 a 3.000 gold (1 Função) ─
+  // ── TIER 2: Nível 10+ (Intermediário) — Salários: 1.500 a 3.000 gold (3 Funções Únicas) ─
   {
     tier: 2,
     nivelMin: 10,
@@ -52,17 +101,66 @@ const CATALGO_EMPREGOS = [
     salarioMax: 3000,
     exigenciaTurnos: 20,
     cargos: [
-      { id: 1, slug: 'vendedor_loja', nome: '🏪 Vendedor de Loja', desc: 'Atender clientes e bater metas de vendas', funcoes: ['Concretizou vendas no comércio local'] },
-      { id: 2, slug: 'mecanico_assist', nome: '🔧 Assistente de Mecânico', desc: 'Consertar motores e trocar óleo', funcoes: ['Manutenções preventivas e trocas de peças'] },
-      { id: 3, slug: 'auxiliar_cozinha', nome: '🧑‍🍳 Auxiliar de Cozinha', desc: 'Preparar pratos em restaurantes', funcoes: ['Preparo de ingredientes e montagem de pratos'] },
-      { id: 4, slug: 'telemarketing', nome: '📞 Atendente de Telemarketing', desc: 'Atendimento ao cliente e suporte', funcoes: ['Atendeu chamadas de suporte e vendas'] },
-      { id: 5, slug: 'motorista_app', nome: '🚖 Motorista de Aplicativo', desc: 'Transportar passageiros na cidade', funcoes: ['Transportou passageiros com segurança'] },
-      { id: 6, slug: 'seguranca_eventos', nome: '🛡️ Segurança de Eventos', desc: 'Proteger shows e eventos fechados', funcoes: ['Vigilância e controle de acesso em evento'] },
-      { id: 7, slug: 'barbeiro', nome: '💇 Barbeiro / Cabeleireiro', desc: 'Realizar cortes e barbas modernos', funcoes: ['Cortes de cabelo e acabamentos de barba'] },
+      {
+        id: 1, slug: 'vendedor_loja', nome: '🏪 Vendedor de Loja', desc: 'Atender clientes e bater metas de vendas',
+        funcoes: [
+          'Recepção dos clientes e sondagem de necessidades',
+          'Demonstração das vantagens e qualidade do produto',
+          'Fechamento de venda e registro no sistema da loja'
+        ]
+      },
+      {
+        id: 2, slug: 'mecanico_assist', nome: '🔧 Assistente de Mecânico', desc: 'Consertar motores e trocar óleo',
+        funcoes: [
+          'Drenagem e substituição do óleo do motor',
+          'Troca de filtros de combustível e filtro de ar',
+          'Checagem da calibragem e alinhamento de pneus'
+        ]
+      },
+      {
+        id: 3, slug: 'auxiliar_cozinha', nome: '🧑‍🍳 Auxiliar de Cozinha', desc: 'Preparar pratos em restaurantes',
+        funcoes: [
+          'Higienização e corte (mise en place) dos ingredientes',
+          'Grelha de acompanhamentos e controle de temperatura',
+          'Montagem rápida e envio dos pratos para garçons'
+        ]
+      },
+      {
+        id: 4, slug: 'telemarketing', nome: '📞 Atendente de Telemarketing', desc: 'Atendimento ao cliente e suporte',
+        funcoes: [
+          'Recepção de chamadas ativas e atendimento do protocolo',
+          'Registro de solicitações no sistema de atendimento CRM',
+          'Resolução de dúvidas e encaminhamento de chamados'
+        ]
+      },
+      {
+        id: 5, slug: 'motorista_app', nome: '🚖 Motorista de Aplicativo', desc: 'Transportar passageiros na cidade',
+        funcoes: [
+          'Aceitação e confirmação de chamadas no aplicativo',
+          'Condução pela rota mais rápida sugerida no GPS',
+          'Desembarque seguro do passageiro e encerramento'
+        ]
+      },
+      {
+        id: 6, slug: 'seguranca_eventos', nome: '🛡️ Segurança de Eventos', desc: 'Proteger shows e eventos fechados',
+        funcoes: [
+          'Checagem de credenciais e ingressos na portaria',
+          'Revista preventiva de bolsas e pertences de acesso',
+          'Monitoramento presencial e ronda durante o show'
+        ]
+      },
+      {
+        id: 7, slug: 'barbeiro', nome: '💇 Barbeiro / Cabeleireiro', desc: 'Realizar cortes e barbas modernos',
+        funcoes: [
+          'Consulta do estilo desejado com o cliente',
+          'Execução do corte de cabelo na tesoura e máquina',
+          'Acabamento com navalha e hidratação de barba'
+        ]
+      },
     ]
   },
 
-  // ── TIER 3: Nível 25+ (Especializado) — Salários: 4.500 a 8.500 gold (2 Funções) ─
+  // ── TIER 3: Nível 25+ (Especializado) — Salários: 4.500 a 8.500 gold (3 Funções Únicas) ─
   {
     tier: 3,
     nivelMin: 25,
@@ -71,17 +169,66 @@ const CATALGO_EMPREGOS = [
     salarioMax: 8500,
     exigenciaTurnos: 30,
     cargos: [
-      { id: 1, slug: 'desenvolvedor_ti', nome: '💻 Desenvolvedor de Software', desc: 'Programar sistemas e resolver bugs', funcoes: ['Desenvolvimento de novos recursos no sistema', 'Resolução de bugs críticos em produção'] },
-      { id: 2, slug: 'chef_cozinha', nome: '👨‍🍳 Chef de Cozinha', desc: 'Comandar equipe de alta gastronomia', funcoes: ['Criação de novos pratos para o menu', 'Supervisão do preparo da brigada de cozinha'] },
-      { id: 3, slug: 'mecanico_chefe', nome: '⚙️ Mecânico Chefe', desc: 'Diagnosticar e reparar veículos', funcoes: ['Diagnóstico eletrônico de injeção', 'Retífica completa de motor'] },
-      { id: 4, slug: 'fotografo_prof', nome: '📸 Fotógrafo Profissional', desc: 'Ensaios e cobertura de eventos', funcoes: ['Cobertura fotográfica de evento corporativo', 'Edição e tratamento de fotos em alta resolução'] },
-      { id: 5, slug: 'designer_grafico', nome: '🎨 Designer Gráfico', desc: 'Criar identidades visuais', funcoes: ['Criação de identidade visual da marca', 'Desenvolvimento de materiais publicitários'] },
-      { id: 6, slug: 'personal_trainer', nome: '🏋️ Personal Trainer', desc: 'Treinos e acompanhamento físico', funcoes: ['Avaliação física de alunos', 'Montagem de rotina de treinos personalizados'] },
-      { id: 7, slug: 'analista_financeiro', nome: '📊 Analista Financeiro', desc: 'Análise de investimentos e custos', funcoes: ['Análise de relatórios de fluxo de caixa', 'Planejamento de orçamento trimestral'] },
+      {
+        id: 1, slug: 'desenvolvedor_ti', nome: '💻 Desenvolvedor de Software', desc: 'Programar sistemas e resolver bugs',
+        funcoes: [
+          'Desenvolvimento de novos módulos em arquitetura limpa',
+          'Execução de testes unitários e refatoração de código',
+          'Correção de vulnerabilidades e bugs em produção'
+        ]
+      },
+      {
+        id: 2, slug: 'chef_cozinha', nome: '👨‍🍳 Chef de Cozinha', desc: 'Comandar equipe de alta gastronomia',
+        funcoes: [
+          'Criação e teste de novos pratos para o menu degustação',
+          'Supervisão do ritmo de trabalho da brigada da cozinha',
+          'Finalização e aprovação dos pratos antes de servir'
+        ]
+      },
+      {
+        id: 3, slug: 'mecanico_chefe', nome: '⚙️ Mecânico Chefe', desc: 'Diagnosticar e reparar veículos',
+        funcoes: [
+          'Diagnóstico computadorizado com scanner de injeção',
+          'Retífica de componentes críticos e troca de correia',
+          'Teste de rodagem e validação final de desempenho'
+        ]
+      },
+      {
+        id: 4, slug: 'fotografo_prof', nome: '📸 Fotógrafo Profissional', desc: 'Ensaios e cobertura de eventos',
+        funcoes: [
+          'Configuração de iluminação e ilhas de flash no estúdio',
+          'Captura fotográfica do ensaio em alta resolução RAW',
+          'Edição e tratamento de cores em software profissional'
+        ]
+      },
+      {
+        id: 5, slug: 'designer_grafico', nome: '🎨 Designer Gráfico', desc: 'Criar identidades visuais',
+        funcoes: [
+          'Criação do conceito de identidade visual da marca',
+          'Vetorização de logotipos e paletas de cores',
+          'Exportação de peças gráficas para mídia impressa e digital'
+        ]
+      },
+      {
+        id: 6, slug: 'personal_trainer', nome: '🏋️ Personal Trainer', desc: 'Treinos e acompanhamento físico',
+        funcoes: [
+          'Avaliação de composição corporal e bioimpedância',
+          'Montagem do programa de treino personalizado',
+          'Acompanhamento postural e correção de técnica do aluno'
+        ]
+      },
+      {
+        id: 7, slug: 'analista_financeiro', nome: '📊 Analista Financeiro', desc: 'Análise de investimentos e custos',
+        funcoes: [
+          'Consolidação do balanço mensal de receita e despesas',
+          'Modelagem de viabilidade de novos investimentos',
+          'Elaboração da projeção do fluxo de caixa corporativo'
+        ]
+      },
     ]
   },
 
-  // ── TIER 4: Nível 45+ (Liderança/Gerência) — Salários: 10.000 a 18.000 gold (3 Funções Gerenciais!) ─
+  // ── TIER 4: Nível 45+ (Liderança/Gerência) — Salários: 10.000 a 18.000 gold (3 Funções Gerenciais) ─
   {
     tier: 4,
     nivelMin: 45,
@@ -90,13 +237,62 @@ const CATALGO_EMPREGOS = [
     salarioMax: 18000,
     exigenciaTurnos: 40,
     cargos: [
-      { id: 1, slug: 'gerente_loja', nome: '👔 Gerente Geral de Loja', desc: 'Gerenciar equipes, estoque e vendas', funcoes: ['📊 Análise do balancete e metas de vendas', '👥 Reunião de alinhamento com equipe de vendas', '📦 Negociação direta com fornecedores'] },
-      { id: 2, slug: 'engenheiro_civil', nome: '🏗️ Engenheiro Civil', desc: 'Supervisionar obras de infraestrutura', funcoes: ['📐 Vistoria técnica da estrutura do projeto', '👷 Gerenciamento de segurança dos operários', '📋 Assinatura de laudos técnicos de engenharia'] },
-      { id: 3, slug: 'medico_especialista', nome: '🩺 Médico Especialista', desc: 'Consultas e diagnósticos avançados', funcoes: ['🩺 Consultas especializadas e diagnósticos', '🔬 Análise de exames laboratoriais avançados', '💊 Prescrição médica de tratamentos específicos'] },
-      { id: 4, slug: 'advogado_senior', nome: '⚖️ Advogado Sênior', desc: 'Defesa de processos nos tribunais', funcoes: ['📜 Elaboração de petições judiciais complexas', '🏛️ Sustentação oral no tribunal de justiça', '🤝 Negociação de acordos milionários'] },
-      { id: 5, slug: 'diretor_producao', nome: '🎬 Diretor de Produção', desc: 'Comandar gravações e grandes projetos', funcoes: ['🎬 Aprovação do roteiro e plano de filmagem', '🎥 Direção de equipe técnica no set', '🎞️ Supervisão da pós-produção e edição'] },
-      { id: 6, slug: 'gerente_projetos', nome: '🚀 Gerente de Projetos (PM)', desc: 'Planejar cronogramas e entregas', funcoes: ['📅 Planejamento de sprints e entregas', '📊 Gestão de riscos e contingência de projeto', '💬 Apresentação de resultados para investidores'] },
-      { id: 7, slug: 'piloto_comercial', nome: '✈️ Piloto Comercial', desc: 'Comandar voos internacionais', funcoes: ['🛫 Checagem pré-voo e plano de navegação', '✈️ Pilotagem em rota de voo internacional', '🛬 Pouso seguro em condições adversas'] },
+      {
+        id: 1, slug: 'gerente_loja', nome: '👔 Gerente Geral de Loja', desc: 'Gerenciar equipes, estoque e vendas',
+        funcoes: [
+          '📊 Análise do balancete e metas diárias de vendas',
+          '👥 Reunião de alinhamento com equipe comercial',
+          '📦 Negociação direta de compras com fornecedores'
+        ]
+      },
+      {
+        id: 2, slug: 'engenheiro_civil', nome: '🏗️ Engenheiro Civil', desc: 'Supervisionar obras de infraestrutura',
+        funcoes: [
+          '📐 Vistoria técnica no canteiro de obras da estrutura',
+          '👷 Gerenciamento das normas de segurança do trabalho',
+          '📋 Assinatura de laudos técnicos de engenharia'
+        ]
+      },
+      {
+        id: 3, slug: 'medico_especialista', nome: '🩺 Médico Especialista', desc: 'Consultas e diagnósticos avançados',
+        funcoes: [
+          '🩺 Consultas médicas e diagnósticos de alta complexidade',
+          '🔬 Análise minuciosa de tomografias e laudos',
+          '💊 Prescrição médica de tratamentos específicos'
+        ]
+      },
+      {
+        id: 4, slug: 'advogado_senior', nome: '⚖️ Advogado Sênior', desc: 'Defesa de processos nos tribunais',
+        funcoes: [
+          '📜 Redação de petições judiciais de alta complexidade',
+          '🏛️ Sustentação oral nas câmaras do tribunal de justiça',
+          '🤝 Mediação presencial de acordos empresariais'
+        ]
+      },
+      {
+        id: 5, slug: 'diretor_producao', nome: '🎬 Diretor de Produção', desc: 'Comandar gravações e grandes projetos',
+        funcoes: [
+          '🎬 Aprovação do roteiro técnico e plano de filmagem',
+          '🎥 Direção e alinhamento de equipe técnica no set',
+          '🎞️ Supervisão do corte final na pós-produção'
+        ]
+      },
+      {
+        id: 6, slug: 'gerente_projetos', nome: '🚀 Gerente de Projetos (PM)', desc: 'Planejar cronogramas e entregas',
+        funcoes: [
+          '📅 Planejamento de sprints e matriz de entregas',
+          '📊 Gestão de riscos e contingência do projeto',
+          '💬 Apresentação de status e resultados aos clientes'
+        ]
+      },
+      {
+        id: 7, slug: 'piloto_comercial', nome: '✈️ Piloto Comercial', desc: 'Comandar voos internacionais',
+        funcoes: [
+          '🛫 Checagem pré-voo de sistemas e briefing da rota',
+          '✈️ Pilotagem e navegação em voo internacional',
+          '🛬 Pouso preciso e desembarque seguro dos passageiros'
+        ]
+      },
     ]
   },
 
@@ -109,13 +305,69 @@ const CATALGO_EMPREGOS = [
     salarioMax: 45000,
     exigenciaTurnos: 50,
     cargos: [
-      { id: 1, slug: 'ceo_executivo', nome: '🏢 Diretor Executivo (CEO)', desc: 'Decisões estratégicas de multinacional', funcoes: ['📈 Aprovada fusão estratégica de mercado', '💼 Reestruturação global do conselho diretivo', '💎 Lançamento de nova linha de negócios', '🏆 Distribuição de dividendos aos acionistas'] },
-      { id: 2, slug: 'investidor_anjo', nome: '💎 Investidor Anjo / VC', desc: 'Aportar capital em grandes negócios', funcoes: ['🔍 Análise de pitches de novas startups', '💰 Aporte de capital semente em rodada Series-A', '📈 Mentoria de aceleração corporativa', '💵 Saída lucrativa em IPO na bolsa'] },
-      { id: 3, slug: 'cirurgiao_chefe', nome: '🏥 Cirurgião Chefe', desc: 'Cirurgias de alta complexidade', funcoes: ['🏥 Coordenação da equipe médica cirúrgica', '🩺 Realização de procedimento cirúrgico de alta precisão', '🔬 Supervisão da UTI de recuperação', '📑 Publicação de artigo científico em revista médica'] },
-      { id: 4, slug: 'juiz_federal', nome: '🏛️ Juiz Federal', desc: 'Julgar casos de grande impacto', funcoes: ['🏛️ Presidência de audiências de alta relevância', '📜 Redação de sentença de processo federal', '⚖️ Análise de recursos constitucionais', '🏛️ Decisão liminar de impacto nacional'] },
-      { id: 5, slug: 'socio_majoritario', nome: '👑 Sócio Majoritário', desc: 'Comandar conselhos e holding', funcoes: ['👑 Aprovação do plano anual da holding', '💼 Nomeação da nova diretoria executiva', '💰 Recolhimento de royalties e dividendos', '🌐 Expansão de subsidiárias no exterior'] },
-      { id: 6, slug: 'engenheiro_aeroespacial', nome: '🛸 Engenheiro Aeroespacial', desc: 'Projetar foguetes e satélites', funcoes: ['🛸 Teste de propulsão de motor de foguete', '🛰️ Calibração de satélite de comunicação orbital', '📊 Simulação aerodinâmica de reentrada atmosférica', '🚀 Lançamento bem-sucedido de missão espacial'] },
-      { id: 7, slug: 'magnata_bilionario', nome: '🏆 Magnata Bilionário', desc: 'Gerenciar império econômico', funcoes: ['🏆 Aquisição de novo grupo empresarial', '✈️ Viagem de negócios em jato privativo', '💎 Inauguração de complexo imobiliário de luxo', '📊 Fechamento do balanço anual recorde da empresa'] },
+      {
+        id: 1, slug: 'ceo_executivo', nome: '🏢 Diretor Executivo (CEO)', desc: 'Decisões estratégicas de multinacional',
+        funcoes: [
+          '📈 Aprovação da fusão estratégica com conglomerado rival',
+          '💼 Reestruturação global do conselho diretivo',
+          '💎 Lançamento de nova linha de negócios multinacional',
+          '🏆 Homologação da distribuição de dividendos aos acionistas'
+        ]
+      },
+      {
+        id: 2, slug: 'investidor_anjo', nome: '💎 Investidor Anjo / VC', desc: 'Aportar capital em grandes negócios',
+        funcoes: [
+          '🔍 Triagem de pitches e modelos de negócio de startups',
+          '💰 Aporte de capital semente em rodada de investimento',
+          '📈 Mentoria executiva de aceleração de empreendedores',
+          '💵 Realização de saída lucrativa (Exit) em IPO na bolsa'
+        ]
+      },
+      {
+        id: 3, slug: 'cirurgiao_chefe', nome: '🏥 Cirurgião Chefe', desc: 'Cirurgias de alta complexidade',
+        funcoes: [
+          '🏥 Coordenação da equipe multidisciplinar do bloco cirúrgico',
+          '🩺 Realização de intervenção cirúrgica de alta precisão',
+          '🔬 Supervisão direta do protocolo de UTI pós-operatório',
+          '📑 Publicação de artigo científico em revista internacional'
+        ]
+      },
+      {
+        id: 4, slug: 'juiz_federal', nome: '🏛️ Juiz Federal', desc: 'Julgar casos de grande impacto',
+        funcoes: [
+          '🏛️ Presidência de audiências judiciais de repercussão nacional',
+          '📜 Redação fundamentada de sentença em processo federal',
+          '⚖️ Análise de recursos constitucionais em câmara superior',
+          '🏛️ Deferimento de liminar de grande impacto público'
+        ]
+      },
+      {
+        id: 5, slug: 'socio_majoritario', nome: '👑 Sócio Majoritário', desc: 'Comandar conselhos e holding',
+        funcoes: [
+          '👑 Homologação do planejamento estratégico anual do grupo',
+          '💼 Eleição e destituição da diretoria executiva',
+          '💰 Acompanhamento e recolhimento de lucros e royalties',
+          '🌐 Expansão de subsidiárias e Holdings no exterior'
+        ]
+      },
+      {
+        id: 6, slug: 'engenheiro_aeroespacial', nome: '🛸 Engenheiro Aeroespacial', desc: 'Projetar foguetes e satélites',
+        funcoes: [
+          '🛸 Teste estático de propulsão de motor de foguete',
+          '🛰️ Calibração de sistemas de telemetria de satélite orbital',
+          '📊 Simulação termodinâmica de reentrada atmosférica',
+          '🚀 Lançamento bem-sucedido de veículo lançador ao espaço'
+        ]
+      },
+      {
+        id: 7, slug: 'magnata_bilionario', nome: '🏆 Magnata Bilionário', desc: 'Gerenciar império econômico',
+        funcoes: [
+          '🏆 Aquisição de novo conglomerado industrial multinacional',
+          '✈️ Deslocamento internacional em jato executivo de grande porte',
+          '💎 Inauguração de empreendimento imobiliário de altíssimo padrão',
+          '📊 Fechamento do balanço anual com faturamento recorde'
+        ]
+      },
     ]
   }
 ];
@@ -131,7 +383,7 @@ for (const t of CATALGO_EMPREGOS) {
   }
 }
 
-// ─── CONFIGURAÇÃO DE TEMPO (08:00 às 23:00 Brasília) ─────────────────────────
+// ─── CONFIGURAÇÃO DE TEMPO (40min cooldown / 30min tolerância / 08:00 às 23:00 Brasília) ─
 
 const HORARIO = {
   INICIO_MIN: 8 * 60,       // 08:00
@@ -139,13 +391,13 @@ const HORARIO = {
 };
 
 const TEMPO = {
-  COOLDOWN_MS: 2 * 60 * 60 * 1000, // 2h entre turnos
-  JANELA_MS:   2 * 60 * 60 * 1000, // 2h de tolerância
+  COOLDOWN_MS: 40 * 60 * 1000, // 40 minutos entre turnos
+  JANELA_MS:   30 * 60 * 1000, // 30 minutos de tolerância
 };
-TEMPO.DEMISSAO_MS = TEMPO.COOLDOWN_MS + TEMPO.JANELA_MS; // 4h totais de expediente
+TEMPO.DEMISSAO_MS = TEMPO.COOLDOWN_MS + TEMPO.JANELA_MS; // 1h10min totais de expediente
 
-const LABEL_COOLDOWN = '2h';
-const LABEL_JANELA   = '2h';
+const LABEL_COOLDOWN = '40min';
+const LABEL_JANELA   = '30min';
 const LABEL_HORARIO  = '08:00 às 23:00 (Brasília)';
 
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
@@ -339,7 +591,8 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
     const num = parseInt(escolhaArg, 10);
 
     if (!isNaN(num) && num >= 1 && num <= 7) {
-      cargoEscolhido = tierAtual.cargos[num - 1];
+      const vagaEscolhida = tierAtual.cargos[num - 1];
+      cargoEscolhido = vagaEscolhida ? CARGO_MAP.get(vagaEscolhida.slug) : null;
     } else {
       cargoEscolhido = ALL_CARGOS.find(c => c.slug === escolhaArg || c.nome.toLowerCase().includes(escolhaArg));
     }
@@ -375,9 +628,8 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
       { upsert: true }
     );
 
-    const funcoesTexto = cargoEscolhido.funcoes.length > 1
-      ? `📋 Funções sob sua responsabilidade (${cargoEscolhido.funcoes.length}):\n` + cargoEscolhido.funcoes.map(f => `  • ${f}`).join('\n')
-      : `📝 Função: ${cargoEscolhido.funcoes[0]}`;
+    const funcoesTexto = `📋 Funções sob sua responsabilidade (${cargoEscolhido.funcoes.length}):\n` +
+      cargoEscolhido.funcoes.map((f, i) => `  ${i + 1}. ${f}`).join('\n');
 
     return reply(sock, jid, msg,
       `🎉 *PARABÉNS! VOCÊ FOI CONTRATADO!* 🎉\n\n` +
@@ -388,6 +640,7 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
       `━━━━━━━━━━━━━━━━\n` +
       `📋 Use *!trabalhar* ou *!work* para iniciar o turno!\n` +
       `⏰ Cooldown entre turnos: *${LABEL_COOLDOWN}*\n` +
+      `⏱️ Tolerância para bater ponto: *${LABEL_JANELA}*\n` +
       `🕐 Horário comercial: *${LABEL_HORARIO}*`
     );
 
@@ -435,7 +688,7 @@ async function handleTrabalhar(sock, msg, jid) {
     const tempoFora = calcularTempoForaHorario(ultimoTrabalho, agora);
     const decorridoEfetivo = (agora - ultimoTrabalho) - tempoFora;
 
-    // Cooldown ativo
+    // Cooldown ativo (40 minutos)
     if (decorridoEfetivo < TEMPO.COOLDOWN_MS) {
       const falta = TEMPO.COOLDOWN_MS - decorridoEfetivo;
       return reply(sock, jid, msg,
@@ -451,7 +704,7 @@ async function handleTrabalhar(sock, msg, jid) {
       return reply(sock, jid, msg, _msgForaHorario());
     }
 
-    // Justa causa por atraso excessivo durante horário comercial
+    // Justa causa por atraso excessivo durante horário comercial (após 40min + 30min tolerância)
     if (decorridoEfetivo >= TEMPO.DEMISSAO_MS) {
       await CarteiraGrupo.findOneAndUpdate(
         filtro(userId, groupId),
@@ -483,7 +736,7 @@ async function handleTrabalhar(sock, msg, jid) {
   }
 }
 
-// ─── Executar turno com múltiplas funções ─────────────────────────────────────
+// ─── Executar turno com funções específicas do cargo ─────────────────────────
 
 async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora) {
   const tierInfo  = cargo.tierInfo;
@@ -501,14 +754,9 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
 
   await alterarGold(userId, groupId, salarioTotal);
 
-  let detalheFuncoes = '';
-  if (numFuncoes > 1) {
-    const parcela = Math.floor(salarioTotal / numFuncoes);
-    detalheFuncoes = `\n📋 *FUNÇÕES DESEMPENHADAS NESTE TURNO (${numFuncoes}):*\n` +
-      cargo.funcoes.map((f, i) => `  ${i + 1}. ${f} *(+${parcela} gold)*`).join('\n') + '\n';
-  } else {
-    detalheFuncoes = `\n📝 *Atividade:* ${cargo.funcoes[0]}\n`;
-  }
+  const parcela = Math.floor(salarioTotal / numFuncoes);
+  const detalheFuncoes = `\n📋 *FUNÇÕES DESEMPENHADAS NESTE TURNO (${numFuncoes}):*\n` +
+    cargo.funcoes.map((f, i) => `  ${i + 1}. ${f} *(+${parcela} gold)*`).join('\n') + '\n';
 
   const proximoTier = CATALGO_EMPREGOS.find(t => t.tier === tierInfo.tier + 1);
   let progressoTexto = '';
@@ -532,6 +780,7 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
     `💰 *Salário Total Recebido:* *+${salarioTotal} gold*\n` +
     `📊 Turnos no cargo atual: *${sucessos}*\n` +
     `⏰ Próximo turno em: *${LABEL_COOLDOWN}* _(horário comercial)_\n` +
+    `⏱️ Janela de tolerância: *${LABEL_JANELA}*\n` +
     progressoTexto
   );
 }
@@ -651,9 +900,8 @@ async function handleEmprego(sock, msg, jid) {
       }
     }
 
-    const funcoesTexto = cargo.funcoes.length > 1
-      ? `\n📋 *Funções do Cargo (${cargo.funcoes.length}):*\n` + cargo.funcoes.map(f => `  • ${f}`).join('\n')
-      : `\n📝 *Função:* ${cargo.funcoes[0]}`;
+    const funcoesTexto = `\n📋 *Funções do Cargo (${cargo.funcoes.length}):*\n` +
+      cargo.funcoes.map((f, i) => `  ${i + 1}. ${f}`).join('\n');
 
     let texto =
       `💼 *SEU CARGO ATUAL NESTE GRUPO*\n\n` +
@@ -742,10 +990,10 @@ async function handleMenuWork(sock, msg, jid, getPrefix) {
 🏢 *SISTEMA DE EMPREGOS*
   • 35 cargos únicos divididos em 5 categorias (Tier 1 a 5)
   • 7 opções de escolha por nível
-  • Cargos avançados possuem *múltiplas funções gerenciais/executivas*!
+  • Todos os cargos possuem *funções específicas desempenhadas a cada turno*!
   • Horário de expediente: *${LABEL_HORARIO}*
   • Cooldown entre turnos: *${LABEL_COOLDOWN}*
-  • Tolerância de *${LABEL_JANELA}* no horário comercial (congelada à noite)
+  • Janela de tolerância: *${LABEL_JANELA}* no horário comercial (congelada à noite)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 

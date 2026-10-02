@@ -122,6 +122,8 @@ const carteiraGrupoSchema = new mongoose.Schema(
     // ── Roubo — ataque (isolado por grupo) ───────────────────────
     itensRoubo:  { type: Map, of: { type: Number, min: 0 }, default: {} },
     equiparoubo: { type: String, default: null },
+    itensRouboBanco:  { type: Map, of: { type: Number, min: 0 }, default: {} },
+    equiparouboBanco: { type: String, default: null },
     ultimoRoubo: { type: Date,   default: null },
 
     // ── Segurança — defesa (isolada por grupo) ───────────────────

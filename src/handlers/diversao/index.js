@@ -281,7 +281,7 @@ initFilhosScheduler,
   handleCurarPet,
   handlePetToggle,
 
-// ── Roubo (11 itens) ──────────────────────────────────────────────────────
+// ── Roubo (14 itens) ──────────────────────────────────────────────────────
   handleMenuRoubo,
   handleMenuSec,
   handleComprarRoubo,

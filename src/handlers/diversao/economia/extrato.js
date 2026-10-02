@@ -2,7 +2,7 @@
 
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const { getCarteira } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { resolveUserFromMsg } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 
 const EXTRATO_LIMITE   = 10;
@@ -40,7 +40,7 @@ function resolverNomesNoItem(item = '', contactNames = {}) {
   });
 }
 
-function buildLinhaTransacao(t, index, contactNames = {}) {
+function buildLinhaTransacao(t, index, contactNames = {}, currencyInfo = {}) {
   const { data, hora } = formatarDataHora(t.date);
   const icone = EXTRATO_ICONES[t.type] ?? '📉';
   const sinal = t.type === 'recebido' ? '+' : '-';
@@ -48,7 +48,7 @@ function buildLinhaTransacao(t, index, contactNames = {}) {
 
   const itemFormatado = resolverNomesNoItem(t.item, contactNames);
 
-  return `  ${num}. ${icone} *${sinal}${t.amount}g* — ${itemFormatado}\n      🕐 ${data} às ${hora}`;
+  return `  ${num}. ${icone} *${sinal}${formatarSaldo(t.amount, { currencyInfo })}* — ${itemFormatado}\n      🕐 ${data} às ${hora}`;
 }
 
 // !extrato
@@ -62,7 +62,7 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
       text:
         `📊 *EXTRATO DE TRANSAÇÕES* 📊\n\n` +
         `😔 Nenhuma transação registrada ainda.\n\n` +
-        `💰 Saldo atual: *${carteira?.gold ?? 0} gold*`,
+        `💰 Saldo atual: *${formatarSaldo(carteira?.gold ?? 0, carteira)}*`,
     }, { quoted: msg });
     return;
   }
@@ -75,7 +75,7 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
     if (t.type === 'recebido') totalEntrada += t.amount;
     else                       totalSaida   += t.amount;
 
-    return buildLinhaTransacao(t, i, contactNames);
+    return buildLinhaTransacao(t, i, contactNames, carteira.currencyInfo);
   });
 
   const saldo        = carteira.gold ?? 0;
@@ -91,11 +91,11 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
       linhas.join('\n\n') +
       `\n\n━━━━━━━━━━━━━━━━\n` +
       `📋 *RESUMO DO PERÍODO*\n` +
-      `  📈 Entradas:  *+${totalEntrada} gold*\n` +
-      `  📉 Saídas:    *-${totalSaida} gold*\n` +
-      `  ${iconeBalanco} Balanço:   *${sinalBalanco}${balanco} gold*\n` +
+      `  📈 Entradas:  *+${formatarSaldo(totalEntrada, carteira)}*\n` +
+      `  📉 Saídas:    *-${formatarSaldo(totalSaida, carteira)}*\n` +
+      `  ${iconeBalanco} Balanço:   *${sinalBalanco}${formatarSaldo(Math.abs(balanco), carteira)}*\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `  💰 Saldo atual: *${saldo} gold*`,
+      `  💰 Saldo atual: *${formatarSaldo(saldo, carteira)}*`,
   }, { quoted: msg });
 }
 

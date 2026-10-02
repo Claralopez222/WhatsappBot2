@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { createHash } = require('crypto');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
@@ -63,11 +64,7 @@ async function resolverUserId(sock, msg) {
 }
 
 async function getCarteiraGrupo(userId, idGrupo) {
-  return CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: userId, idGrupo },
-    { $setOnInsert: { idWhatsApp: userId, idGrupo } },
-    { upsert: true, new: true }
-  );
+  return carteiraService.getCarteira(userId, idGrupo);
 }
 
 // ─── calcularLimiteBanco ─────────────────────────────────────────────────────
@@ -129,8 +126,8 @@ async function handleBanco(sock, msg, jid, caption) {
   // ✅ Bloco de limite diário reutilizado — mostra o level do usuário
   const linhaLimite =
     `*LIMITE DIÁRIO (Lvl ${userLevel}):*\n` +
-    `  📊 Depositado hoje: *${depositedToday}* gold\n` +
-    `  🔓 Disponível: *${remainingLimit}* gold`;
+    `  📊 Depositado hoje: *${carteiraService.formatarSaldo(depositedToday, carteira)}*\n` +
+    `  🔓 Disponível: *${carteiraService.formatarSaldo(remainingLimit, carteira)}*`;
 
   // ── Exibir status (sem argumento) ────────────────────────────────────────────
   if (!match) {
@@ -153,7 +150,7 @@ async function handleBanco(sock, msg, jid, caption) {
           `  💎 Use: *!resgatar* (neste grupo)\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
           `${linhaLimite}\n\n` +
-          `*SEU SALDO (grupo):* 💰 *${saldoDisponivel}* gold\n\n` +
+          `*SEU SALDO (grupo):* 💰 *${carteiraService.formatarSaldo(saldoDisponivel, carteira)}*\n\n` +
           `_Deixe seu dinheiro trabalhar para você!_ 🚀`,
       }, { quoted: msg });
       return;
@@ -172,13 +169,13 @@ async function handleBanco(sock, msg, jid, caption) {
         `${msLeft > 0 ? '⌛' : '🎯'} ${status}\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*DETALHES:*\n` +
-        `  💵 Investido: *${banco.amount}* gold\n` +
+        `  💵 Investido: *${carteiraService.formatarSaldo(banco.amount, carteira)}*\n` +
         `  📈 Taxa de juros: *${banco.interest}%*\n` +
-        `  💎 Retorno esperado: *${futureAmount}* gold\n` +
-        `  💹 Lucro previsto: *+${ganho}* gold\n\n` +
+        `  💎 Retorno esperado: *${carteiraService.formatarSaldo(futureAmount, carteira)}*\n` +
+        `  💹 Lucro previsto: *+${carteiraService.formatarSaldo(ganho, carteira)}*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `${linhaLimite}\n\n` +
-        `*SEU SALDO (grupo):* 💰 *${saldoDisponivel}* gold\n\n` +
+        `*SEU SALDO (grupo):* 💰 *${carteiraService.formatarSaldo(saldoDisponivel, carteira)}*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         (msLeft > 0
           ? `⏳ Aguarde *${formatTimeLeft(msLeft)}* para resgatar!\n  💵 Ou deposite mais: *!banco <quantia>*`
@@ -201,10 +198,10 @@ async function handleBanco(sock, msg, jid, caption) {
   if (remainingLimit <= 0) {
     await sock.sendMessage(jid, {
       text:
-        `⚠️ *LIMITE DIÁRIO ATINGIDO*\n\nVocê já depositou *${depositedToday}* gold hoje!\n\n` +
+        `⚠️ *LIMITE DIÁRIO ATINGIDO*\n\nVocê já depositou *${carteiraService.formatarSaldo(depositedToday, carteira)}* hoje!\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `  📊 Limite (Lvl ${userLevel}): *${limiteDiario}* gold\n` +
-        `  🔒 Limite restante: *0* gold\n\n` +
+        `  📊 Limite (Lvl ${userLevel}): *${carteiraService.formatarSaldo(limiteDiario, carteira)}*\n` +
+        `  🔒 Limite restante: *${carteiraService.formatarSaldo(0, carteira)}*\n\n` +
         `_Volte amanhã para depositar mais!_ ⏰`,
     }, { quoted: msg });
     return;
@@ -214,11 +211,11 @@ async function handleBanco(sock, msg, jid, caption) {
     await sock.sendMessage(jid, {
       text:
         `⚠️ *LIMITE DIÁRIO EXCEDIDO*\n\n` +
-        `  📊 Limite (Lvl ${userLevel}): *${limiteDiario}* gold\n` +
-        `  ✅ Depositado hoje: *${depositedToday}* gold\n` +
-        `  🔓 Disponível: *${remainingLimit}* gold\n\n` +
-        `*Você tentou depositar:* ${amount} gold\n\n` +
-        `_Tente depositar no máximo *${remainingLimit}* gold agora!_ ⏰`,
+        `  📊 Limite (Lvl ${userLevel}): *${carteiraService.formatarSaldo(limiteDiario, carteira)}*\n` +
+        `  ✅ Depositado hoje: *${carteiraService.formatarSaldo(depositedToday, carteira)}*\n` +
+        `  🔓 Disponível: *${carteiraService.formatarSaldo(remainingLimit, carteira)}*\n\n` +
+        `*Você tentou depositar:* ${carteiraService.formatarSaldo(amount, carteira)}\n\n` +
+        `_Tente depositar no máximo *${carteiraService.formatarSaldo(remainingLimit, carteira)}* agora!_ ⏰`,
     }, { quoted: msg });
     return;
   }
@@ -234,9 +231,9 @@ async function handleBanco(sock, msg, jid, caption) {
     if (err instanceof RangeError) {
       await sock.sendMessage(jid, {
         text:
-          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${amount}* gold neste grupo!\n\n` +
+          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${carteiraService.formatarSaldo(amount, carteira)}* neste grupo!\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
-          `*SEU SALDO (grupo):*\n  💰 Disponível: *${saldoDisponivel}* gold`,
+          `*SEU SALDO (grupo):*\n  💰 Disponível: *${carteiraService.formatarSaldo(saldoDisponivel, carteira)}*`,
       }, { quoted: msg });
       return;
     }
@@ -268,19 +265,19 @@ async function handleBanco(sock, msg, jid, caption) {
         `💼 *Investimento atualizado com sucesso!*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*RESUMO:*\n` +
-        `  💵 Adicionado agora: *+${amount}* gold\n` +
-        `  🏦 Total investido: *${newTotal}* gold\n` +
+        `  💵 Adicionado agora: *+${carteiraService.formatarSaldo(amount, carteira)}*\n` +
+        `  🏦 Total investido: *${carteiraService.formatarSaldo(newTotal, carteira)}*\n` +
         `  📈 Taxa de juros: *${banco.interest}%*\n` +
         `  ⏰ Tempo restante: *${formatTimeLeft(msLeft)}*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*RETORNO ESPERADO:*\n` +
-        `  💎 Resgate em: *${futureAmount}* gold\n` +
-        `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
+        `  💎 Resgate em: *${carteiraService.formatarSaldo(futureAmount, carteira)}*\n` +
+        `  💹 Lucro esperado: *+${carteiraService.formatarSaldo(ganho, carteira)}*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*SALDO (grupo):*\n` +
-        `  💰 Disponível: *${saldoAposDebito}* gold\n` +
-        `  🏦 Investido: *${newTotal}* gold\n` +
-        `  🔓 Limite restante hoje: *${limiteRestanteHoje}* gold`,
+        `  💰 Disponível: *${carteiraService.formatarSaldo(saldoAposDebito, carteira)}*\n` +
+        `  🏦 Investido: *${carteiraService.formatarSaldo(newTotal, carteira)}*\n` +
+        `  🔓 Limite restante hoje: *${carteiraService.formatarSaldo(limiteRestanteHoje, carteira)}*`,
     }, { quoted: msg });
 
   } else {
@@ -305,18 +302,18 @@ async function handleBanco(sock, msg, jid, caption) {
         `💼 *Seu dinheiro está trabalhando!*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*RESUMO DO INVESTIMENTO:*\n` +
-        `  💵 Valor investido: *${amount}* gold\n` +
+        `  💵 Valor investido: *${carteiraService.formatarSaldo(amount, carteira)}*\n` +
         `  📈 Taxa de juros: *${interest}%*\n` +
         `  ⏰ Prazo: *20 minutos*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*RETORNO ESPERADO:*\n` +
-        `  💎 Resgate em: *${futureAmount}* gold\n` +
-        `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
+        `  💎 Resgate em: *${carteiraService.formatarSaldo(futureAmount, carteira)}*\n` +
+        `  💹 Lucro esperado: *+${carteiraService.formatarSaldo(ganho, carteira)}*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*SALDO (grupo):*\n` +
-        `  💰 Disponível: *${saldoAposDebito}* gold\n` +
-        `  🏦 Investido: *${amount}* gold\n` +
-        `  🔓 Limite restante hoje: *${limiteRestanteHoje}* gold`,
+        `  💰 Disponível: *${carteiraService.formatarSaldo(saldoAposDebito, carteira)}*\n` +
+        `  🏦 Investido: *${carteiraService.formatarSaldo(amount, carteira)}*\n` +
+        `  🔓 Limite restante hoje: *${carteiraService.formatarSaldo(limiteRestanteHoje, carteira)}*`,
     }, { quoted: msg });
   }
 }
@@ -357,10 +354,10 @@ async function handleResgatar(sock, msg, jid) {
         `⌛ *Seu investimento vence em ${formatTimeLeft(msLeft)}!*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*DETALHES:*\n` +
-        `  💵 Investido: *${banco.amount}* gold\n` +
+        `  💵 Investido: *${carteiraService.formatarSaldo(banco.amount, carteira)}*\n` +
         `  📈 Taxa: *${banco.interest}%*\n` +
-        `  💎 Retorno esperado: *${futureAmount}* gold\n` +
-        `  💹 Lucro esperado: *+${ganho}* gold\n\n` +
+        `  💎 Retorno esperado: *${carteiraService.formatarSaldo(futureAmount, carteira)}*\n` +
+        `  💹 Lucro esperado: *+${carteiraService.formatarSaldo(ganho, carteira)}*\n\n` +
         `_Aguarde o prazo para resgatar!_`,
     }, { quoted: msg });
     return;
@@ -377,29 +374,70 @@ async function handleResgatar(sock, msg, jid) {
     lucro:     ganho,
   };
 
-  // ── Zerar banco, creditar gold e registrar histórico atomicamente ────────────
-  const carteiraFinal = await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: userId, idGrupo },
-    {
-      $inc: { gold: futureAmount },
-      $set: {
-        'banco.amount':    0,
-        'banco.interest':  0,
-        'banco.startDate': null,
+  let carteiraFinal;
+  if (carteira.currencyInfo) {
+    const requestId = createHash('sha256')
+      .update(`banco:${userId}:${idGrupo}:${new Date(banco.startDate).toISOString()}:${futureAmount}`)
+      .digest('hex');
+    carteiraFinal = await carteiraService.alterarGold(
+      userId,
+      idGrupo,
+      futureAmount,
+      'Resgate banco',
+      requestId,
+    );
+    const resgateBanco = await CarteiraGrupo.updateOne(
+      {
+        idWhatsApp: userId,
+        idGrupo,
+        'banco.amount': banco.amount,
+        'banco.startDate': banco.startDate,
       },
-      $push: {
-        'banco.historico': {
-          $each:  [entradaHistorico],
-          $slice: -BANCO_CONFIG.HISTORICO_LIMITE,
+      {
+        $set: {
+          'banco.amount': 0,
+          'banco.interest': 0,
+          'banco.startDate': null,
         },
-        goldHistory: {
-          $each:  [{ type: 'recebido', item: 'Resgate banco', amount: futureAmount }],
-          $slice: -50,
+        $push: {
+          'banco.historico': {
+            $each: [entradaHistorico],
+            $slice: -BANCO_CONFIG.HISTORICO_LIMITE,
+          },
+          goldHistory: {
+            $each: [{ type: 'recebido', item: 'Resgate banco', amount: futureAmount }],
+            $slice: -50,
+          },
         },
       },
-    },
-    { new: true }
-  );
+    );
+    if (resgateBanco.modifiedCount !== 1) {
+      throw new Error('O investimento mudou durante o resgate; o saldo foi protegido para uma nova tentativa.');
+    }
+  } else {
+    carteiraFinal = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: userId, idGrupo },
+      {
+        $inc: { gold: futureAmount },
+        $set: {
+          'banco.amount': 0,
+          'banco.interest': 0,
+          'banco.startDate': null,
+        },
+        $push: {
+          'banco.historico': {
+            $each: [entradaHistorico],
+            $slice: -BANCO_CONFIG.HISTORICO_LIMITE,
+          },
+          goldHistory: {
+            $each: [{ type: 'recebido', item: 'Resgate banco', amount: futureAmount }],
+            $slice: -50,
+          },
+        },
+      },
+      { new: true },
+    );
+  }
 
   // ── Progresso de missão no Usuario ──────────────────────────────────────────
   if (ganho > 0) {
@@ -415,13 +453,13 @@ async function handleResgatar(sock, msg, jid) {
       `💎 *Parabéns! Seu investimento rendeu!*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*RESUMO:*\n` +
-      `  💵 Investimento inicial: *${banco.amount}* gold\n` +
+      `  💵 Investimento inicial: *${carteiraService.formatarSaldo(banco.amount, carteira)}*\n` +
       `  📈 Taxa de juros: *${banco.interest}%*\n` +
-      `  💰 Resgate total: *${futureAmount}* gold\n` +
-      `  💹 Lucro obtido: *+${ganho}* gold\n\n` +
+      `  💰 Resgate total: *${carteiraService.formatarSaldo(futureAmount, carteira)}*\n` +
+      `  💹 Lucro obtido: *+${carteiraService.formatarSaldo(ganho, carteira)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*SALDO FINAL (grupo):*\n` +
-      `  ✅ Total na conta: *${carteiraFinal.gold}* gold`,
+      `  ✅ Total na conta: *${carteiraService.formatarSaldo(carteiraFinal.gold, carteiraFinal)}*`,
   }, { quoted: msg });
 }
 
@@ -455,7 +493,7 @@ async function handleHistoricoBanco(sock, msg, jid) {
       const data = new Date(h.data).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       return (
         `*${i + 1}.* ${data}\n` +
-        `   💵 ${h.investido} → 💎 ${h.resgate} gold (+${h.lucro}) | ${h.juros}%`
+        `   💵 ${carteiraService.formatarSaldo(h.investido, carteira)} → 💎 ${carteiraService.formatarSaldo(h.resgate, carteira)} (+${carteiraService.formatarSaldo(h.lucro, carteira)}) | ${h.juros}%`
       );
     })
     .join('\n\n');

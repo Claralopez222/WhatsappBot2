@@ -10,6 +10,7 @@ const {
   somenteGrupo, getModoAtivo, verificarRecuperacaoDerrota, JANELA_SAQUE_MS,
   getInventarioMap, itemKeyParaNome,
 } = require('../../utils/medievalUtils');
+const { getCarteira, formatarSaldo, transferirGold } = require('../../utils/carteira');
 
 const RESPOSTA_TIMEOUT_MS = 60 * 1000;
 
@@ -73,14 +74,14 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
       }, { quoted: msg });
     }
 
-    const carteiraPerdedor = await CarteiraGrupo.findOne({ idWhatsApp: targetJid, idGrupo: jid }).lean();
+    const carteiraPerdedor = await getCarteira(targetJid, jid);
     const gold = carteiraPerdedor?.gold || 0;
 
     const invMap = getInventarioMap(perdedor);
 
     const opcoes = [];
     if (gold > 0) {
-      opcoes.push({ tipo: 'gold', valor: gold, label: `💰 ${gold} gold` });
+      opcoes.push({ tipo: 'gold', valor: gold, label: `💰 ${formatarSaldo(gold, carteiraPerdedor)}` });
     }
 
     const nomesNoInventario = new Set();
@@ -185,32 +186,18 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
       const session = await mongoose.startSession();
       try {
         if (op.tipo === 'gold') {
-          let debitadoOk = false;
           try {
-            await session.withTransaction(async () => {
-              const debitado = await CarteiraGrupo.findOneAndUpdate(
-                { idWhatsApp: estado.perdedorJid, idGrupo: jid, gold: { $gte: op.valor } },
-                { $inc: { gold: -op.valor } },
-                { session }
-              );
-              if (!debitado) throw new Error('INDISPONIVEL');
-              debitadoOk = true;
-              await CarteiraGrupo.findOneAndUpdate(
-                { idWhatsApp: senderJid, idGrupo: jid },
-                { $inc: { gold: op.valor } },
-                { upsert: true, session }
-              );
-            });
-            resumo.push(`💰 ${op.valor} gold`);
+            const transferencia = await transferirGold(
+              estado.perdedorJid,
+              senderJid,
+              jid,
+              op.valor,
+              'Saque medieval',
+            );
+            resumo.push(`💰 ${formatarSaldo(op.valor, transferencia.para)}`);
           } catch (errTx) {
-            if (errTx.message === 'INDISPONIVEL') {
-              resumo.push(`⚠️ Gold — não estava mais disponível`);
-            } else {
-              console.error('⚠️ Erro na transação de gold saqueado:', errTx.message);
-              resumo.push(debitadoOk
-                ? `⚠️ Gold — erro ao transferir, nada foi alterado`
-                : `⚠️ Gold — erro ao processar`);
-            }
+            if (errTx instanceof RangeError) resumo.push('⚠️ Saldo — não estava mais disponível');
+            else throw errTx;
           } finally {
             await session.endSession();
           }

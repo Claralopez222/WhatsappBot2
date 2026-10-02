@@ -4,6 +4,7 @@ const path   = require('path');
 const Filho  = require(path.join(__dirname, '..', '..', 'models', 'Filho'));
 const Usuario= require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const { getCarteira, alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CHANCE_FILHO       = 0.40;  // 40% de chance
@@ -378,17 +379,14 @@ async function handleRemedioFilho(sock, msg, jid) {
       return sock.sendMessage(jid, { text: '✅ Nenhum filho doente no momento!' }, { quoted: msg });
     }
 
-    // Débito atômico — evita corrida com outros comandos de gold
-    const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: jid, gold: { $gte: CUSTO_REMEDIO } },
-      { $inc: { gold: -CUSTO_REMEDIO } },
-      { new: true }
-    );
-
-    if (!carteiraAtualizada) {
-      const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
+    let carteiraAtualizada;
+    try {
+      carteiraAtualizada = await alterarGold(userId, jid, -CUSTO_REMEDIO, 'Remédio para filho');
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      const carteira = await getCarteira(userId, jid);
       return sock.sendMessage(jid, {
-        text: `❌ Você precisa de *${CUSTO_REMEDIO} gold* para comprar o remédio! Você tem *${carteira?.gold ?? 0} gold*.`,
+        text: `❌ Você precisa de *${formatarSaldo(CUSTO_REMEDIO, carteira)}* para comprar o remédio! Seu saldo é *${formatarSaldo(carteira?.gold ?? 0, carteira)}*.`,
       }, { quoted: msg });
     }
 
@@ -402,10 +400,7 @@ async function handleRemedioFilho(sock, msg, jid) {
       await filhoDoente.save();
     } catch (e) {
       // Reverte o débito se não conseguir salvar o filho
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: jid },
-        { $inc: { gold: CUSTO_REMEDIO } }
-      ).catch(() => {});
+      await alterarGold(userId, jid, CUSTO_REMEDIO, 'Estorno do remédio para filho');
       throw e;
     }
 
@@ -415,7 +410,7 @@ async function handleRemedioFilho(sock, msg, jid) {
       text:
         `💊 *${filhoDoente.nome}* foi curado(a)!\n\n` +
         `${emoji} Já está se sentindo melhor.\n` +
-        `💰 Gasto: *${CUSTO_REMEDIO} gold*\n\n` +
+        `💰 Gasto: *${formatarSaldo(CUSTO_REMEDIO, carteiraAtualizada)}*\n\n` +
         `😊 Felicidade : ${statusBar(60)}\n` +
         `🍽️ Fome       : ${statusBar(60)}\n` +
         `😴 Sono       : ${statusBar(60)}\n` +

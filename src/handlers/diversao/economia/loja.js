@@ -4,7 +4,8 @@ const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
-const { getCarteira, alterarGold, comprarComGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { getCarteira, comprarComGold, venderComGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { consultarSaldoPorIdentidade } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'appWallet'));
 const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
@@ -17,6 +18,10 @@ try {
 } catch {}
 
 const { resolverItemKey } = require('./_shared');
+
+async function moedaDaConta(msg) {
+  return consultarSaldoPorIdentidade(resolveUserFromMsg(msg));
+}
 
 // !gold
 async function handleGold(sock, msg, jid, getPrefix, contactNames) {
@@ -39,9 +44,9 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
 
     const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
     const texto =
-      `💰 *SALDO DE GOLD* 💰\n\n` +
+      `💰 *SALDO DA CONTA* 💰\n\n` +
       `👤 *${userName}*\n` +
-      `💵 Saldo neste grupo: *${gold} gold*\n` +
+      `💵 Saldo disponível: *${formatarSaldo(gold, carteira)}*\n` +
       `📊 Status: ${status}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*FORMAS DE GANHAR:*\n` +
@@ -83,6 +88,7 @@ async function handleLoja(sock, msg, jid, getPrefix) {
 // !lojafood
 async function handleLojaFood(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const currencyInfo = await moedaDaConta(msg);
   const categorias = {
     '🍕 PRINCIPAIS': ['pizza', 'hamburger', 'frango', 'picanha'],
     '🍫 DOCES':      ['chocolate', 'bolo'],
@@ -95,7 +101,7 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
     for (const k of keys) {
       const item = ITENS_LOJA[k];
       if (item) {
-        texto += `  🍽️ ${item.nome} — *${item.preco}* gold\n`;
+        texto += `  🍽️ ${item.nome} — *${formatarSaldo(item.preco, currencyInfo)}*\n`;
         texto += `    └ chave: \`${k}\`\n`;
       }
     }
@@ -113,6 +119,7 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
 // !lojapet
 async function handleLojaPet(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const currencyInfo = await moedaDaConta(msg);
   const categorias = {
     '🦴 COMIDAS':      ['racao', 'racaopremium', 'carnefresh', 'peixe', 'leite'],
     '🎾 BRINQUEDOS':   ['bolinha', 'pelucia', 'corda', 'disco', 'casabrinquedo'],
@@ -126,7 +133,7 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
     for (const k of keys) {
       const item = ITENS_LOJA[k];
       if (item) {
-        texto += `  🐾 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `  🐾 ${item.nome} — *${formatarSaldo(item.preco, currencyInfo)}*\n`;
         texto += `    └ chave: \`${k}\`\n`;
       }
     }
@@ -144,6 +151,7 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
 // !lojatec
 async function handleLojaTec(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const currencyInfo = await moedaDaConta(msg);
   const categorias = {
     '🖥️ COMPUTADORES': ['notebook', 'pcgamerlegendario'],
     '📱 SMARTPHONES':  ['celular', 'smartphonebasico'],
@@ -158,7 +166,7 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
     for (const k of keys) {
       const item = ITENS_LOJA[k];
       if (item) {
-        texto += `  💻 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `  💻 ${item.nome} — *${formatarSaldo(item.preco, currencyInfo)}*\n`;
         texto += `    └ chave: \`${k}\`\n`;
       }
     }
@@ -176,6 +184,7 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
 // !lojacasal
 async function handleLojaCasal(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const currencyInfo = await moedaDaConta(msg);
   const categorias = {
     '🎁 PRESENTES ROMÂNTICOS': ['flores', 'carta', 'morango', 'urso', 'caixa'],
     '💎 JOIAS':                ['anel'],
@@ -188,7 +197,7 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
     for (const k of keys) {
       const item = ITENS_LOJA[k];
       if (item) {
-        texto += `  💕 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `  💕 ${item.nome} — *${formatarSaldo(item.preco, currencyInfo)}*\n`;
         texto += `    └ chave: \`${k}\`\n`;
       }
     }
@@ -216,6 +225,7 @@ async function handleComprar(sock, msg, jid, caption) {
   }
 
   const itemDigitado = match[1].trim();
+  const currencyInfo = await moedaDaConta(msg);
   const itemNome = resolverItemKey(itemDigitado);
 
   const itemInfo = itemNome
@@ -225,7 +235,7 @@ async function handleComprar(sock, msg, jid, caption) {
   if (!itemInfo) {
     const lista = Object.entries(ITENS_LOJA)
       .slice(0, 15)
-      .map(([, v]) => `  • ${v.nome} (${v.preco} gold)`)
+      .map(([, v]) => `  • ${v.nome} (${formatarSaldo(v.preco, currencyInfo)})`)
       .join('\n');
     await sock.sendMessage(jid, {
       text:
@@ -259,10 +269,10 @@ async function handleComprar(sock, msg, jid, caption) {
       const saldoAtual    = carteiraAtual?.gold ?? 0;
       await sock.sendMessage(jid, {
         text:
-          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${preco}* gold neste grupo!\n\n` +
+          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem saldo suficiente para esta compra.\n\n` +
           `━━━━━━━━━━━━━━━━\n*SEU SALDO:*\n` +
-          `  💰 Disponível: *${saldoAtual}* gold\n` +
-          `  💎 Precisa de: *${preco}* gold`,
+          `  💰 Disponível: *${formatarSaldo(saldoAtual, carteiraAtual)}*\n` +
+          `  💎 Precisa de: *${formatarSaldo(preco, carteiraAtual || currencyInfo)}*`,
       }, { quoted: msg });
       return;
     }
@@ -280,9 +290,9 @@ async function handleComprar(sock, msg, jid, caption) {
       `🛒 *Você comprou com sucesso!*\n\n` +
       `━━━━━━━━━━━━━━━━\n*DETALHES:*\n` +
       `  📦 Item: *${itemInfo.nome}*\n` +
-      `  💵 Preço: *${preco}* gold\n\n` +
+      `  💵 Preço: *${formatarSaldo(preco, resultado.carteira)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n*SALDO ATUALIZADO:*\n` +
-      `  ✅ Novo saldo: *${saldoFinal}* gold`,
+      `  ✅ Novo saldo: *${formatarSaldo(saldoFinal, resultado.carteira)}*`,
   }, { quoted: msg });
 }
 
@@ -331,34 +341,45 @@ async function handleVender(sock, msg, jid, caption) {
     return;
   }
 
-  const removido = await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId, [`inventory.${itemKey}`]: { $gte: quantidade } },
-    { $inc: { [`inventory.${itemKey}`]: -quantidade } }
-  );
-
-  if (!removido) {
+  const totalRecebido = preco * quantidade;
+  const resultado = await venderComGold({
+    idWhatsApp: userId,
+    idGrupo: jid,
+    valorTotal: totalRecebido,
+    descricaoGold: `Venda: ${itemInfo.nome} x${quantidade}`,
+    modeloInventario: Usuario,
+    filtroInventario: { idWhatsApp: userId },
+    campoInventario: `inventory.${itemKey}`,
+    quantidade,
+  });
+  if (!resultado.ok) {
+    if (resultado.motivo === 'ITEM_INSUFICIENTE') {
+      await sock.sendMessage(jid, {
+        text: `⚠️ Estoque de *${itemInfo.nome}* mudou antes da venda ser concluída. Tente novamente.`,
+      }, { quoted: msg });
+      return;
+    }
     await sock.sendMessage(jid, {
-      text: `⚠️ Estoque de *${itemInfo.nome}* mudou antes da venda ser concluída. Tente novamente.`,
+      text: '⚠️ Não foi possível concluir a venda. Seu item continua no inventário.',
     }, { quoted: msg });
     return;
   }
 
-  const totalRecebido = preco * quantidade;
-  const carteira = await alterarGold(userId, jid, totalRecebido, `Venda: ${itemInfo.nome} x${quantidade}`);
+  const carteira = resultado.carteira;
 
   const avisoPrecoAjustado = preco < precoDigitado
-    ? `\n_(preço ajustado para o máximo permitido: ${itemInfo.preco} gold/un.)_`
+    ? `\n_(preço ajustado para o máximo permitido.)_`
     : '';
 
   await sock.sendMessage(jid, {
     text:
       `✅ *VENDA REALIZADA!* ✅\n\n` +
       `📦 Item: *${itemInfo.nome}*\n` +
-      `💵 Preço unitário: *${preco} gold*${avisoPrecoAjustado}\n` +
+      `💵 Preço unitário: *${formatarSaldo(preco, carteira)}*${avisoPrecoAjustado}\n` +
       `📊 Quantidade: *${quantidade}*\n` +
-      `💰 Total recebido: *${totalRecebido} gold*\n\n` +
+      `💰 Total recebido: *${formatarSaldo(totalRecebido, carteira)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `💎 Novo saldo: *${carteira?.gold ?? '?'} gold*`,
+      `💎 Novo saldo: *${formatarSaldo(carteira?.gold ?? 0, carteira)}*`,
   }, { quoted: msg });
 }
 
@@ -413,7 +434,7 @@ async function handleInventario(sock, msg, jid) {
       `${linhas}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*TOTAL:* ${totalItens} item(ns)\n\n` +
-      `💰 *SALDO NESTE GRUPO:* *${carteira?.gold ?? 0} gold*`,
+      `💰 *SALDO DA CONTA:* *${formatarSaldo(carteira?.gold ?? 0, carteira)}*`,
   }, { quoted: msg });
 }
 

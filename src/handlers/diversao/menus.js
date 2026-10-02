@@ -42,8 +42,8 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   await sock.sendMessage(jid, {
     text:
-      `🪙 *SISTEMA DE GOLD* 🪙\n\n` +
-      `${P}gold — ver saldo\n` +
+      `🪙 *SISTEMA DE SALDO* 🪙\n\n` +
+      `${P}gold — ver saldo (comando antigo)\n` +
       `${P}loja — loja geral\n` +
       `${P}lojafood — loja de comida\n` +
       `${P}lojapet — loja de pets\n` +
@@ -52,17 +52,17 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
       `${P}buy [item] — comprar item\n` +
       `${P}vender [item] — vender item\n` +
       `${P}inventario — ver inventário\n` +
-      `${P}pix [@] [valor] — transferir gold\n` +
+      `${P}pix [@] [valor] — transferir saldo\n` +
       `${P}pixmulti [@1] [@2] [valor] — transferir para vários\n` +
-      `${P}pixdoar [valor] — doar gold para um membro\n` +
-      `${P}apostar [valor] — apostar gold\n` +
+      `${P}pixdoar [valor] — doar saldo para um membro\n` +
+      `${P}apostar [valor] — apostar saldo\n` +
       `${P}slots [valor] — jogar slots\n` +
       `${P}corrida [valor] — corrida de bichos\n` +
       `${P}garimpar — garimpar recursos\n` +
-      `${P}extrato — histórico de gold\n` +
+      `${P}extrato — histórico de saldo\n` +
       `${P}banco [valor] — investir no banco\n` +
       `${P}resgatar — resgatar do banco\n` +
-      `${P}rankgold — ranking de gold\n` +
+      `${P}rankgold — ranking de saldo\n` +
       `${P}give [@] [item] — dar item do inventário`,
   }, { quoted: msg });
 }
@@ -107,17 +107,17 @@ async function handleSistemaGold(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   await sock.sendMessage(jid, {
     text:
-      `📖 *COMO FUNCIONA O GOLD* 📖\n\n` +
-      `💰 *O que é Gold?*\n` +
-      `Gold é a moeda virtual do bot. Use para comprar itens, apostar e muito mais!\n\n` +
-      `📥 *Como ganhar Gold:*\n` +
-      `• Bônus diário de 100 gold ao mandar mensagem\n` +
+      `📖 *COMO FUNCIONA O SALDO* 📖\n\n` +
+      `💰 *Moeda da conta*\n` +
+      `O saldo do app e do bot é compartilhado e exibido na moeda do país da sua conta.\n\n` +
+      `📥 *Como ganhar saldo:*\n` +
+      `• Bônus diário de saldo ao mandar mensagem\n` +
       `• Trabalhar com ${P}trabalhar\n` +
       `• Garimpar com ${P}garimpar\n` +
       `• Vender itens com ${P}vender\n` +
       `• Ganhar no cassino/corrida\n` +
       `• Pescar e vender peixes\n\n` +
-      `📤 *Como gastar Gold:*\n` +
+      `📤 *Como gastar saldo:*\n` +
       `• Comprar itens na loja\n` +
       `• Apostar em jogos\n` +
       `• Transferir para outros\n` +
@@ -168,12 +168,12 @@ async function handleMenuAuxiliar(sock, msg, jid, getPrefix) {
       `📋 *MENU AUXILIAR* 📋\n\n` +
       `🎮 *Jogos e Diversão:*\n` +
       `▸ ${P}brincadeiras — ver brincadeiras\n` +
-      `▸ ${P}menugold — comandos de gold\n` +
+      `▸ ${P}menugold — comandos de saldo\n` +
       `▸ ${P}menupet — comandos de pets\n` +
       `▸ ${P}menumarket — marketplace\n` +
       `▸ ${P}menuwork — empregos\n\n` +
       `⚙️ *Sistemas:*\n` +
-      `▸ ${P}sistemgold — como funciona o gold\n` +
+      `▸ ${P}sistemgold — como funciona o saldo\n` +
       `▸ ${P}sistempet — como funciona os pets\n` +
       `▸ ${P}sistemmedieval — sistema medieval\n\n` +
       `👥 *Grupos:*\n` +
@@ -219,7 +219,7 @@ Crie seu personagem, batalhe, evolua e domine o reino.
   ▸ ${P}missaomed — missão aleatória (cooldown 30min)
   • Requer HP mínimo de 20
   • 3 dificuldades: fácil, médio e difícil
-  • Sucesso: XP + Gold | Falha: dano + 10 XP de consolação
+  • Sucesso: XP + saldo | Falha: dano + 10 XP de consolação
 
 ❤️ *RECUPERAÇÃO*
   ▸ ${P}recargamana — recupera 60% do HP e 100% da mana
@@ -229,7 +229,7 @@ Crie seu personagem, batalhe, evolua e domine o reino.
 
 🏪 *LOJA & EQUIPAMENTOS*
   ▸ ${P}lojamedieval — ver armas, armaduras e poções
-  ▸ ${P}comprar _(item)_ — comprar com o gold do grupo
+  ▸ ${P}comprar _(item)_ — comprar com o saldo compartilhado
   ▸ ${P}equipar _(item)_ — equipar arma ou armadura
   ▸ ${P}desequipar _(arma/armadura)_ — remover item equipado
   ▸ ${P}invmed — ver seu inventário medieval

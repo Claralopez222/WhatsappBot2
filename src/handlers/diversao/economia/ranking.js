@@ -2,6 +2,7 @@
 
 const path = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
+const { formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
@@ -35,7 +36,7 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
 
     if (!top?.length) {
       await sock.sendMessage(jid, {
-        text: '💰 *RANKING DE GOLD*\n\nNenhum membro ativo com Gold registrado neste grupo ainda!\n\n⛏️ Use *!garimpar* para começar a ganhar Gold.',
+        text: '💰 *RANKING DE REAIS*\n\nNenhum membro ativo com saldo registrado neste grupo ainda!\n\n⛏️ Use *!garimpar* para começar a ganhar saldo.',
       }, { quoted: msg });
       return;
     }
@@ -50,17 +51,17 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
       const numero = u.idWhatsApp.split('@')[0].split(':')[0];
       const medal  = MEDALS[i];
 
-      return `${medal} @${numero}\n   ${bar} ${count} 💰 (${pct}%)`;
+      return `${medal} @${numero}\n   ${bar} ${formatarSaldo(count)} (${pct}%)`;
     }).join('\n\n');
 
     const mentions = top.map(u => u.idWhatsApp);
 
     await sock.sendMessage(jid, {
       text:
-        `💰 *RANKING DE GOLD — MEMBROS ATIVOS* 💰\n\n` +
+        `💰 *RANKING DE REAIS — MEMBROS ATIVOS* 💰\n\n` +
         `${linhas}\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `🏦 Total do Top 10: *${totalGold} Gold*\n` +
+        `🏦 Total do Top 10: *${formatarSaldo(totalGold)}*\n` +
         `⛏️ Use *!garimpar* para subir no ranking!`,
       mentions,
     }, { quoted: msg });

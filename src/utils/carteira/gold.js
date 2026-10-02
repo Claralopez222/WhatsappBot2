@@ -3,6 +3,7 @@
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
 const LidMapping    = require('../../models/LidMapping');
 const { normalizarJid } = require('../identity');
+const { ajustarSaldoVinculado, consultarSaldoVinculado } = require('./appWallet');
 
 const GOLD_HISTORY_LIMITE = 50;
 
@@ -59,6 +60,8 @@ async function getCarteira(idWhatsApp, idGrupo) {
   assertJid(idGrupo,    'idGrupo');
 
   const jidsBusca = await resolverJidsEquivalentes(idWhatsApp);
+  const jidTelefone = jidsBusca.find(jid => jid.endsWith('@s.whatsapp.net'));
+  const saldoVinculado = jidTelefone ? await consultarSaldoVinculado(jidTelefone) : null;
   const carteiras = await CarteiraGrupo.find({ idWhatsApp: { $in: jidsBusca }, idGrupo }).sort({ gold: -1, xp: -1 }).lean();
 
   if (carteiras.length > 0) {
@@ -109,20 +112,36 @@ async function getCarteira(idWhatsApp, idGrupo) {
         { $set: updateSet },
         { new: true }
       );
-      return unificada;
+      return aplicarSaldoVinculado(unificada, saldoVinculado);
     }
-    return carteiras[0];
+    return aplicarSaldoVinculado(carteiras[0], saldoVinculado);
   }
 
   const primaryJid = jidsBusca[0];
-  return CarteiraGrupo.findOneAndUpdate(
+  const carteira = await CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: primaryJid, idGrupo },
     { $setOnInsert: { idWhatsApp: primaryJid, idGrupo } },
     { upsert: true, new: true }
   );
+  return aplicarSaldoVinculado(carteira, saldoVinculado);
 }
 
-async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
+function aplicarSaldoVinculado(carteira, saldoVinculado) {
+  if (!saldoVinculado) return carteira;
+  const dados = typeof carteira?.toObject === 'function' ? carteira.toObject() : { ...carteira };
+  return {
+    ...dados,
+    gold: saldoVinculado.balanceCents,
+    currencyInfo: {
+      countryCode: saldoVinculado.countryCode,
+      currencyCode: saldoVinculado.currencyCode,
+      rate: saldoVinculado.rate,
+      rateDate: saldoVinculado.rateDate,
+    },
+  };
+}
+
+async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema', requestId) {
   assertJid(idWhatsApp, 'idWhatsApp');
   assertJid(idGrupo,    'idGrupo');
 
@@ -130,6 +149,14 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
 
   if (typeof valor !== 'number' || isNaN(valor)) {
     throw new TypeError('carteira/gold.alterarGold: "valor" deve ser um número.');
+  }
+  const jidTelefone = jidsBusca.find(jid => jid.endsWith('@s.whatsapp.net'));
+  if (jidTelefone) {
+    if (!Number.isSafeInteger(valor)) {
+      throw new TypeError('carteira/gold.alterarGold: o valor compartilhado deve ser um número inteiro de centavos.');
+    }
+    const movimentacao = await ajustarSaldoVinculado(jidTelefone, valor, descricao, requestId);
+    if (movimentacao) return getCarteira(idWhatsApp, idGrupo);
   }
 
   const tipo     = valor >= 0 ? 'recebido' : 'gasto';

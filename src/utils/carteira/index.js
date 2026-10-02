@@ -5,6 +5,11 @@ const { rankingGold, rankingXp }                       = require('./ranking');
 const { transferirGold }                               = require('./transferencia');
 const { comprarComGold, venderComGold }                = require('./compras');
 const { resolveJidComLid }                             = require('../identity');
+const { formatarMoeda }                                 = require('./appWallet');
+
+function formatarSaldo(centavos, carteira) {
+  return formatarMoeda(centavos, carteira?.currencyInfo || carteira);
+}
 
 module.exports = {
   getCarteira,
@@ -15,6 +20,7 @@ module.exports = {
   transferirGold,
   comprarComGold,
   venderComGold,
+  formatarSaldo,
 
   // Compat: quem ainda importar resolverJidCarteira daqui continua
   // funcionando. Migre pra require('../identity').resolveJidComLid

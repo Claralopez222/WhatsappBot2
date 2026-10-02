@@ -2,7 +2,7 @@
 
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const { getCarteira, transferirGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { getCarteira, transferirGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { resolveUserFromMsg, resolveGlobalId, extrairNumero } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const Usuario = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const { LOOKUP_ITENS_LOJA, normalizarChaveItem } = require('./_shared');
@@ -134,8 +134,8 @@ async function handlePix(sock, msg, jid, caption) {
       await sock.sendMessage(jid, {
         text:
           `⚠️ *SALDO INSUFICIENTE!*\n\n` +
-          `💰 Você tem: *${saldo}* gold\n` +
-          `💸 Precisa de: *${quantia}* gold`,
+          `💰 Você tem: *${formatarSaldo(saldo, carteiraRemetente)}*\n` +
+          `💸 Precisa de: *${formatarSaldo(quantia, carteiraRemetente)}*`,
       }, { quoted: msg });
       return;
     }
@@ -147,9 +147,9 @@ async function handlePix(sock, msg, jid, caption) {
   await sock.sendMessage(jid, {
     text:
       `✅ *TRANSFERÊNCIA REALIZADA!* ✅\n\n` +
-      `💸 *${quantia} gold* enviado para *@${numeroPura}*\n\n` +
+      `💸 *${formatarSaldo(quantia, resultado.de)}* enviado para *@${numeroPura}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `💰 Seu novo saldo: *${saldoFinalRemetente}* gold`,
+      `💰 Seu novo saldo: *${formatarSaldo(saldoFinalRemetente, resultado.de)}*`,
     mentions: [targetJid, userId],
   }, { quoted: msg });
 }
@@ -192,9 +192,9 @@ async function handlePixMulti(sock, msg, jid, caption) {
     await sock.sendMessage(jid, {
       text:
         `⚠️ *SALDO INSUFICIENTE PARA PIX MÚLTIPLO!*\n\n` +
-        `👥 Alvos: *${targets.length}* pessoas (${quantiaPorPessoa} gold/cada)\n` +
-        `💸 Total necessário: *${totalNecessario}* gold\n` +
-        `💰 Seu saldo: *${saldoAtual}* gold`,
+        `👥 Alvos: *${targets.length}* pessoas (${formatarSaldo(quantiaPorPessoa, carteiraRemetente)}/cada)\n` +
+        `💸 Total necessário: *${formatarSaldo(totalNecessario, carteiraRemetente)}*\n` +
+        `💰 Seu saldo: *${formatarSaldo(saldoAtual, carteiraRemetente)}*`,
     }, { quoted: msg });
     return;
   }
@@ -217,9 +217,9 @@ async function handlePixMulti(sock, msg, jid, caption) {
   await sock.sendMessage(jid, {
     text:
       `✅ *PIX MÚLTIPLO CONCLUÍDO!* ✅\n\n` +
-      `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} gold* cada!\n` +
-      `💸 Total distribuído: *${enviados * quantiaPorPessoa} gold*\n` +
-      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* gold`,
+      `🎁 *${enviados}* pessoa(s) receberam *${formatarSaldo(quantiaPorPessoa, carteiraFinal)}* cada!\n` +
+      `💸 Total distribuído: *${formatarSaldo(enviados * quantiaPorPessoa, carteiraFinal)}*\n` +
+      `💰 Seu novo saldo: *${formatarSaldo(carteiraFinal?.gold ?? 0, carteiraFinal)}*`,
     mentions: mentionsList,
   }, { quoted: msg });
 }
@@ -269,18 +269,18 @@ async function handlePixDoar(sock, msg, jid, caption) {
   const numSorteado = getNumeroPuro(sorteado);
 
   try {
-    const res = await transferirGold(userId, sorteado, jid, quantia, 'Doação de Gold');
+    const res = await transferirGold(userId, sorteado, jid, quantia, 'Doação de saldo');
     await sock.sendMessage(jid, {
       text:
         `🎉 *DOAÇÃO ANÔNIMA DE GOLD!* 🎉\n\n` +
-        `🎁 *@${userBase}* doou *${quantia} gold* para *@${numSorteado}*!\n\n` +
-        `💰 Novo saldo do doador: *${res?.de?.gold ?? 0}* gold`,
+        `🎁 *@${userBase}* doou *${formatarSaldo(quantia, res?.de)}* para *@${numSorteado}*!\n\n` +
+        `💰 Novo saldo do doador: *${formatarSaldo(res?.de?.gold ?? 0, res?.de)}*`,
       mentions: [userId, sorteado],
     }, { quoted: msg });
   } catch (e) {
     if (e instanceof RangeError) {
       await sock.sendMessage(jid, {
-        text: `⚠️ Você não possui *${quantia} gold* suficientes para doar.`,
+        text: `⚠️ Você não possui *${formatarSaldo(quantia)}* suficientes para doar.`,
       }, { quoted: msg });
       return;
     }

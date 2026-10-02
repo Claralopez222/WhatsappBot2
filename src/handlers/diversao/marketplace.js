@@ -19,8 +19,11 @@
 'use strict';
 
 const path     = require('path');
+const crypto   = require('crypto');
 const mongoose = require('mongoose');
 const Usuario  = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const { formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { ajustarSaldoPorIdentidade, consultarSaldoPorIdentidade } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'appWallet'));
 
 // ─── CATÁLOGO ─────────────────────────────────────────────────────────────────
 
@@ -162,6 +165,13 @@ const logSchema = new mongoose.Schema(
     totalBruto:   { type: Number, required: true, min: [0, 'totalBruto não pode ser negativo']   },
     taxa:         { type: Number, required: true, min: [0, 'taxa não pode ser negativa']          },
     totalLiquido: { type: Number, required: true, min: [0, 'totalLiquido não pode ser negativo']  },
+    purchaseId: { type: String, default: null },
+    buyerWalletLinked: { type: Boolean, default: false },
+    sellerWalletLinked: { type: Boolean, default: false },
+    settlementStatus: { type: String, enum: ['pending', 'completed', 'reversed'], default: 'completed' },
+    offerSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+    buyerNameForLog: { type: String, default: null },
+    sellerNameForLog: { type: String, default: null },
   },
   {
     timestamps: true,
@@ -188,6 +198,7 @@ logSchema.index({ vendedorId:  1, createdAt: -1 }); // find/count lado vendedor
 // ATENÇÃO: este índice NÃO cobre o countDocuments({ $or: [...] }) atual;
 // cada ramo do $or usa o seu índice composto acima via index union.
 logSchema.index({ compradorId: 1, vendedorId: 1 });
+logSchema.index({ purchaseId: 1 }, { unique: true, sparse: true });
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -697,7 +708,9 @@ function parseBuyArgs(caption) {
   return { vendedorRaw: match[1], itemKey: match[2].toLowerCase(), quantidade };
 }
 
-function buildMensagemComprador({ oferta, quantidade, totalBruto, taxa, novoSaldoComprador }) {
+function buildMensagemComprador({
+  oferta, quantidade, totalBruto, taxa, novoSaldoComprador, currencyInfoBuyer, currencyInfoSeller,
+}) {
   const vendedorExibicao = oferta.sellerName
     ? `${oferta.sellerName} (${formatarNumero(oferta.sellerId)})`
     : formatarNumero(oferta.sellerId);
@@ -706,16 +719,19 @@ function buildMensagemComprador({ oferta, quantidade, totalBruto, taxa, novoSald
     `✅ *COMPRA REALIZADA!*\n\n` +
     `📦 *Item:* ${oferta.itemNome}\n` +
     `📊 *Quantidade:* ${quantidade}\n` +
-    `💵 *Preço unit.:* ${oferta.preco}g\n` +
-    `💳 *Total pago:* ${totalBruto}g _(${oferta.preco} × ${quantidade})_\n` +
-    `🏦 *Taxa do mercado:* ${taxa}g _(paga pelo vendedor)_\n` +
+    `💵 *Preço unit.:* ${formatarSaldo(oferta.preco, currencyInfoBuyer)}\n` +
+    `💳 *Total pago:* ${formatarSaldo(totalBruto, currencyInfoBuyer)} _(${formatarSaldo(oferta.preco, currencyInfoBuyer)} × ${quantidade})_\n` +
+    `🏦 *Taxa do mercado:* ${formatarSaldo(taxa, currencyInfoSeller)} _(paga pelo vendedor)_\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `👤 *Vendedor:* ${vendedorExibicao}\n` +
-    `💰 *Seu saldo:* ${novoSaldoComprador}g`
+    `💰 *Seu saldo:* ${formatarSaldo(novoSaldoComprador, currencyInfoBuyer)}`
   );
 }
 
-function buildMensagemVendedor({ oferta, quantidade, totalBruto, totalLiquido, taxa, compradorId, compradorNome }) {
+function buildMensagemVendedor({
+  oferta, quantidade, totalBruto, totalLiquido, taxa, compradorId, compradorNome, novoSaldoVendedor,
+  currencyInfoBuyer, currencyInfoSeller,
+}) {
   const compradorExibicao = compradorNome
     ? `${compradorNome} (@${formatarNumero(compradorId)})`
     : `@${formatarNumero(compradorId)}`;
@@ -724,11 +740,12 @@ function buildMensagemVendedor({ oferta, quantidade, totalBruto, totalLiquido, t
     text:
       `🛒 *VENDA REALIZADA!*\n\n` +
       `📦 *Item:* ${oferta.itemNome} × ${quantidade}\n` +
-      `💵 *Preço unit.:* ${oferta.preco}g\n` +
+      `💵 *Preço unit.:* ${formatarSaldo(oferta.preco, currencyInfoSeller)}\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `💸 *Valor bruto:* ${totalBruto}g\n` +
-      `🏦 *Taxa (${CONFIG.TAXA_MERCADO_PCT}%):* -${taxa}g\n` +
-      `💰 *Você recebeu:* +${totalLiquido}g\n` +
+      `💸 *Valor bruto:* ${formatarSaldo(totalBruto, currencyInfoSeller)}\n` +
+      `🏦 *Taxa (${CONFIG.TAXA_MERCADO_PCT}%):* -${formatarSaldo(taxa, currencyInfoSeller)}\n` +
+      `💰 *Você recebeu:* +${formatarSaldo(totalLiquido, currencyInfoSeller)}\n` +
+      (novoSaldoVendedor == null ? '' : `💳 *Seu saldo:* ${formatarSaldo(novoSaldoVendedor, currencyInfoSeller)}\n`) +
       `━━━━━━━━━━━━━━━━\n` +
       `👤 *Comprador:* ${compradorExibicao}`,
     mentions: [compradorId],
@@ -737,19 +754,23 @@ function buildMensagemVendedor({ oferta, quantidade, totalBruto, totalLiquido, t
 
 // ─── LÓGICA DE COMPRA ─────────────────────────────────────────────────────────
 
-async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, compradorNome, vendedorNome }, session) {
+async function executarCompra({
+  compradorId, vendedorId, itemKey, quantidade, compradorNome, vendedorNome,
+  buyerWalletLinked = false, sellerWalletLinked = false, purchaseId,
+}, session) {
 
   // 1. Leitura paralela — sem writes ainda
   // BUG 2 FIX: filtroOfertasAtivas garante que ofertas expiradas (ainda não
   // limpas pelo TTL) não sejam compráveis. Sem este filtro, o vendedor poderia
   // receber gold de uma oferta que ele considerava encerrada há dias.
-  const [ofertaExistente, saldoDoc] = await Promise.all([
+  const [ofertaExistente, saldoDoc, vendedorDoc] = await Promise.all([
     Oferta.findOne(
       filtroOfertasAtivas({ sellerId: vendedorId, itemKey }),
       { preco: 1, quantidade: 1, itemNome: 1, sellerId: 1, sellerName: 1, origemInventario: 1 },
       { session }
     ).lean(),
     Usuario.findOne({ idWhatsApp: compradorId }, { gold: 1 }, { session }).lean(),
+    Usuario.findOne({ idWhatsApp: vendedorId }, { gold: 1 }, { session }).lean(),
   ]);
 
   // 2. Validações antes de qualquer write
@@ -762,6 +783,12 @@ async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, co
   if (!saldoDoc) {
     const err = new Error('COMPRADOR_NAO_ENCONTRADO');
     err.userMsg = '⚠️ Seu usuário não foi encontrado. Tente novamente.';
+    throw err;
+  }
+
+  if (!vendedorDoc) {
+    const err = new Error('VENDEDOR_NAO_ENCONTRADO');
+    err.userMsg = '⚠️ O vendedor não foi encontrado. Contate um administrador.';
     throw err;
   }
 
@@ -780,13 +807,13 @@ async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, co
   const totalLiquido = totalBruto - taxa;
   const saldoAtual   = saldoDoc.gold ?? 0;
 
-  if (saldoAtual < totalBruto) {
+  if (!buyerWalletLinked && saldoAtual < totalBruto) {
     const err = new Error('SALDO_INSUFICIENTE');
     err.userMsg =
       `❌ *SALDO INSUFICIENTE*\n\n` +
-      `💰 Você tem: *${saldoAtual}g*\n` +
-      `💸 Precisa: *${totalBruto}g*\n` +
-      `📊 Faltam: *${totalBruto - saldoAtual}g*`;
+      `💰 Você tem: *${formatarSaldo(saldoAtual)}*\n` +
+      `💸 Precisa: *${formatarSaldo(totalBruto)}*\n` +
+      `📊 Faltam: *${formatarSaldo(totalBruto - saldoAtual)}*`;
     throw err;
   }
 
@@ -836,15 +863,24 @@ async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, co
   // 4. Transferência financeira + entrega do item
   const [compradorAtualizado, vendedorAtualizado] = await Promise.all([
     Usuario.findOneAndUpdate(
-      { idWhatsApp: compradorId, gold: { $gte: totalBruto } },
-      { $inc: { gold: -totalBruto, [`inventory.${itemKey}`]: quantidade } },
+      buyerWalletLinked
+        ? { idWhatsApp: compradorId }
+        : { idWhatsApp: compradorId, gold: { $gte: totalBruto } },
+      {
+        $inc: {
+          ...(buyerWalletLinked ? {} : { gold: -totalBruto }),
+          [`inventory.${itemKey}`]: quantidade,
+        },
+      },
       { session, new: true }
     ).lean(),
-    Usuario.findOneAndUpdate(
-      { idWhatsApp: vendedorId },
-      { $inc: { gold: totalLiquido } },
-      { session, new: true }
-    ).lean(),
+    sellerWalletLinked
+      ? Promise.resolve(vendedorDoc)
+      : Usuario.findOneAndUpdate(
+          { idWhatsApp: vendedorId },
+          { $inc: { gold: totalLiquido } },
+          { session, new: true },
+        ).lean(),
   ]);
 
   if (!compradorAtualizado) {
@@ -875,6 +911,13 @@ async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, co
     totalBruto,
     taxa,
     totalLiquido,
+    purchaseId: purchaseId || null,
+    buyerWalletLinked,
+    sellerWalletLinked,
+    settlementStatus: buyerWalletLinked || sellerWalletLinked ? 'pending' : 'completed',
+    offerSnapshot: oferta,
+    buyerNameForLog: compradorNome ?? null,
+    sellerNameForLog: vendedorNome ?? oferta.sellerName ?? null,
     createdAt:     new Date(),
   }], { session });
 
@@ -886,6 +929,160 @@ async function executarCompra({ compradorId, vendedorId, itemKey, quantidade, co
     novoSaldoComprador: compradorAtualizado.gold,
     novoSaldoVendedor:  vendedorAtualizado.gold,
   };
+}
+
+function requestIdLiquidacaoMarket(purchaseId, participant) {
+  return crypto.createHash('sha256')
+    .update(`market:${purchaseId}:${participant}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+async function liquidarCompraPendente(registro) {
+  if (registro.settlementStatus === 'completed') return;
+  if (registro.settlementStatus !== 'pending' || !registro.purchaseId) {
+    throw new Error('Registro de liquidação do marketplace inválido.');
+  }
+
+  let buyerBalance = null;
+  let sellerBalance = null;
+  if (registro.buyerWalletLinked) {
+    let debit;
+    try {
+      debit = await ajustarSaldoPorIdentidade(
+        registro.compradorId,
+        -registro.totalBruto,
+        `Marketplace: compra ${registro.itemNome}`,
+        requestIdLiquidacaoMarket(registro.purchaseId, 'buyer'),
+      );
+    } catch (error) {
+      if (error instanceof RangeError) {
+        await reverterCompraSemSaldo(registro);
+        error.settlementReversed = true;
+      }
+      throw error;
+    }
+    if (!debit) throw new Error('A carteira do comprador deixou de estar vinculada ao app.');
+    buyerBalance = debit.balanceCents;
+  }
+  if (registro.sellerWalletLinked) {
+    const credit = await ajustarSaldoPorIdentidade(
+      registro.vendedorId,
+      registro.totalLiquido,
+      `Marketplace: venda ${registro.itemNome}`,
+      requestIdLiquidacaoMarket(registro.purchaseId, 'seller'),
+    );
+    if (!credit) throw new Error('A carteira do vendedor deixou de estar vinculada ao app.');
+    sellerBalance = credit.balanceCents;
+  }
+
+  const updated = await MarketLog.updateOne(
+    { purchaseId: registro.purchaseId, settlementStatus: 'pending' },
+    { $set: { settlementStatus: 'completed' } },
+  );
+  if (updated.matchedCount === 0) {
+    const current = await MarketLog.findOne({ purchaseId: registro.purchaseId }, { settlementStatus: 1 }).lean();
+    if (current?.settlementStatus !== 'completed') {
+      throw new Error('A liquidação do marketplace não foi confirmada.');
+    }
+  }
+  return { buyerBalance, sellerBalance };
+}
+
+async function retomarLiquidacoesPendentes(userId) {
+  const pendentes = await MarketLog.find({
+    settlementStatus: 'pending',
+    $or: [{ compradorId: userId }, { vendedorId: userId }],
+  }).sort({ createdAt: 1 }).limit(10).lean();
+
+  for (const registro of pendentes) await liquidarCompraPendente(registro);
+  return pendentes.length;
+}
+
+async function reverterCompraSemSaldo(registro) {
+  if (!registro.offerSnapshot || registro.settlementStatus !== 'pending') {
+    throw new Error('Não é possível reverter a compra sem o registro de reserva original.');
+  }
+
+  const offer = registro.offerSnapshot;
+  const originChanges = consumirOrigemInventario(offer.origemInventario, registro.quantidade);
+  const restoreOrigin = Object.fromEntries(
+    Object.entries(originChanges).map(([path, delta]) => [path, -delta]),
+  );
+
+  await withTransaction(async (session) => {
+    const buyerItem = await Usuario.findOneAndUpdate(
+      {
+        idWhatsApp: registro.compradorId,
+        [`inventory.${registro.itemKey}`]: { $gte: registro.quantidade },
+      },
+      {
+        $inc: {
+          [`inventory.${registro.itemKey}`]: -registro.quantidade,
+          ...(registro.buyerWalletLinked ? {} : { gold: registro.totalBruto }),
+        },
+      },
+      { session, new: true },
+    );
+    if (!buyerItem) throw new Error('Não foi possível retirar o item reservado durante a reversão.');
+
+    if (!registro.sellerWalletLinked) {
+      const sellerRefunded = await Usuario.findOneAndUpdate(
+        { idWhatsApp: registro.vendedorId, gold: { $gte: registro.totalLiquido } },
+        { $inc: { gold: -registro.totalLiquido } },
+        { session, new: true },
+      );
+      if (!sellerRefunded) {
+        throw new Error('O saldo creditado ao vendedor já foi utilizado; a compra exige reconciliação.');
+      }
+    }
+
+    const currentOffer = await Oferta.findById(offer._id, null, { session }).lean();
+    if (currentOffer) {
+      const restoredOffer = await Oferta.updateOne(
+        { _id: offer._id },
+        { $inc: { quantidade: registro.quantidade, ...restoreOrigin } },
+        { session },
+      );
+      if (restoredOffer.matchedCount !== 1) {
+        throw new Error('A oferta mudou durante a reversão da compra.');
+      }
+    } else {
+      const sameListing = await Oferta.findOne(
+        { sellerId: offer.sellerId, itemKey: offer.itemKey },
+        { _id: 1 },
+        { session },
+      ).lean();
+      if (sameListing) {
+        const restoredInventory = await Usuario.updateOne(
+          { idWhatsApp: registro.vendedorId },
+          { $inc: { [`inventory.${registro.itemKey}`]: registro.quantidade } },
+          { session },
+        );
+        if (restoredInventory.matchedCount !== 1) {
+          throw new Error('Não foi possível devolver o item ao inventário do vendedor.');
+        }
+      } else {
+        const restoredOfferSnapshot = {
+          ...offer,
+          _id: offer._id,
+          ...(offer.expiresAt && new Date(offer.expiresAt) <= new Date()
+            ? { expiresAt: new Date(Date.now() + CONFIG.OFERTA_EXPIRA_DIAS * 86_400_000) }
+            : {}),
+        };
+        await Oferta.create([restoredOfferSnapshot], { session });
+      }
+    }
+
+    const logUpdate = await MarketLog.updateOne(
+      { _id: registro._id, settlementStatus: 'pending' },
+      { $set: { settlementStatus: 'reversed' } },
+      { session },
+    );
+    if (logUpdate.modifiedCount !== 1) {
+      throw new Error('O estado da compra mudou antes de concluir a reversão.');
+    }
+  });
 }
 
 // ─── HANDLERS ─────────────────────────────────────────────────────────────────
@@ -954,8 +1151,8 @@ async function handleAvenda(sock, msg, jid, caption = '') {
         }
 
         texto += `  📦 *${o.itemNome}*\n`;
-        texto += `     💵 ${o.preco}g × ${o.quantidade} un. _(total: ${totalVal}g)_\n`;
-        texto += `     🏦 _Taxa estimada: ${taxaEst}g (${CONFIG.TAXA_MERCADO_PCT}%)_\n`;
+        texto += `     💵 ${formatarSaldo(o.preco)} × ${o.quantidade} un. _(total: ${formatarSaldo(totalVal)})_\n`;
+        texto += `     🏦 _Taxa estimada: ${formatarSaldo(taxaEst)} (${CONFIG.TAXA_MERCADO_PCT}%)_\n`;
         texto += expiraTexto;
         texto += `     🛒 \`!buyoferta ${num} ${o.itemKey} <qtd>\`\n`;
       }
@@ -1032,15 +1229,15 @@ async function handleBuscarOferta(sock, msg, jid, caption) {
       }
 
       texto += `👤 *${nomeExibido}* (${num})\n`;
-      texto += `   💵 ${o.preco}g × ${o.quantidade} un. _(total: ${totalVal}g)_\n`;
-      texto += `   🏦 _Taxa estimada: ${taxaEst}g (${CONFIG.TAXA_MERCADO_PCT}%)_\n`;
+      texto += `   💵 ${formatarSaldo(o.preco)} × ${o.quantidade} un. _(total: ${formatarSaldo(totalVal)})_\n`;
+      texto += `   🏦 _Taxa estimada: ${formatarSaldo(taxaEst)} (${CONFIG.TAXA_MERCADO_PCT}%)_\n`;
       texto += expiraTexto;
       texto += `   🛒 \`!buyoferta ${num} ${itemKey} <qtd>\`\n\n`;
     }
 
     const nomeBarato = maisBarato.sellerName?.trim() || formatarNumero(maisBarato.sellerId);
     texto += `━━━━━━━━━━━━━━━━\n`;
-    texto += `🏆 Mais barato: *${maisBarato.preco}g* de ${nomeBarato}\n`;
+    texto += `🏆 Mais barato: *${formatarSaldo(maisBarato.preco)}* de ${nomeBarato}\n`;
     texto += `🛒 \`!buyoferta ${formatarNumero(maisBarato.sellerId)} ${itemKey} <qtd>\``;
 
     return reply(sock, jid, msg, texto);
@@ -1105,7 +1302,7 @@ async function handleOfertar(sock, msg, jid, caption) {
   if (!Number.isInteger(preco) || preco < CONFIG.PRECO_MINIMO || preco > CONFIG.PRECO_MAXIMO) {
     return reply(sock, jid, msg,
       `❌ *Preço inválido!*\n` +
-      `💵 Deve ser um inteiro entre *${CONFIG.PRECO_MINIMO}g* e *${CONFIG.PRECO_MAXIMO.toLocaleString('pt-BR')}g*`
+      `💵 Deve ser um inteiro entre *${formatarSaldo(CONFIG.PRECO_MINIMO)}* e *${formatarSaldo(CONFIG.PRECO_MAXIMO)}*`
     );
   }
 
@@ -1263,13 +1460,13 @@ async function handleOfertar(sock, msg, jid, caption) {
   return reply(sock, jid, msg,
     `✅ *OFERTA CRIADA COM SUCESSO!*\n\n` +
     `📦 *Item:* ${itemNome}\n` +
-    `💵 *Preço unitário:* ${preco.toLocaleString('pt-BR')}g\n` +
+    `💵 *Preço unitário:* ${formatarSaldo(preco)}\n` +
     `📊 *Quantidade adicionada:* ${quantidade}\n` +
     `💰 *Estoque total na oferta:* ${ofertaCriada.quantidade}\n` +
     expiraTexto + `\n` +
     `━━━━━━━━━━━━━━━━\n` +
-    `💸 *Se vender tudo:* ~${liquidoEstimado.toLocaleString('pt-BR')}g líquido\n` +
-    `   _(bruto ${totalOferta.toLocaleString('pt-BR')}g − taxa ${taxaEstimada.toLocaleString('pt-BR')}g)_\n` +
+    `💸 *Se vender tudo:* ~${formatarSaldo(liquidoEstimado)} líquido\n` +
+    `   _(bruto ${formatarSaldo(totalOferta)} − taxa ${formatarSaldo(taxaEstimada)})_\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `📋 *Suas ofertas ativas:* ${restantes}/${CONFIG.MAX_OFERTAS_USER}\n` +
     `🛒 Ver marketplace: *!avenda*\n` +
@@ -1289,14 +1486,7 @@ async function handleBuy(sock, msg, jid, caption) {
     return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   }
 
-  // ── 2. Cooldown ──────────────────────────────────────────────────────────
-
-  const espera = checkCooldown(compradorId);
-  if (espera > 0) {
-    return reply(sock, jid, msg, `⏳ Aguarde *${espera}s* antes de comprar novamente.`);
-  }
-
-  // ── 3. Parse dos argumentos ──────────────────────────────────────────────
+  // ── 2. Parse dos argumentos ──────────────────────────────────────────────
 
   const args = parseBuyArgs(caption);
   if (!args) {
@@ -1320,7 +1510,7 @@ async function handleBuy(sock, msg, jid, caption) {
     );
   }
 
-  if (compradorId === vendedorId) {
+  if (formatarNumero(compradorId) === formatarNumero(vendedorId)) {
     return reply(sock, jid, msg, '❌ Você não pode comprar sua própria oferta!');
   }
 
@@ -1331,12 +1521,60 @@ async function handleBuy(sock, msg, jid, caption) {
     );
   }
 
-  // ── 5. Verificação prévia de saldo (antes de abrir transação) ────────────
+  const purchaseId = crypto.createHash('sha256')
+    .update(`${compradorId}:${msg?.key?.id || crypto.randomUUID()}`)
+    .digest('hex');
 
-  const compradorPreview = await Usuario.findOne(
-    { idWhatsApp: compradorId },
-    { gold: 1, nome: 1 }
-  ).lean().catch(() => null);
+  const compraAnterior = await MarketLog.findOne({ purchaseId }).lean();
+  if (compraAnterior) {
+    try {
+      if (compraAnterior.settlementStatus === 'pending') {
+        await liquidarCompraPendente(compraAnterior);
+      }
+      return reply(sock, jid, msg, '✅ Esta compra já foi processada e não será cobrada novamente.');
+    } catch (error) {
+      if (error.settlementReversed) {
+        return reply(sock, jid, msg,
+          '❌ A compra anterior foi cancelada porque o saldo ficou insuficiente; o item e a oferta foram restaurados. Tente novamente após conferir seu saldo.'
+        );
+      }
+      console.error('[Market] Não foi possível retomar compra pendente:', error);
+      return reply(sock, jid, msg,
+        '⏳ A compra anterior continua em processamento. O saldo e a entrega serão reconciliados sem cobrança duplicada; tente novamente em instantes.'
+      );
+    }
+  }
+
+  try {
+    const pendentesConcluidas = await retomarLiquidacoesPendentes(compradorId);
+    if (pendentesConcluidas > 0) {
+      await reply(sock, jid, msg, '✅ Uma liquidação anterior foi concluída antes de iniciar outra compra.');
+    }
+  } catch (error) {
+    if (error.settlementReversed) {
+      return reply(sock, jid, msg,
+        '❌ Uma compra pendente foi cancelada porque o saldo ficou insuficiente; o item e a oferta foram restaurados. Confira seu saldo antes de comprar novamente.'
+      );
+    }
+    console.error('[Market] Há liquidação pendente para o comprador:', error);
+    return reply(sock, jid, msg,
+      '⏳ Uma compra anterior ainda está sendo liquidada. Não iniciei outra compra; tente novamente em instantes.'
+    );
+  }
+
+  // ── 3. Cooldown ──────────────────────────────────────────────────────────
+  const espera = checkCooldown(compradorId);
+  if (espera > 0) {
+    return reply(sock, jid, msg, `⏳ Aguarde *${espera}s* antes de comprar novamente.`);
+  }
+
+  // ── 4. Verificação prévia de saldo (antes de abrir transação) ────────────
+
+  const [compradorPreview, buyerWallet, sellerWallet] = await Promise.all([
+    Usuario.findOne({ idWhatsApp: compradorId }, { gold: 1, nome: 1 }).lean(),
+    consultarSaldoPorIdentidade(compradorId),
+    consultarSaldoPorIdentidade(vendedorId),
+  ]);
 
   if (!compradorPreview) {
     return reply(sock, jid, msg, '⚠️ Seu usuário não foi encontrado. Tente novamente.');
@@ -1365,22 +1603,26 @@ async function handleBuy(sock, msg, jid, caption) {
   }
 
   const custoTotal = ofertaPreview.preco * quantidade;
-  if ((compradorPreview.gold ?? 0) < custoTotal) {
-    const faltam = custoTotal - (compradorPreview.gold ?? 0);
+  const buyerWalletLinked = Boolean(buyerWallet);
+  const sellerWalletLinked = Boolean(sellerWallet);
+  const saldoDisponivel = buyerWalletLinked ? buyerWallet.balanceCents : (compradorPreview.gold ?? 0);
+  if (saldoDisponivel < custoTotal) {
+    const faltam = custoTotal - saldoDisponivel;
+    const moedaComprador = buyerWallet || {};
     return reply(sock, jid, msg,
       `❌ *SALDO INSUFICIENTE*\n\n` +
-      `💰 Você tem: *${compradorPreview.gold ?? 0}g*\n` +
-      `💸 Precisa: *${custoTotal}g* _(${ofertaPreview.preco}g × ${quantidade})_\n` +
-      `📊 Faltam: *${faltam}g*`
+      `💰 Você tem: *${formatarSaldo(saldoDisponivel, moedaComprador)}*\n` +
+      `💸 Precisa: *${formatarSaldo(custoTotal, moedaComprador)}* _(${formatarSaldo(ofertaPreview.preco, moedaComprador)} × ${quantidade})_\n` +
+      `📊 Faltam: *${formatarSaldo(faltam, moedaComprador)}*`
     );
   }
 
-  // ── 6. Registro do cooldown ──────────────────────────────────────────────
+  // ── 5. Registro do cooldown ──────────────────────────────────────────────
   // Setado somente após TODAS as validações síncronas e prévias passarem
 
   BUY_COOLDOWNS.set(compradorId, Date.now());
 
-  // ── 7. Busca de nomes para exibição (fora da transação) ──────────────────
+  // ── 6. Busca de nomes para exibição (fora da transação) ──────────────────
 
   let compradorNome = compradorPreview.nome?.trim() ?? null;
   let vendedorNome  = null;
@@ -1395,14 +1637,17 @@ async function handleBuy(sock, msg, jid, caption) {
     console.warn('[Market] handleBuy: falha ao buscar nome do vendedor (não crítico):', e.message);
   }
 
-  // ── 8. Execução da transação ─────────────────────────────────────────────
+  // ── 7. Reserva do item e registro da compra ──────────────────────────────
 
   let resultado;
 
   try {
     resultado = await withTransaction((session) =>
       executarCompra(
-        { compradorId, vendedorId, itemKey, quantidade, compradorNome, vendedorNome },
+        {
+          compradorId, vendedorId, itemKey, quantidade, compradorNome, vendedorNome,
+          buyerWalletLinked, sellerWalletLinked, purchaseId,
+        },
         session
       )
     );
@@ -1410,6 +1655,19 @@ async function handleBuy(sock, msg, jid, caption) {
     // Erro: libera o cooldown pra permitir retry imediato — não faz sentido
     // punir uma tentativa que nem chegou a completar.
     BUY_COOLDOWNS.delete(compradorId);
+
+    const savedPurchase = await MarketLog.findOne({ purchaseId }).lean().catch(() => null);
+    if (savedPurchase?.settlementStatus === 'pending') {
+      try {
+        await liquidarCompraPendente(savedPurchase);
+        return reply(sock, jid, msg, '✅ Esta compra já foi processada e não será cobrada novamente.');
+      } catch (settlementError) {
+        console.error('[Market] Liquidação pendente após tentativa concorrente:', settlementError);
+        return reply(sock, jid, msg,
+          '⏳ A compra foi registrada e sua liquidação ainda está pendente. Tente novamente em instantes; não haverá cobrança duplicada.'
+        );
+      }
+    }
 
     if (e.userMsg) {
       return reply(sock, jid, msg, e.userMsg);
@@ -1430,6 +1688,33 @@ async function handleBuy(sock, msg, jid, caption) {
     );
   }
 
+  let settlement = { buyerBalance: null, sellerBalance: null };
+  if (buyerWalletLinked || sellerWalletLinked) {
+    try {
+      const purchaseLog = await MarketLog.findOne({ purchaseId }).lean();
+      if (!purchaseLog) throw new Error('Registro da compra não encontrado após a reserva.');
+      settlement = await liquidarCompraPendente(purchaseLog);
+    } catch (error) {
+      if (error.settlementReversed) {
+        BUY_COOLDOWNS.delete(compradorId);
+        return reply(sock, jid, msg,
+          `❌ Saldo insuficiente. A compra foi cancelada e o item/oferta foram restaurados. Total necessário: *${formatarSaldo(custoTotal, buyerWallet)}*.`
+        );
+      }
+      console.error('[Market] A compra foi registrada, mas sua liquidação está pendente:', error);
+      return reply(sock, jid, msg,
+        '⏳ Item e oferta foram registrados; a movimentação do saldo está pendente. Ela será retomada na próxima compra e não será cobrada duas vezes.'
+      );
+    }
+  }
+
+  const saldoCompradorFinal = buyerWalletLinked
+    ? settlement.buyerBalance
+    : resultado.novoSaldoComprador;
+  const saldoVendedorFinal = sellerWalletLinked
+    ? settlement.sellerBalance
+    : resultado.novoSaldoVendedor;
+
   // ── CORREÇÃO: sem sucesso, NÃO apagamos o cooldown aqui — antes isso
   // liberava o comprador pra comprar de novo instantaneamente após uma
   // compra bem-sucedida, anulando o throttle de 3s entre compras. Agora o
@@ -1440,13 +1725,27 @@ async function handleBuy(sock, msg, jid, caption) {
 
   await reply(
     sock, jid, msg,
-    buildMensagemComprador({ ...resultado, quantidade })
+    buildMensagemComprador({
+      ...resultado,
+      quantidade,
+      novoSaldoComprador: saldoCompradorFinal,
+      currencyInfoBuyer: buyerWallet || {},
+      currencyInfoSeller: sellerWallet || {},
+    })
   );
 
   sock
     .sendMessage(
       vendedorId,
-      buildMensagemVendedor({ ...resultado, quantidade, compradorId, compradorNome })
+      buildMensagemVendedor({
+        ...resultado,
+        quantidade,
+        compradorId,
+        compradorNome,
+        novoSaldoVendedor: saldoVendedorFinal,
+        currencyInfoBuyer: buyerWallet || {},
+        currencyInfoSeller: sellerWallet || {},
+      })
     )
     .catch((err) =>
       console.warn('[Market] handleBuy: notificação ao vendedor falhou:', {
@@ -1588,14 +1887,14 @@ async function handleMinhasOfertas(sock, msg, jid) {
       }
 
       texto += `📦 *${o.itemNome}*\n`;
-      texto += `   💵 ${o.preco}g × ${o.quantidade} un.\n`;
-      texto += `   💰 Você recebe: *${liquido}g* _(bruto ${totalItem}g − taxa ${taxa}g)_`;
+      texto += `   💵 ${formatarSaldo(o.preco)} × ${o.quantidade} un.\n`;
+      texto += `   💰 Você recebe: *${formatarSaldo(liquido)}* _(bruto ${formatarSaldo(totalItem)} − taxa ${formatarSaldo(taxa)})_`;
       texto += expiraTexto + '\n';
       texto += `   ❌ \`!cancelaroferta ${o.itemKey}\`\n\n`;
     }
 
     texto += `━━━━━━━━━━━━━━━━\n`;
-    texto += `💰 *Potencial líquido total:* ${totalPotencial}g`;
+    texto += `💰 *Potencial líquido total:* ${formatarSaldo(totalPotencial)}`;
 
     return reply(sock, jid, msg, texto);
   } catch (e) {
@@ -1727,16 +2026,16 @@ async function handleHistoricoMarket(sock, msg, jid, caption = '') {
         ? `🛒 *COMPRA* — ${data} ${hora}\n`
         : `📥 *VENDA* — ${data} ${hora}\n`;
 
-      texto += `   📦 ${log.itemNome} × ${log.quantidade} _(${log.precoUnit}g/un.)_\n`;
+      texto += `   📦 ${log.itemNome} × ${log.quantidade} _(${formatarSaldo(log.precoUnit)}/un.)_\n`;
 
       if (ehComprador) {
         texto +=
-          `   💸 Pago: *${log.totalBruto}g* ` +
-          `_(taxa ${log.taxa}g paga pelo vendedor)_ | ${contraparteExib}\n\n`;
+          `   💸 Pago: *${formatarSaldo(log.totalBruto)}* ` +
+          `_(taxa ${formatarSaldo(log.taxa)} paga pelo vendedor)_ | ${contraparteExib}\n\n`;
       } else {
         texto +=
-          `   💰 Bruto: ${log.totalBruto}g − taxa ${log.taxa}g = ` +
-          `*+${log.totalLiquido}g* | ${contraparteExib}\n\n`;
+          `   💰 Bruto: ${formatarSaldo(log.totalBruto)} − taxa ${formatarSaldo(log.taxa)} = ` +
+          `*+${formatarSaldo(log.totalLiquido)}* | ${contraparteExib}\n\n`;
       }
     }
 

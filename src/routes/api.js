@@ -8,6 +8,9 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
+const WhatsappWalletMigration = require('../models/WhatsappWalletMigration');
+const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
+const { consultarSaldoPorIdentidade, ajustarSaldoPorIdentidade } = require('../utils/carteira/appWallet');
 const rateLimit      = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
 
@@ -129,6 +132,122 @@ router.get('/integration/economy', async (req, res) => {
   } catch (error) {
     console.error('[API integração] Falha ao carregar economia vinculada:', error);
     return res.status(500).json({ error: 'Não foi possível consultar a economia do WhatsApp.' });
+  }
+});
+
+router.post('/integration/wallet/migrate', async (req, res) => {
+  const secret = process.env.WHATSAPP_LINK_SECRET;
+  if (!secret || secret.length < 32) {
+    console.error('[API integração] WHATSAPP_LINK_SECRET ausente ou curto demais.');
+    return res.status(503).json({ error: 'Migração da carteira indisponível.' });
+  }
+
+  const jid = String(req.get('x-zeca-jid') || '').trim().toLowerCase();
+  const timestamp = req.get('x-zeca-timestamp') || '';
+  const signature = req.get('x-zeca-signature') || '';
+  const linkedAtMs = req.body?.linkedAtMs;
+  if (!/^\d+@s\.whatsapp\.net$/.test(jid)
+      || !/^\d{13}$/.test(timestamp)
+      || !Number.isSafeInteger(linkedAtMs) || linkedAtMs <= 0
+      || !/^[a-f\d]{64}$/i.test(signature)) {
+    return res.status(400).json({ error: 'Solicitação inválida.' });
+  }
+  if (Math.abs(Date.now() - Number(timestamp)) > 60_000) {
+    return res.status(401).json({ error: 'Solicitação expirada.' });
+  }
+
+  const payload = `${timestamp}\nPOST\n/api/integration/wallet/migrate\n${jid}\n${linkedAtMs}`;
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+  const received = Buffer.from(signature, 'hex');
+  if (received.length !== expected.length || !crypto.timingSafeEqual(expected, received)) {
+    return res.status(401).json({ error: 'Assinatura inválida.' });
+  }
+
+  const migrationId = crypto.createHash('sha256').update(`${jid}\n${linkedAtMs}`).digest('hex');
+  let session;
+  try {
+    session = await CarteiraGrupo.startSession();
+    let migration;
+    await session.withTransaction(async () => {
+      const existing = await WhatsappWalletMigration.findById(migrationId).session(session).lean();
+      if (existing) {
+        migration = existing;
+        return;
+      }
+
+      const numberVariants = gerarVariantesNumero(jid.split('@')[0])
+        .map(number => `${number}@s.whatsapp.net`);
+      const mapping = await LidMapping.findOne({ pn: { $in: numberVariants } })
+        .select('lid')
+        .session(session)
+        .lean();
+      const identityVariants = [...new Set([
+        ...numberVariants,
+        ...(mapping?.lid ? [mapping.lid] : []),
+      ])];
+      const wallets = await CarteiraGrupo.find({
+        idWhatsApp: { $in: identityVariants },
+        idGrupo: { $regex: /@g\.us$/ },
+      }).session(session).lean();
+      const profiles = await Usuario.find({ idWhatsApp: { $in: identityVariants } })
+        .select('_id gold')
+        .session(session)
+        .lean();
+
+      const byGroup = new Map();
+      for (const wallet of wallets) {
+        const groupId = wallet.idGrupo;
+        const previous = byGroup.get(groupId) || { gold: 0, bank: 0 };
+        previous.gold = Math.max(previous.gold, Number(wallet.gold) || 0);
+        previous.bank = Math.max(previous.bank, Number(wallet.banco?.amount) || 0);
+        byGroup.set(groupId, previous);
+      }
+      const groupGoldCents = [...byGroup.values()].reduce((total, wallet) => total + wallet.gold, 0);
+      const profileGoldCents = profiles.reduce(
+        (maximum, profile) => Math.max(maximum, Number(profile.gold) || 0),
+        0,
+      );
+      const goldCents = groupGoldCents + profileGoldCents;
+      const bankCents = [...byGroup.values()].reduce((total, wallet) => total + wallet.bank, 0);
+      if (!Number.isSafeInteger(goldCents) || goldCents < 0
+          || !Number.isSafeInteger(bankCents) || bankCents < 0) {
+        throw new Error('Saldo inválido na carteira do bot durante a migração.');
+      }
+
+      if (wallets.length > 0) {
+        await CarteiraGrupo.updateMany(
+          { _id: { $in: wallets.map(wallet => wallet._id) } },
+          { $set: { gold: 0, 'banco.amount': 0 } },
+          { session },
+        );
+      }
+      if (profiles.length > 0) {
+        await Usuario.updateMany(
+          { _id: { $in: profiles.map(profile => profile._id) } },
+          { $set: { gold: 0 } },
+          { session },
+        );
+      }
+      migration = {
+        _id: migrationId,
+        jid,
+        linkedAtMs,
+        goldCents,
+        bankCents,
+      };
+      await WhatsappWalletMigration.create([migration], { session });
+    });
+
+    return res.json({
+      goldCents: migration.goldCents,
+      bankCents: migration.bankCents,
+      migrationId,
+    });
+  } catch (error) {
+    console.error('[API integração] Falha ao migrar a carteira do bot:', error);
+    return res.status(500).json({ error: 'Não foi possível migrar a carteira do bot.' });
+  } finally {
+    if (session) await session.endSession();
   }
 });
 
@@ -1186,6 +1305,28 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     const jidNorm   = jidsBusca[0] || normalizarJid(termoOriginal);
 
     if (!eGlobal) {
+      const carteiraAtual = await getCarteira(jidNorm, idGrupo);
+      if (carteiraAtual?.currencyInfo) {
+        if (!Number.isSafeInteger(valor)) {
+          return res.status(400).json({ error: 'valor deve ser um número inteiro de centavos para uma conta vinculada.' });
+        }
+        const delta = op === 'dar'
+          ? valor
+          : op === 'remover'
+            ? -valor
+            : valor - carteiraAtual.gold;
+        let carteira;
+        try {
+          carteira = delta === 0 ? carteiraAtual : await alterarGold(jidNorm, idGrupo, delta, 'Ajuste Admin');
+        } catch (error) {
+          if (error instanceof RangeError) {
+            return res.status(400).json({ error: 'Saldo insuficiente para remover esse valor.' });
+          }
+          throw error;
+        }
+        return res.json({ ok: true, idWhatsApp: jidNorm, goldAtual: carteira.gold });
+      }
+
       let update = {};
       if (op === 'dar') {
         update = {
@@ -1225,6 +1366,30 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
 
       return res.json({ ok: true, idWhatsApp: jidsBusca[0], goldAtual: carteira?.gold ?? valor });
     } else {
+      const saldoVinculado = await consultarSaldoPorIdentidade(jidNorm);
+      if (saldoVinculado) {
+        if (!Number.isSafeInteger(valor)) {
+          return res.status(400).json({ error: 'valor deve ser um número inteiro de centavos para uma conta vinculada.' });
+        }
+        const delta = op === 'dar'
+          ? valor
+          : op === 'remover'
+            ? -valor
+            : valor - saldoVinculado.balanceCents;
+        let saldoFinal = saldoVinculado;
+        try {
+          if (delta !== 0) {
+            saldoFinal = await ajustarSaldoPorIdentidade(jidNorm, delta, 'Ajuste Admin');
+          }
+        } catch (error) {
+          if (error instanceof RangeError) {
+            return res.status(400).json({ error: 'Saldo insuficiente para remover esse valor.' });
+          }
+          throw error;
+        }
+        return res.json({ ok: true, idWhatsApp: jidNorm, goldAtual: saldoFinal.balanceCents });
+      }
+
       let updateCarteira = {};
       let updateUsuario  = {};
 
@@ -1269,6 +1434,16 @@ router.delete('/admin/usuario/:idWhatsApp/gold/reset', adminAuth, async (req, re
     const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
     const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
     const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+
+    const saldoVinculado = await consultarSaldoPorIdentidade(jidNorm);
+    if (saldoVinculado?.balanceCents > 0) {
+      await ajustarSaldoPorIdentidade(
+        jidNorm,
+        -saldoVinculado.balanceCents,
+        'Reset Admin',
+        crypto.randomUUID(),
+      );
+    }
 
     const [resultadoCarteira, resultadoUsuario] = await Promise.all([
       CarteiraGrupo.updateMany(
@@ -1321,28 +1496,24 @@ router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Origem e destino não podem ser o mesmo usuário.' });
 
     // Verifica saldo da origem
-    const carteiraOrigem = await CarteiraGrupo.findOne({ idWhatsApp: { $in: jidsOrigem }, idGrupo }).lean();
+    const carteiraOrigem = await getCarteira(jidsOrigem[0], idGrupo);
     if (!carteiraOrigem)
       return res.status(404).json({ error: 'Carteira de origem não encontrada.' });
     if ((carteiraOrigem.gold || 0) < valor)
-      return res.status(400).json({ error: `Saldo insuficiente. Origem tem ${carteiraOrigem.gold || 0} gold.` });
+      return res.status(400).json({ error: `Saldo insuficiente. Origem tem ${carteiraOrigem.gold || 0}.` });
 
-    const [, carteiraDestinoAtual] = await Promise.all([
-      CarteiraGrupo.updateMany(
-        { idWhatsApp: { $in: jidsOrigem }, idGrupo },
-        { $inc: { gold: -valor } }
-      ),
-      CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: { $in: jidsDestino }, idGrupo },
-        { $inc: { gold: valor } },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
-      ),
-    ]);
+    const { de, para } = await transferirGold(
+      jidsOrigem[0],
+      jidsDestino[0],
+      idGrupo,
+      valor,
+      'Transferência Admin',
+    );
 
     return res.json({
       ok: true,
-      goldOrigem:  (carteiraOrigem.gold || 0) - valor,
-      goldDestino: carteiraDestinoAtual.gold,
+      goldOrigem: de.gold,
+      goldDestino: para.gold,
     });
   } catch (err) {
     console.error('[API] POST /admin/gold/transferir:', err);
@@ -1801,7 +1972,7 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
       return res.status(400).json({ error: 'Aposta deve ser um número positivo.' });
 
     if (valorAposta > 100_000)
-      return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
+      return res.status(400).json({ error: `Aposta máxima: ${formatarSaldo(100_000)}.` });
 
     // ── Confirma que o usuário pertence ao grupo (resolve @lid se necessário) ─
     let idResolvido = idWhatsApp;
@@ -1820,27 +1991,22 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
     if (!carteira)
       return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
 
-    // ── Verifica saldo ────────────────────────────────────────────────────────
-    if ((carteira.gold ?? 0) < valorAposta)
-      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
-
-    // ── Debita aposta atomicamente ────────────────────────────────────────────
-    const carteiraDebitada = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: idResolvido, idGrupo, gold: { $gte: valorAposta } },
-      {
-        $inc: { gold: -valorAposta },
-        $push: {
-          goldHistory: {
-            $each:  [{ type: 'gasto', item: 'Slots (aposta)', amount: valorAposta, date: new Date() }],
-            $slice: -50,
-          },
-        },
-      },
-      { new: true }
-    );
-
-    if (!carteiraDebitada)
-      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
+    const carteiraIntegrada = await getCarteira(idResolvido, idGrupo);
+    let carteiraDebitada;
+    try {
+      carteiraDebitada = await alterarGold(
+        idResolvido,
+        idGrupo,
+        -valorAposta,
+        'Slots (aposta)',
+        crypto.randomUUID(),
+      );
+    } catch (error) {
+      if (error instanceof RangeError) {
+        return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteiraIntegrada.gold });
+      }
+      throw error;
+    }
 
     // ── Sorteia resultado ─────────────────────────────────────────────────────
     const [r1, r2, r3]   = sortearSlotBackend();
@@ -1852,20 +2018,23 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
     let saldoFinal = carteiraDebitada.gold;
 
     if (premio > 0) {
-      const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: idResolvido, idGrupo },
-        {
-          $inc: { gold: premio },
-          $push: {
-            goldHistory: {
-              $each:  [{ type: 'recebido', item: `Slots (${mult}x)`, amount: premio, date: new Date() }],
-              $slice: -50,
-            },
-          },
-        },
-        { new: true }
-      );
-      saldoFinal = carteiraAtualizada?.gold ?? saldoFinal;
+      try {
+        const carteiraAtualizada = await alterarGold(
+          idResolvido,
+          idGrupo,
+          premio,
+          `Slots (${mult}x)`,
+          crypto.randomUUID(),
+        );
+        saldoFinal = carteiraAtualizada.gold;
+      } catch (error) {
+        try {
+          await alterarGold(idResolvido, idGrupo, valorAposta, 'Estorno de aposta: prêmio indisponível', crypto.randomUUID());
+        } catch (refundError) {
+          console.error('[API] Estorno crítico de Slots falhou:', refundError);
+        }
+        throw error;
+      }
     }
 
     return res.json({
@@ -1979,31 +2148,28 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
       return res.status(400).json({ error: 'Aposta deve ser um número positivo.' });
 
     if (valorAposta > 100_000)
-      return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
+      return res.status(400).json({ error: `Aposta máxima: ${formatarSaldo(100_000)}.` });
 
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
     if (!carteira)
       return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
 
-    if ((carteira.gold ?? 0) < valorAposta)
-      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
-
-    const carteiraDebitada = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp, idGrupo, gold: { $gte: valorAposta } },
-      {
-        $inc: { gold: -valorAposta },
-        $push: {
-          goldHistory: {
-            $each:  [{ type: 'gasto', item: `Corrida (${CORRIDA_BICHOS_API[escolhaIdx].nome})`, amount: valorAposta, date: new Date() }],
-            $slice: -50,
-          },
-        },
-      },
-      { new: true }
-    );
-
-    if (!carteiraDebitada)
-      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
+    const carteiraIntegrada = await getCarteira(idWhatsApp, idGrupo);
+    let carteiraDebitada;
+    try {
+      carteiraDebitada = await alterarGold(
+        idWhatsApp,
+        idGrupo,
+        -valorAposta,
+        `Corrida (${CORRIDA_BICHOS_API[escolhaIdx].nome})`,
+        crypto.randomUUID(),
+      );
+    } catch (error) {
+      if (error instanceof RangeError) {
+        return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteiraIntegrada.gold });
+      }
+      throw error;
+    }
 
     const vencedorIdx = sortearVencedorApi();
     const ganhou      = escolhaIdx === vencedorIdx;
@@ -2013,27 +2179,25 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
 
     let saldoFinal = carteiraDebitada.gold;
 
-if (premio > 0) {
-  const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp, idGrupo },
-    {
-      $inc: { gold: premio },
-      $push: {
-        goldHistory: {
-          $each: [{
-            type: 'recebido',
-            item: `Corrida (${bicho.odds}x)`,
-            amount: premio,
-            date: new Date(),
-          }],
-          $slice: -50,
-        },
-      },
-    },
-    { new: true }
-  );
-  saldoFinal = carteiraAtualizada?.gold ?? (carteiraDebitada.gold + premio);
-}
+    if (premio > 0) {
+      try {
+        const carteiraAtualizada = await alterarGold(
+          idWhatsApp,
+          idGrupo,
+          premio,
+          `Corrida (${bicho.odds}x)`,
+          crypto.randomUUID(),
+        );
+        saldoFinal = carteiraAtualizada.gold;
+      } catch (error) {
+        try {
+          await alterarGold(idWhatsApp, idGrupo, valorAposta, 'Estorno de aposta: prêmio indisponível', crypto.randomUUID());
+        } catch (refundError) {
+          console.error('[API] Estorno crítico de Corrida falhou:', refundError);
+        }
+        throw error;
+      }
+    }
 
     return res.json({
       vencedorIdx,

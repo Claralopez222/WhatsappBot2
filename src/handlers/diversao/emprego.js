@@ -12,10 +12,11 @@ let CarteiraGrupo;
 let getCarteira;
 let alterarGold;
 let resolverJidCarteira;
+let formatarSaldo;
 
 try {
   CarteiraGrupo = require('../../models/CarteiraGrupo');
-  ({ getCarteira, alterarGold, resolverJidCarteira } = require('../../utils/carteira'));
+  ({ getCarteira, alterarGold, resolverJidCarteira, formatarSaldo } = require('../../utils/carteira'));
 } catch (err) {
   console.error('[Emprego] ERRO CRÍTICO ao importar dependências:', err.message);
   process.exit(1);
@@ -570,7 +571,7 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
     if (!escolhaArg) {
       const opcoesTexto = tierAtual.cargos.map(c =>
         `  *${c.id}.* ${c.nome}\n` +
-        `     💰 Salário: *${tierAtual.salarioMin}–${tierAtual.salarioMax} gold*\n` +
+        `     💰 Salário: *${formatarSaldo(tierAtual.salarioMin, carteira)}–${formatarSaldo(tierAtual.salarioMax, carteira)}*\n` +
         `     📝 _${c.desc}_`
       ).join('\n\n');
 
@@ -635,7 +636,7 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
       `🎉 *PARABÉNS! VOCÊ FOI CONTRATADO!* 🎉\n\n` +
       `💼 Cargo: *${cargoEscolhido.nome}*\n` +
       `🏅 Categoria: *${cargoEscolhido.tierInfo.nomeTier}*\n` +
-      `💰 Salário por turno: *${cargoEscolhido.tierInfo.salarioMin}–${cargoEscolhido.tierInfo.salarioMax} gold*\n\n` +
+      `💰 Salário por turno: *${formatarSaldo(cargoEscolhido.tierInfo.salarioMin, carteira)}–${formatarSaldo(cargoEscolhido.tierInfo.salarioMax, carteira)}*\n\n` +
       `${funcoesTexto}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `📋 Use *!trabalhar* ou *!work* para iniciar o turno!\n` +
@@ -752,11 +753,11 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
     }
   );
 
-  await alterarGold(userId, groupId, salarioTotal);
+  const carteiraAtualizada = await alterarGold(userId, groupId, salarioTotal);
 
   const parcela = Math.floor(salarioTotal / numFuncoes);
   const detalheFuncoes = `\n📋 *FUNÇÕES DESEMPENHADAS NESTE TURNO (${numFuncoes}):*\n` +
-    cargo.funcoes.map((f, i) => `  ${i + 1}. ${f} *(+${parcela} gold)*`).join('\n') + '\n';
+    cargo.funcoes.map((f, i) => `  ${i + 1}. ${f} *(+${formatarSaldo(parcela, carteiraAtualizada)})*`).join('\n') + '\n';
 
   const proximoTier = CATALGO_EMPREGOS.find(t => t.tier === tierInfo.tier + 1);
   let progressoTexto = '';
@@ -777,7 +778,7 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
     `💼 Cargo: *${cargo.nome}*\n` +
     `🎖️ Categoria: *${tierInfo.nomeTier}*\n` +
     `${detalheFuncoes}\n` +
-    `💰 *Salário Total Recebido:* *+${salarioTotal} gold*\n` +
+    `💰 *Salário Total Recebido:* *+${formatarSaldo(salarioTotal, carteiraAtualizada)}*\n` +
     `📊 Turnos no cargo atual: *${sucessos}*\n` +
     `⏰ Próximo turno em: *${LABEL_COOLDOWN}* _(horário comercial)_\n` +
     `⏱️ Janela de tolerância: *${LABEL_JANELA}*\n` +
@@ -907,7 +908,7 @@ async function handleEmprego(sock, msg, jid) {
       `💼 *SEU CARGO ATUAL NESTE GRUPO*\n\n` +
       `🏢 Cargo: *${cargo.nome}*\n` +
       `🎖️ Categoria: *${tierInfo.nomeTier}*\n` +
-      `💰 Salário por turno: *${tierInfo.salarioMin}–${tierInfo.salarioMax} gold*\n` +
+      `💰 Salário por turno: *${formatarSaldo(tierInfo.salarioMin, carteira)}–${formatarSaldo(tierInfo.salarioMax, carteira)}*\n` +
       `📊 Turnos concluídos nesta categoria: *${sucessos}*\n` +
       `📅 Status do expediente: ${statusTurno}\n` +
       funcoesTexto +

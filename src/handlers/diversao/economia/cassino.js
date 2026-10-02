@@ -2,7 +2,7 @@
 
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { getCarteira, alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { resolveGlobalId } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 
 // ═══════════════════════════════════════════════════════════════
@@ -82,7 +82,7 @@ function buildFrame(s1, s2, s3, girando = true) {
   );
 }
 
-function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal) {
+function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal, carteira) {
   const premio  = Math.floor(aposta * mult);
   const icone   = lucroLiq > 0 ? '📈' : lucroLiq === 0 ? '➖' : '📉';
   const sinal   = lucroLiq >= 0 ? '+' : '';
@@ -95,13 +95,13 @@ function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal) {
     `${label}\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `📋 *DETALHES DA RODADA*\n` +
-    `  💵 Aposta:      *${aposta} gold*\n` +
+    `  💵 Aposta:      *${formatarSaldo(aposta, carteira)}*\n` +
     (mult > 0
       ? `  ✖️  Multiplicador: *${mult}x*\n` +
-        `  🏆 Prêmio:      *${premio} gold*\n`
+        `  🏆 Prêmio:      *${formatarSaldo(premio, carteira)}*\n`
       : '') +
-    `  ${icone} Resultado:   *${sinal}${lucroLiq} gold*\n` +
-    `  💰 Saldo final: *${saldoFinal} gold*`
+    `  ${icone} Resultado:   *${sinal}${formatarSaldo(lucroLiq, carteira)}*\n` +
+    `  💰 Saldo final: *${formatarSaldo(saldoFinal, carteira)}*`
   );
 }
 
@@ -133,9 +133,9 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
         `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
         `❌ *Saldo insuficiente!*\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `💰 Seu saldo:  *${saldo} gold*\n` +
-        `🎲 Aposta:     *${aposta} gold*\n` +
-        `📉 Faltam:     *${aposta - saldo} gold*`,
+        `💰 Seu saldo:  *${formatarSaldo(saldo, carteira)}*\n` +
+        `🎲 Aposta:     *${formatarSaldo(aposta, carteira)}*\n` +
+        `📉 Faltam:     *${formatarSaldo(aposta - saldo, carteira)}*`,
     }, { quoted: msg });
     return;
   }
@@ -166,7 +166,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
     saldoFinal = carteiraAtualizada.gold;
   }
 
-  const textoFinal = buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal);
+  const textoFinal = buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal, carteira);
 
   try { await sock.chatModify({ text: textoFinal }, msgInicial.key); }
   catch { await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg }); }
@@ -222,8 +222,8 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
         `🏁 *CORRIDA DE BICHOS* 🏁\n\n` +
         `❌ *Saldo insuficiente!*\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `💰 Seu saldo: *${saldo} gold*\n` +
-        `🎲 Aposta:    *${aposta} gold*`,
+        `💰 Seu saldo: *${formatarSaldo(saldo, carteira)}*\n` +
+        `🎲 Aposta:    *${formatarSaldo(aposta, carteira)}*`,
     }, { quoted: msg });
     return;
   }
@@ -265,8 +265,8 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
     : `❌ *DERROTA!*\n${FRASES_DERROTA_CORRIDA[Math.floor(Math.random() * FRASES_DERROTA_CORRIDA.length)]}`;
 
   const resultadoLinha = venceu
-    ? `📈 Ganho líquido: *+${lucroLiq} gold* _(prêmio de ${premio} gold pelas odds ${bichoEscolha.odds}x)_`
-    : `📉 Perda: *-${aposta} gold*`;
+    ? `📈 Ganho líquido: *+${formatarSaldo(lucroLiq, carteira)}* _(prêmio de ${formatarSaldo(premio, carteira)} pelas odds ${bichoEscolha.odds}x)_`
+    : `📉 Perda: *-${formatarSaldo(aposta, carteira)}*`;
 
   await sock.sendMessage(jid, {
     text:
@@ -276,7 +276,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
       `${statusTxt}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `${resultadoLinha}\n` +
-      `💰 Saldo final: *${saldoFinal} gold*\n\n` +
+      `💰 Saldo final: *${formatarSaldo(saldoFinal, carteira)}*\n\n` +
       `_Quer correr de novo? !corrida [bicho] [valor]_`,
   }, { quoted: msg });
 }
@@ -302,7 +302,7 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
 
   if (saldo < aposta) {
     await sock.sendMessage(jid, {
-      text: `❌ *Saldo insuficiente!* Você possui *${saldo} gold*.`,
+      text: `❌ *Saldo insuficiente!* Você possui *${formatarSaldo(saldo, carteira)}*.`,
     }, { quoted: msg });
     return;
   }
@@ -334,9 +334,9 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
       text:
         `🎉 *APOSTA GANHA!* 🎉\n\n` +
         `🪙 ${frase}\n\n` +
-        `💵 Valor apostado: *${aposta} gold*\n` +
-        `📈 Ganho: *+${aposta} gold*\n` +
-        `💰 Novo saldo: *${novoSaldo} gold*\n\n` +
+        `💵 Valor apostado: *${formatarSaldo(aposta, carteira)}*\n` +
+        `📈 Ganho: *+${formatarSaldo(aposta, carteira)}*\n` +
+        `💰 Novo saldo: *${formatarSaldo(novoSaldo, carteira)}*\n\n` +
         `_Quer arriscar de novo? !apostar <valor>_`,
     }, { quoted: msg });
   } else {
@@ -348,9 +348,9 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
       text:
         `💔 *APOSTA PERDIDA!* 💔\n\n` +
         `🪙 ${frase}\n\n` +
-        `💵 Valor apostado: *${aposta} gold*\n` +
-        `📉 Perda: *-${aposta} gold*\n` +
-        `💰 Novo saldo: *${novoSaldo} gold*\n\n` +
+        `💵 Valor apostado: *${formatarSaldo(aposta, carteira)}*\n` +
+        `📉 Perda: *-${formatarSaldo(aposta, carteira)}*\n` +
+        `💰 Novo saldo: *${formatarSaldo(novoSaldo, carteira)}*\n\n` +
         `_Não desanima — tenta de novo! !apostar <valor>_`,
     }, { quoted: msg });
   }

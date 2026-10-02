@@ -5,6 +5,7 @@
 const MedievalPersonagem = require('../../models/MedievalPersonagem');
 const CarteiraGrupo      = require('../../models/CarteiraGrupo');
 const GrupoConfig        = require('../../models/GrupoConfig');
+const { alterarGold, formatarSaldo } = require('../../utils/carteira');
 
 const {
   CLASSES, ELEMENTOS, MISSOES,
@@ -477,10 +478,11 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
         { idWhatsApp: senderJid, idGrupo: jid },
         { $set: { ultimaMissao: new Date() }, $inc: { xpMedieval: xpBonus } }
       );
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: senderJid, idGrupo: jid },
-        { $inc: { gold: goldBonus } },
-        { upsert: true }
+      const carteiraAtualizada = await alterarGold(
+        senderJid,
+        jid,
+        goldBonus,
+        `Recompensa de missão medieval: ${missao.titulo}`,
       );
 
       await sock.sendMessage(jid, {
@@ -490,7 +492,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
           `🏆 *${p.nome}* retornou vitorioso!\n\n` +
           `🎁 *Recompensas:*\n` +
           `⭐ +${xpBonus} XP Medieval\n` +
-          `🪙 +${goldBonus} Gold\n\n` +
+          `🪙 +${formatarSaldo(goldBonus, carteiraAtualizada)}\n\n` +
           `_Próxima missão disponível em 30 minutos._`,
       }, { quoted: msg });
 

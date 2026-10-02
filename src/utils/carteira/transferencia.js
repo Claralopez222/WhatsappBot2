@@ -1,6 +1,11 @@
 'use strict';
 
-const { alterarGold } = require('./gold');
+const { getCarteira, alterarGold } = require('./gold');
+const {
+  consultarSaldoVinculado,
+  transferirSaldoVinculado,
+} = require('./appWallet');
+const { resolvePhoneAndJid } = require('../identity');
 
 function getJidBase(jid) {
   if (!jid) return '';
@@ -9,7 +14,7 @@ function getJidBase(jid) {
 
 async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, descricao = 'transferência') {
   const val = Math.floor(Number(valor));
-  if (isNaN(val) || val <= 0 || !Number.isFinite(val)) {
+  if (!Number.isSafeInteger(val) || val <= 0) {
     throw new RangeError('transferirGold: valor deve ser um número inteiro positivo.');
   }
 
@@ -23,6 +28,32 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
   const label   = (descricao || 'transferência').trim();
   const numDe   = baseDe;
   const numPara = basePara;
+
+  const [identidadeDe, identidadePara] = await Promise.all([
+    resolvePhoneAndJid(deIdWhatsApp),
+    resolvePhoneAndJid(paraIdWhatsApp),
+  ]);
+  const jidDe = identidadeDe.pnJid;
+  const jidPara = identidadePara.pnJid;
+  if (jidDe && jidPara) {
+    const [saldoDe, saldoPara] = await Promise.all([
+      consultarSaldoVinculado(jidDe),
+      consultarSaldoVinculado(jidPara),
+    ]);
+    if (saldoDe && saldoPara) {
+      await transferirSaldoVinculado(
+        jidDe,
+        jidPara,
+        val,
+        `${label} para @${numPara}`,
+      );
+      const [de, para] = await Promise.all([
+        getCarteira(deIdWhatsApp, idGrupo),
+        getCarteira(paraIdWhatsApp, idGrupo),
+      ]);
+      return { de, para };
+    }
+  }
 
   const carteiraDE = await alterarGold(deIdWhatsApp, idGrupo, -val, `${label} para @${numPara}`);
 

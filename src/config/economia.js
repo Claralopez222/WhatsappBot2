@@ -144,7 +144,7 @@ const NARRATIVAS = {
   ],
   comum: [
     '▫️ Mais um dia de garimpo honesto...',
-    '🪨 O trabalho é duro, mas o gold cai...',
+    '🪨 O trabalho é duro, mas o saldo cai...',
     '⛏️ Nada de extraordinário, mas rendeu!',
   ],
 };

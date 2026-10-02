@@ -4,7 +4,7 @@ const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
-const { alterarGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { getSenderJid } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 
 // Fallback seguro caso missoes não exporte prepareDailyMissionState/incrementMission
@@ -172,13 +172,13 @@ async function handleGarimpar(sock, msg, jid) {
 
       linhas.push(``);
       if (goldFinal > 0) {
-        linhas.push(`💰 Encontrado: *+${goldFinal} gold*`);
+        linhas.push(`💰 Encontrado: *+${formatarSaldo(goldFinal, carteira)}*`);
       } else {
         linhas.push(`💰 Encontrado: *nada — evento destruiu tudo!*`);
       }
 
       linhas.push(`⚡ XP ganho: *+${xpFinal} XP*`);
-      linhas.push(`💳 Novo saldo: *${carteira?.gold ?? '?'} gold*`);
+      linhas.push(`💳 Novo saldo: *${formatarSaldo(carteira?.gold ?? 0, carteira)}*`);
       linhas.push(``);
       linhas.push(`⏰ Próximo garimpo em: *15 minutos*`);
 

@@ -21,6 +21,7 @@ const emprestimoSchema = new mongoose.Schema(
     vencimento:        { type: Date,    default: null },
     solicitadoEm:      { type: Date,    default: null },
     prazo:             { type: Number,  default: 7,   min: 1 },
+    requestId:         { type: String,  default: null },
     quitadoEm:         { type: Date,    default: null },
     proximoEmprestimo: { type: Date,    default: null },
   },

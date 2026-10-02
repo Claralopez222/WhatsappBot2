@@ -8,6 +8,7 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const { ACESSORIOS_CASAL } = require('../diversao/acessoriosCasal');
 
 const { resolveUsuarioInfo } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 const PET_EMOJIS = {
   tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',
@@ -42,21 +43,20 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   }
 
   let userGold = 0;
+  let walletInfo = null;
   let bankText = '❌ Sem investimento ativo';
   try {
-    const carteira =
-      await CarteiraGrupo.findOne({ idWhatsApp: resolvedJid, idGrupo: jid }) ||
-      await CarteiraGrupo.findOne({ idWhatsApp: alvoJid,     idGrupo: jid }) ||
-      (userInfo.lidJid ? await CarteiraGrupo.findOne({ idWhatsApp: userInfo.lidJid, idGrupo: jid }) : null);
+    const carteira = await getCarteira(resolvedJid, jid);
 
     userGold = carteira?.gold ?? 0;
+    walletInfo = carteira;
     const banco = carteira?.banco;
     if (banco?.amount > 0) {
       const msLeft = Math.max(0, new Date(banco.startDate).getTime() + 3 * 60 * 60 * 1000 - Date.now());
       const status = msLeft > 0
         ? `⏳ Faltam ${Math.ceil(msLeft / 60000)}min`
         : '✅ Pronto para resgatar!';
-      bankText = `💳 ${banco.amount}g investido (${banco.interest}% juros)  ${status}`;
+      bankText = `💳 ${formatarSaldo(banco.amount, carteira)} investido (${banco.interest}% juros)  ${status}`;
     }
   } catch {}
 
@@ -235,7 +235,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   L.push(
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `💰 *ECONOMIA*`,
-    `👛 Carteira: *${userGold}g*`,
+    `👛 Carteira: *${formatarSaldo(userGold, walletInfo)}*`,
     `🏦 Banco: ${bankText}`,
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `🐾 *PET ATIVO*`,

@@ -4,10 +4,10 @@ const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const CasalEstado   = require(path.join(__dirname, '..', '..', 'models', 'CasalEstado'));
 const { getNivelInfo }  = require(path.join(__dirname, '..', '..', 'utils', 'levelUtils'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { getCarteira, alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ═══════════════════════════════════════════════════════════════
 // ─── CONFIGURAÇÃO ──────────────────────────────────────────────
@@ -19,7 +19,6 @@ const CONFIG = {
   CUSTO_SURPRESA:       50,
   COOLDOWN_CIUMENTO_MS: 60 * 60 * 1000,
   LIMITE_DECLARACAO:    500,
-  LIMITE_GOLD_HISTORY:  50,
   RANK_CASAIS_TOP:      10,
   FUSO:                 'America/Sao_Paulo',
 };
@@ -112,30 +111,19 @@ function infoNivel(xp) {
 }
 
 /**
- * Debita gold da CarteiraGrupo de forma atômica (só desconta se houver saldo).
+ * Debita o saldo local ou compartilhado sem permitir saldo negativo.
  * @returns {Promise<{ok: boolean, saldo: number}>} saldo após o débito (ok) ou saldo atual (falha)
  */
 async function debitarGold(jid, senderJid, valor, item) {
   const idWhatsApp = normalizarJid(senderJid);
-  if (!idWhatsApp) return { ok: false, saldo: 0 };
-
-  const carteira = await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp, idGrupo: jid, gold: { $gte: valor } },
-    {
-      $inc:  { gold: -valor },
-      $push: {
-        goldHistory: {
-          $each:  [{ type: 'gasto', item, amount: valor }],
-          $slice: -CONFIG.LIMITE_GOLD_HISTORY,
-        },
-      },
-    },
-    { new: true }
-  );
-  if (carteira) return { ok: true, saldo: carteira.gold };
-
-  const atual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo: jid }, { gold: 1 }).lean();
-  return { ok: false, saldo: atual?.gold ?? 0 };
+  if (!idWhatsApp) return { ok: false, carteira: null };
+  try {
+    const carteira = await alterarGold(idWhatsApp, jid, -valor, item);
+    return { ok: true, carteira };
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return { ok: false, carteira: await getCarteira(idWhatsApp, jid) };
+  }
 }
 
 // Casais com ativação de XP Dobro em andamento (evita cobrança dupla por mensagens simultâneas)
@@ -330,11 +318,11 @@ async function handleXpDobro(sock, msg, jid, senderJid, relacionamentos) {
       return;
     }
 
-    const { ok, saldo } = await debitarGold(jid, senderJid, CONFIG.CUSTO_XP_DOBRO, 'XP Dobro');
+    const { ok, carteira } = await debitarGold(jid, senderJid, CONFIG.CUSTO_XP_DOBRO, 'XP Dobro');
     if (!ok) {
       await responder(sock, msg, jid,
-        `🪙 Você precisa de *${CONFIG.CUSTO_XP_DOBRO} de gold* para ativar o XP Dobro por 1 hora!\n` +
-        `💰 Seu saldo neste grupo: *${saldo}*`);
+        `🪙 Você precisa de *${formatarSaldo(CONFIG.CUSTO_XP_DOBRO, carteira)}* para ativar o XP Dobro por 1 hora!\n` +
+        `💰 Seu saldo neste grupo: *${formatarSaldo(carteira?.gold ?? 0, carteira)}*`);
       return;
     }
 
@@ -349,7 +337,7 @@ async function handleXpDobro(sock, msg, jid, senderJid, relacionamentos) {
     await responder(sock, msg, jid,
       `⚡ *XP DOBRO ATIVADO!* ⚡\n\n` +
       `Todos os carinhos de vocês renderão o dobro de XP pela próxima *1 hora*! 🎉\n` +
-      `💰 Saldo restante: *${saldo}*`);
+      `💰 Saldo restante: *${formatarSaldo(carteira.gold, carteira)}*`);
   } finally {
     ativandoXpDobro.delete(key);
   }
@@ -403,11 +391,11 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
     '💔 Você precisa estar em um relacionamento para dar uma surpresa!');
   if (!found) return;
 
-  const { ok, saldo } = await debitarGold(jid, senderJid, CONFIG.CUSTO_SURPRESA, 'Surpresa romântica');
+  const { ok, carteira } = await debitarGold(jid, senderJid, CONFIG.CUSTO_SURPRESA, 'Surpresa romântica');
   if (!ok) {
     await responder(sock, msg, jid,
-      `🪙 Você precisa de *${CONFIG.CUSTO_SURPRESA} de gold* para fazer uma surpresa!\n` +
-      `💰 Seu saldo neste grupo: *${saldo}*`);
+      `🪙 Você precisa de *${formatarSaldo(CONFIG.CUSTO_SURPRESA, carteira)}* para fazer uma surpresa!\n` +
+      `💰 Seu saldo neste grupo: *${formatarSaldo(carteira?.gold ?? 0, carteira)}*`);
     return;
   }
 
@@ -433,7 +421,7 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
     `🎉 *SURPRESA ROMÂNTICA!* 🎉\n\n` +
     `${tag(senderNorm)} fez uma surpresa para ${tag(parcJid)}!\n${surpresa.text}\n\n` +
     `💖 *+${ganho} XP para o casal!*${bonusStr} (Total: ${xpAtual} XP)\n` +
-    `💰 Saldo restante: *${saldo}*`,
+    `💰 Saldo restante: *${formatarSaldo(carteira.gold, carteira)}*`,
     [senderNorm, parcJid]);
 }
 

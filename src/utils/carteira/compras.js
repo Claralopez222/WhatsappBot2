@@ -2,6 +2,10 @@
 
 const mongoose = require('mongoose');
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
+const {
+  ajustarSaldoPorIdentidade,
+  consultarSaldoPorIdentidade,
+} = require('./appWallet');
 
 /**
  * Compra genérica: debita gold da CarteiraGrupo e credita `quantidade` de um
@@ -36,6 +40,43 @@ async function comprarComGold({
   const qtd = Math.floor(Number(quantidade));
   if (isNaN(qtd) || qtd <= 0) {
     return { ok: false, motivo: 'PARAMETROS_INVALIDOS' };
+  }
+
+  const linkedBalance = await consultarSaldoPorIdentidade(idWhatsApp);
+  if (linkedBalance) {
+    let balanceAfter = linkedBalance;
+    let debited = false;
+    try {
+      if (preco > 0) {
+        const result = await ajustarSaldoPorIdentidade(idWhatsApp, -preco, descricaoGold);
+        if (!result) throw new Error('A conta compartilhada deixou de estar vinculada durante a compra.');
+        balanceAfter = result;
+        debited = true;
+      }
+      await modeloInventario.findOneAndUpdate(
+        filtroInventario,
+        { $inc: { [campoInventario]: qtd } },
+        { upsert: true },
+      );
+      return {
+        ok: true,
+        carteira: {
+          gold: balanceAfter?.balanceCents ?? linkedBalance.balanceCents,
+          currencyInfo: linkedBalance,
+        },
+      };
+    } catch (error) {
+      if (debited) {
+        try {
+          await ajustarSaldoPorIdentidade(idWhatsApp, preco, `Estorno: ${descricaoGold}`);
+        } catch (refundError) {
+          console.error('❌ Estorno crítico de compra na carteira compartilhada falhou:', refundError.message);
+        }
+      }
+      if (error instanceof RangeError) return { ok: false, motivo: 'GOLD_INSUFICIENTE' };
+      console.error('⚠️ Erro em comprarComGold (carteira compartilhada):', error.message);
+      return { ok: false, motivo: 'ERRO' };
+    }
   }
 
   // 1. Tenta realizar via transação Mongo (modo Replica Set)
@@ -172,6 +213,39 @@ async function venderComGold({
   const qtd = Math.floor(Number(quantidade));
   if (isNaN(qtd) || qtd <= 0) {
     return { ok: false, motivo: 'PARAMETROS_INVALIDOS' };
+  }
+
+  const linkedBalance = await consultarSaldoPorIdentidade(idWhatsApp);
+  if (linkedBalance) {
+    const invAtualizado = await modeloInventario.findOneAndUpdate(
+      { ...filtroInventario, [campoInventario]: { $gte: qtd } },
+      { $inc: { [campoInventario]: -qtd } },
+      { new: true },
+    );
+    if (!invAtualizado) return { ok: false, motivo: 'ITEM_INSUFICIENTE' };
+
+    try {
+      const balanceAfter = await ajustarSaldoPorIdentidade(idWhatsApp, valorTotal, descricaoGold);
+      if (!balanceAfter) throw new Error('A conta compartilhada deixou de estar vinculada durante a venda.');
+      return {
+        ok: true,
+        carteira: {
+          gold: balanceAfter?.balanceCents ?? linkedBalance.balanceCents,
+          currencyInfo: linkedBalance,
+        },
+      };
+    } catch (error) {
+      try {
+        await modeloInventario.findOneAndUpdate(
+          filtroInventario,
+          { $inc: { [campoInventario]: qtd } },
+        );
+      } catch (refundError) {
+        console.error('❌ Estorno crítico de item na venda compartilhada falhou:', refundError.message);
+      }
+      console.error('⚠️ Erro em venderComGold (carteira compartilhada):', error.message);
+      return { ok: false, motivo: 'ERRO' };
+    }
   }
 
   const invAtualizado = await modeloInventario.findOneAndUpdate(

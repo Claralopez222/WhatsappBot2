@@ -1,9 +1,24 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const dns = require('node:dns').promises;
+const net = require('node:net');
 const sharp = require('sharp');
 const { fetchBuffer } = require(path.join(__dirname, '..', '..', 'fetchurl'));
 const { convertVideoToSticker } = require(path.join(__dirname, '..', '..', 'sticker'));
+
+const blockedNetworks = new net.BlockList();
+[
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
+  ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24],
+  ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
+  ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
+].forEach(([address, prefix]) => blockedNetworks.addSubnet(address, prefix, 'ipv4'));
+[
+  ['::', 128], ['::1', 128], ['64:ff9b:1::', 48], ['100::', 64],
+  ['2001::', 23], ['2001:db8::', 32], ['2002::', 16], ['fc00::', 7], ['fe80::', 10],
+  ['ff00::', 8],
+].forEach(([address, prefix]) => blockedNetworks.addSubnet(address, prefix, 'ipv6'));
 
 let _cachedYtDlpPath = null;
 let _cachedFfmpegPath = null;
@@ -29,16 +44,91 @@ const log = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function expandirUrl(urlEncurtada) {
-  const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
-  for (const method of ['head', 'get']) {
-    try {
-      const res = await axios[method](urlEncurtada, { maxRedirects: 5, timeout: 10000, headers });
-      const final = res.request?.res?.responseUrl;
-      if (final) return final;
-    } catch {}
+function isPublicAddress(address, family) {
+  const normalized = address.split('%')[0];
+  if (family === 6 && normalized.toLowerCase().startsWith('::ffff:')) {
+    return isPublicAddress(normalized.slice(7), 4);
   }
-  return urlEncurtada;
+  return !blockedNetworks.check(normalized, family === 4 ? 'ipv4' : 'ipv6');
+}
+
+async function resolvePublicAddress(hostname) {
+  const family = net.isIP(hostname);
+  const addresses = family
+    ? [{ address: hostname, family }]
+    : await dns.lookup(hostname, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some(({ address: resolved, family: resolvedFamily }) =>
+    !isPublicAddress(resolved, resolvedFamily))) {
+    throw new Error('O link aponta para um endereço de rede não permitido.');
+  }
+  return addresses[0];
+}
+
+async function validateExternalUrl(input) {
+  let url;
+  try {
+    url = new URL(input);
+  } catch {
+    throw new Error('O link informado não é válido.');
+  }
+  if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) {
+    throw new Error('Use um link HTTPS público e sem credenciais.');
+  }
+  const resolved = await resolvePublicAddress(url.hostname);
+  return {
+    url,
+    lookup: (_hostname, options, callback) => {
+      if (options?.all) {
+        callback(null, [{ address: resolved.address, family: resolved.family }]);
+      } else {
+        callback(null, resolved.address, resolved.family);
+      }
+    },
+  };
+}
+
+async function expandirUrl(urlInicial) {
+  let current = urlInicial;
+  for (let redirects = 0; redirects <= 5; redirects++) {
+    const validated = await validateExternalUrl(current);
+    const response = await axios.get(validated.url.href, {
+      maxRedirects: 0,
+      timeout: 10_000,
+      responseType: 'stream',
+      maxContentLength: 1,
+      headers: {
+        Range: 'bytes=0-0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      lookup: validated.lookup,
+      validateStatus: () => true,
+    });
+    response.data?.destroy();
+    const location = response.headers.location;
+    if (response.status >= 300 && response.status < 400 && location) {
+      if (redirects === 5) throw new Error('O link contém redirecionamentos demais.');
+      current = new URL(location, validated.url).href;
+      continue;
+    }
+    return validated.url.href;
+  }
+  throw new Error('Não foi possível validar o destino do link.');
+}
+
+async function prepararLinkDownload(link) {
+  return expandirUrl(link);
+}
+
+async function aceitarLinkDownload(sock, msg, jid, link) {
+  try {
+    return await prepararLinkDownload(link);
+  } catch (error) {
+    log.warn('Link de download recusado:', error.message);
+    await sock.sendMessage(jid, {
+      text: `⚠️ ${error.message || 'Não foi possível validar o destino desse link.'}`,
+    }, { quoted: msg });
+    return null;
+  }
 }
 
 function getFfmpegPath() {
@@ -371,11 +461,10 @@ async function handleSave(sock, msg, jid, caption) {
     return sock.sendMessage(jid, { text: '⚠️ Envie um link válido. Exemplo: *!save https://...*' }, { quoted: msg });
   }
 
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+  link = await aceitarLinkDownload(sock, msg, jid, link);
+  if (!link) return;
 
-  if (/vt\.tiktok|vm\.tiktok|pin\.it|t\.co|bit\.ly|tinyurl/i.test(link)) {
-    try { link = await expandirUrl(link); } catch {}
-  }
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   const ytdlp = await getYtDlpPath();
   const ffmpegBin = getFfmpegPath();
@@ -530,11 +619,10 @@ async function handlePinterest(sock, msg, jid, caption) {
     return sock.sendMessage(jid, { text: '⚠️ Envie um link válido do Pinterest. Exemplo: *!pinterest https://pin.it/...*' }, { quoted: msg });
   }
 
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+  link = await aceitarLinkDownload(sock, msg, jid, link);
+  if (!link) return;
 
-  if (/pin\.it/i.test(link)) {
-    try { link = await expandirUrl(link); } catch {}
-  }
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   const ytdlp = await getYtDlpPath();
   const ffmpegBin = getFfmpegPath();
@@ -624,11 +712,10 @@ async function handleSaveRec(sock, msg, jid, caption) {
   if (!link || !link.startsWith('http')) {
     return sock.sendMessage(jid, { text: '⚠️ Envie um link válido. Exemplo: *!saverec https://...*' }, { quoted: msg });
   }
-  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+  link = await aceitarLinkDownload(sock, msg, jid, link);
+  if (!link) return;
 
-  if (/vt\.tiktok|vm\.tiktok|pin\.it|t\.co|bit\.ly|tinyurl/i.test(link)) {
-    try { link = await expandirUrl(link); } catch {}
-  }
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   const ytdlp = await getYtDlpPath();
   const ffmpegBin = getFfmpegPath();
@@ -740,9 +827,8 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
     return sock.sendMessage(jid, { text: `⚠️ Envie o link do vídeo.\nExemplo: *${P}tiktok https://vm.tiktok.com/xxx*` }, { quoted: msg });
   }
 
-  if (/vt\.tiktok|vm\.tiktok/i.test(link)) {
-    try { link = await expandirUrl(link); } catch {}
-  }
+  link = await aceitarLinkDownload(sock, msg, jid, link);
+  if (!link) return;
 
   const ytdlp = await getYtDlpPath();
   const ffmpegBin = getFfmpegPath();
@@ -872,10 +958,13 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 
 // !audio
 async function handleAudioDownload(sock, msg, jid, caption) {
-  const link = caption.replace(/^[!.,\/]*audio\s*/i, '').trim();
+  let link = caption.replace(/^[!.,\/]*audio\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
     return sock.sendMessage(jid, { text: '⚠️ Envie o link do vídeo.\nExemplo: *!audio https://youtu.be/xxx*' }, { quoted: msg });
   }
+  link = await aceitarLinkDownload(sock, msg, jid, link);
+  if (!link) return;
+
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   const ytdlp = await getYtDlpPath();
@@ -1118,7 +1207,11 @@ async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
   const id = randomUUID();
   const rawPath = tmpPath(id, '_raw.mp4');
   const outPath = tmpPath(id, '_out.mp4');
-  const target = pending.meta?.webpage_url || `ytsearch1:${pending.nome} official video`;
+  let target = pending.meta?.webpage_url || `ytsearch1:${pending.nome} official video`;
+  if (target.startsWith('http')) {
+    target = await aceitarLinkDownload(sock, msg, jid, target);
+    if (!target) return;
+  }
 
   const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '--max-filesize', '120m', '-o', rawPath, target];
   const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 180000);
@@ -1318,4 +1411,6 @@ module.exports = {
   getFfmpegPath,
   getFfprobePath,
   limparTmpAntigos,
+  _isPublicAddress: isPublicAddress,
+  _validateExternalUrl: validateExternalUrl,
 };

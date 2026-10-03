@@ -5,6 +5,7 @@ const axios = require('axios');
 const { resolvePhoneAndJid } = require('../identity');
 
 const WALLET_PATH = '/whatsapp/wallet';
+const WORK_PATH = '/whatsapp/work';
 
 function normalizePhoneJid(jid) {
   const number = String(jid || '').trim().toLowerCase().split('@')[0].split(':')[0];
@@ -77,6 +78,68 @@ async function requestAppWallet(action, jid, options = {}) {
     throw new Error('O servidor do app retornou uma carteira compartilhada inválida.');
   }
   return result;
+}
+
+async function operarCarreiraVinculada(idWhatsApp, action, options = {}) {
+  const identity = await resolvePhoneAndJid(String(idWhatsApp || ''));
+  const jid = normalizePhoneJid(identity.pnJid);
+  if (!jid) return null;
+
+  const baseUrl = (process.env.ZECA_API_URL || 'https://zeca-jvic.onrender.com').trim().replace(/\/+$/, '');
+  const secret = process.env.WHATSAPP_LINK_SECRET;
+  let apiUrl;
+  try {
+    apiUrl = new URL(baseUrl);
+  } catch {
+    throw new Error('ZECA_API_URL inválida para consultar o emprego compartilhado.');
+  }
+  if (apiUrl.protocol !== 'https:' || !secret || secret.length < 32) {
+    throw new Error('Configure ZECA_API_URL HTTPS e WHATSAPP_LINK_SECRET para usar o emprego compartilhado.');
+  }
+
+  const requestId = options.requestId || '';
+  const jobSlug = options.jobSlug || '';
+  const sessionId = options.sessionId || '';
+  const answerIndex = options.answerIndex ?? '';
+  const timestamp = String(Date.now());
+  const canonical = [
+    timestamp,
+    'POST',
+    WORK_PATH,
+    jid,
+    action,
+    requestId,
+    jobSlug,
+    sessionId,
+    answerIndex,
+  ].join('\n');
+  const signature = crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+  const payload = { action, jid, requestId, jobSlug, sessionId, answerIndex };
+
+  let response;
+  try {
+    response = await axios.post(
+      `${apiUrl.origin}${WORK_PATH}`,
+      payload,
+      {
+        timeout: 15_000,
+        headers: {
+          'x-work-timestamp': timestamp,
+          'x-work-signature': signature,
+        },
+      },
+    );
+  } catch (error) {
+    const message = error.response?.data?.error?.message;
+    if (typeof message === 'string' && message) throw new Error(message);
+    throw error;
+  }
+
+  const result = response.data?.result;
+  if (!result || typeof result !== 'object') {
+    throw new Error('O servidor do app retornou dados inválidos para o emprego compartilhado.');
+  }
+  return result.linked === true ? result : null;
 }
 
 async function consultarSaldoVinculado(jid) {
@@ -157,5 +220,6 @@ module.exports = {
   consultarSaldoPorIdentidade,
   formatarMoeda,
   normalizePhoneJid,
+  operarCarreiraVinculada,
   transferirSaldoVinculado,
 };

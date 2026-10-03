@@ -20,9 +20,19 @@ Na Central da conta do app, gere um código, abra o WhatsApp e envie a mensagem 
 
 Na primeira utilização da carteira após o vínculo, o bot migra uma única vez os saldos disponíveis e depósitos bancários dos grupos, soma também o saldo legado do perfil e zera os valores antigos para evitar duplicidade. Cada unidade antiga de `gold` equivale a R$ 0,01. O saldo canônico passa a ser compartilhado entre app e bot, armazenado em centavos de BRL; transferências e movimentações do bot atualizam a carteira do app.
 
+O uso do bot e do comando `!pix` pelo WhatsApp não exige login no app nem aparelho Android. Quem não vinculou uma conta continua usando a carteira legada do bot; quem já vinculou usa a carteira compartilhada por solicitações assinadas entre servidores, sem precisar entrar no app a cada transferência. O `!pix` transfere saldo virtual do bot/app, não faz uma liquidação de Pix bancário.
+
 O cadastro do app exige a escolha de um país. O saldo compartilhado é exibido na moeda desse país com a cotação diária em relação ao BRL; o valor armazenado e liquidado continua em centavos de BRL. Usuários sem vínculo continuam usando a carteira legada do bot, apresentada em reais. O marketplace permite transações entre usuários vinculados e não vinculados; liquidações incompletas ficam pendentes e são retomadas sem duplicar cobranças.
 
 Na carteira interna do app, transferências entre contas configuradas com moedas diferentes usam a cotação diária, cobram uma taxa de 1% adicional do remetente e creditam ao destinatário o valor integral convertido. A cotação e a taxa são exibidas antes da confirmação; transferências entre contas na mesma moeda não pagam essa taxa. A carteira permanece contabilizada em centavos de BRL.
+
+País e moeda ficam bloqueados após a escolha inicial para impedir que a conta troque de moeda para obter vantagem em preços ou transferências. Correções de cadastro precisam ser solicitadas ao suporte. Os saldos do ranking são exibidos com a moeda configurada por cada jogador, não com a moeda de quem está consultando.
+
+## Carreira compartilhada e inflação
+
+As 35 vagas e o progresso profissional são compartilhados entre o app e o WhatsApp para contas vinculadas. A carreira fica associada à conta, então contratar, pedir demissão, promover ou concluir um turno em um dos canais atualiza o outro. O app e `!trabalhar` usam desafios de turno, cooldown de 40 minutos e pagamento na carteira compartilhada; o comando continua disponível pelo WhatsApp sem login no app.
+
+Preços da loja e salários são corrigidos em 2% a cada período completo de 30 dias, com o mesmo índice no app e no backend. O servidor recalcula o valor no momento da compra ou do pagamento do turno, para que preços ou salários enviados pelo cliente não possam contornar a inflação.
 
 ## Dados sincronizados e privacidade
 

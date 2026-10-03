@@ -262,7 +262,7 @@ router.get('/integration/dashboard', async (req, res) => {
   const timestamp = req.get('x-zeca-timestamp') || '';
   const signature = req.get('x-zeca-signature') || '';
   const sections = String(req.query.sections || '').split(',').filter(Boolean).sort();
-  const allowedSections = new Set(['economy', 'missions', 'pets', 'profile']);
+  const allowedSections = new Set(['economy', 'missions', 'pets', 'profile', 'work']);
   if (!/^\d+@s\.whatsapp\.net$/.test(jid)
       || !/^\d{13}$/.test(timestamp)
       || !/^[a-f\d]{64}$/i.test(signature)
@@ -319,6 +319,29 @@ router.get('/integration/dashboard', async (req, res) => {
           messages: Math.max(0, Number(wallet.mensagens) || 0),
           quizPoints: Math.max(0, Number(wallet.quizPoints) || 0),
         })),
+      };
+    }
+    if (sections.includes('work')) {
+      const workWallets = await CarteiraGrupo.find({
+        idWhatsApp: { $in: identityVariants },
+        idGrupo: { $regex: /@g\.us$/ },
+      })
+        .select('empregoAtual totalTrabalhosComSucesso ultimoTrabalho demissaoVoluntariaAte')
+        .sort({ totalTrabalhosComSucesso: -1, ultimoTrabalho: -1 })
+        .limit(100)
+        .lean();
+      const legacyJob = workWallets.find(wallet =>
+        typeof wallet.empregoAtual === 'string' && wallet.empregoAtual.trim()
+      );
+      result.work = {
+        legacyCareer: legacyJob ? {
+          jobSlug: legacyJob.empregoAtual,
+          shiftsInTier: Math.max(0, Number(legacyJob.totalTrabalhosComSucesso) || 0),
+          lastShiftAtMs: legacyJob.ultimoTrabalho ? new Date(legacyJob.ultimoTrabalho).getTime() : 0,
+          resignUntilMs: legacyJob.demissaoVoluntariaAte
+            ? new Date(legacyJob.demissaoVoluntariaAte).getTime()
+            : 0,
+        } : null,
       };
     }
     if (sections.includes('pets')) {

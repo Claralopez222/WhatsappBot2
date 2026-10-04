@@ -7,6 +7,8 @@ const path = require('path');
 const Usuario    = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
+const crypto = require('crypto');
+const { getWalletBalance, adjustWalletLocal } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
 
 // ─── DEFINIÇÃO DAS MISSÕES ──────────────────────────────────────────────────
 
@@ -238,6 +240,48 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
           `📊 Progresso: *${progress}/${mission.target}*\n\n` +
           `_${mission.desc}_`
       }, { quoted: msg });
+      return;
+    }
+
+    // ── Conta vinculada: credita no saldo do app, não em Usuario.gold ──
+    try {
+      const walletMissao = await getWalletBalance(userId);
+      if (walletMissao.linked) {
+        // requestId determinístico (usuário + dia + missão): repetir o crédito não duplica.
+        const requestId = crypto.createHash('sha256')
+          .update(`missao:${userId}:${state.date || getTodayStr()}:${mission.id}`)
+          .digest('hex');
+
+        // 1) Credita primeiro (idempotente no servidor).
+        await adjustWalletLocal(userId, mission.reward, `Missão: ${mission.label}`, { requestId });
+
+        // 2) Só então marca como resgatada. Se duas requisições corrierem, o servidor
+        //    reconhece o mesmo requestId e a segunda cai no "já resgatou".
+        const marcado = await Usuario.findOneAndUpdate(
+          { idWhatsApp: userId, [`dailyMissions.claimed.${mission.id}`]: { $ne: true } },
+          { $set: {
+            [`dailyMissions.completed.${mission.id}`]: true,
+            [`dailyMissions.claimed.${mission.id}`]: true,
+          } },
+          { new: true }
+        );
+        if (!marcado) {
+          await sock.sendMessage(jid, {
+            text: `✅ Você já resgatou *${mission.label}* hoje!\n\n🔄 Missões renovam à meia-noite.`
+          }, { quoted: msg });
+          return;
+        }
+        await sock.sendMessage(jid, {
+          text:
+            `🎉 *MISSÃO CONCLUÍDA!* 🎉\n\n` +
+            `${mission.emoji} *${mission.label}*\n` +
+            `💰 Recompensa creditada na sua conta do app.`
+        }, { quoted: msg });
+        return;
+      }
+    } catch (e) {
+      console.error('[missao] Erro ao creditar na carteira vinculada:', e.message);
+      await sock.sendMessage(jid, { text: '❌ Erro ao creditar a recompensa. Tente novamente!' }, { quoted: msg });
       return;
     }
 

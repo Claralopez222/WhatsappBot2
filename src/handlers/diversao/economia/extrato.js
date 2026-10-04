@@ -4,6 +4,7 @@ const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { getCarteira } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { resolveUserFromMsg } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const { formatWalletAmount } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 
 const EXTRATO_LIMITE   = 10;
 const EXTRATO_DATE_FMT = { day: '2-digit', month: '2-digit' };
@@ -40,7 +41,7 @@ function resolverNomesNoItem(item = '', contactNames = {}) {
   });
 }
 
-function buildLinhaTransacao(t, index, contactNames = {}) {
+function buildLinhaTransacao(t, index, contactNames = {}, wallet = {}) {
   const { data, hora } = formatarDataHora(t.date);
   const icone = EXTRATO_ICONES[t.type] ?? '📉';
   const sinal = t.type === 'recebido' ? '+' : '-';
@@ -48,7 +49,7 @@ function buildLinhaTransacao(t, index, contactNames = {}) {
 
   const itemFormatado = resolverNomesNoItem(t.item, contactNames);
 
-  return `  ${num}. ${icone} *${sinal}${t.amount}g* — ${itemFormatado}\n      🕐 ${data} às ${hora}`;
+  return `  ${num}. ${icone} *${sinal}${formatWalletAmount(t.amount, wallet)}* — ${itemFormatado}\n      🕐 ${data} às ${hora}`;
 }
 
 // !extrato
@@ -62,7 +63,7 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
       text:
         `📊 *EXTRATO DE TRANSAÇÕES* 📊\n\n` +
         `😔 Nenhuma transação registrada ainda.\n\n` +
-        `💰 Saldo atual: *${carteira?.gold ?? 0} gold*`,
+        `💰 Saldo atual: *${formatWalletAmount(carteira?.gold ?? 0, carteira)}*`,
     }, { quoted: msg });
     return;
   }
@@ -75,13 +76,13 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
     if (t.type === 'recebido') totalEntrada += t.amount;
     else                       totalSaida   += t.amount;
 
-    return buildLinhaTransacao(t, i, contactNames);
+    return buildLinhaTransacao(t, i, contactNames, carteira);
   });
 
   const saldo        = carteira.gold ?? 0;
   const balanco      = totalEntrada - totalSaida;
   const iconeBalanco = balanco >= 0 ? '📈' : '📉';
-  const sinalBalanco = balanco >= 0 ? '+' : '';
+  const sinalBalanco = balanco >= 0 ? '+' : '-';
 
   await sock.sendMessage(jid, {
     text:
@@ -91,11 +92,11 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
       linhas.join('\n\n') +
       `\n\n━━━━━━━━━━━━━━━━\n` +
       `📋 *RESUMO DO PERÍODO*\n` +
-      `  📈 Entradas:  *+${totalEntrada} gold*\n` +
-      `  📉 Saídas:    *-${totalSaida} gold*\n` +
-      `  ${iconeBalanco} Balanço:   *${sinalBalanco}${balanco} gold*\n` +
+      `  📈 Entradas:  *+${formatWalletAmount(totalEntrada, carteira)}*\n` +
+      `  📉 Saídas:    *-${formatWalletAmount(totalSaida, carteira)}*\n` +
+      `  ${iconeBalanco} Balanço:   *${sinalBalanco}${formatWalletAmount(Math.abs(balanco), carteira)}*\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `  💰 Saldo atual: *${saldo} gold*`,
+      `  💰 Saldo atual: *${formatWalletAmount(saldo, carteira)}*`,
   }, { quoted: msg });
 }
 

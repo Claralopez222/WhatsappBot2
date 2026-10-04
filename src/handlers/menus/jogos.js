@@ -8,7 +8,7 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 ╚══════════════════════╝
 
 💰 *ECONOMIA*
-  ▸ ${P}menugold
+  ▸ ${P}menugold — economia em Reais
   ▸ ${P}missao
   ▸ ${P}garimpar
   ▸ ${P}extrato

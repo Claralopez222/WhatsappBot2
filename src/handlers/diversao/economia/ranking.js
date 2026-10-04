@@ -2,6 +2,7 @@
 
 const path = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
+const { formatWalletAmount } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
@@ -24,13 +25,12 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
     const metadata = await sock.groupMetadata(jid);
     const membrosAtuais = new Set(metadata.participants.map(p => p.id));
 
-    const candidatos = await CarteiraGrupo.find({ idGrupo: jid, gold: { $gt: 0 } })
-      .sort({ gold: -1 })
-      .limit(100)
+    const candidatos = await CarteiraGrupo.find({ idGrupo: jid })
       .lean();
 
     const top = candidatos
-      .filter(u => membrosAtuais.has(u.idWhatsApp))
+      .filter(u => membrosAtuais.has(u.idWhatsApp) && (Number(u.gold) || 0) > 0)
+      .sort((left, right) => right.gold - left.gold)
       .slice(0, 10);
 
     if (!top?.length) {
@@ -40,27 +40,24 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
       return;
     }
 
-    const totalGold = top.reduce((s, u) => s + (u.gold || 0), 0);
     const maxGold   = top[0].gold || 1;
 
     const linhas = top.map((u, i) => {
       const count = u.gold || 0;
-      const pct   = ((count / totalGold) * 100).toFixed(1);
       const bar    = barraProgresso(count, maxGold);
       const numero = u.idWhatsApp.split('@')[0].split(':')[0];
       const medal  = MEDALS[i];
 
-      return `${medal} @${numero}\n   ${bar} ${count} 💰 (${pct}%)`;
+      return `${medal} @${numero}\n   ${bar} ${formatWalletAmount(count, u.wallet || {})}`;
     }).join('\n\n');
 
     const mentions = top.map(u => u.idWhatsApp);
 
     await sock.sendMessage(jid, {
       text:
-        `💰 *RANKING DE GOLD — MEMBROS ATIVOS* 💰\n\n` +
+        `💰 *RANKING DE SALDOS — MEMBROS ATIVOS* 💰\n\n` +
         `${linhas}\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `🏦 Total do Top 10: *${totalGold} Gold*\n` +
         `⛏️ Use *!garimpar* para subir no ranking!`,
       mentions,
     }, { quoted: msg });

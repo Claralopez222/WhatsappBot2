@@ -6,17 +6,26 @@ require('dotenv').config();
 // ─── MongoDB Models ───────────────────────────────────────────────────────────
 const CarteiraGrupoModel = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
 const GrupoConfigModel   = require(path.join(__dirname, '..', 'models', 'GrupoConfig'));
-
-// ─── Firebase Firestore (SDK v9+ Modular) ────────────────────────────────────
-const { db } = require(path.join(__dirname, '..', '..', 'firebaseConfig'));
-const { doc, setDoc } = require('firebase/firestore');
+const LidMappingModel    = require(path.join(__dirname, '..', 'models', 'LidMapping'));
 
 // ─── Utilitário ───────────────────────────────────────────────────────────────
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function gerarVariantesNumero(termo) {
+  const digitos = String(termo || '').replace(/\D/g, '');
+  const variantes = new Set([digitos]);
+  if (digitos.startsWith('55') && digitos.length >= 12) {
+    const ddd = digitos.slice(2, 4);
+    const resto = digitos.slice(4);
+    if (resto.length === 8) variantes.add(`55${ddd}9${resto}`);
+    else if (resto.length === 9 && resto.startsWith('9')) variantes.add(`55${ddd}${resto.slice(1)}`);
+  }
+  return [...variantes];
+}
+
 /**
  * Descobre os grupos ativos do bot, remove do banco grupos dos quais o bot saiu,
- * e atualiza o nome real dos grupos restantes no MongoDB e Firestore.
+ * e atualiza o nome real dos grupos restantes no MongoDB.
  *
  * @param {Object} sock - Instância ativa do Baileys
  */
@@ -58,15 +67,21 @@ async function rodarAtualizacao(sock) {
     }
     console.log(`📋 O bot está participando ativamente de ${activeGroupJids.length} grupo(s).`);
 
-    // Remove do banco todos os grupos que o bot NÃO faz mais parte
-    const delCarteira = await CarteiraGrupoModel.deleteMany({ idGrupo: { $nin: activeGroupJids } });
-    const delConfig   = await GrupoConfigModel.deleteMany({ idGrupo: { $nin: activeGroupJids } });
+    if (activeGroupJids.length === 0) {
+      // Lista vazia quase sempre é falha momentânea do WhatsApp, não "bot sem grupos".
+      // Com $nin: [] o deleteMany apagaria TUDO, então não limpa nada nesta rodada.
+      console.warn('⚠️ Lista de grupos vazia; limpeza do banco ignorada por segurança.');
+    } else {
+      // Remove do banco todos os grupos que o bot NÃO faz mais parte
+      const delCarteira = await CarteiraGrupoModel.deleteMany({ idGrupo: { $nin: activeGroupJids } });
+      const delConfig   = await GrupoConfigModel.deleteMany({ idGrupo: { $nin: activeGroupJids } });
 
-    if (delCarteira.deletedCount > 0) {
-      console.log(`🧹 Removidos ${delCarteira.deletedCount} registro(s) de CarteiraGrupo de grupos em que o bot não está mais.`);
-    }
-    if (delConfig.deletedCount > 0) {
-      console.log(`🧹 Removidos ${delConfig.deletedCount} registro(s) de GrupoConfig de grupos em que o bot não está mais.`);
+      if (delCarteira.deletedCount > 0) {
+        console.log(`🧹 Removidos ${delCarteira.deletedCount} registro(s) de CarteiraGrupo de grupos em que o bot não está mais.`);
+      }
+      if (delConfig.deletedCount > 0) {
+        console.log(`🧹 Removidos ${delConfig.deletedCount} registro(s) de GrupoConfig de grupos em que o bot não está mais.`);
+      }
     }
   } catch (err) {
     console.error('⚠️ Erro ao obter lista de grupos ativos do WhatsApp:', err.message);
@@ -104,20 +119,6 @@ async function rodarAtualizacao(sock) {
       if (!nomeReal) {
         throw new Error('Campo "subject" vazio ou ausente nos metadados.');
       }
-
-const LidMappingModel    = require(path.join(__dirname, '..', 'models', 'LidMapping'));
-
-function gerarVariantesNumero(termo) {
-  const digitos = String(termo || '').replace(/\D/g, '');
-  const variantes = new Set([digitos]);
-  if (digitos.startsWith('55') && digitos.length >= 12) {
-    const ddd = digitos.slice(2, 4);
-    const resto = digitos.slice(4);
-    if (resto.length === 8) variantes.add(`55${ddd}9${resto}`);
-    else if (resto.length === 9 && resto.startsWith('9')) variantes.add(`55${ddd}${resto.slice(1)}`);
-  }
-  return [...variantes];
-}
 
       // ── 3a. Limpa membros fantasmas (que não estão mais no grupo) ─────────
       const participantesAtuais = metadata?.participants || [];
@@ -175,23 +176,6 @@ function gerarVariantesNumero(termo) {
         { $set: { nomeGrupo: nomeReal } },
         { upsert: true }
       );
-
-      try {
-        if (db) {
-          const docRef = doc(db, 'configuracoes_grupo', jid);
-          await setDoc(
-            docRef,
-            {
-              idGrupo   : jid,
-              nomeGrupo : nomeReal,
-              updatedAt : new Date(),
-            },
-            { merge: true }
-          ).catch(() => {});
-        }
-      } catch (e) {
-        // Firebase sync fallback
-      }
 
       atualizados++;
       console.log(

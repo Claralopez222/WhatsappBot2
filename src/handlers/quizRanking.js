@@ -1,7 +1,17 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
+const { contaVinculada } = require('../utils/carteira/vinculo');
 
 const PREMIOS = [1000, 500, 350];
+
+// Aceita Set/Array. Se vier vazio (o bot.js passa new Set()), descobre os grupos pelo banco.
+async function resolverGruposAtivos(gruposAtivos, filtro = {}) {
+  const informados = gruposAtivos instanceof Set
+    ? [...gruposAtivos]
+    : Array.isArray(gruposAtivos) ? gruposAtivos : [];
+  if (informados.length > 0) return informados;
+  return CarteiraGrupo.distinct('idGrupo', { idGrupo: { $regex: /@g\.us$/ }, ...filtro });
+}
 const MEDALS  = ['🥇', '🥈', '🥉'];
 
 const DOMINGO   = 0;   // 0 = domingo
@@ -53,7 +63,7 @@ function msParaProximoDomingo() {
 // ─── Premiação ────────────────────────────────────────────────────────────────
 async function executarPremiacao(sock, gruposAtivos) {
   console.log('[QuizRanking] Executando premiação semanal...');
-  const activeGroups = Array.isArray(gruposAtivos) ? gruposAtivos : [];
+  const activeGroups = await resolverGruposAtivos(gruposAtivos, { quizPoints: { $gt: 0 } });
 
   for (const groupJid of activeGroups) {
     if (!groupJid) continue;
@@ -64,6 +74,13 @@ async function executarPremiacao(sock, gruposAtivos) {
         .lean();
 
       if (!top3.length) continue;
+
+      // Se o Zeca estiver fora, adia o grupo inteiro: os pontos NÃO são zerados.
+      const estadosVinculo = await Promise.all(top3.map(u => contaVinculada(u.idWhatsApp)));
+      if (estadosVinculo.includes(null)) {
+        console.error(`[QuizRanking] Carteira indisponível; premiação adiada para ${groupJid}.`);
+        continue;
+      }
 
       let texto = `🏆 *PREMIAÇÃO SEMANAL DE QUIZ!* 🏆\n\n`;
       texto += `Parabéns aos campeões desta semana!\n\n`;
@@ -76,13 +93,17 @@ async function executarPremiacao(sock, gruposAtivos) {
         const gold = PREMIOS[i];
         const jidNorm = jidNormalizedUser(u.idWhatsApp);
 
+        const pagaGold = estadosVinculo[i] === false;
+
         await CarteiraGrupo.findOneAndUpdate(
           { idWhatsApp: u.idWhatsApp, idGrupo: groupJid },
-          { $inc: { gold }, $set: { quizPoints: 0 } },
+          { ...(pagaGold ? { $inc: { gold } } : {}), $set: { quizPoints: 0 } },
           { upsert: true }
         );
 
-        texto += `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → *+${gold} gold!*\n`;
+        texto += pagaGold
+          ? `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → *+${gold} gold!*\n`
+          : `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → _sem gold (conta vinculada ao app)_\n`;
         mentions.push(jidNorm);
       }
 
@@ -112,7 +133,7 @@ async function enviarAviso(sock, gruposAtivos, tipo) {
     '5min':  `🚨 *ÚLTIMOS 5 MINUTOS!* A premiação começa já já!\n\n_Última chance de jogar *!quiz* e subir no ranking!_ 🏃`,
   };
 
-  const activeGroups = Array.isArray(gruposAtivos) ? gruposAtivos : [];
+  const activeGroups = await resolverGruposAtivos(gruposAtivos, { quizPoints: { $gt: 0 } });
 
   for (const groupJid of activeGroups) {
     if (!groupJid) continue;

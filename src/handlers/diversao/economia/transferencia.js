@@ -8,6 +8,16 @@ const Usuario = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuari
 const { LOOKUP_ITENS_LOJA, normalizarChaveItem } = require('./_shared');
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
+function mensagemErroTransferencia(error) {
+  if (error.message === 'LINKED_UNLINKED_TRANSFER_NOT_ALLOWED') {
+    return '❌ A transferência não foi realizada: o remetente e o destinatário precisam estar vinculados ao app.';
+  }
+  if (error.message === 'LINKED_TRANSFER_RECIPIENT_NOT_LINKED') {
+    return '❌ A transferência não foi realizada: o destinatário precisa vincular a conta ao app primeiro.';
+  }
+  return null;
+}
+
 function getNumeroPuro(jid) {
   if (!jid) return '';
   return jid.split('@')[0].split(':')[0];
@@ -139,6 +149,11 @@ async function handlePix(sock, msg, jid, caption) {
       }, { quoted: msg });
       return;
     }
+    const mensagem = mensagemErroTransferencia(e);
+    if (mensagem) {
+      await sock.sendMessage(jid, { text: mensagem }, { quoted: msg });
+      return;
+    }
     throw e;
   }
 
@@ -200,6 +215,7 @@ async function handlePixMulti(sock, msg, jid, caption) {
   }
 
   let enviados = 0;
+  let transferenciasRestritas = false;
   const mentionsList = [userId];
 
   for (const target of targets) {
@@ -209,6 +225,7 @@ async function handlePixMulti(sock, msg, jid, caption) {
       mentionsList.push(target);
     } catch (e) {
       console.error(`[handlePixMulti] Erro ao enviar para ${target}:`, e.message);
+      if (mensagemErroTransferencia(e)) transferenciasRestritas = true;
     }
   }
 
@@ -216,10 +233,11 @@ async function handlePixMulti(sock, msg, jid, caption) {
 
   await sock.sendMessage(jid, {
     text:
-      `✅ *PIX MÚLTIPLO CONCLUÍDO!* ✅\n\n` +
+      `${transferenciasRestritas ? '⚠️ *PIX MÚLTIPLO PARCIALMENTE CONCLUÍDO*' : '✅ *PIX MÚLTIPLO CONCLUÍDO!*'}\n\n` +
       `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} gold* cada!\n` +
       `💸 Total distribuído: *${enviados * quantiaPorPessoa} gold*\n` +
-      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* gold`,
+      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* gold` +
+      (transferenciasRestritas ? '\n\n❌ Algumas transferências exigiam que ambas as contas estivessem vinculadas ao app.' : ''),
     mentions: mentionsList,
   }, { quoted: msg });
 }
@@ -282,6 +300,11 @@ async function handlePixDoar(sock, msg, jid, caption) {
       await sock.sendMessage(jid, {
         text: `⚠️ Você não possui *${quantia} gold* suficientes para doar.`,
       }, { quoted: msg });
+      return;
+    }
+    const mensagem = mensagemErroTransferencia(e);
+    if (mensagem) {
+      await sock.sendMessage(jid, { text: mensagem }, { quoted: msg });
       return;
     }
     await sock.sendMessage(jid, { text: '❌ Ocorreu um erro ao realizar a doação.' }, { quoted: msg });

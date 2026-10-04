@@ -42,8 +42,8 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   await sock.sendMessage(jid, {
     text:
-      `🪙 *SISTEMA DE GOLD* 🪙\n\n` +
-      `${P}gold — ver saldo\n` +
+      `💵 *SISTEMA DE REAIS* 💵\n\n` +
+      `${P}reais / ${P}real — ver saldo (${P}gold continua como alias)\n` +
       `${P}loja — loja geral\n` +
       `${P}lojafood — loja de comida\n` +
       `${P}lojapet — loja de pets\n` +
@@ -52,17 +52,17 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
       `${P}buy [item] — comprar item\n` +
       `${P}vender [item] — vender item\n` +
       `${P}inventario — ver inventário\n` +
-      `${P}pix [@] [valor] — transferir gold\n` +
+      `${P}pix [@] [valor] — transferir Reais\n` +
       `${P}pixmulti [@1] [@2] [valor] — transferir para vários\n` +
-      `${P}pixdoar [valor] — doar gold para um membro\n` +
-      `${P}apostar [valor] — apostar gold\n` +
+      `${P}pixdoar [valor] — doar Reais para um membro\n` +
+      `${P}apostar [valor] — apostar Reais\n` +
       `${P}slots [valor] — jogar slots\n` +
       `${P}corrida [valor] — corrida de bichos\n` +
       `${P}garimpar — garimpar recursos\n` +
-      `${P}extrato — histórico de gold\n` +
+      `${P}extrato — histórico de transações\n` +
       `${P}banco [valor] — investir no banco\n` +
       `${P}resgatar — resgatar do banco\n` +
-      `${P}rankgold — ranking de gold\n` +
+      `${P}rankgold — ranking de saldo\n` +
       `${P}give [@] [item] — dar item do inventário`,
   }, { quoted: msg });
 }
@@ -107,21 +107,21 @@ async function handleSistemaGold(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   await sock.sendMessage(jid, {
     text:
-      `📖 *COMO FUNCIONA O GOLD* 📖\n\n` +
-      `💰 *O que é Gold?*\n` +
-      `Gold é a moeda virtual do bot. Use para comprar itens, apostar e muito mais!\n\n` +
-      `📥 *Como ganhar Gold:*\n` +
-      `• Bônus diário de 100 gold ao mandar mensagem\n` +
+      `📖 *COMO FUNCIONA A MOEDA* 📖\n\n` +
+      `💰 *Reais*\n` +
+      `Os saldos e valores da economia do bot são exibidos em Reais ou na moeda local da conta vinculada. Use para comprar itens, apostar e muito mais!\n\n` +
+      `📥 *Como ganhar:*\n` +
+      `• Bônus diário ao mandar mensagem\n` +
       `• Trabalhar com ${P}trabalhar\n` +
       `• Garimpar com ${P}garimpar\n` +
       `• Vender itens com ${P}vender\n` +
       `• Ganhar no cassino/corrida\n` +
       `• Pescar e vender peixes\n\n` +
-      `📤 *Como gastar Gold:*\n` +
+      `📤 *Como gastar:*\n` +
       `• Comprar itens na loja\n` +
       `• Apostar em jogos\n` +
       `• Transferir para outros\n` +
-      `• Investir no banco\n\n` +
+      `• Investir no banco (indisponível para contas vinculadas)\n\n` +
       `💡 *Dica:* Use ${P}menugold para ver todos os comandos!`,
   }, { quoted: msg });
 }
@@ -168,12 +168,12 @@ async function handleMenuAuxiliar(sock, msg, jid, getPrefix) {
       `📋 *MENU AUXILIAR* 📋\n\n` +
       `🎮 *Jogos e Diversão:*\n` +
       `▸ ${P}brincadeiras — ver brincadeiras\n` +
-      `▸ ${P}menugold — comandos de gold\n` +
+      `▸ ${P}menugold — comandos da economia em Reais\n` +
       `▸ ${P}menupet — comandos de pets\n` +
       `▸ ${P}menumarket — marketplace\n` +
       `▸ ${P}menuwork — empregos\n\n` +
       `⚙️ *Sistemas:*\n` +
-      `▸ ${P}sistemgold — como funciona o gold\n` +
+      `▸ ${P}sistemgold — como funciona a moeda\n` +
       `▸ ${P}sistempet — como funciona os pets\n` +
       `▸ ${P}sistemmedieval — sistema medieval\n\n` +
       `👥 *Grupos:*\n` +

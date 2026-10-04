@@ -8,6 +8,7 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const CasalEstado   = require(path.join(__dirname, '..', '..', 'models', 'CasalEstado'));
 const { getNivelInfo }  = require(path.join(__dirname, '..', '..', 'utils', 'levelUtils'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 
 // ═══════════════════════════════════════════════════════════════
 // ─── CONFIGURAÇÃO ──────────────────────────────────────────────
@@ -330,6 +331,8 @@ async function handleXpDobro(sock, msg, jid, senderJid, relacionamentos) {
       return;
     }
 
+    if (await bloqueadoPorVinculo(sock, msg, jid, normalizarJid(senderJid))) return;
+
     const { ok, saldo } = await debitarGold(jid, senderJid, CONFIG.CUSTO_XP_DOBRO, 'XP Dobro');
     if (!ok) {
       await responder(sock, msg, jid,
@@ -402,6 +405,8 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
   const found = await exigirRelacionamento(sock, msg, jid, senderNorm, relacionamentos,
     '💔 Você precisa estar em um relacionamento para dar uma surpresa!');
   if (!found) return;
+
+  if (await bloqueadoPorVinculo(sock, msg, jid, normalizarJid(senderJid))) return;
 
   const { ok, saldo } = await debitarGold(jid, senderJid, CONFIG.CUSTO_SURPRESA, 'Surpresa romântica');
   if (!ok) {

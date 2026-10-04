@@ -6,6 +6,7 @@ const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuari
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { incrementMission } = require('./missoes');
 const { BANCO_CONFIG } = require(path.join(__dirname, '..', '..', 'config', 'banco'));
+const { getWalletBalance } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
 
 // ─── Helpers puros ────────────────────────────────────────────────────────────
 
@@ -98,6 +99,14 @@ async function handleBanco(sock, msg, jid, caption) {
     return;
   }
 
+  const linkedWallet = await getWalletBalance(userId);
+  if (linkedWallet.linked) {
+    await sock.sendMessage(jid, {
+      text: '🏦 Seu dinheiro da conta vinculada é compartilhado entre os grupos e fica disponível em !reais (ou !real). Novos investimentos do banco do bot não estão disponíveis para contas vinculadas.',
+    }, { quoted: msg });
+    return;
+  }
+
   const carteira = await getCarteiraGrupo(userId, idGrupo);
   const banco    = carteira.banco ?? {};
   const today    = new Date().toISOString().split('T')[0];
@@ -148,7 +157,7 @@ async function handleBanco(sock, msg, jid, caption) {
           `  💵 Exemplo: *!banco 500*\n\n` +
           `*RENDIMENTOS:*\n` +
           `  📈 Juros: ${BANCO_CONFIG.JUROS_MIN}–${BANCO_CONFIG.JUROS_MAX}%\n` +
-          `  ⏰ Prazo: *3 horas*\n\n` +
+          `  ⏰ Prazo: *20 minutos*\n\n` +
           `*RESGATE:*\n` +
           `  💎 Use: *!resgatar* (neste grupo)\n\n` +
           `━━━━━━━━━━━━━━━━\n` +
@@ -307,7 +316,7 @@ async function handleBanco(sock, msg, jid, caption) {
         `*RESUMO DO INVESTIMENTO:*\n` +
         `  💵 Valor investido: *${amount}* gold\n` +
         `  📈 Taxa de juros: *${interest}%*\n` +
-        `  ⏰ Prazo: *3 horas*\n\n` +
+        `  ⏰ Prazo: *20 minutos*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `*RETORNO ESPERADO:*\n` +
         `  💎 Resgate em: *${futureAmount}* gold\n` +
@@ -332,6 +341,14 @@ async function handleResgatar(sock, msg, jid) {
   if (!idGrupo) {
     await sock.sendMessage(jid, {
       text: '⚠️ O banco só funciona dentro de grupos!',
+    }, { quoted: msg });
+    return;
+  }
+
+  const linkedWallet = await getWalletBalance(userId);
+  if (linkedWallet.linked) {
+    await sock.sendMessage(jid, {
+      text: '🏦 Seu dinheiro da conta vinculada é compartilhado entre os grupos e fica disponível em !reais (ou !real). Investimentos do banco do bot não estão disponíveis para contas vinculadas.',
     }, { quoted: msg });
     return;
   }

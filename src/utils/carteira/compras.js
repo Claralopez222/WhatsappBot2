@@ -2,6 +2,7 @@
 
 const mongoose = require('mongoose');
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
+const { contaVinculada } = require('./vinculo');
 
 /**
  * Compra genérica: debita gold da CarteiraGrupo e credita `quantidade` de um
@@ -37,6 +38,10 @@ async function comprarComGold({
   if (isNaN(qtd) || qtd <= 0) {
     return { ok: false, motivo: 'PARAMETROS_INVALIDOS' };
   }
+
+  const vinculada = await contaVinculada(idWhatsApp);
+  if (vinculada === null) return { ok: false, motivo: 'ERRO' };
+  if (vinculada) return { ok: false, motivo: 'CONTA_VINCULADA' };
 
   // 1. Tenta realizar via transação Mongo (modo Replica Set)
   let session = null;
@@ -173,6 +178,10 @@ async function venderComGold({
   if (isNaN(qtd) || qtd <= 0) {
     return { ok: false, motivo: 'PARAMETROS_INVALIDOS' };
   }
+
+  const vinculada = await contaVinculada(idWhatsApp);
+  if (vinculada === null) return { ok: false, motivo: 'ERRO' };
+  if (vinculada) return { ok: false, motivo: 'CONTA_VINCULADA' };
 
   const invAtualizado = await modeloInventario.findOneAndUpdate(
     { ...filtroInventario, [campoInventario]: { $gte: qtd } },

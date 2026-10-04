@@ -6,6 +6,7 @@ const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', '
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
 const { alterarGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { getSenderJid } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const { formatWalletAmount, getWalletBalance } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 
 // Fallback seguro caso missoes não exporte prepareDailyMissionState/incrementMission
 let prepareDailyMissionState = async () => {};
@@ -81,6 +82,14 @@ async function handleGarimpar(sock, msg, jid) {
   const userIdRaw = getSenderJid(msg);
   const userId    = jidNormalizedUser(userIdRaw);
   const agora     = Date.now();
+
+  const walletGarimpo = await getWalletBalance(userId);
+  if (walletGarimpo.linked) {
+    await sock.sendMessage(jid, {
+      text: 'O garimpo está temporariamente indisponível para contas vinculadas ao app.',
+    }, { quoted: msg });
+    return;
+  }
 
   if (!global._garimpoInFlight) global._garimpoInFlight = new Set();
   if (global._garimpoInFlight.has(userId)) {
@@ -172,13 +181,13 @@ async function handleGarimpar(sock, msg, jid) {
 
       linhas.push(``);
       if (goldFinal > 0) {
-        linhas.push(`💰 Encontrado: *+${goldFinal} gold*`);
+        linhas.push(`💰 Encontrado: *+${formatWalletAmount(goldFinal, carteira)}*`);
       } else {
         linhas.push(`💰 Encontrado: *nada — evento destruiu tudo!*`);
       }
 
       linhas.push(`⚡ XP ganho: *+${xpFinal} XP*`);
-      linhas.push(`💳 Novo saldo: *${carteira?.gold ?? '?'} gold*`);
+      linhas.push(`💳 Novo saldo: *${formatWalletAmount(carteira?.gold ?? 0, carteira)}*`);
       linhas.push(``);
       linhas.push(`⏰ Próximo garimpo em: *15 minutos*`);
 

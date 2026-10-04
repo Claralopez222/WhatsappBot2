@@ -4,6 +4,8 @@ const path   = require('path');
 const Filho  = require(path.join(__dirname, '..', '..', 'models', 'Filho'));
 const Usuario= require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CHANCE_FILHO       = 0.40;  // 40% de chance
@@ -377,6 +379,10 @@ async function handleRemedioFilho(sock, msg, jid) {
     if (!filhoDoente) {
       return sock.sendMessage(jid, { text: '✅ Nenhum filho doente no momento!' }, { quoted: msg });
     }
+
+    // Conta vinculada ao app: o gold do grupo não vale mais (o saldo vive no app).
+    const userIdCarteira = await resolverJidCarteira(userId, jid);
+    if (await bloqueadoPorVinculo(sock, msg, jid, userIdCarteira)) return;
 
     // Débito atômico — evita corrida com outros comandos de gold
     const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(

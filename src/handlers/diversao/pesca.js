@@ -16,6 +16,7 @@
 const path          = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { getCarteira, alterarGold, resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
 
@@ -326,6 +327,7 @@ async function handlePescar(sock, msg, jid) {
   }
 
   userId = await resolverJidCarteira(userId, groupId);
+  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
 
   try {
     const carteira = await getCarteira(userId, groupId);
@@ -591,6 +593,7 @@ async function handleComprarPesca(sock, msg, jid, caption) {
   }
 
   userId = await resolverJidCarteira(userId, groupId);
+  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
 
   // ── Remove o prefixo do comando antes de parsear os argumentos ──
   // Sem isso, partes[0] capturaria "!buypesca" como nome do item.
@@ -831,6 +834,7 @@ async function handleVenderPesca(sock, msg, jid, caption) {
   if (!groupId) return reply(sock, jid, msg, '🎣 Venda de pesca só funciona em grupos!');
 
   userId = await resolverJidCarteira(userId, groupId);
+  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
 
   const args    = (caption ?? '').replace(/^[!.,\/]sellpesca\s*/i, '').trim().split(/\s+/);
   const itemKey = (args[0] ?? '').toLowerCase() || null;

@@ -46,7 +46,7 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
   ▸ ${P}menujogos
   ▸ ${P}brincadeiras
   ▸ ${P}alteradores
-  ▸ ${P}menugold
+  ▸ ${P}menugold — economia em Reais
   ▸ ${P}menumarket
   ▸ ${P}menumediev
   ▸ ${P}menuroubar
@@ -121,7 +121,7 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 ╚══════════════════════╝
 
 💰 *ECONOMIA*
-  ▸ ${P}menugold
+  ▸ ${P}menugold — economia em Reais
   ▸ ${P}missao
   ▸ ${P}garimpar
   ▸ ${P}extrato

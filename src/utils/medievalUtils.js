@@ -6,6 +6,7 @@
 
 const MedievalPersonagem = require('../models/MedievalPersonagem');
 const GrupoConfig        = require('../models/GrupoConfig');
+const { contaVinculada, bloqueadoPorVinculo } = require('./carteira/vinculo');
 
 const JANELA_SAQUE_MS = 3 * 60 * 1000; // 3 minutos
 
@@ -562,6 +563,8 @@ module.exports = {
   POCOES,
   MISSOES,
   JANELA_SAQUE_MS,
+  contaVinculada,
+  bloqueadoPorVinculo,
   somenteGrupo,
   getModoAtivo,
   sanitizarNome,

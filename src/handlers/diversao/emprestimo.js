@@ -3,6 +3,7 @@
 const path = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 // Usuario removido — level agora vem do grupo
 
 // ─── Configuração ─────────────────────────────────────────────────────────────
@@ -313,6 +314,8 @@ async function handleEmprestimo(sock, msg, jid, caption) {
     await enviarErro(sock, msg, jid, 'Não foi possível identificar seu usuário.');
     return;
   }
+
+  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
 
   const args = (caption || '').trim().split(/\s+/);
 

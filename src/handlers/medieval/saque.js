@@ -8,7 +8,7 @@ const CarteiraGrupo      = require('../../models/CarteiraGrupo');
 const {
   ARMADURAS, getArma,
   somenteGrupo, getModoAtivo, verificarRecuperacaoDerrota, JANELA_SAQUE_MS,
-  getInventarioMap, itemKeyParaNome,
+  getInventarioMap, itemKeyParaNome, bloqueadoPorVinculo,
 } = require('../../utils/medievalUtils');
 
 const RESPOSTA_TIMEOUT_MS = 60 * 1000;
@@ -51,6 +51,7 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
       return sock.sendMessage(jid, { text: '😂 Você não pode saquear a si mesmo!' }, { quoted: msg });
     }
 
+    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid, targetJid)) return;
     const perdedor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid });
     if (!perdedor) {
       return sock.sendMessage(jid, { text: '❌ Esse jogador não tem personagem medieval.' }, { quoted: msg });
@@ -162,6 +163,13 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
     if (!await getModoAtivo(jid)) {
       limparEstado(jid, senderJid);
       await sock.sendMessage(jid, { text: '⚔️ O modo medieval foi desativado neste grupo — saque cancelado.' }, { quoted: msg });
+      return true;
+    }
+
+    // Reconfere no momento da confirmação: alguém pode ter vinculado a conta
+    // durante os 60 segundos de espera, e o gold iria para o saldo legado.
+    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid, estado.perdedorJid)) {
+      limparEstado(jid, senderJid);
       return true;
     }
 

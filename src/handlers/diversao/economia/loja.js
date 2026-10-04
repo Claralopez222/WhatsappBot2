@@ -17,6 +17,13 @@ try {
 } catch {}
 
 const { resolverItemKey } = require('./_shared');
+const { formatWalletAmount, getWalletBalance } = require('../../../utils/carteira/wallet');
+
+async function getMoneyFormatter(msg) {
+  const userId = jidNormalizedUser(resolveUserFromMsg(msg));
+  const wallet = await getWalletBalance(userId);
+  return amount => formatWalletAmount(amount, wallet);
+}
 
 // !gold
 async function handleGold(sock, msg, jid, getPrefix, contactNames) {
@@ -27,6 +34,7 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
   try {
     const carteira  = await getCarteira(userId, idGrupo);
     const gold      = carteira?.gold ?? 0;
+    const saldoFormatado = formatWalletAmount(gold, carteira);
     const numero    = userId.split('@')[0];
     // msg.pushName é o nome de exibição que o próprio WhatsApp já manda em
     // toda mensagem — funciona mesmo antes do evento contacts.upsert chegar.
@@ -39,9 +47,9 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
 
     const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
     const texto =
-      `💰 *SALDO DE GOLD* 💰\n\n` +
+      `💰 *SALDO DA CONTA* 💰\n\n` +
       `👤 *${userName}*\n` +
-      `💵 Saldo neste grupo: *${gold} gold*\n` +
+      `💵 Saldo ${carteira?.walletLinked ? 'da conta' : 'neste grupo'}: *${saldoFormatado}*\n` +
       `📊 Status: ${status}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*FORMAS DE GANHAR:*\n` +
@@ -82,6 +90,7 @@ async function handleLoja(sock, msg, jid, getPrefix) {
 
 // !lojafood
 async function handleLojaFood(sock, msg, jid, getPrefix) {
+  const formatMoney = await getMoneyFormatter(msg);
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const categorias = {
     '🍕 PRINCIPAIS': ['pizza', 'hamburger', 'frango', 'picanha'],
@@ -95,7 +104,7 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
     for (const k of keys) {
       const item = ITENS_LOJA[k];
       if (item) {
-        texto += `  🍽️ ${item.nome} — *${item.preco}* gold\n`;
+        texto += `  🍽️ ${item.nome} — *${formatMoney(item.preco)}*\n`;
         texto += `    └ chave: \`${k}\`\n`;
       }
     }
@@ -112,6 +121,7 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
 
 // !lojapet
 async function handleLojaPet(sock, msg, jid, getPrefix) {
+  const formatMoney = await getMoneyFormatter(msg);
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const categorias = {
     '🦴 COMIDAS':      ['racao', 'racaopremium', 'carnefresh', 'peixe', 'leite'],
@@ -126,7 +136,7 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
     for (const k of keys) {
       const item = ITENS_LOJA[k];
       if (item) {
-        texto += `  🐾 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `  🐾 ${item.nome} — *${formatMoney(item.preco)}*\n`;
         texto += `    └ chave: \`${k}\`\n`;
       }
     }
@@ -143,6 +153,7 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
 
 // !lojatec
 async function handleLojaTec(sock, msg, jid, getPrefix) {
+  const formatMoney = await getMoneyFormatter(msg);
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const categorias = {
     '🖥️ COMPUTADORES': ['notebook', 'pcgamerlegendario'],
@@ -158,7 +169,7 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
     for (const k of keys) {
       const item = ITENS_LOJA[k];
       if (item) {
-        texto += `  💻 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `  💻 ${item.nome} — *${formatMoney(item.preco)}*\n`;
         texto += `    └ chave: \`${k}\`\n`;
       }
     }
@@ -175,6 +186,7 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
 
 // !lojacasal
 async function handleLojaCasal(sock, msg, jid, getPrefix) {
+  const formatMoney = await getMoneyFormatter(msg);
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const categorias = {
     '🎁 PRESENTES ROMÂNTICOS': ['flores', 'carta', 'morango', 'urso', 'caixa'],
@@ -188,7 +200,7 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
     for (const k of keys) {
       const item = ITENS_LOJA[k];
       if (item) {
-        texto += `  💕 ${item.nome} — *${item.preco}* gold\n`;
+        texto += `  💕 ${item.nome} — *${formatMoney(item.preco)}*\n`;
         texto += `    └ chave: \`${k}\`\n`;
       }
     }
@@ -223,15 +235,24 @@ async function handleComprar(sock, msg, jid, caption) {
     : null;
 
   if (!itemInfo) {
+    const formatMoney = await getMoneyFormatter(msg);
     const lista = Object.entries(ITENS_LOJA)
       .slice(0, 15)
-      .map(([, v]) => `  • ${v.nome} (${v.preco} gold)`)
+      .map(([, v]) => `  • ${v.nome} (${formatMoney(v.preco)})`)
       .join('\n');
     await sock.sendMessage(jid, {
       text:
         `⚠️ *ITEM NÃO ENCONTRADO*\n\nO item *${itemDigitado}* não existe!\n\n` +
         `━━━━━━━━━━━━━━━━\n*ITENS DISPONÍVEIS:*\n${lista}\n\n` +
         `*USE:*\n  !buy <item>\n  Exemplo: !buy pizza`,
+    }, { quoted: msg });
+    return;
+  }
+
+  const walletBalance = await getWalletBalance(userId);
+  if (walletBalance.linked) {
+    await sock.sendMessage(jid, {
+      text: 'A compra de itens com efeitos no inventário está temporariamente indisponível para contas vinculadas.',
     }, { quoted: msg });
     return;
   }
@@ -259,10 +280,10 @@ async function handleComprar(sock, msg, jid, caption) {
       const saldoAtual    = carteiraAtual?.gold ?? 0;
       await sock.sendMessage(jid, {
         text:
-          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${preco}* gold neste grupo!\n\n` +
+          `⚠️ *SALDO INSUFICIENTE*\n\nVocê não tem *${formatWalletAmount(preco, walletBalance)}* neste grupo!\n\n` +
           `━━━━━━━━━━━━━━━━\n*SEU SALDO:*\n` +
-          `  💰 Disponível: *${saldoAtual}* gold\n` +
-          `  💎 Precisa de: *${preco}* gold`,
+          `  💰 Disponível: *${formatWalletAmount(saldoAtual, carteiraAtual)}*\n` +
+          `  💎 Precisa de: *${formatWalletAmount(preco, carteiraAtual)}*`,
       }, { quoted: msg });
       return;
     }
@@ -280,15 +301,22 @@ async function handleComprar(sock, msg, jid, caption) {
       `🛒 *Você comprou com sucesso!*\n\n` +
       `━━━━━━━━━━━━━━━━\n*DETALHES:*\n` +
       `  📦 Item: *${itemInfo.nome}*\n` +
-      `  💵 Preço: *${preco}* gold\n\n` +
+      `  💵 Preço: *${formatWalletAmount(preco, walletBalance)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n*SALDO ATUALIZADO:*\n` +
-      `  ✅ Novo saldo: *${saldoFinal}* gold`,
+      `  ✅ Novo saldo: *${formatWalletAmount(saldoFinal, resultado.carteira)}*`,
   }, { quoted: msg });
 }
 
 // !vender
 async function handleVender(sock, msg, jid, caption) {
   const userId = jidNormalizedUser(resolveUserFromMsg(msg));
+  const wallet = await getWalletBalance(userId);
+  if (wallet.linked) {
+    await sock.sendMessage(jid, {
+      text: 'A venda direta de itens está temporariamente indisponível para contas vinculadas; seu saldo permanece seguro.',
+    }, { quoted: msg });
+    return;
+  }
   const match  = caption.match(/vender\s+(\S+)\s+(\d+)\s+(\d+)/i);
 
   if (!match) {
@@ -354,11 +382,11 @@ async function handleVender(sock, msg, jid, caption) {
     text:
       `✅ *VENDA REALIZADA!* ✅\n\n` +
       `📦 Item: *${itemInfo.nome}*\n` +
-      `💵 Preço unitário: *${preco} gold*${avisoPrecoAjustado}\n` +
+      `💵 Preço unitário: *${formatWalletAmount(preco, carteira)}*${avisoPrecoAjustado}\n` +
       `📊 Quantidade: *${quantidade}*\n` +
-      `💰 Total recebido: *${totalRecebido} gold*\n\n` +
+      `💰 Total recebido: *${formatWalletAmount(totalRecebido, carteira)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
-      `💎 Novo saldo: *${carteira?.gold ?? '?'} gold*`,
+      `💎 Novo saldo: *${formatWalletAmount(carteira?.gold ?? 0, carteira)}*`,
   }, { quoted: msg });
 }
 
@@ -413,7 +441,7 @@ async function handleInventario(sock, msg, jid) {
       `${linhas}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*TOTAL:* ${totalItens} item(ns)\n\n` +
-      `💰 *SALDO NESTE GRUPO:* *${carteira?.gold ?? 0} gold*`,
+      `💰 *SALDO ${carteira?.walletLinked ? 'DA CONTA' : 'NESTE GRUPO'}:* *${formatWalletAmount(carteira?.gold ?? 0, carteira)}*`,
   }, { quoted: msg });
 }
 

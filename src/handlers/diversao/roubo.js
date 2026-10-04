@@ -2,7 +2,8 @@
 
 /**
  * Sistema de Roubo — Piroquinhas Bot
- * Comandos: !menuroubar, !roubar, !menusec, !equiparroubo, !equiparsec
+ * Comandos: !menuroubar, !roubar, !roubarbanco, !menusec, !equiparroubo, !equiparsec
+ *           !buyroubarbanco, !equiparroubarbanco, !invroubarbanco
  *           !meusitensroubo, !meussec, !meiosec, !comprarroubo, !comprarsec
  *
  * Toda a lógica é isolada por grupo via CarteiraGrupo.
@@ -19,6 +20,9 @@ const {
 } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { incrementMission } = require('./missoes');
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
+const { getWalletBalance } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
+
+const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 
 // ─── CONFIGURAÇÕES ────────────────────────────────────────────────────────────
 
@@ -47,6 +51,14 @@ const ITENS_ROUBO = {
   cavador:    { nome: '⛏️ Picareta de Diamante', preco: 500, bonus: 60 },
 };
 
+const ITENS_ROUBO_BANCO = {
+  macarico_cofre: { nome: '🔥 Maçarico para Cofre',        preco: 900,  bonus: 15 },
+  furadeira:      { nome: '🛠️ Furadeira Industrial',      preco: 1500, bonus: 25 },
+  clone_cartao:   { nome: '💳 Clonador de Cartões',        preco: 2400, bonus: 35 },
+  pulso_emp:      { nome: '⚡ Pulso Eletromagnético',      preco: 3800, bonus: 45 },
+  tuneladora:     { nome: '🚜 Tuneladora de Alta Pressão', preco: 6000, bonus: 60 },
+};
+
 // ─── CATÁLOGO — ITENS DE DEFESA ───────────────────────────────────────────────
 
 const ITENS_SEGURANCA = {
@@ -58,6 +70,10 @@ const ITENS_SEGURANCA = {
   bunker:    { nome: '🛡️ Bunker Subterrâneo',   preco: 500, defesa: 55 },
   laser:     { nome: '🔴 Raios Laser',           preco: 600, defesa: 65 },
   militares: { nome: '🪖 Segurança Militar',     preco: 800, defesa: 80 },
+  drones_taticos: { nome: '🚁 Enxame de Drones Táticos',      preco: 1200, defesa: 85 },
+  equipe_elite:   { nome: '🦾 Equipe de Segurança de Elite',  preco: 2200, defesa: 90 },
+  cofre_titanio:  { nome: '🏦 Cofre Blindado de Titânio',     preco: 4000, defesa: 95 },
+  central_ia:     { nome: '🧠 Central de Segurança com IA',   preco: 7500, defesa: 100 },
 };
 
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
@@ -133,15 +149,24 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
     texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
   }
 
+  texto += `\n🏦 *FERRAMENTAS PARA ASSALTO A BANCO*\n`;
+  for (const [key, item] of Object.entries(ITENS_ROUBO_BANCO)) {
+    texto += `  ▸ ${item.nome} — *${item.preco}* gold\n`;
+    texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
+  }
+
   texto += `
 📜 *COMANDOS*
-  ▸ ${P}buyroubo _(item)_ — Comprar item
-  ▸ ${P}equiparroubo _(item)_ — Equipar item
-  ▸ ${P}invroubo — Ver inventário de ataque
+  ▸ ${P}buyroubo _(item)_ — Comprar item/ferramenta
+  ▸ ${P}equiparroubo _(item)_ — Equipar para o tipo de roubo
+  ▸ ${P}invroubo — Ver inventários de roubo e banco
   ▸ ${P}roubar @pessoa — Roubar alguém
+  ▸ ${P}roubarbanco @pessoa — Assaltar o banco de alguém
 
 ⚠️ *REGRAS*
   • Item equipado é obrigatório para roubar!
+  • Assaltar bancos exige ferramenta própria, comprada e equipada pelos comandos acima.
+  • A ferramenta é consumida na tentativa de assalto ao banco.
   • Cooldown: *${formatarTempo(COOLDOWN_ROUBO_MS)}* entre tentativas
   • Taxa base de sucesso: *${TAXA_SUCESSO_BASE}%*
 
@@ -189,7 +214,9 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
 
-  const match = caption.match(/buyroubo\s+(\S+)/i);
+  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
+
+  const match = String(caption || '').match(/buyroubo\s+(\S+)/i);
   if (!match) {
     await sock.sendMessage(jid, {
       text: '⚠️ Use: *!buyroubo <item>*\nExemplo: *!buyroubo dinamite*',
@@ -198,7 +225,8 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   }
 
   const itemSlug = match[1].toLowerCase().trim();
-  const itemInfo = ITENS_ROUBO[itemSlug];
+  const itemInfo = ITENS_ROUBO[itemSlug] || ITENS_ROUBO_BANCO[itemSlug];
+  const campoInventario = ITENS_ROUBO[itemSlug] ? 'itensRoubo' : 'itensRouboBanco';
   if (!itemInfo) {
     await sock.sendMessage(jid, {
       text: `⚠️ Item *${itemSlug}* não encontrado na loja de roubo!\nUse *!menuroubar* para ver os disponíveis.`,
@@ -231,7 +259,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   }
 
   try {
-    await incrementarItem(userId, idGrupo, 'itensRoubo', itemSlug);
+    await incrementarItem(userId, idGrupo, campoInventario, itemSlug);
   } catch (e) {
     console.error('Erro ao registrar item de roubo, reembolsando:', e.message);
     try {
@@ -253,7 +281,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   await sock.sendMessage(jid, {
     text:
       `✅ *COMPRA REALIZADA!*\n\n` +
-      `🎭 *Item:* ${itemInfo.nome}\n` +
+      `🔧 *Item/ferramenta:* ${itemInfo.nome}\n` +
       `💵 *Preço:* ${itemInfo.preco} gold\n` +
       `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
       `💎 *Saldo restante:* ${carteiraFinal.gold} gold\n\n` +
@@ -266,6 +294,8 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
 async function handleComprarSec(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
+
+  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
 
   const match = caption.match(/buysec\s+(\S+)/i);
   if (!match) {
@@ -343,7 +373,7 @@ async function handleComprarSec(sock, msg, jid, caption) {
 async function handleEquiparRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match   = caption.match(/equiparroubo\s+(\S+)/i);
+  const match   = String(caption || '').match(/equiparroubo\s+(\S+)/i);
 
   if (!match) {
     await sock.sendMessage(jid, {
@@ -353,7 +383,10 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
   }
 
   const itemSlug = match[1].toLowerCase().trim();
-  const itemInfo = ITENS_ROUBO[itemSlug];
+  const itemInfo = ITENS_ROUBO[itemSlug] || ITENS_ROUBO_BANCO[itemSlug];
+  const ferramentaBanco = Boolean(ITENS_ROUBO_BANCO[itemSlug]);
+  const campoInventario = ferramentaBanco ? 'itensRouboBanco' : 'itensRoubo';
+  const campoEquipado = ferramentaBanco ? 'equiparouboBanco' : 'equiparoubo';
 
   if (!itemInfo) {
     await sock.sendMessage(jid, {
@@ -363,7 +396,7 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
   }
 
   const carteira = await getCarteira(userId, idGrupo);
-  const qtd      = getItemQtd(carteira.itensRoubo, itemSlug);
+  const qtd = getItemQtd(carteira[campoInventario], itemSlug);
 
   if (qtd <= 0) {
     await sock.sendMessage(jid, {
@@ -376,19 +409,21 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
 
   await CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: userId, idGrupo },
-    { $set: { equiparoubo: itemSlug } }
+    { $set: { [campoEquipado]: itemSlug } }
   );
 
-  const taxaFinal = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + itemInfo.bonus);
+  const taxaBase = ferramentaBanco ? TAXA_SUCESSO_BASE_BANCO : TAXA_SUCESSO_BASE;
+  const taxaFinal = Math.min(TAXA_MAX, taxaBase + itemInfo.bonus);
+  const destino = ferramentaBanco ? '!roubarbanco @pessoa' : '!roubar @pessoa';
 
   await sock.sendMessage(jid, {
     text:
-      `✅ *ITEM EQUIPADO!* ✅\n\n` +
+      `✅ *${ferramentaBanco ? 'FERRAMENTA BANCÁRIA' : 'ITEM DE ROUBO'} EQUIPADO!* ✅\n\n` +
       `🎭 *Item:* ${itemInfo.nome}\n` +
       `📈 *Bônus de sucesso:* +${itemInfo.bonus}%\n` +
       `🎲 *Taxa com este item:* até *${taxaFinal}%*\n` +
       `🎒 *No inventário:* ${qtd}x\n\n` +
-      `🔫 Agora use *!roubar @pessoa* para atacar!`,
+      `🔫 Agora use *${destino}* para atacar!`,
   }, { quoted: msg });
 }
 
@@ -452,39 +487,58 @@ async function handleInvRoubo(sock, msg, jid) {
   const idGrupo = getGroupId(msg, jid);
 
   const carteira = await getCarteira(userId, idGrupo);
+  const secoes = [
+    {
+      titulo: '🎭 ITENS PARA ROUBO COMUM',
+      catalogo: ITENS_ROUBO,
+      inventario: carteira.itensRoubo,
+      equipado: carteira.equiparoubo,
+      taxaBase: TAXA_SUCESSO_BASE,
+    },
+    {
+      titulo: '🏦 FERRAMENTAS PARA ASSALTO A BANCO',
+      catalogo: ITENS_ROUBO_BANCO,
+      inventario: carteira.itensRouboBanco,
+      equipado: carteira.equiparouboBanco,
+      taxaBase: TAXA_SUCESSO_BASE_BANCO,
+    },
+  ];
+  let texto = `🎒 ═══ SEUS ITENS DE ROUBO ═══ 🎒\n\n`;
+  let possuiItens = false;
 
-  let texto   = `🎒 ═══ SEUS ITENS DE ROUBO ═══ 🎒\n\n`;
-  let temItem = false;
+  for (const secao of secoes) {
+    texto += `*${secao.titulo}*\n`;
+    let possuiNaSecao = false;
 
-  for (const [key, item] of Object.entries(ITENS_ROUBO)) {
-    const qtd = getItemQtd(carteira.itensRoubo, key);
-    if (qtd > 0) {
-      temItem = true;
-      const equipado = carteira.equiparoubo === key;
-      const tag = equipado ? ' ⚡ *EQUIPADO*' : '';
-      texto += `  ${item.nome}${tag}\n`;
-      texto += `    └ Qtd: *${qtd}x* | Bônus: *+${item.bonus}%*\n`;
+    for (const [key, item] of Object.entries(secao.catalogo)) {
+      const qtd = getItemQtd(secao.inventario, key);
+      if (qtd > 0) {
+        possuiItens = true;
+        possuiNaSecao = true;
+        const tag = secao.equipado === key ? ' ⚡ *EQUIPADO*' : '';
+        texto += `  ${item.nome}${tag}\n`;
+        texto += `    └ Qtd: *${qtd}x* | Bônus: *+${item.bonus}%*\n`;
+      }
     }
+
+    if (!possuiNaSecao) {
+      texto += `_Nenhum item nesta categoria._\n`;
+    } else {
+      const itemEquipado = secao.equipado && secao.catalogo[secao.equipado];
+      if (itemEquipado) {
+        const taxaAtual = Math.min(TAXA_MAX, secao.taxaBase + itemEquipado.bonus);
+        texto += `📈 Bônus ativo: *+${itemEquipado.bonus}%* | Chance antes da defesa: *${taxaAtual}%*\n`;
+      } else {
+        texto += `⚠️ Nenhum item desta categoria equipado.\n`;
+      }
+    }
+    texto += `\n━━━━━━━━━━━━━━━━\n\n`;
   }
 
-  if (!temItem) {
-    texto += `😔 Você não possui nenhum item de roubo neste grupo.\n\n`;
-    texto += `🛒 Compre itens com *!menuroubar*!`;
+  if (!possuiItens) {
+    texto += `🛒 Compre itens e ferramentas em *!menuroubar* com *!buyroubo <item>*`;
   } else {
-    texto += `\n━━━━━━━━━━━━━━━━\n`;
-
-    const eqKey = carteira.equiparoubo;
-    const eq    = eqKey && ITENS_ROUBO[eqKey];
-
-    if (eq) {
-      const taxaAtual = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.bonus);
-      texto += `⚡ *Equipado:* ${eq.nome}\n`;
-      texto += `📈 *Bônus ativo:* +${eq.bonus}% de sucesso\n`;
-      texto += `🎲 *Taxa atual:* até ${taxaAtual}%`;
-    } else {
-      texto += `⚠️ *Nenhum item equipado!*\n`;
-      texto += `Use *!equiparroubo <item>* para equipar.`;
-    }
+    texto += `Use *!equiparroubo <item>* para escolher o equipamento de cada categoria.`;
   }
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
@@ -585,6 +639,8 @@ async function handleRoubar(sock, msg, jid) {
     await sock.sendMessage(jid, { text: '❌ Você não pode se roubar!' }, { quoted: msg });
     return;
   }
+
+  if (await bloqueadoPorVinculo(sock, msg, jid, atacanteId, vitimaId)) return;
 
   // ── Buscar carteiras em paralelo ─────────────────────────────────────────────
   const [carteiraAtacante, carteiraVitima] = await Promise.all([
@@ -860,6 +916,8 @@ async function handlePolicia(sock, msg, jid) {
     return;
   }
 
+  if (await bloqueadoPorVinculo(sock, msg, jid, vitimaId, ladrao)) return;
+
   // ── Buscar carteiras em paralelo ──────────────────────────────────────────
   const [carteiraVitima, carteiraLadrao] = await Promise.all([
     getCarteira(vitimaId, idGrupo),
@@ -970,6 +1028,20 @@ function calcularPctBanco(bonusItem) {
   return { min, max };
 }
 
+async function consumirFerramentaBanco(atacanteId, idGrupo, itemSlug, carteiraAtacante) {
+  const atualizada = await incrementarItem(atacanteId, idGrupo, 'itensRouboBanco', itemSlug, -1);
+  const restante = atualizada
+    ? getItemQtd(atualizada.itensRouboBanco, itemSlug)
+    : Math.max(0, getItemQtd(carteiraAtacante.itensRouboBanco, itemSlug) - 1);
+
+  if (restante <= 0) {
+    await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: atacanteId, idGrupo },
+      { $unset: { equiparouboBanco: '' } }
+    );
+  }
+}
+
 // ─── !roubarbanco @pessoa ─────────────────────────────────────────────────────
 
 async function handleRoubarBanco(sock, msg, jid) {
@@ -996,6 +1068,8 @@ async function handleRoubarBanco(sock, msg, jid) {
     return;
   }
 
+  if (await bloqueadoPorVinculo(sock, msg, jid, atacanteId, vitimaId)) return;
+
   // ── Buscar carteiras em paralelo ──────────────────────────────────────────
   const [carteiraAtacante, carteiraVitima] = await Promise.all([
     getCarteira(atacanteId, idGrupo),
@@ -1003,26 +1077,26 @@ async function handleRoubarBanco(sock, msg, jid) {
   ]);
 
   // ── Item equipado obrigatório ─────────────────────────────────────────────
-  const itemSlugAtaque = carteiraAtacante.equiparoubo;
-  const itemAtaque     = itemSlugAtaque && ITENS_ROUBO[itemSlugAtaque];
+  const itemSlugAtaque = carteiraAtacante.equiparouboBanco;
+  const itemAtaque     = itemSlugAtaque && ITENS_ROUBO_BANCO[itemSlugAtaque];
 
   if (!itemAtaque) {
     await sock.sendMessage(jid, {
       text:
-        `❌ *Você precisa equipar um item de roubo antes!*\n\n` +
+        `❌ *Você precisa equipar uma ferramenta de banco antes!*\n\n` +
         `🛒 Compre com *!menuroubar*\n` +
-        `⚡ Equipe com *!equiparroubo <item>*`,
+        `⚡ Equipe com *!equiparroubarbanco <item>*`,
     }, { quoted: msg });
     return;
   }
 
   // ── Verificar se atacante tem o item no inventário (vai consumir se falhar) ─
-  const qtdItem = getItemQtd(carteiraAtacante.itensRoubo, itemSlugAtaque);
+  const qtdItem = getItemQtd(carteiraAtacante.itensRouboBanco, itemSlugAtaque);
   if (qtdItem <= 0) {
     await sock.sendMessage(jid, {
       text:
         `❌ Você não possui *${itemAtaque.nome}* no inventário!\n\n` +
-        `🛒 Compre com *!buyroubo ${itemSlugAtaque}*`,
+        `🛒 Compre com *!buyroubarbanco ${itemSlugAtaque}*`,
     }, { quoted: msg });
     return;
   }
@@ -1116,18 +1190,7 @@ async function handleRoubarBanco(sock, msg, jid) {
       atacanteId, idGrupo, valorRoubado, `Assaltou banco de ${vitimaId}`
     );
 
-    // Consumir item de ataque — reaproveita o doc retornado pelo decremento
-    // em vez de buscar a carteira de novo.
-    const carteiraAtacanteAtualizada = await incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1);
-    const qtdRestante = carteiraAtacanteAtualizada
-      ? getItemQtd(carteiraAtacanteAtualizada.itensRoubo, itemSlugAtaque)
-      : Math.max(0, getItemQtd(carteiraAtacante.itensRoubo, itemSlugAtaque) - 1);
-    if (qtdRestante <= 0) {
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: atacanteId, idGrupo },
-        { $unset: { equiparoubo: '' } }
-      );
-    }
+    await consumirFerramentaBanco(atacanteId, idGrupo, itemSlugAtaque, carteiraAtacante);
 
     texto +=
       `✅ *ASSALTO BEM-SUCEDIDO!*\n\n` +
@@ -1165,7 +1228,7 @@ async function handleRoubarBanco(sock, msg, jid) {
       // insuficiente, só debita o que houver (evita crash com gold baixo/zerado).
       alterarGoldSeguro(atacanteId, idGrupo, -multa, 'Multa por falha no assalto ao banco'),
       // Consome 1 item equipado
-      incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1),
+      consumirFerramentaBanco(atacanteId, idGrupo, itemSlugAtaque, carteiraAtacante),
     ]);
 
     texto +=
@@ -1185,6 +1248,7 @@ async function handleRoubarBanco(sock, msg, jid) {
 
 module.exports = {
   ITENS_ROUBO,
+  ITENS_ROUBO_BANCO,
   ITENS_SEGURANCA,
   handleMenuRoubo,
   handleMenuSec,

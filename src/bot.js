@@ -321,7 +321,10 @@ function getBotSock() {
   return _botSock;
 }
 
-module.exports = { getBotSock };
+module.exports = {
+  getBotSock,
+  get sock() { return _botSock; },
+};
 
 // ─── Servidor Web ─────────────────────────────────────────────────────────────
 const express = require('express');

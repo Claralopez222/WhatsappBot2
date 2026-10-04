@@ -12,6 +12,7 @@ const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuari
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { prepareDailyMissionState } = require('./missoes');
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { contaVinculada } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 
 const quizState      = new Map(); // senderJid → { r, resolvedJid, timeout }
@@ -580,21 +581,29 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       const pts = (pontosMap.get(effectiveJid) || 0) + 10;
       pontosMap.set(effectiveJid, pts);
 
-      const goldReward = 15;
+      // true = vinculada, false = não vinculada, null = Zeca indisponível (falha fechada)
+      const contaApp   = await contaVinculada(effectiveJid);
+      const goldReward = contaApp === false ? 15 : 0;
       const [, novoSaldoGold] = await Promise.all([
         saveQuizPointsToDB(effectiveJid, jid),
-        changeGold(effectiveJid, goldReward, jid),
+        goldReward > 0 ? changeGold(effectiveJid, goldReward, jid) : Promise.resolve(0),
         Usuario.findOneAndUpdate(
           { idWhatsApp: effectiveJid },
           { $inc: { 'dailyMissions.progress.quiz5': 1 } }
         ).catch(e => console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message)),
       ]);
 
+      const linhaGold = goldReward > 0
+        ? `💵 *+${goldReward} gold!* Saldo: *${novoSaldoGold} gold*`
+        : contaApp === true
+          ? `ℹ️ _Contas vinculadas ao app ganham só pontos no quiz._`
+          : `ℹ️ _O gold do quiz está indisponível agora. Seus pontos foram salvos._`;
+
       await sock.sendMessage(jid, {
         text:
           `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n` +
           `💰 *+10 pontos!* Total: *${pts} pts*\n` +
-          `💵 *+${goldReward} gold!* Saldo: *${novoSaldoGold} gold*`,
+          linhaGold,
       }, { quoted: msg });
 
     } else {

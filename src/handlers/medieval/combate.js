@@ -12,6 +12,7 @@ const {
   calcularDano, narrarCombate, xpParaNivel, verificarCooldown,
   somenteGrupo, getModoAtivo, getOuCriarPersonagem, gerarBarra,
   verificarRecuperacaoDerrota, verificarLevelUp, JANELA_SAQUE_MS,
+  bloqueadoPorVinculo,
 } = require('../../utils/medievalUtils');
 
 // ── Cooldowns (ms) ────────────────────────────────────────────────────────────
@@ -427,6 +428,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
       return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
     }
 
+    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid)) return;
     const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
       ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     const { pode, tempoRestante } = verificarCooldown(p.ultimaMissao, CD_MISSAO);

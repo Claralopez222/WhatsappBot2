@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { getWalletBalance } = require('../utils/carteira/wallet');
 
 // ─── Sub-schema: histórico de gold ───────────────────────────────────────────
 const goldHistorySchema = new mongoose.Schema({
@@ -94,6 +95,14 @@ const usuarioSchema = new mongoose.Schema({
   xp:         { type: Number, default: 0,   min: 0 },
   level:      { type: Number, default: 1,   min: 1 },
   gold:       { type: Number, default: 0, min: 0 },
+  walletMigration: {
+    type: new mongoose.Schema({
+      id: { type: String, default: null },
+      goldCents: { type: Number, default: 0 },
+    }, { _id: false }),
+    default: undefined,
+    select: false,
+  },
   quizPoints: { type: Number, default: 0,   min: 0 },
   mensagens:  { type: Number, default: 0,   min: 0 },
 
@@ -135,6 +144,100 @@ const usuarioSchema = new mongoose.Schema({
 
 }, {
   timestamps: true,
+});
+
+function touchesGlobalGold(update) {
+  if (!update || typeof update !== 'object') return false;
+  if (Array.isArray(update)) return update.some(touchesGlobalGold);
+  return Object.entries(update).some(([key, value]) =>
+    key === 'gold' || (key.startsWith('$') && touchesGlobalGold(value))
+  );
+}
+
+async function guardLinkedGlobalGold(query, filter, update, options = {}) {
+  if (options.comment === 'wallet-migration' || !touchesGlobalGold(update)) return;
+  function collect(value, jids = []) {
+    if (typeof value === 'string') jids.push(value);
+    else if (Array.isArray(value)) value.forEach(item => collect(item, jids));
+    else if (value && typeof value === 'object') {
+      for (const [key, nested] of Object.entries(value)) {
+        if (key === 'idWhatsApp' || key.startsWith('$')) collect(nested, jids);
+      }
+    }
+    return jids;
+  }
+  let jids = [...new Set(collect(filter))];
+  if (!jids.length) {
+    const model = query.model || query;
+    jids = await model.distinct('idWhatsApp', filter).limit(10_000);
+  }
+  for (const jid of jids) {
+    const wallet = await getWalletBalance(jid);
+    if (wallet.linked) throw new Error('LINKED_WALLET_REQUIRES_SERVICE');
+  }
+}
+
+async function overlayLinkedGlobalGold(user) {
+  if (!user || !user.idWhatsApp || user.gold === undefined) return user;
+  const wallet = await getWalletBalance(user.idWhatsApp);
+  if (!wallet.linked) return user;
+  if (typeof user.set === 'function') user.set('gold', wallet.balanceCents);
+  else user.gold = wallet.balanceCents;
+  user.balanceCents = wallet.balanceCents;
+  user.wallet = wallet;
+  user.walletLinked = true;
+  user.walletCurrencyCode = wallet.currencyCode;
+  user.walletCountryCode = wallet.countryCode;
+  user.walletRate = wallet.rate;
+  user.walletRateDate = wallet.rateDate;
+  return user;
+}
+
+function isTargetedGlobalRead(filter = {}) {
+  return Object.hasOwn(filter, 'idWhatsApp')
+    || Object.hasOwn(filter, '_id')
+    || Boolean(filter.$or || filter.$and);
+}
+
+for (const operation of ['updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne']) {
+  usuarioSchema.pre(operation, async function () {
+    await guardLinkedGlobalGold(this, this.getFilter(), this.getUpdate(), this.getOptions());
+  });
+}
+
+usuarioSchema.pre('bulkWrite', async function (operations, options = {}) {
+  for (const operation of operations || []) {
+    const write = operation.updateOne || operation.updateMany || operation.replaceOne;
+    if (write) {
+      await guardLinkedGlobalGold(this, write.filter, write.update || write.replacement, options);
+      continue;
+    }
+    const document = operation.insertOne?.document;
+    if (document && Number(document.gold || 0) !== 0) {
+      const wallet = await getWalletBalance(document.idWhatsApp);
+      if (wallet.linked) throw new Error('LINKED_WALLET_REQUIRES_SERVICE');
+    }
+  }
+});
+
+usuarioSchema.post('find', async function (users) {
+  if (this.getOptions().comment === 'legacy-wallet-read' || !isTargetedGlobalRead(this.getFilter())) return;
+  await Promise.all((users || []).map(overlayLinkedGlobalGold));
+});
+usuarioSchema.post('findOne', async function (user) {
+  if (this.getOptions().comment === 'legacy-wallet-read' || !isTargetedGlobalRead(this.getFilter())) return;
+  await overlayLinkedGlobalGold(user);
+});
+usuarioSchema.post('findOneAndUpdate', async function (user) {
+  if (this.getOptions().comment === 'legacy-wallet-read' || !isTargetedGlobalRead(this.getFilter())) return;
+  await overlayLinkedGlobalGold(user);
+});
+
+usuarioSchema.pre('save', async function () {
+  if (this.isModified('gold') && (!this.isNew || Number(this.gold || 0) !== 0)) {
+    const wallet = await getWalletBalance(this.idWhatsApp);
+    if (wallet.linked) throw new Error('LINKED_WALLET_REQUIRES_SERVICE');
+  }
 });
 
 // ─── Índices ──────────────────────────────────────────────────────────────────

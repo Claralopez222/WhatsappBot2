@@ -21,6 +21,7 @@
 const path     = require('path');
 const mongoose = require('mongoose');
 const Usuario  = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 
 // ─── CATÁLOGO ─────────────────────────────────────────────────────────────────
 
@@ -1074,6 +1075,9 @@ async function handleOfertar(sock, msg, jid, caption) {
     return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
   }
 
+  // Contas vinculadas ao app não usam o marketplace (ele paga em Usuario.gold, saldo legado).
+  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
+
   // ── 2. Parse dos argumentos ──────────────────────────────────────────────
 
   const match = caption.match(/ofertar\s+([A-Za-z0-9_-]+)\s+(\d+)\s+(\d+)/i);
@@ -1323,6 +1327,9 @@ async function handleBuy(sock, msg, jid, caption) {
   if (compradorId === vendedorId) {
     return reply(sock, jid, msg, '❌ Você não pode comprar sua própria oferta!');
   }
+
+  // Bloqueia se comprador OU vendedor estiver vinculado (o vendedor receberia gold legado).
+  if (await bloqueadoPorVinculo(sock, msg, jid, compradorId, vendedorId)) return;
 
   if (quantidade > CONFIG.MAX_QTD_COMPRA) {
     return reply(sock, jid, msg,

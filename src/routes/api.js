@@ -8,7 +8,16 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
+const WalletMigration = require('../models/WalletMigration');
+const { contaVinculada } = require('../utils/carteira/vinculo');
 const rateLimit      = require('express-rate-limit');
+
+function respostaVinculada(res, vinculada) {
+  if (vinculada === null) {
+    return res.status(503).json({ error: 'Carteira temporariamente indisponível. Tente novamente.' });
+  }
+  return res.status(409).json({ error: 'Este recurso está indisponível para contas vinculadas ao app.' });
+}
 const { ipKeyGenerator } = require('express-rate-limit');
 
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
@@ -34,10 +43,427 @@ router.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key, x-zeca-jid, x-zeca-timestamp, x-zeca-signature');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
+});
+
+router.get('/integration/economy', async (req, res) => {
+  const secret = process.env.WHATSAPP_LINK_SECRET;
+  if (!secret || secret.length < 32) {
+    console.error('[API integração] WHATSAPP_LINK_SECRET ausente ou curto demais.');
+    return res.status(503).json({ error: 'Consulta da economia indisponível.' });
+  }
+
+  const jid = String(req.get('x-zeca-jid') || '').trim().toLowerCase();
+  const timestamp = req.get('x-zeca-timestamp') || '';
+  const signature = req.get('x-zeca-signature') || '';
+  if (!/^\d+@s\.whatsapp\.net$/.test(jid)
+      || !/^\d{13}$/.test(timestamp)
+      || !/^[a-f\d]{64}$/i.test(signature)) {
+    return res.status(400).json({ error: 'Solicitação inválida.' });
+  }
+  if (Math.abs(Date.now() - Number(timestamp)) > 60_000) {
+    return res.status(401).json({ error: 'Solicitação expirada.' });
+  }
+
+  const payload = `${timestamp}\nGET\n/api/integration/economy\n${jid}`;
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+  const received = Buffer.from(signature, 'hex');
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
+    return res.status(401).json({ error: 'Assinatura inválida.' });
+  }
+
+  try {
+    const numberVariants = gerarVariantesNumero(jid.split('@')[0])
+      .map(number => `${number}@s.whatsapp.net`);
+    const mapping = await LidMapping.findOne({ pn: { $in: numberVariants } }).select('lid').lean();
+    const identityVariants = [...new Set([
+      ...numberVariants,
+      ...(mapping?.lid ? [mapping.lid] : []),
+    ])];
+    const wallets = await CarteiraGrupo.find({
+      idWhatsApp: { $in: identityVariants },
+      idGrupo: { $regex: /@g\.us$/ },
+    })
+      .comment('legacy-wallet-read')
+      .select('idGrupo nome nomeGrupo nomeCustom gold banco.amount goldHistory')
+      .sort({ gold: -1 })
+      .lean();
+
+    const byGroup = new Map();
+    for (const wallet of wallets) {
+      const groupId = wallet.idGrupo;
+      const name = wallet.nomeCustom?.trim() || wallet.nomeGrupo?.trim()
+        || wallet.nome?.trim() || nomeGrupoFallback(groupId);
+      const previous = byGroup.get(groupId);
+      if (!previous) {
+        byGroup.set(groupId, {
+          name,
+          gold: Number(wallet.gold) || 0,
+          bankGold: Number(wallet.banco?.amount) || 0,
+          history: Array.isArray(wallet.goldHistory) ? wallet.goldHistory : [],
+        });
+
+
+      } else {
+        previous.gold = Math.max(previous.gold, Number(wallet.gold) || 0);
+        previous.bankGold = Math.max(previous.bankGold, Number(wallet.banco?.amount) || 0);
+        if (name.length > previous.name.length) previous.name = name;
+        previous.history.push(...(Array.isArray(wallet.goldHistory) ? wallet.goldHistory : []));
+      }
+    }
+
+    const groups = [...byGroup.values()]
+      .map(group => ({
+        name: group.name,
+        gold: group.gold,
+        bankGold: group.bankGold,
+      }))
+      .sort((left, right) => right.gold - left.gold)
+      .slice(0, 100);
+    const history = [...byGroup.values()]
+      .flatMap(group => group.history.map(entry => ({
+        groupName: group.name,
+        type: entry.type === 'gasto' ? 'spent' : 'received',
+        item: String(entry.item || 'Movimentação').slice(0, 80),
+        amount: Math.max(0, Number(entry.amount) || 0),
+        createdAtMs: entry.date ? new Date(entry.date).getTime() : 0,
+      })))
+      .filter(entry => Number.isFinite(entry.createdAtMs))
+      .sort((left, right) => right.createdAtMs - left.createdAtMs)
+      .slice(0, 30);
+    const totalGold = [...byGroup.values()].reduce((total, group) => total + group.gold, 0);
+    const totalBankGold = [...byGroup.values()].reduce((total, group) => total + group.bankGold, 0);
+
+    return res.json({ totalGold, totalBankGold, groups, history });
+  } catch (error) {
+    console.error('[API integração] Falha ao carregar economia vinculada:', error);
+    return res.status(500).json({ error: 'Não foi possível consultar a economia do WhatsApp.' });
+  }
+});
+
+router.post('/integration/wallet/migrate', async (req, res) => {
+  const secret = process.env.WHATSAPP_LINK_SECRET;
+  if (!secret || secret.length < 32) {
+    return res.status(503).json({ error: 'Migração da carteira indisponível.' });
+  }
+
+  const jid = String(req.get('x-zeca-jid') || '').trim().toLowerCase();
+  const timestamp = req.get('x-zeca-timestamp') || '';
+  const signature = req.get('x-zeca-signature') || '';
+  const linkedAtMs = req.body?.linkedAtMs;
+  if (!/^\d+@s\.whatsapp\.net$/.test(jid)
+      || !/^\d{13}$/.test(timestamp)
+      || !/^[a-f\d]{64}$/i.test(signature)
+      || req.body?.jid !== jid
+      || !Number.isSafeInteger(linkedAtMs)
+      || linkedAtMs < 0) {
+    return res.status(400).json({ error: 'Solicitação inválida.' });
+  }
+  if (Math.abs(Date.now() - Number(timestamp)) > 60_000) {
+    return res.status(401).json({ error: 'Solicitação expirada.' });
+  }
+
+  const payload = `${timestamp}\nPOST\n/api/integration/wallet/migrate\n${jid}\n${linkedAtMs}`;
+  const expected = crypto.createHmac('sha256', secret).update(payload, 'utf8').digest();
+  const received = Buffer.from(signature, 'hex');
+  if (received.length !== expected.length || !crypto.timingSafeEqual(expected, received)) {
+    return res.status(401).json({ error: 'Assinatura inválida.' });
+  }
+
+  try {
+    const migrationId = crypto.createHash('sha256')
+      .update(`${jid}\n${linkedAtMs}`, 'utf8')
+      .digest('hex');
+    const numberVariants = gerarVariantesNumero(jid.split('@')[0])
+      .map(number => `${number}@s.whatsapp.net`);
+    const mapping = await LidMapping.findOne({ pn: { $in: numberVariants } }).select('lid').lean();
+    const identityVariants = [...new Set([
+      ...numberVariants,
+      ...(mapping?.lid ? [mapping.lid] : []),
+    ])];
+    const migration = await WalletMigration.findOneAndUpdate(
+      { jid, linkedAtMs },
+      { $setOnInsert: { jid, linkedAtMs, migrationId, state: 'pending', goldCents: 0, bankCents: 0 } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    if (migration.state !== 'complete') {
+      const [wallets, users] = await Promise.all([
+        CarteiraGrupo.find({ idWhatsApp: { $in: identityVariants } })
+          .comment('legacy-wallet-read')
+          .select('idGrupo gold banco.amount +walletMigration').lean(),
+        Usuario.find({ idWhatsApp: { $in: identityVariants } })
+          .comment('legacy-wallet-read').select('gold +walletMigration').lean(),
+      ]);
+
+      await Promise.all([
+        ...wallets.map(wallet => wallet.walletMigration?.id === migrationId
+          ? Promise.resolve()
+          : CarteiraGrupo.updateOne(
+            { _id: wallet._id, 'walletMigration.id': { $ne: migrationId } },
+            {
+              $set: {
+                gold: 0,
+                'banco.amount': 0,
+                'banco.interest': 0,
+                'banco.startDate': null,
+                'banco.depositedToday': 0,
+                'banco.lastDepositDate': null,
+                walletMigration: {
+                  id: migrationId,
+                  goldCents: Math.round(Math.max(0, Number(wallet.gold) || 0)),
+                  bankCents: Math.round(Math.max(0, Number(wallet.banco?.amount) || 0)),
+                },
+              },
+            },
+            { comment: 'wallet-migration' },
+          )),
+        ...users.map(user => user.walletMigration?.id === migrationId
+          ? Promise.resolve()
+          : Usuario.updateOne(
+            { _id: user._id, 'walletMigration.id': { $ne: migrationId } },
+            {
+              $set: {
+                gold: 0,
+                walletMigration: {
+                  id: migrationId,
+                  goldCents: Math.round(Math.max(0, Number(user.gold) || 0)),
+                },
+              },
+            },
+            { comment: 'wallet-migration' },
+          )),
+      ]);
+
+      const [migratedWallets, migratedUsers] = await Promise.all([
+        CarteiraGrupo.find({ idWhatsApp: { $in: identityVariants } })
+          .comment('legacy-wallet-read')
+          .select('idGrupo +walletMigration').lean(),
+        Usuario.find({ idWhatsApp: { $in: identityVariants } })
+          .comment('legacy-wallet-read').select('+walletMigration').lean(),
+      ]);
+      const byGroup = new Map();
+      for (const wallet of migratedWallets) {
+        const entry = byGroup.get(wallet.idGrupo) || { gold: 0, bank: 0 };
+        entry.gold = Math.max(entry.gold, Number(wallet.walletMigration?.goldCents) || 0);
+        entry.bank = Math.max(entry.bank, Number(wallet.walletMigration?.bankCents) || 0);
+        byGroup.set(wallet.idGrupo, entry);
+      }
+      const availableGoldCents = [...byGroup.values()].reduce((sum, entry) => sum + entry.gold, 0)
+        + Math.max(0, ...migratedUsers.map(user => Number(user.walletMigration?.goldCents) || 0));
+      const migratedBankCents = [...byGroup.values()].reduce((sum, entry) => sum + entry.bank, 0);
+      const goldCents = availableGoldCents + migratedBankCents;
+      await WalletMigration.updateOne(
+        { jid, linkedAtMs, migrationId },
+        { $set: { goldCents, bankCents: 0, state: 'complete' } },
+      );
+      migration.goldCents = goldCents;
+      migration.bankCents = 0;
+      migration.state = 'complete';
+    }
+
+    return res.json({ goldCents: migration.goldCents, bankCents: migration.bankCents, migrationId });
+  } catch (error) {
+    console.error('[API integração] Falha ao migrar carteira vinculada:', error);
+    return res.status(500).json({ error: 'Não foi possível migrar a carteira.' });
+  }
+});
+
+router.get('/integration/dashboard', async (req, res) => {
+  const secret = process.env.WHATSAPP_LINK_SECRET;
+  if (!secret || secret.length < 32) {
+    console.error('[API integração] WHATSAPP_LINK_SECRET ausente ou curto demais.');
+    return res.status(503).json({ error: 'Sincronização do WhatsApp indisponível.' });
+  }
+
+  const jid = String(req.get('x-zeca-jid') || '').trim().toLowerCase();
+  const timestamp = req.get('x-zeca-timestamp') || '';
+  const signature = req.get('x-zeca-signature') || '';
+  const sections = String(req.query.sections || '').split(',').filter(Boolean).sort();
+  const allowedSections = new Set(['economy', 'missions', 'pets', 'profile', 'work']);
+  if (!/^\d+@s\.whatsapp\.net$/.test(jid)
+      || !/^\d{13}$/.test(timestamp)
+      || !/^[a-f\d]{64}$/i.test(signature)
+      || sections.some(section => !allowedSections.has(section))
+      || new Set(sections).size !== sections.length) {
+    return res.status(400).json({ error: 'Solicitação inválida.' });
+  }
+  if (Math.abs(Date.now() - Number(timestamp)) > 60_000) {
+    return res.status(401).json({ error: 'Solicitação expirada.' });
+  }
+
+  const canonicalPath = `/api/integration/dashboard?sections=${sections.join(',')}`;
+  const payload = `${timestamp}\nGET\n${canonicalPath}\n${jid}`;
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+  const received = Buffer.from(signature, 'hex');
+  if (received.length !== expected.length || !crypto.timingSafeEqual(expected, received)) {
+    return res.status(401).json({ error: 'Assinatura inválida.' });
+  }
+
+  try {
+    const numberVariants = gerarVariantesNumero(jid.split('@')[0])
+      .map(number => `${number}@s.whatsapp.net`);
+    const mapping = await LidMapping.findOne({ pn: { $in: numberVariants } }).select('lid').lean();
+    const identityVariants = [...new Set([
+      ...numberVariants,
+      ...(mapping?.lid ? [mapping.lid] : []),
+    ])];
+    const usuario = await Usuario.findOne({ idWhatsApp: { $in: identityVariants } })
+      .select('nome username level xp quizPoints mensagens pet inventory dailyMissions')
+      .lean();
+    if (!usuario) return res.status(404).json({ error: 'Perfil do WhatsApp não encontrado.' });
+
+    const result = {};
+    if (sections.includes('profile')) {
+      const wallets = await CarteiraGrupo.find({
+        idWhatsApp: { $in: identityVariants },
+        idGrupo: { $regex: /@g\.us$/ },
+      })
+        .select('idGrupo nome nomeGrupo nomeCustom xp level mensagens quizPoints')
+        .sort({ xp: -1 })
+        .limit(100)
+        .lean();
+      result.profile = {
+        displayName: String(usuario.nome || usuario.username || 'Jogador').slice(0, 40),
+        level: Math.max(1, Number(usuario.level) || 1),
+        xp: Math.max(0, Number(usuario.xp) || 0),
+        quizPoints: Math.max(0, Number(usuario.quizPoints) || 0),
+        messages: Math.max(0, Number(usuario.mensagens) || 0),
+        groups: wallets.map(wallet => ({
+          name: wallet.nomeCustom?.trim() || wallet.nomeGrupo?.trim()
+            || wallet.nome?.trim() || nomeGrupoFallback(wallet.idGrupo),
+          xp: Math.max(0, Number(wallet.xp) || 0),
+          level: Math.max(1, Number(wallet.level) || 1),
+          messages: Math.max(0, Number(wallet.mensagens) || 0),
+          quizPoints: Math.max(0, Number(wallet.quizPoints) || 0),
+        })),
+      };
+    }
+    if (sections.includes('pets')) {
+      const inventoryValue = usuario.inventory instanceof Map
+        ? Object.fromEntries(usuario.inventory)
+        : usuario.inventory;
+      const inventory = inventoryValue && typeof inventoryValue === 'object' && !Array.isArray(inventoryValue)
+        ? Object.fromEntries(Object.entries(inventoryValue)
+          .filter(([key, value]) => /^[a-zA-Z0-9_-]{1,60}$/.test(key)
+            && Number.isSafeInteger(Number(value)) && Number(value) > 0)
+          .slice(0, 100)
+          .map(([key, value]) => [key, Number(value)]))
+        : {};
+      const pet = usuario.pet && typeof usuario.pet === 'object' ? {
+        type: String(usuario.pet.type || '').slice(0, 40),
+        name: String(usuario.pet.name || '').slice(0, 40),
+        rarity: String(usuario.pet.rarity || '').slice(0, 30),
+        level: Math.max(1, Number(usuario.pet.level) || 1),
+        happiness: Math.max(0, Math.min(100, Number(usuario.pet.happiness) || 0)),
+        energy: Math.max(0, Math.min(100, Number(usuario.pet.energy) || 0)),
+        fullness: Math.max(0, Math.min(100, Number(usuario.pet.fullness) || 0)),
+      } : null;
+      result.pets = { pet, inventory };
+    }
+    if (sections.includes('missions')) {
+      const { dailyMissionDefinitions, getTodayStr } = require('../handlers/diversao/missoes');
+      const state = usuario.dailyMissions?.date === getTodayStr()
+        ? usuario.dailyMissions
+        : null;
+      result.missions = {
+        date: getTodayStr(),
+        items: dailyMissionDefinitions.map(mission => {
+          const progress = Math.max(0, Math.min(
+            mission.target,
+            Number(state?.progress?.[mission.id]) || 0,
+          ));
+          return {
+            id: mission.id,
+            title: mission.label,
+            target: mission.target,
+            progress,
+            completed: state?.completed?.[mission.id] === true || progress >= mission.target,
+            claimedInBot: state?.claimed?.[mission.id] === true,
+          };
+        }),
+      };
+    }
+    if (sections.includes('work')) {
+      const [empregoAtual] = await CarteiraGrupo.find({
+        idWhatsApp: { $in: identityVariants },
+        idGrupo: { $regex: /@g\.us$/ },
+        empregoAtual: { $nin: [null, '', 'desempregado'] },
+      })
+        .select('empregoAtual totalTrabalhosComSucesso ultimoTrabalho demissaoVoluntariaAte')
+        .sort({ totalTrabalhosComSucesso: -1 })
+        .limit(1)
+        .lean();
+      const ms = (valor) => {
+        const t = valor ? new Date(valor).getTime() : 0;
+        return Number.isFinite(t) ? Math.max(0, Math.floor(t)) : 0;
+      };
+      result.work = {
+        legacyCareer: empregoAtual ? {
+          jobSlug: empregoAtual.empregoAtual,
+          shiftsInTier: Math.max(0, Math.floor(Number(empregoAtual.totalTrabalhosComSucesso) || 0)),
+          lastShiftAtMs: ms(empregoAtual.ultimoTrabalho),
+          resignUntilMs: ms(empregoAtual.demissaoVoluntariaAte),
+        } : null,
+      };
+    }
+    if (sections.includes('economy')) {
+      const wallets = await CarteiraGrupo.find({
+        idWhatsApp: { $in: identityVariants },
+        idGrupo: { $regex: /@g\.us$/ },
+      })
+        .comment('legacy-wallet-read')
+        .select('idGrupo nome nomeGrupo nomeCustom gold banco.amount goldHistory')
+        .sort({ gold: -1 })
+        .limit(100)
+        .lean();
+      const walletsByGroup = new Map();
+      for (const wallet of wallets) {
+        const name = wallet.nomeCustom?.trim() || wallet.nomeGrupo?.trim()
+          || wallet.nome?.trim() || nomeGrupoFallback(wallet.idGrupo);
+        const existing = walletsByGroup.get(wallet.idGrupo);
+        if (!existing) {
+          walletsByGroup.set(wallet.idGrupo, {
+            name,
+            gold: Math.max(0, Number(wallet.gold) || 0),
+            bankGold: Math.max(0, Number(wallet.banco?.amount) || 0),
+            history: Array.isArray(wallet.goldHistory) ? [...wallet.goldHistory] : [],
+          });
+        } else {
+          existing.gold = Math.max(existing.gold, Math.max(0, Number(wallet.gold) || 0));
+          existing.bankGold = Math.max(existing.bankGold, Math.max(0, Number(wallet.banco?.amount) || 0));
+          if (name.length > existing.name.length) existing.name = name;
+          if (Array.isArray(wallet.goldHistory)) existing.history.push(...wallet.goldHistory);
+        }
+      }
+      const uniqueWallets = [...walletsByGroup.values()];
+      result.economy = {
+        totalGold: uniqueWallets.reduce((total, wallet) => total + wallet.gold, 0),
+        totalBankGold: uniqueWallets.reduce((total, wallet) => total + wallet.bankGold, 0),
+        groups: uniqueWallets.map(wallet => ({
+          name: wallet.name,
+          gold: wallet.gold,
+          bankGold: wallet.bankGold,
+        })),
+        history: uniqueWallets.flatMap(wallet => wallet.history
+          .map(entry => ({
+            groupName: wallet.name,
+            type: entry.type === 'gasto' ? 'spent' : 'received',
+            item: String(entry.item || 'Movimentação').slice(0, 80),
+            amount: Math.max(0, Number(entry.amount) || 0),
+            createdAtMs: entry.date ? new Date(entry.date).getTime() : 0,
+          })))
+          .sort((left, right) => right.createdAtMs - left.createdAtMs)
+          .slice(0, 30),
+      };
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('[API integração] Falha ao sincronizar painel do bot:', error);
+    return res.status(500).json({ error: 'Não foi possível sincronizar os dados do WhatsApp.' });
+  }
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -922,6 +1348,15 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     const jidsBusca = await resolverJidsBusca(termoOriginal);
     const jidNorm   = jidsBusca[0] || normalizarJid(termoOriginal);
 
+    const vinculada = await contaVinculada(jidsBusca.find(j => j.endsWith('@s.whatsapp.net')) || jidNorm);
+    if (vinculada !== false) {
+      return res.status(vinculada === null ? 503 : 409).json({
+        error: vinculada === null
+          ? 'Carteira temporariamente indisponível.'
+          : 'Conta vinculada: ajuste o saldo pelo painel administrativo do app.',
+      });
+    }
+
     if (!eGlobal) {
       let update = {};
       if (op === 'dar') {
@@ -1056,6 +1491,15 @@ router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
 
     if (jidsOrigem.some(j => jidsDestino.includes(j)))
       return res.status(400).json({ error: 'Origem e destino não podem ser o mesmo usuário.' });
+
+    const pnOf = (jids) => jids.find(j => j.endsWith('@s.whatsapp.net')) || jids[0];
+    const [vincOrigem, vincDestino] = await Promise.all([
+      contaVinculada(pnOf(jidsOrigem)),
+      contaVinculada(pnOf(jidsDestino)),
+    ]);
+    if (vincOrigem !== false || vincDestino !== false) {
+      return res.status(409).json({ error: 'Conta vinculada envolvida: use o painel administrativo do app.' });
+    }
 
     // Verifica saldo da origem
     const carteiraOrigem = await CarteiraGrupo.findOne({ idWhatsApp: { $in: jidsOrigem }, idGrupo }).lean();
@@ -1540,6 +1984,9 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
     if (valorAposta > 100_000)
       return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
 
+    const vinculada = await contaVinculada(idWhatsApp);
+    if (vinculada !== false) return respostaVinculada(res, vinculada);
+
     // ── Confirma que o usuário pertence ao grupo (resolve @lid se necessário) ─
     let idResolvido = idWhatsApp;
     let carteira = await CarteiraGrupo.findOne({ idWhatsApp: idResolvido, idGrupo });
@@ -1717,6 +2164,9 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
 
     if (valorAposta > 100_000)
       return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
+
+    const vinculada = await contaVinculada(idWhatsApp);
+    if (vinculada !== false) return respostaVinculada(res, vinculada);
 
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
     if (!carteira)

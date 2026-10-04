@@ -9,7 +9,7 @@ const CarteiraGrupo      = require('../../models/CarteiraGrupo');
 const {
   ARMAS, ARMADURAS, POCOES, getClasse, getElemento, getArma, getArmadura, getPocao,
   getModoAtivo, getOuCriarPersonagem, somenteGrupo,
-  getInventarioMap, normalizarItemKey, itemKeyParaNome,
+  getInventarioMap, normalizarItemKey, itemKeyParaNome, contaVinculada,
 } = require('../../utils/medievalUtils');
 
 // ─── !lojamedieval ────────────────────────────────────────────────────────────
@@ -127,6 +127,11 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
   if (!await getModoAtivo(jid)) return;
 
   try {
+    if (await contaVinculada(senderJid)) {
+      return sock.sendMessage(jid, {
+        text: '🏪 A compra de itens medievais está indisponível para contas vinculadas ao app.',
+      }, { quoted: msg });
+    }
     const nomeItem = itemKeyParaNome((args || '').trim());
     if (!nomeItem) {
       return sock.sendMessage(jid, { text: '🏪 Diga o nome do item!\nExemplo: *!comprar Espada* ou *!comprar Espada_Rúnica*' }, { quoted: msg });
@@ -506,6 +511,11 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!await getModoAtivo(jid)) return;
 
   try {
+    if (await contaVinculada(senderJid)) {
+      return sock.sendMessage(jid, {
+        text: '🏪 A venda de itens medievais está indisponível para contas vinculadas ao app.',
+      }, { quoted: msg });
+    }
     const partes      = (args || '').trim().split(/\s+/);
     const ultimaParte = partes[partes.length - 1];
     const temQtd      = /^\d+$/.test(ultimaParte) && partes.length > 1;

@@ -1,6 +1,74 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { getWalletBalance } = require('../utils/carteira/wallet');
+
+const WALLET_FIELDS = new Set(['gold', 'banco.amount']);
+
+function updateTouchesWallet(update) {
+  if (!update || typeof update !== 'object') return false;
+  if (Array.isArray(update)) return update.some(updateTouchesWallet);
+  for (const [key, value] of Object.entries(update)) {
+    if (WALLET_FIELDS.has(key) || key.endsWith('.gold') || key.endsWith('.banco.amount')) return true;
+    if (key.startsWith('$') && updateTouchesWallet(value)) return true;
+  }
+  return false;
+}
+
+function collectJids(value, result = []) {
+  if (!value) return result;
+  if (typeof value === 'string') result.push(value);
+  else if (Array.isArray(value)) value.forEach(item => collectJids(item, result));
+  else if (typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value)) {
+      if (key === 'idWhatsApp') collectJids(nested, result);
+      else if (key.startsWith('$')) collectJids(nested, result);
+    }
+  }
+  return result;
+}
+
+async function rejectLinkedWalletWrite(query, filter, update, options = {}) {
+  if (options.comment === 'wallet-migration' || !updateTouchesWallet(update)) return;
+  let jids = [...new Set(collectJids(filter))];
+  if (!jids.length) {
+    const model = query.model || query;
+    jids = await model.distinct('idWhatsApp', filter).limit(10_000);
+  }
+  for (const jid of jids) {
+    const wallet = await getWalletBalance(jid);
+    if (wallet.linked) {
+      throw new Error('LINKED_WALLET_REQUIRES_SERVICE');
+    }
+  }
+}
+
+async function overlayLinkedBalance(wallet) {
+  if (!wallet || !wallet.idWhatsApp || wallet.gold === undefined) return wallet;
+  const result = await getWalletBalance(wallet.idWhatsApp);
+  if (!result.linked) return wallet;
+  wallet.gold = result.balanceCents;
+  if (typeof wallet.set === 'function') wallet.set('gold', result.balanceCents);
+  if (wallet.banco) {
+    if (typeof wallet.set === 'function') wallet.set('banco.amount', 0);
+    else wallet.banco.amount = 0;
+  }
+  wallet.balanceCents = result.balanceCents;
+  wallet.wallet = result;
+  wallet.walletLinked = true;
+  wallet.walletCurrencyCode = result.currencyCode;
+  wallet.walletCountryCode = result.countryCode;
+  wallet.walletRate = result.rate;
+  wallet.walletRateDate = result.rateDate;
+  return wallet;
+}
+
+function isTargetedWalletRead(filter = {}) {
+  return Object.hasOwn(filter, 'idWhatsApp')
+    || Object.hasOwn(filter, 'idGrupo')
+    || Object.hasOwn(filter, '_id')
+    || Boolean(filter.$or || filter.$and);
+}
 
 // ─── Sub-schemas ──────────────────────────────────────────────────────────────
 
@@ -122,6 +190,8 @@ const carteiraGrupoSchema = new mongoose.Schema(
     // ── Roubo — ataque (isolado por grupo) ───────────────────────
     itensRoubo:  { type: Map, of: { type: Number, min: 0 }, default: {} },
     equiparoubo: { type: String, default: null },
+    itensRouboBanco:  { type: Map, of: { type: Number, min: 0 }, default: {} },
+    equiparouboBanco: { type: String, default: null },
     ultimoRoubo: { type: Date,   default: null },
 
     // ── Segurança — defesa (isolada por grupo) ───────────────────
@@ -153,6 +223,15 @@ const carteiraGrupoSchema = new mongoose.Schema(
 
     // ── Histórico de gold ────────────────────────────────────────
     goldHistory: { type: [goldHistorySchema], default: [] },
+    walletMigration: {
+      type: new mongoose.Schema({
+        id: { type: String, default: null },
+        goldCents: { type: Number, default: 0 },
+        bankCents: { type: Number, default: 0 },
+      }, { _id: false }),
+      default: undefined,
+      select: false,
+    },
   // ── Inventário (usado pelo painel admin e pelos handlers) ─────
     inventario: {
       type: mongoose.Schema.Types.Mixed,
@@ -176,6 +255,54 @@ const carteiraGrupoSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+for (const operation of ['updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne']) {
+  carteiraGrupoSchema.pre(operation, async function () {
+    await rejectLinkedWalletWrite(this, this.getFilter(), this.getUpdate(), this.getOptions());
+  });
+}
+
+carteiraGrupoSchema.pre('bulkWrite', async function (operations, options = {}) {
+  for (const operation of operations || []) {
+    const write = operation.updateOne || operation.updateMany || operation.replaceOne;
+    if (write) {
+      await rejectLinkedWalletWrite(this, write.filter, write.update || write.replacement, options);
+      continue;
+    }
+    const document = operation.insertOne?.document;
+    if (document && (Number(document.gold || 0) !== 0 || Number(document.banco?.amount || 0) !== 0)) {
+      const wallet = await getWalletBalance(document.idWhatsApp);
+      if (wallet.linked) throw new Error('LINKED_WALLET_REQUIRES_SERVICE');
+    }
+  }
+});
+
+carteiraGrupoSchema.post('find', async function (docs) {
+  if (this.getOptions().comment === 'legacy-wallet-read' || !isTargetedWalletRead(this.getFilter())) return;
+  await Promise.all((docs || []).map(overlayLinkedBalance));
+});
+carteiraGrupoSchema.post('findOne', async function (doc) {
+  if (this.getOptions().comment === 'legacy-wallet-read' || !isTargetedWalletRead(this.getFilter())) return;
+  await overlayLinkedBalance(doc);
+});
+carteiraGrupoSchema.post('findOneAndUpdate', async function (doc) {
+  if (this.getOptions().comment === 'legacy-wallet-read' || !isTargetedWalletRead(this.getFilter())) return;
+  await overlayLinkedBalance(doc);
+});
+carteiraGrupoSchema.post('aggregate', async function (docs) {
+  if (this.options.comment === 'legacy-wallet-read') return;
+  await Promise.all((docs || []).map(overlayLinkedBalance));
+});
+
+carteiraGrupoSchema.pre('save', async function () {
+  const changesMoney = this.isModified('gold') || this.isModified('banco.amount');
+  if (changesMoney && (this.isNew
+    ? (Number(this.gold || 0) !== 0 || Number(this.banco?.amount || 0) !== 0)
+    : true)) {
+    const wallet = await getWalletBalance(this.idWhatsApp);
+    if (wallet.linked) throw new Error('LINKED_WALLET_REQUIRES_SERVICE');
+  }
+});
 
 // ─── Índices ──────────────────────────────────────────────────────────────────
 

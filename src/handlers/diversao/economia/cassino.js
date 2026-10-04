@@ -3,7 +3,27 @@
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { getCarteira, alterarGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const {
+  formatWalletAmount,
+  localMinorUnitsToBrlCents,
+} = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 const { resolveGlobalId } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const { randomUUID } = require('crypto');
+
+// Credita o prêmio com um requestId fixo: se a 1ª chamada tiver sido aplicada
+// e a resposta se perder, a 2ª é reconhecida pelo servidor e não credita em dobro.
+// Só repete para conta vinculada (o fluxo legado não é idempotente).
+async function creditarPremio(carteira, senderNorm, jid, valor, descricao) {
+  const requestId = randomUUID();
+  const opts = { requestId, allowLinked: true };
+  try {
+    return await alterarGold(senderNorm, jid, valor, descricao, opts);
+  } catch (e) {
+    if (!carteira?.walletLinked) throw e;
+    console.error(`[cassino] falha ao creditar "${descricao}", repetindo com o mesmo requestId:`, e.message);
+    return alterarGold(senderNorm, jid, valor, descricao, opts);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !slots ─────────────────────────────────────────────────────
@@ -82,10 +102,10 @@ function buildFrame(s1, s2, s3, girando = true) {
   );
 }
 
-function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal) {
+function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal, wallet) {
   const premio  = Math.floor(aposta * mult);
   const icone   = lucroLiq > 0 ? '📈' : lucroLiq === 0 ? '➖' : '📉';
-  const sinal   = lucroLiq >= 0 ? '+' : '';
+  const sinal   = lucroLiq >= 0 ? '+' : '-';
 
   return (
     `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
@@ -95,19 +115,19 @@ function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal) {
     `${label}\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `📋 *DETALHES DA RODADA*\n` +
-    `  💵 Aposta:      *${aposta} gold*\n` +
+    `  💵 Aposta:      *${formatWalletAmount(aposta, wallet)}*\n` +
     (mult > 0
       ? `  ✖️  Multiplicador: *${mult}x*\n` +
-        `  🏆 Prêmio:      *${premio} gold*\n`
+        `  🏆 Prêmio:      *${formatWalletAmount(premio, wallet)}*\n`
       : '') +
-    `  ${icone} Resultado:   *${sinal}${lucroLiq} gold*\n` +
-    `  💰 Saldo final: *${saldoFinal} gold*`
+    `  ${icone} Resultado:   *${sinal}${formatWalletAmount(Math.abs(lucroLiq), wallet)}*\n` +
+    `  💰 Saldo final: *${formatWalletAmount(saldoFinal, wallet)}*`
   );
 }
 
 async function handleSlots(sock, msg, jid, senderJid, caption) {
   const args       = caption.trim().split(/\s+/);
-  const aposta     = parseInt(args[1]);
+  let aposta       = parseInt(args[1]);
   const senderNorm = jidNormalizedUser(senderJid);
 
   if (!aposta || isNaN(aposta) || aposta <= 0) {
@@ -125,6 +145,13 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   }
 
   const carteira = await getCarteira(senderNorm, jid);
+  if (carteira?.walletLinked) {
+    aposta = localMinorUnitsToBrlCents(aposta, { rate: carteira.walletRate });
+    if (aposta <= 0) {
+      await sock.sendMessage(jid, { text: '⚠️ A aposta é menor que o valor mínimo aceito após a conversão da moeda.' }, { quoted: msg });
+      return;
+    }
+  }
   const saldo    = carteira?.gold ?? 0;
 
   if (saldo < aposta) {
@@ -133,14 +160,14 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
         `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
         `❌ *Saldo insuficiente!*\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `💰 Seu saldo:  *${saldo} gold*\n` +
-        `🎲 Aposta:     *${aposta} gold*\n` +
-        `📉 Faltam:     *${aposta - saldo} gold*`,
+        `💰 Seu saldo:  *${formatWalletAmount(saldo, carteira)}*\n` +
+        `🎲 Aposta:     *${formatWalletAmount(aposta, carteira)}*\n` +
+        `📉 Faltam:     *${formatWalletAmount(aposta - saldo, carteira)}*`,
     }, { quoted: msg });
     return;
   }
 
-  await alterarGold(senderNorm, jid, -aposta, 'Slots (aposta)');
+  await alterarGold(senderNorm, jid, -aposta, 'Slots (aposta)', { allowLinked: true });
 
   const msgInicial = await sock.sendMessage(
     jid,
@@ -150,7 +177,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
 
   for (const [s1, s2, s3] of SLOTS_FRAMES_ANIM) {
     await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
-    try { await sock.chatModify({ text: buildFrame(s1, s2, s3, true) }, msgInicial.key); } catch {}
+    try { await sock.sendMessage(jid, { text: buildFrame(s1, s2, s3, true), edit: msgInicial.key }); } catch {}
   }
 
   await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
@@ -162,13 +189,21 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
 
   let saldoFinal = saldo - aposta;
   if (premio > 0) {
-    const carteiraAtualizada = await alterarGold(senderNorm, jid, premio, `Slots (${mult}x)`);
-    saldoFinal = carteiraAtualizada.gold;
+    try {
+      const carteiraAtualizada = await creditarPremio(carteira, senderNorm, jid, premio, `Slots (${mult}x)`);
+      saldoFinal = carteiraAtualizada.gold;
+    } catch (e) {
+      console.error(`[slots] PRÊMIO NÃO CREDITADO jid=${senderNorm} premio=${premio}:`, e.message);
+      await sock.sendMessage(jid, {
+        text: '⚠️ Não consegui creditar seu prêmio agora. Fale com um admin; a rodada foi registrada.',
+      }, { quoted: msg });
+      return;
+    }
   }
 
-  const textoFinal = buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal);
+  const textoFinal = buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal, carteira);
 
-  try { await sock.chatModify({ text: textoFinal }, msgInicial.key); }
+  try { await sock.sendMessage(jid, { text: textoFinal, edit: msgInicial.key }); }
   catch { await sock.sendMessage(jid, { text: textoFinal }, { quoted: msg }); }
 }
 
@@ -195,7 +230,7 @@ function sortearVencedor() {
 async function handleCorrida(sock, msg, jid, senderJid, caption) {
   const args       = caption.trim().split(/\s+/);
   const escolha    = parseInt(args[1]);
-  const aposta     = parseInt(args[2]);
+  let aposta       = parseInt(args[2]);
   const senderNorm = jidNormalizedUser(senderJid);
 
   const escolhaValida = escolha >= 1 && escolha <= CORRIDA_BICHOS.length;
@@ -214,6 +249,13 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   }
 
   const carteira = await getCarteira(senderNorm, jid);
+  if (carteira?.walletLinked) {
+    aposta = localMinorUnitsToBrlCents(aposta, { rate: carteira.walletRate });
+    if (aposta <= 0) {
+      await sock.sendMessage(jid, { text: '⚠️ A aposta é menor que o valor mínimo aceito após a conversão da moeda.' }, { quoted: msg });
+      return;
+    }
+  }
   const saldo    = carteira?.gold ?? 0;
 
   if (saldo < aposta) {
@@ -222,13 +264,13 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
         `🏁 *CORRIDA DE BICHOS* 🏁\n\n` +
         `❌ *Saldo insuficiente!*\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `💰 Seu saldo: *${saldo} gold*\n` +
-        `🎲 Aposta:    *${aposta} gold*`,
+        `💰 Seu saldo: *${formatWalletAmount(saldo, carteira)}*\n` +
+        `🎲 Aposta:    *${formatWalletAmount(aposta, carteira)}*`,
     }, { quoted: msg });
     return;
   }
 
-  await alterarGold(senderNorm, jid, -aposta, 'Corrida (aposta)');
+  await alterarGold(senderNorm, jid, -aposta, 'Corrida (aposta)', { allowLinked: true });
 
   const vencedorIdx = sortearVencedor();
   const escolhaIdx  = escolha - 1;
@@ -240,8 +282,16 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
 
   let saldoFinal = saldo - aposta;
   if (venceu && premio > 0) {
-    const carteiraAtualizada = await alterarGold(senderNorm, jid, premio, `Corrida (${bichoEscolha.nome})`);
-    saldoFinal = carteiraAtualizada.gold;
+    try {
+      const carteiraAtualizada = await creditarPremio(carteira, senderNorm, jid, premio, `Corrida (${bichoEscolha.nome})`);
+      saldoFinal = carteiraAtualizada.gold;
+    } catch (e) {
+      console.error(`[corrida] PRÊMIO NÃO CREDITADO jid=${senderNorm} premio=${premio}:`, e.message);
+      await sock.sendMessage(jid, {
+        text: '⚠️ Não consegui creditar seu prêmio agora. Fale com um admin; a rodada foi registrada.',
+      }, { quoted: msg });
+      return;
+    }
   }
 
   const FRASES_VITORIA_CORRIDA = [
@@ -265,8 +315,8 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
     : `❌ *DERROTA!*\n${FRASES_DERROTA_CORRIDA[Math.floor(Math.random() * FRASES_DERROTA_CORRIDA.length)]}`;
 
   const resultadoLinha = venceu
-    ? `📈 Ganho líquido: *+${lucroLiq} gold* _(prêmio de ${premio} gold pelas odds ${bichoEscolha.odds}x)_`
-    : `📉 Perda: *-${aposta} gold*`;
+    ? `📈 Ganho líquido: *+${formatWalletAmount(lucroLiq, carteira)}* _(prêmio de ${formatWalletAmount(premio, carteira)} pelas odds ${bichoEscolha.odds}x)_`
+    : `📉 Perda: *-${formatWalletAmount(aposta, carteira)}*`;
 
   await sock.sendMessage(jid, {
     text:
@@ -276,7 +326,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
       `${statusTxt}\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `${resultadoLinha}\n` +
-      `💰 Saldo final: *${saldoFinal} gold*\n\n` +
+      `💰 Saldo final: *${formatWalletAmount(saldoFinal, carteira)}*\n\n` +
       `_Quer correr de novo? !corrida [bicho] [valor]_`,
   }, { quoted: msg });
 }
@@ -287,7 +337,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
 
 async function handleApostar(sock, msg, jid, senderJid, caption) {
   const args       = caption.trim().split(/\s+/);
-  const aposta     = parseInt(args[1]);
+  let aposta       = parseInt(args[1]);
   const senderNorm = jidNormalizedUser(senderJid);
 
   if (!aposta || isNaN(aposta) || aposta <= 0) {
@@ -298,11 +348,18 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
   }
 
   const carteira = await getCarteira(senderNorm, jid);
+  if (carteira?.walletLinked) {
+    aposta = localMinorUnitsToBrlCents(aposta, { rate: carteira.walletRate });
+    if (aposta <= 0) {
+      await sock.sendMessage(jid, { text: '⚠️ A aposta é menor que o valor mínimo aceito após a conversão da moeda.' }, { quoted: msg });
+      return;
+    }
+  }
   const saldo    = carteira?.gold ?? 0;
 
   if (saldo < aposta) {
     await sock.sendMessage(jid, {
-      text: `❌ *Saldo insuficiente!* Você possui *${saldo} gold*.`,
+      text: `❌ *Saldo insuficiente!* Você possui *${formatWalletAmount(saldo, carteira)}*.`,
     }, { quoted: msg });
     return;
   }
@@ -327,30 +384,30 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
 
   if (venceu) {
     const frase = FRASES_VITORIA[Math.floor(Math.random() * FRASES_VITORIA.length)];
-    const carteiraAtualizada = await alterarGold(senderNorm, jid, aposta, 'Aposta (Vitória)');
+    const carteiraAtualizada = await alterarGold(senderNorm, jid, aposta, 'Aposta (Vitória)', { allowLinked: true });
     const novoSaldo = carteiraAtualizada?.gold ?? (saldo + aposta);
 
     await sock.sendMessage(jid, {
       text:
         `🎉 *APOSTA GANHA!* 🎉\n\n` +
         `🪙 ${frase}\n\n` +
-        `💵 Valor apostado: *${aposta} gold*\n` +
-        `📈 Ganho: *+${aposta} gold*\n` +
-        `💰 Novo saldo: *${novoSaldo} gold*\n\n` +
+        `💵 Valor apostado: *${formatWalletAmount(aposta, carteira)}*\n` +
+        `📈 Ganho: *+${formatWalletAmount(aposta, carteira)}*\n` +
+        `💰 Novo saldo: *${formatWalletAmount(novoSaldo, carteiraAtualizada)}*\n\n` +
         `_Quer arriscar de novo? !apostar <valor>_`,
     }, { quoted: msg });
   } else {
     const frase = FRASES_DERROTA[Math.floor(Math.random() * FRASES_DERROTA.length)];
-    const carteiraAtualizada = await alterarGold(senderNorm, jid, -aposta, 'Aposta (Derrota)');
+    const carteiraAtualizada = await alterarGold(senderNorm, jid, -aposta, 'Aposta (Derrota)', { allowLinked: true });
     const novoSaldo = carteiraAtualizada?.gold ?? (saldo - aposta);
 
     await sock.sendMessage(jid, {
       text:
         `💔 *APOSTA PERDIDA!* 💔\n\n` +
         `🪙 ${frase}\n\n` +
-        `💵 Valor apostado: *${aposta} gold*\n` +
-        `📉 Perda: *-${aposta} gold*\n` +
-        `💰 Novo saldo: *${novoSaldo} gold*\n\n` +
+        `💵 Valor apostado: *${formatWalletAmount(aposta, carteira)}*\n` +
+        `📉 Perda: *-${formatWalletAmount(aposta, carteira)}*\n` +
+        `💰 Novo saldo: *${formatWalletAmount(novoSaldo, carteiraAtualizada)}*\n\n` +
         `_Não desanima — tenta de novo! !apostar <valor>_`,
     }, { quoted: msg });
   }

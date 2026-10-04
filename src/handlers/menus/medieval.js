@@ -12,7 +12,7 @@ Um RPG completo onde você escolhe uma classe, ganha XP, batalha e conquista ite
 
 📜 *PERSONAGEM*
   ▸ ${P}ficha — ver sua ficha e atributos
-  ▸ ${P}missaomed — missões por XP e Gold
+  ▸ ${P}missaomed — missões por XP e saldo
   ▸ ${P}recargamana — meditar e recuperar energia
   ▸ ${P}usarpocao _(poção)_ — usar uma poção
 

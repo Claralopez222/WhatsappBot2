@@ -1,49 +1,32 @@
-# Dependencies
-node_modules/
-.venv/
-venv/
-__pycache__/
-
-# Environment & Secrets
-.env
-.env.*
-*.env
-*.pem
-*.key
-
-# Cookies & Authentication Sessions
-*cookies*.txt
-*_cookies.txt
-cookies.txt
-session/
-sessions/
-auth_info/
-auth_info_baileys/
-qrcode.png
-*.qr.png
-
-# Database & Data Dumps
-data.json
-dados.json
-numeros.json
-downloads_full.txt
-backup_antes_migracao/
-
-# Binaries & Executables
-*.exe
-yt-dlp.exe
-
-# Logs & Temporary Files
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-temp/
-tmp/
-downloads/
-coverage/
-dist/
-
-# OS/Editor Noise
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
 .DS_Store
-Thumbs.db
+/build
+/functions/node_modules/
+/firebase-debug.log
+/firestore-debug.log
+/functions/firestore-debug.log
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+node_modules
+.env
+*firebase-adminsdk*.json
+firestore-debug.log
+.idea/
+
+node_modules
+.env
+*firebase-adminsdk*.json
+firestore-debug.log
+
+.idea/

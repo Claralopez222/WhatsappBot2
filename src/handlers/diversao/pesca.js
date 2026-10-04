@@ -461,9 +461,9 @@ async function handlePescar(sock, msg, jid) {
     const ehDesc = DESCARTAVEL_KEYS.has(item.key);
 
     // ── Persistência de Recompensas e Inventário ──────────────────────────
-    if (item.gold > 0) {
-      await alterarGold(userId, groupId, item.gold, `Pesca: ${item.nome}`);
-    }
+    const carteiraRecompensa = item.gold > 0
+      ? await alterarGold(userId, groupId, item.gold, `Pesca: ${item.nome}`)
+      : await getCarteira(userId, groupId);
 
     if (!ehDesc) {
       await CarteiraGrupo.findOneAndUpdate(
@@ -490,13 +490,13 @@ async function handlePescar(sock, msg, jid) {
       `📦 *${item.nome}*\n` +
       `🏷️ Raridade: *${rarLabel}*\n`;
 
-    if (item.gold > 0) resultado += `💰 *+${item.gold} Gold* (creditados no grupo)\n`;
+    if (item.gold > 0) resultado += `💰 *+${formatarSaldo(item.gold, carteiraRecompensa)}* adicionados ao saldo\n`;
 
     if (ehDesc)   resultado += `\n🗑️ _Apenas entulho de rio descartável desta vez..._\n`;
     else          resultado += `\n📥 _Item guardado com sucesso no inventário do grupo._\n`;
 
     if (precoVenda && !ehLixo && !ehDesc) {
-      resultado += `💵 _Venda rápida por: *${precoVenda} Gold* → !sellpesca ${item.key}_\n`;
+      resultado += `💵 _Venda rápida por: *${formatarSaldo(precoVenda, carteiraRecompensa)}* → !sellpesca ${item.key}_\n`;
     }
 
     const reacao = reacoes[item.raridade] ?? '';
@@ -526,7 +526,7 @@ async function handleVaras(sock, msg, jid) {
     for (const [key, vara] of listaVaras) {
       texto +=
         `${vara.nome}\n` +
-        `   💵 Preço: *${vara.preco} Gold*\n` +
+        `   💵 Preço: *${formatarSaldo(vara.preco)}*\n` +
         `   📈 Bônus raridade: *+${vara.bonus_raridade}*\n` +
         `   🎯 Reduz falha: *-${vara.reduce_falha}%*\n` +
         `   🛒 \`!buypesca ${key}\`\n\n`;
@@ -556,7 +556,7 @@ async function handleIscas(sock, msg, jid) {
     for (const [key, isca] of listaIscas) {
       texto +=
         `${isca.nome}\n` +
-        `   💵 Preço: *${isca.preco} Gold*\n` +
+        `   💵 Preço: *${formatarSaldo(isca.preco)}*\n` +
         `   📈 Bônus raridade: *+${isca.bonus_raridade}*\n` +
         `   🎯 Reduz falha: *-${isca.reduce_falha}%*\n` +
         `   🛒 \`!buypesca ${key}\`\n\n`;
@@ -651,21 +651,45 @@ async function handleComprarPesca(sock, msg, jid, caption) {
       : {};
 
     // ── Verifica saldo (e, se for vara, ausência prévia) e debita de forma atômica ──
-    const operacaoCompra = await CarteiraGrupo.findOneAndUpdate(
-      {
-        idWhatsApp: userId,
-        idGrupo:    groupId,
-        gold:       { $gte: custoTotal },
-        ...guardaVaraUnica,
-      },
-      {
-        $inc: {
-          gold: -custoTotal,
-          [`itensPesca.${itemKey}`]: qtdComprar,
+    const linkedBalance = await consultarSaldoPorIdentidade(userId);
+    let operacaoCompra;
+    if (linkedBalance) {
+      try {
+        const carteiraDebitada = await alterarGold(userId, groupId, -custoTotal, `Compra de pesca: ${info.nome}`);
+        const itemAtualizado = await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp: userId, idGrupo: groupId, ...guardaVaraUnica },
+          { $inc: { [`itensPesca.${itemKey}`]: qtdComprar } },
+          { new: true, upsert: false },
+        );
+        if (!itemAtualizado) {
+          await alterarGold(userId, groupId, custoTotal, `Estorno de compra de pesca: ${info.nome}`);
+        } else {
+          operacaoCompra = {
+            ...itemAtualizado.toObject(),
+            gold: carteiraDebitada.gold,
+            currencyInfo: carteiraDebitada.currencyInfo,
+          };
+        }
+      } catch (error) {
+        if (!(error instanceof RangeError)) throw error;
+      }
+    } else {
+      operacaoCompra = await CarteiraGrupo.findOneAndUpdate(
+        {
+          idWhatsApp: userId,
+          idGrupo: groupId,
+          gold: { $gte: custoTotal },
+          ...guardaVaraUnica,
         },
-      },
-      { new: true, upsert: false }
-    );
+        {
+          $inc: {
+            gold: -custoTotal,
+            [`itensPesca.${itemKey}`]: qtdComprar,
+          },
+        },
+        { new: true, upsert: false },
+      );
+    }
 
     if (!operacaoCompra) {
       // A guarda pode ter falhado por dois motivos diferentes — busca o
@@ -683,9 +707,9 @@ async function handleComprarPesca(sock, msg, jid, caption) {
 
       return reply(sock, jid, msg,
         `❌ *SALDO INSUFICIENTE!*\n\n` +
-        `💰 Você tem: *${saldoAtual} Gold*\n` +
-        `💵 Necessário: *${custoTotal} Gold*\n` +
-        `📉 Faltam: *${custoTotal - saldoAtual} Gold*`
+        `💰 Você tem: *${formatarSaldo(saldoAtual, carteiraAtual)}*\n` +
+        `💵 Necessário: *${formatarSaldo(custoTotal, carteiraAtual)}*\n` +
+        `📉 Faltam: *${formatarSaldo(custoTotal - saldoAtual, carteiraAtual)}*`
       );
     }
 
@@ -697,8 +721,8 @@ async function handleComprarPesca(sock, msg, jid, caption) {
     return reply(sock, jid, msg,
       `✅ *COMPRA REALIZADA!*\n\n` +
       `${tipoLabel}: *${info.nome}*${qtdLabel}\n` +
-      `💵 Total pago: *${custoTotal} Gold*\n` +
-      `💰 Saldo restante: *${operacaoCompra.gold} Gold*\n\n` +
+      `💵 Total pago: *${formatarSaldo(custoTotal, operacaoCompra)}*\n` +
+      `💰 Saldo restante: *${formatarSaldo(operacaoCompra.gold, operacaoCompra)}*\n\n` +
       `${ehVara ? '🎣 Use *!pescar* para testar sua nova vara!' : '📦 Veja seu inventário: *!inventariopesca*'}`
     );
 
@@ -721,9 +745,7 @@ async function handleInventarioPesca(sock, msg, jid) {
   userId = await resolverJidCarteira(userId, groupId);
 
   try {
-    const carteira = await CarteiraGrupo
-      .findOne({ idWhatsApp: userId, idGrupo: groupId })
-      .lean();
+    const carteira = await getCarteira(userId, groupId);
 
     const semItens =
       `🎣 *SEU INVENTÁRIO DE PESCA ESTÁ VAZIO*\n\n` +
@@ -758,7 +780,7 @@ async function handleInventarioPesca(sock, msg, jid) {
         const precoVenda = Math.floor(info.preco * 0.50);
         texto += `   ${info.nome} × ${inv[k]}${ativa}\n`;
         texto += `   ├ Bônus raridade: *+${info.bonus_raridade}* · Reduz falha: *-${info.reduce_falha}%*\n`;
-        texto += `   └ Venda: *${precoVenda}g* → \`!sellpesca ${k}\`\n\n`;
+        texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${k}\`\n\n`;
       }
     }
 
@@ -773,7 +795,7 @@ async function handleInventarioPesca(sock, msg, jid) {
 const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.70
         texto += `   ${info.nome} × ${inv[k]}${ativa}\n`;
         texto += `   ├ Bônus raridade: *+${info.bonus_raridade}* · Reduz falha: *-${info.reduce_falha}%*\n`;
-        texto += `   └ Venda: *${precoVenda}g* → \`!sellpesca ${k}\`\n\n`;
+        texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${k}\`\n\n`;
       }
     }
 
@@ -790,7 +812,7 @@ const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.
 
         texto += `   ${nome} × ${inv[k]} ${rarLabel}\n`;
         if (precoVenda) {
-          texto += `   └ Venda: *${precoVenda}g* → \`!sellpesca ${k}\`\n\n`;
+          texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${k}\`\n\n`;
         } else {
           texto += `   └ _(sem valor de mercado)_\n\n`;
         }
@@ -808,7 +830,7 @@ const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.
 
     texto +=
       `━━━━━━━━━━━━━━━━\n` +
-      `💰 Gold neste grupo: *${carteira.gold ?? 0}*\n` +
+      `💰 Saldo neste grupo: *${formatarSaldo(carteira.gold ?? 0, carteira)}*\n` +
       `${cooldownStr}\n\n` +
       `🎣 *!pescar* · 💵 *!sellpesca <item> [qtd]* · 🛒 *!buypesca <item>*\n` +
       `🎁 *!givepesca @fulano <item> [qtd]* · 📊 *!statspesca*`;
@@ -889,9 +911,7 @@ async function handleVenderPesca(sock, msg, jid, caption) {
   }
 
   try {
-    const carteira = await CarteiraGrupo
-      .findOne({ idWhatsApp: userId, idGrupo: groupId })
-      .lean();
+    const carteira = await getCarteira(userId, groupId);
 
     const invRaw     = carteira?.itensPesca;
     const inv        = invRaw instanceof Map ? Object.fromEntries(invRaw) : (invRaw ?? {});
@@ -928,10 +948,7 @@ async function handleVenderPesca(sock, msg, jid, caption) {
     // ── Credita o gold ───────────────────────────────────────────────────────
     await alterarGold(userId, groupId, totalGold, `Venda pesca: ${info.nome} ×${qtdVender}`);
 
-    const carteiraFinal = await CarteiraGrupo
-      .findOne({ idWhatsApp: userId, idGrupo: groupId })
-      .select('gold')
-      .lean();
+    const carteiraFinal = await getCarteira(userId, groupId);
 
     // BUG 9 FIX: o aviso de "50%" só faz sentido pra vara agora — iscas
     // vendem na mesma taxa que itens pescados (70%), então não são mais
@@ -944,12 +961,12 @@ async function handleVenderPesca(sock, msg, jid, caption) {
       `💵 *VENDA REALIZADA COM SUCESSO!*\n\n` +
       `📦 Item: *${info.nome}*\n` +
       `🔢 Quantidade vendida: *${qtdVender}×*\n` +
-      `💰 Valor unitário: *${precoUnitario} Gold* (${Math.round(taxaVenda * 100)}% do valor base)\n` +
-      `🏆 Total recebido: *+${totalGold} Gold*\n\n` +
+      `💰 Valor unitário: *${formatarSaldo(precoUnitario, carteiraFinal)}* (${Math.round(taxaVenda * 100)}% do valor base)\n` +
+      `🏆 Total recebido: *+${formatarSaldo(totalGold, carteiraFinal)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       avisoEquip +
       `📦 Restante no inventário: *${disponivel - qtdVender}×*\n` +
-      `💰 Saldo atual no grupo: *${carteiraFinal?.gold ?? 0} Gold*`
+      `💰 Saldo atual no grupo: *${formatarSaldo(carteiraFinal?.gold ?? 0, carteiraFinal)}*`
     );
 
   } catch (err) {
@@ -1048,7 +1065,7 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
       texto +=
         `${medalha} *@${numero}*\n` +
         `   ${bar} ${s.total} 🐟 (${pct}%)\n` +
-        `   💰 ${s.gold} Gold\n\n`;
+        `   💰 ${formatarSaldo(s.gold)}\n\n`;
     });
 
     const mentions = scores.map(s => s.idWhatsApp);

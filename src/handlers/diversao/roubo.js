@@ -17,6 +17,7 @@ const {
   getCarteira,
   alterarGold,
   alterarGoldSeguro,
+  formatarSaldo,
 } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { incrementMission } = require('./missoes');
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
@@ -145,7 +146,13 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 `;
 
   for (const [key, item] of Object.entries(ITENS_ROUBO)) {
-    texto += `  ▸ ${item.nome} — *${item.preco}* gold\n`;
+    texto += `  ▸ ${item.nome} — *${formatarSaldo(item.preco)}*\n`;
+    texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
+  }
+
+  texto += `\n🏦 *FERRAMENTAS PARA ASSALTO A BANCO*\n`;
+  for (const [key, item] of Object.entries(ITENS_ROUBO_BANCO)) {
+    texto += `  ▸ ${item.nome} — *${formatarSaldo(item.preco)}*\n`;
     texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
   }
 
@@ -189,7 +196,7 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 `;
 
   for (const [key, item] of Object.entries(ITENS_SEGURANCA)) {
-    texto += `  ▸ ${item.nome} — *${item.preco}* gold\n`;
+    texto += `  ▸ ${item.nome} — *${formatarSaldo(item.preco)}*\n`;
     texto += `     └ Proteção: *+${item.defesa}%* | chave: \`${key}\`\n`;
   }
 
@@ -245,9 +252,9 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
       await sock.sendMessage(jid, {
         text:
           `❌ *SALDO INSUFICIENTE!*\n\n` +
-          `💵 Preço:      *${itemInfo.preco}* gold\n` +
-          `💰 Seu saldo:  *${saldo}* gold\n` +
-          `⚠️ Faltam:     *${faltam}* gold`,
+          `💵 Preço:      *${formatarSaldo(itemInfo.preco, carteira)}*\n` +
+          `💰 Seu saldo:  *${formatarSaldo(saldo, carteira)}*\n` +
+          `⚠️ Faltam:     *${formatarSaldo(faltam, carteira)}*`,
       }, { quoted: msg });
       return;
     }
@@ -265,12 +272,12 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     try {
       await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
       await sock.sendMessage(jid, {
-        text: '⚠️ Erro ao registrar o item. Seu gold foi reembolsado.',
+        text: '⚠️ Erro ao registrar o item. Seu saldo foi reembolsado.',
       }, { quoted: msg });
     } catch (refundErr) {
       console.error('FALHA CRÍTICA: reembolso também falhou (buyroubo):', refundErr.message);
       await sock.sendMessage(jid, {
-        text: '⚠️ Erro ao registrar o item e ao reembolsar o gold. Contate um administrador.',
+        text: '⚠️ Erro ao registrar o item e ao reembolsar o saldo. Contate um administrador.',
       }, { quoted: msg });
     }
     return;
@@ -284,7 +291,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
       `🔧 *Item/ferramenta:* ${itemInfo.nome}\n` +
       `💵 *Preço:* ${itemInfo.preco} gold\n` +
       `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
-      `💎 *Saldo restante:* ${carteiraFinal.gold} gold\n\n` +
+      `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
       `💡 Use *!equiparroubo ${itemSlug}* para equipar!`,
   }, { quoted: msg });
 }
@@ -325,9 +332,9 @@ async function handleComprarSec(sock, msg, jid, caption) {
       await sock.sendMessage(jid, {
         text:
           `❌ *SALDO INSUFICIENTE!*\n\n` +
-          `💵 Preço:      *${itemInfo.preco}* gold\n` +
-          `💰 Seu saldo:  *${saldo}* gold\n` +
-          `⚠️ Faltam:     *${faltam}* gold`,
+          `💵 Preço:      *${formatarSaldo(itemInfo.preco, carteira)}*\n` +
+          `💰 Seu saldo:  *${formatarSaldo(saldo, carteira)}*\n` +
+          `⚠️ Faltam:     *${formatarSaldo(faltam, carteira)}*`,
       }, { quoted: msg });
       return;
     }
@@ -345,12 +352,12 @@ async function handleComprarSec(sock, msg, jid, caption) {
     try {
       await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
       await sock.sendMessage(jid, {
-        text: '⚠️ Erro ao registrar o item. Seu gold foi reembolsado.',
+        text: '⚠️ Erro ao registrar o item. Seu saldo foi reembolsado.',
       }, { quoted: msg });
     } catch (refundErr) {
       console.error('FALHA CRÍTICA: reembolso também falhou (buysec):', refundErr.message);
       await sock.sendMessage(jid, {
-        text: '⚠️ Erro ao registrar o item e ao reembolsar o gold. Contate um administrador.',
+        text: '⚠️ Erro ao registrar o item e ao reembolsar o saldo. Contate um administrador.',
       }, { quoted: msg });
     }
     return;
@@ -362,9 +369,9 @@ async function handleComprarSec(sock, msg, jid, caption) {
     text:
       `✅ *COMPRA REALIZADA!*\n\n` +
       `🔐 *Item:* ${itemInfo.nome}\n` +
-      `💵 *Preço:* ${itemInfo.preco} gold\n` +
+      `💵 *Preço:* ${formatarSaldo(itemInfo.preco, carteiraFinal)}\n` +
       `🛡️ *Proteção:* +${itemInfo.defesa}%\n` +
-      `💎 *Saldo restante:* ${carteiraFinal.gold} gold\n\n` +
+      `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
       `💡 Use *!equiparsec ${itemSlug}* para ativar!`,
   }, { quoted: msg });
 }
@@ -716,7 +723,7 @@ async function handleRoubar(sock, msg, jid) {
   const saldoVitima = carteiraVitima.gold ?? 0;
   if (saldoVitima <= 0) {
     await sock.sendMessage(jid, {
-      text: '❌ A vítima não tem gold para roubar neste grupo!',
+      text: '❌ A vítima não tem saldo para roubar neste grupo!',
     }, { quoted: msg });
     return;
   }
@@ -790,14 +797,14 @@ async function handleRoubar(sock, msg, jid) {
     const pct          = Math.floor(Math.random() * (ROUBO_MAX_PCT - ROUBO_MIN_PCT + 1)) + ROUBO_MIN_PCT;
     const ouroRoubado  = Math.max(1, Math.floor(saldoVitima * pct / 100));
 
-    const { debitado } = await alterarGoldSeguro(
+    const { debitado, carteira: carteiraVitimaAtualizada } = await alterarGoldSeguro(
       vitimaId, idGrupo, -ouroRoubado, `Roubado por ${atacanteId}`
     );
 
     if (debitado === 0) {
       textoResposta +=
         `😅 *AZAR!*\n\n` +
-        `A vítima ficou sem gold no último segundo!\n` +
+        `A vítima ficou sem saldo no último segundo!\n` +
         `🗑️ *Item consumido:* ${itemAtaque.nome}\n` +
         `⏱️ *Próxima tentativa em:* ${formatarTempo(COOLDOWN_ROUBO_MS)}`;
       await sock.sendMessage(jid, { text: textoResposta }, { quoted: msg });
@@ -824,9 +831,9 @@ async function handleRoubar(sock, msg, jid) {
 
     textoResposta +=
       `✅ *ROUBO BEM-SUCEDIDO!*\n\n` +
-      `💰 *Ouro roubado:* ${debitado} gold (${pct}% do saldo)\n` +
-      `👤 *Seu novo saldo:* ${carteiraAtualizada.gold} gold\n` +
-      `😢 *Saldo da vítima:* ${saldoVitima - debitado} gold\n` +
+      `💰 *Valor roubado:* ${formatarSaldo(debitado, carteiraAtualizada)} (${pct}% do saldo)\n` +
+      `👤 *Seu novo saldo:* ${formatarSaldo(carteiraAtualizada.gold, carteiraAtualizada)}\n` +
+      `😢 *Saldo da vítima:* ${formatarSaldo(carteiraVitimaAtualizada.gold, carteiraVitimaAtualizada)}\n` +
       `🗑️ *Item consumido:* ${itemAtaque.nome}\n` +
       (itemDefesa ? `🛡️ *Defesa da vítima consumida:* ${itemDefesa.nome}\n` : ``) +
       `💡 A vítima pode usar *!policia @você* nas próximas 2h!`;
@@ -840,7 +847,7 @@ async function handleRoubar(sock, msg, jid) {
     textoResposta +=
       `❌ *ROUBO FRACASSADO!*\n\n` +
       `🚔 A polícia chegou e te prendeu!\n` +
-      `😌 *Saldo da vítima:* ${saldoVitima} gold (intacto)\n` +
+      `😌 *Saldo da vítima:* ${formatarSaldo(saldoVitima, carteiraVitima)} (intacto)\n` +
       `🗑️ *Item consumido:* ${itemAtaque.nome}\n` +
       (itemDefesa ? `🛡️ *Defesa da vítima consumida:* ${itemDefesa.nome}\n` : ``) +
       `🔒 *Você ficará preso por:* ${formatarTempo(COOLDOWN_PRESO_MS)}`;
@@ -887,9 +894,9 @@ function _buildTextoCaptura(numeroLadrao, debitavel = 0) {
     `🔒 *Ficará preso por mais:* ${formatarTempo(COOLDOWN_PRESO_MS)}\n`;
 
   if (debitavel > 0) {
-    return cabecalho + `💰 *Gold recuperado:* ${debitavel} gold (${DEVOLUCAO_POLICIA}% do roubado)`;
+    return cabecalho + `💰 *Saldo recuperado:* ${formatarSaldo(debitavel)} (${DEVOLUCAO_POLICIA}% do roubado)`;
   }
-  return cabecalho + `😔 O ladrão não tem gold para devolver.`;
+  return cabecalho + `😔 O ladrão não tem saldo para devolver.`;
 }
 
 // ─── !policia @ladrão ─────────────────────────────────────────────────────────
@@ -997,7 +1004,7 @@ async function handlePolicia(sock, msg, jid) {
     textoResultado =
       `❌ *LADRÃO ESCAPOU!*\n\n` +
       `🏃 @${numeroLadrao} conseguiu fugir da polícia!\n` +
-      `😔 Nenhum gold foi recuperado.`;
+      `😔 Nenhum saldo foi recuperado.`;
   }
 
   const texto =
@@ -1194,9 +1201,9 @@ async function handleRoubarBanco(sock, msg, jid) {
 
     texto +=
       `✅ *ASSALTO BEM-SUCEDIDO!*\n\n` +
-      `🏦 *Roubado do banco:* ${valorRoubado} gold (${pct}% do investimento)\n` +
-      `💰 *Seu novo saldo:* ${carteiraAtualizada.gold} gold\n` +
-      `🏦 *Banco da vítima restante:* ${saldoBanco - valorRoubado} gold\n` +
+      `🏦 *Roubado do banco:* ${formatarSaldo(valorRoubado, carteiraAtualizada)} (${pct}% do investimento)\n` +
+      `💰 *Seu novo saldo:* ${formatarSaldo(carteiraAtualizada.gold, carteiraAtualizada)}\n` +
+      `🏦 *Banco da vítima restante:* ${formatarSaldo(saldoBanco - valorRoubado, carteiraVitima)}\n` +
       `🗑️ *Item consumido:* ${itemAtaque.nome}\n\n` +
       `💡 A vítima pode usar *!policia @você* nas próximas 2h!`;
 
@@ -1236,9 +1243,9 @@ async function handleRoubarBanco(sock, msg, jid) {
       `🚔 A segurança do banco te capturou!\n\n` +
       `*PUNIÇÕES:*\n` +
       `  🔒 Preso por: *${formatarTempo(COOLDOWN_PRESO_BANCO_MS)}*\n` +
-      `  💸 Multa: *${multa} gold* (10% do seu saldo)\n` +
+      `  💸 Multa: *${formatarSaldo(multa, carteiraAtacante)}* (10% do seu saldo)\n` +
       `  🗑️ Item destruído: *${itemAtaque.nome}*\n\n` +
-      `😌 *Banco da vítima:* ${saldoBanco} gold (intacto)`;
+      `😌 *Banco da vítima:* ${formatarSaldo(saldoBanco, carteiraVitima)} (intacto)`;
   }
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });

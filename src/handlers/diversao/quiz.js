@@ -114,13 +114,9 @@ async function changeGold(userId, amount, groupJid) {
   const idNorm = await resolverJidCarteira(userId, groupJid);
 
   try {
-    // ── 1. Atualiza CarteiraGrupo (gold LOCAL do grupo) ───────────────────
+    // ── 1. Atualiza o saldo local ou compartilhado conforme o vínculo ──────
     if (groupJid) {
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: idNorm, idGrupo: groupJid },
-        { $inc: { gold: amount } },
-        { upsert: true }
-      );
+      await carteiraService.alterarGold(idNorm, groupJid, amount, 'Recompensa do quiz');
     }
 
     // ── 2. Atualiza Usuario global (missões diárias) ──────────────────────
@@ -142,15 +138,11 @@ async function changeGold(userId, amount, groupJid) {
       );
     }
 
-    // ── 4. Retorna saldo REAL da CarteiraGrupo (gold local, não global) ───
+    // ── 4. Retorna o saldo efetivo da carteira ────────────────────────────
     if (groupJid) {
-      const carteira = await CarteiraGrupo.findOne(
-        { idWhatsApp: idNorm, idGrupo: groupJid },
-        { gold: 1 }
-      ).lean();
-      const saldo = carteira?.gold ?? 0;
-      console.log(`✅ Gold alterado: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (saldo no grupo: ${saldo})`);
-      return saldo;
+      const carteira = await carteiraService.getCarteira(idNorm, groupJid);
+      console.log(`✅ Saldo do quiz alterado: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (saldo: ${carteira.gold})`);
+      return carteira;
     }
 
     console.log(`✅ Gold alterado: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (sem grupo)`);
@@ -158,7 +150,7 @@ async function changeGold(userId, amount, groupJid) {
 
   } catch (e) {
     console.error('⚠️ Erro ao alterar gold:', e.message);
-    return 0;
+    throw e;
   }
 }
 

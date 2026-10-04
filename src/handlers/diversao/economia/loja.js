@@ -4,7 +4,8 @@ const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
-const { getCarteira, alterarGold, comprarComGold } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { getCarteira, comprarComGold, venderComGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { consultarSaldoPorIdentidade } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'appWallet'));
 const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
@@ -23,6 +24,10 @@ async function getMoneyFormatter(msg) {
   const userId = jidNormalizedUser(resolveUserFromMsg(msg));
   const wallet = await getWalletBalance(userId);
   return amount => formatWalletAmount(amount, wallet);
+}
+
+async function moedaDaConta(msg) {
+  return consultarSaldoPorIdentidade(resolveUserFromMsg(msg));
 }
 
 // !gold
@@ -92,6 +97,7 @@ async function handleLoja(sock, msg, jid, getPrefix) {
 async function handleLojaFood(sock, msg, jid, getPrefix) {
   const formatMoney = await getMoneyFormatter(msg);
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const currencyInfo = await moedaDaConta(msg);
   const categorias = {
     '🍕 PRINCIPAIS': ['pizza', 'hamburger', 'frango', 'picanha'],
     '🍫 DOCES':      ['chocolate', 'bolo'],
@@ -123,6 +129,7 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
 async function handleLojaPet(sock, msg, jid, getPrefix) {
   const formatMoney = await getMoneyFormatter(msg);
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const currencyInfo = await moedaDaConta(msg);
   const categorias = {
     '🦴 COMIDAS':      ['racao', 'racaopremium', 'carnefresh', 'peixe', 'leite'],
     '🎾 BRINQUEDOS':   ['bolinha', 'pelucia', 'corda', 'disco', 'casabrinquedo'],
@@ -155,6 +162,7 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
 async function handleLojaTec(sock, msg, jid, getPrefix) {
   const formatMoney = await getMoneyFormatter(msg);
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const currencyInfo = await moedaDaConta(msg);
   const categorias = {
     '🖥️ COMPUTADORES': ['notebook', 'pcgamerlegendario'],
     '📱 SMARTPHONES':  ['celular', 'smartphonebasico'],
@@ -188,6 +196,7 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
 async function handleLojaCasal(sock, msg, jid, getPrefix) {
   const formatMoney = await getMoneyFormatter(msg);
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const currencyInfo = await moedaDaConta(msg);
   const categorias = {
     '🎁 PRESENTES ROMÂNTICOS': ['flores', 'carta', 'morango', 'urso', 'caixa'],
     '💎 JOIAS':                ['anel'],
@@ -228,6 +237,7 @@ async function handleComprar(sock, msg, jid, caption) {
   }
 
   const itemDigitado = match[1].trim();
+  const currencyInfo = await moedaDaConta(msg);
   const itemNome = resolverItemKey(itemDigitado);
 
   const itemInfo = itemNome
@@ -359,23 +369,34 @@ async function handleVender(sock, msg, jid, caption) {
     return;
   }
 
-  const removido = await Usuario.findOneAndUpdate(
-    { idWhatsApp: userId, [`inventory.${itemKey}`]: { $gte: quantidade } },
-    { $inc: { [`inventory.${itemKey}`]: -quantidade } }
-  );
-
-  if (!removido) {
+  const totalRecebido = preco * quantidade;
+  const resultado = await venderComGold({
+    idWhatsApp: userId,
+    idGrupo: jid,
+    valorTotal: totalRecebido,
+    descricaoGold: `Venda: ${itemInfo.nome} x${quantidade}`,
+    modeloInventario: Usuario,
+    filtroInventario: { idWhatsApp: userId },
+    campoInventario: `inventory.${itemKey}`,
+    quantidade,
+  });
+  if (!resultado.ok) {
+    if (resultado.motivo === 'ITEM_INSUFICIENTE') {
+      await sock.sendMessage(jid, {
+        text: `⚠️ Estoque de *${itemInfo.nome}* mudou antes da venda ser concluída. Tente novamente.`,
+      }, { quoted: msg });
+      return;
+    }
     await sock.sendMessage(jid, {
-      text: `⚠️ Estoque de *${itemInfo.nome}* mudou antes da venda ser concluída. Tente novamente.`,
+      text: '⚠️ Não foi possível concluir a venda. Seu item continua no inventário.',
     }, { quoted: msg });
     return;
   }
 
-  const totalRecebido = preco * quantidade;
-  const carteira = await alterarGold(userId, jid, totalRecebido, `Venda: ${itemInfo.nome} x${quantidade}`);
+  const carteira = resultado.carteira;
 
   const avisoPrecoAjustado = preco < precoDigitado
-    ? `\n_(preço ajustado para o máximo permitido: ${itemInfo.preco} gold/un.)_`
+    ? `\n_(preço ajustado para o máximo permitido.)_`
     : '';
 
   await sock.sendMessage(jid, {

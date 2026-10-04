@@ -394,7 +394,7 @@ async function handleRemedioFilho(sock, msg, jid) {
     if (!carteiraAtualizada) {
       const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
       return sock.sendMessage(jid, {
-        text: `❌ Você precisa de *${CUSTO_REMEDIO} gold* para comprar o remédio! Você tem *${carteira?.gold ?? 0} gold*.`,
+        text: `❌ Você precisa de *${formatarSaldo(CUSTO_REMEDIO, carteira)}* para comprar o remédio! Seu saldo é *${formatarSaldo(carteira?.gold ?? 0, carteira)}*.`,
       }, { quoted: msg });
     }
 
@@ -408,10 +408,7 @@ async function handleRemedioFilho(sock, msg, jid) {
       await filhoDoente.save();
     } catch (e) {
       // Reverte o débito se não conseguir salvar o filho
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: jid },
-        { $inc: { gold: CUSTO_REMEDIO } }
-      ).catch(() => {});
+      await alterarGold(userId, jid, CUSTO_REMEDIO, 'Estorno do remédio para filho');
       throw e;
     }
 
@@ -421,7 +418,7 @@ async function handleRemedioFilho(sock, msg, jid) {
       text:
         `💊 *${filhoDoente.nome}* foi curado(a)!\n\n` +
         `${emoji} Já está se sentindo melhor.\n` +
-        `💰 Gasto: *${CUSTO_REMEDIO} gold*\n\n` +
+        `💰 Gasto: *${formatarSaldo(CUSTO_REMEDIO, carteiraAtualizada)}*\n\n` +
         `😊 Felicidade : ${statusBar(60)}\n` +
         `🍽️ Fome       : ${statusBar(60)}\n` +
         `😴 Sono       : ${statusBar(60)}\n` +

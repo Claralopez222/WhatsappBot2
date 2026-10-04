@@ -23,6 +23,7 @@ const {
   convertVideoToSticker,
   convertBratSticker,
   convertTextoSticker,
+  isSupportedRasterImage,
 } = require(path.join(__dirname, '..', 'sticker'));
 
 const { fetchBuffer } = require(path.join(__dirname, '..', 'fetchurl'));
@@ -258,6 +259,12 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
     await sock.sendMessage(jid, { text: '❌ Mídia vazia. Tente reenviar.' }, { quoted: msg });
     return;
   }
+  if (imageMsg && (buffer.length > 25 * 1024 * 1024 || !isSupportedRasterImage(buffer))) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Imagem não suportada. Envie JPEG, PNG, GIF ou WebP de até 25 MB.',
+    }, { quoted: msg });
+    return;
+  }
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
   let sticker = null;
@@ -293,7 +300,7 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
     } catch (e) {
       console.log('⚠️ Tentativa 1 falhou, normalizando imagem...', e.message);
       try {
-        const normalized = await sharp(buffer)
+        const normalized = await sharp(buffer, { limitInputPixels: 16_000_000 })
           .rotate()
           .flatten({ background: { r: 255, g: 255, b: 255 } })
           .resize(384, 384, { fit: 'fill' })
@@ -345,6 +352,11 @@ async function handleDesfig(sock, msg, content, jid) {
     'buffer', {},
     { logger, reuploadRequest: sock.updateMediaMessage }
   );
+  if (!buffer || buffer.length > 25 * 1024 * 1024 || !isSupportedRasterImage(buffer)
+      || buffer.toString('ascii', 8, 12) !== 'WEBP') {
+    await sock.sendMessage(jid, { text: '⚠️ Figurinha WebP inválida ou muito grande.' }, { quoted: msg });
+    return;
+  }
 
   // ✅ FIX: NÃO confiar no campo isAnimated do metadata — alguns clientes
   // WhatsApp não o enviam corretamente. Detectamos direto no buffer.
@@ -365,12 +377,13 @@ async function handleDesfig(sock, msg, content, jid) {
     let frameCount = 0;
     try {
       // sharp lê todas as páginas (frames) de um WebP animado com { pages: -1 }
-      const img   = sharp(buffer, { animated: true });
+      const img   = sharp(buffer, { animated: true, limitInputPixels: 16_000_000 });
       const meta  = await img.metadata();
       const pages = meta.pages || 1;
+      if (pages > VIDEO_MAX_FRAMES) throw new Error('Figurinha com quadros demais.');
 
       for (let i = 0; i < pages; i++) {
-        const frameBuf = await sharp(buffer, { animated: false, page: i })
+        const frameBuf = await sharp(buffer, { animated: false, page: i, limitInputPixels: 16_000_000 })
           .resize(512, 512, { fit: 'fill' })
           .png()
           .toBuffer();
@@ -416,7 +429,7 @@ async function handleDesfig(sock, msg, content, jid) {
     }, { quoted: msg });
 
   } else {
-    const jpegBuffer = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
+    const jpegBuffer = await sharp(buffer, { limitInputPixels: 16_000_000 }).jpeg({ quality: 90 }).toBuffer();
     await sock.sendMessage(jid, {
       image: jpegBuffer, mimetype: 'image/jpeg', caption: '🖼️ Imagem da figurinha!',
     }, { quoted: msg });
@@ -447,6 +460,11 @@ async function handleToGif(sock, msg, content, jid) {
     'buffer', {},
     { logger, reuploadRequest: sock.updateMediaMessage }
   );
+  if (!buffer || buffer.length > 25 * 1024 * 1024 || !isSupportedRasterImage(buffer)
+      || buffer.toString('ascii', 8, 12) !== 'WEBP') {
+    await sock.sendMessage(jid, { text: '⚠️ Figurinha WebP inválida ou muito grande.' }, { quoted: msg });
+    return;
+  }
 
   // ✅ FIX: detecta animação pelo buffer, não pelo metadata
   if (!isAnimatedWebp(buffer)) {
@@ -463,10 +481,11 @@ async function handleToGif(sock, msg, content, jid) {
 
   let frameCount = 0;
   try {
-    const meta  = await sharp(buffer, { animated: true }).metadata();
+    const meta  = await sharp(buffer, { animated: true, limitInputPixels: 16_000_000 }).metadata();
     const pages = meta.pages || 1;
+    if (pages > VIDEO_MAX_FRAMES) throw new Error('Figurinha com quadros demais.');
     for (let i = 0; i < pages; i++) {
-      const frameBuf = await sharp(buffer, { animated: false, page: i })
+      const frameBuf = await sharp(buffer, { animated: false, page: i, limitInputPixels: 16_000_000 })
         .resize(384, 384, { fit: 'fill' })
         .png()
         .toBuffer();

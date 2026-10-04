@@ -219,7 +219,7 @@ Crie seu personagem, batalhe, evolua e domine o reino.
   ▸ ${P}missaomed — missão aleatória (cooldown 30min)
   • Requer HP mínimo de 20
   • 3 dificuldades: fácil, médio e difícil
-  • Sucesso: XP + Gold | Falha: dano + 10 XP de consolação
+  • Sucesso: XP + saldo | Falha: dano + 10 XP de consolação
 
 ❤️ *RECUPERAÇÃO*
   ▸ ${P}recargamana — recupera 60% do HP e 100% da mana
@@ -229,7 +229,7 @@ Crie seu personagem, batalhe, evolua e domine o reino.
 
 🏪 *LOJA & EQUIPAMENTOS*
   ▸ ${P}lojamedieval — ver armas, armaduras e poções
-  ▸ ${P}comprar _(item)_ — comprar com o gold do grupo
+  ▸ ${P}comprar _(item)_ — comprar com o saldo compartilhado
   ▸ ${P}equipar _(item)_ — equipar arma ou armadura
   ▸ ${P}desequipar _(arma/armadura)_ — remover item equipado
   ▸ ${P}invmed — ver seu inventário medieval

@@ -2,7 +2,7 @@
 
 const path = require('path');
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
-const CarteiraGrupo  = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
+const { getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 
 // Normaliza chave de item removendo acentos, espaços e caracteres especiais
 function normalizarChaveItem(str = '') {
@@ -28,8 +28,12 @@ function resolverItemKey(digitado = '') {
 }
 
 async function getSaldoGrupo(userId, idGrupo) {
-  const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).lean();
+  const carteira = await getCarteira(userId, idGrupo);
   return carteira?.gold ?? 0;
+}
+
+async function getCarteiraGrupo(userId, idGrupo) {
+  return getCarteira(userId, idGrupo);
 }
 
 module.exports = {
@@ -37,4 +41,6 @@ module.exports = {
   LOOKUP_ITENS_LOJA,
   resolverItemKey,
   getSaldoGrupo,
+  getCarteiraGrupo,
+  formatarSaldo,
 };

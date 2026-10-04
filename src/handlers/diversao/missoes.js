@@ -4,6 +4,7 @@
  */
 
 const path = require('path');
+const { createHash } = require('crypto');
 const Usuario    = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
@@ -16,7 +17,7 @@ const dailyMissionDefinitions = [
   { id: 'xp100',   label: 'Ganhe 100 XP',       target: 100, reward: 50,  emoji: '⭐', desc: 'Suba de level' },
   { id: 'msg50',   label: 'Mande 50 mensagens',  target: 50,  reward: 30,  emoji: '💬', desc: 'Seja ativo!' },
   { id: 'quiz5',   label: 'Acerte 5 quiz',       target: 5,   reward: 75,  emoji: '🧠', desc: 'Mostre inteligência' },
-  { id: 'gold500', label: 'Ganhe 500 gold',      target: 500, reward: 100, emoji: '💰', desc: 'Fique rico' },
+  { id: 'gold500', label: 'Ganhe 500 em saldo',  target: 500, reward: 100, emoji: '💰', desc: 'Fique rico' },
   { id: 'pet10',   label: 'Cuide do pet 10x',    target: 10,  reward: 60,  emoji: '🐾', desc: 'Ame seu pet' },
   { id: 'roubo3',  label: 'Faça 3 roubos',       target: 3,   reward: 80,  emoji: '🎭', desc: 'Seja um ladrão!' },
 ];
@@ -231,13 +232,18 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
     if (!isCompleted) {
       const bar = buildProgressBar(progress, mission.target);
       const pct = Math.min(Math.floor((progress / mission.target) * 100), 99); // nunca mostra 100% sem completar
+      const walletInfo = mission.id === 'gold500'
+        ? await consultarSaldoPorIdentidade(userId)
+        : null;
       await sock.sendMessage(jid, {
         text:
           `⏳ *Missão em andamento!*\n\n` +
           `${mission.emoji} *${mission.label}*\n` +
           `    └ ID: \`${mission.id}\`\n` +
           `[${bar}] ${pct}%\n` +
-          `📊 Progresso: *${progress}/${mission.target}*\n\n` +
+          `📊 Progresso: *${mission.id === 'gold500'
+            ? `${formatarSaldo(progress, walletInfo || {})}/${formatarSaldo(mission.target, walletInfo || {})}`
+            : `${progress}/${mission.target}`}*\n\n` +
           `_${mission.desc}_`
       }, { quoted: msg });
       return;
@@ -287,6 +293,13 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
 
     // ── Concede recompensa atomicamente ───────────────────────────
     try {
+      const linkedBalance = await consultarSaldoPorIdentidade(userId);
+      const requestId = createHash('sha256')
+        .update(`${userId}:${state.date}:${mission.id}`)
+        .digest('hex');
+      const balanceAfter = linkedBalance
+        ? await alterarGold(userId, jid, mission.reward, `Missão diária: ${mission.label}`, requestId)
+        : null;
       const updated = await Usuario.findOneAndUpdate(
         {
           idWhatsApp: userId,
@@ -297,7 +310,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
             [`dailyMissions.completed.${mission.id}`]: true,
             [`dailyMissions.claimed.${mission.id}`]:   true,
           },
-          $inc: { gold: mission.reward },
+          ...(linkedBalance ? {} : { $inc: { gold: mission.reward } }),
         },
         { new: true }
       );
@@ -313,8 +326,8 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
         text:
           `🎉 *MISSÃO CONCLUÍDA!* 🎉\n\n` +
           `${mission.emoji} *${mission.label}*\n` +
-          `💰 Recompensa: *+${mission.reward} gold* adicionado!\n` +
-          `💵 Seu gold atual: *${updated.gold}*\n\n` +
+          `💰 Recompensa: *${formatarSaldo(mission.reward, balanceAfter || linkedBalance || {})}* adicionada!\n` +
+          `💵 Seu saldo atual: *${formatarSaldo(balanceAfter?.gold ?? updated.gold, balanceAfter || linkedBalance || {})}*\n\n` +
           `_${mission.desc}_`
       }, { quoted: msg });
     } catch (e) {
@@ -325,6 +338,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
   }
 
   // ── Listagem de todas as missões ──────────────────────────────
+  const walletInfo = await consultarSaldoPorIdentidade(userId);
   let totalGoldDisponivel = 0;
   const lines = [];
 
@@ -345,9 +359,9 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
     const pct = Math.min(Math.floor((progress / mission.target) * 100), 100);
 
     lines.push(
-      `${statusEmoji} ${mission.emoji} *${mission.label}* — _+${mission.reward}g_\n` +
+      `${statusEmoji} ${mission.emoji} *${mission.label}* — _+${formatarSaldo(mission.reward, walletInfo || {})}_\n` +
       `    └ ID: \`${mission.id}\`\n` +
-      `    [${bar}] ${pct}% | ${progress}/${mission.target} | _${mission.desc}_`
+      `    [${bar}] ${pct}% | ${mission.id === 'gold500' ? `${formatarSaldo(progress, walletInfo || {})}/${formatarSaldo(mission.target, walletInfo || {})}` : `${progress}/${mission.target}`} | _${mission.desc}_`
     );
   }
 
@@ -355,7 +369,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
   const rodape     = allClaimed
     ? `🏆 *Parabéns! Você completou todas as missões de hoje!*`
     : totalGoldDisponivel > 0
-      ? `🎁 *Você tem ${totalGoldDisponivel}g para resgatar!*\n💡 Use *${P}missao <id>* para resgatar.`
+      ? `🎁 *Você tem ${formatarSaldo(totalGoldDisponivel, walletInfo || {})} para resgatar!*\n💡 Use *${P}missao <id>* para resgatar.`
       : `💪 Continue jogando para completar suas missões!`;
 
   const comoResgatar = dailyMissionDefinitions

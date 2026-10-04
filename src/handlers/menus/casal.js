@@ -60,7 +60,7 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
   ▸ ${P}cuidarfilho — Cuidar dos filhos _(cooldown 20h)_
 
 💊 *SAÚDE*
-  ▸ ${P}remediofil — Curar filho doente _(300 gold)_
+  ▸ ${P}remediofil — Curar filho doente _(R$ 3,00)_
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 📋 *REGRAS*

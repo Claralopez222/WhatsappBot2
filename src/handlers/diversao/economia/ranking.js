@@ -35,7 +35,7 @@ async function handleRankGold(sock, msg, jid, contactNames = {}) {
 
     if (!top?.length) {
       await sock.sendMessage(jid, {
-        text: '💰 *RANKING DE GOLD*\n\nNenhum membro ativo com Gold registrado neste grupo ainda!\n\n⛏️ Use *!garimpar* para começar a ganhar Gold.',
+        text: '💰 *RANKING DE REAIS*\n\nNenhum membro ativo com saldo registrado neste grupo ainda!\n\n⛏️ Use *!garimpar* para começar a ganhar saldo.',
       }, { quoted: msg });
       return;
     }

@@ -1,3 +1,4 @@
+const { createHash } = require('crypto');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const { contaVinculada } = require('../utils/carteira/vinculo');
@@ -128,7 +129,7 @@ async function executarPremiacao(sock, gruposAtivos) {
 // ─── Aviso ────────────────────────────────────────────────────────────────────
 async function enviarAviso(sock, gruposAtivos, tipo) {
   const textos = {
-    '60min': `⏰ *ATENÇÃO!* A premiação semanal de quiz começa em *1 hora!*\n\n🏆 Top 3 ganham:\n🥇 1.000 gold\n🥈 500 gold\n🥉 350 gold\n\n_Joga *!quiz* agora pra subir no ranking!_`,
+    '60min': `⏰ *ATENÇÃO!* A premiação semanal de quiz começa em *1 hora!*\n\n🏆 Top 3 ganham:\n🥇 R$ 10,00\n🥈 R$ 5,00\n🥉 R$ 3,50\n\n_Joga *!quiz* agora pra subir no ranking!_`,
     '10min': `🔔 *Faltam apenas 10 minutos* para a premiação semanal de quiz!\n\n_Use *!rankjogos* para ver sua posição!_`,
     '5min':  `🚨 *ÚLTIMOS 5 MINUTOS!* A premiação começa já já!\n\n_Última chance de jogar *!quiz* e subir no ranking!_ 🏃`,
   };

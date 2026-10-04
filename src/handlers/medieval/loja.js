@@ -5,6 +5,7 @@
 const mongoose           = require('mongoose');
 const MedievalPersonagem = require('../../models/MedievalPersonagem');
 const CarteiraGrupo      = require('../../models/CarteiraGrupo');
+const { getCarteira, alterarGold, formatarSaldo } = require('../../utils/carteira');
 
 const {
   ARMAS, ARMADURAS, POCOES, getClasse, getElemento, getArma, getArmadura, getPocao,
@@ -22,7 +23,7 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
     }
 
     const [carteira, p] = await Promise.all([
-      CarteiraGrupo.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean(),
+      getCarteira(senderJid, jid),
       getOuCriarPersonagem(senderJid, jid, nomeDisplay),
     ]);
     const gold            = carteira?.gold || 0;
@@ -52,7 +53,7 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
 
           return (
             `${bloqueadoClasse && mostrarTodas ? '⛔' : bloqueadoNivel && mostrarTodas ? '🔒' : a.emoji} *${a.nome}*\n` +
-            `📦 Preço: *${a.preco} Gold*\n` +
+            `📦 Preço: *${formatarSaldo(a.preco, carteira)}*\n` +
             `⚔️ Bônus de ataque: *+${a.bonusAtaque}*${mana}\n` +
             `${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
             statusTag +
@@ -71,7 +72,7 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
             : '';
           return (
             `${bloqueado && mostrarTodas ? '🔒' : a.emoji} *${a.nome}*\n` +
-            `📦 Preço: *${a.preco} Gold*\n` +
+            `📦 Preço: *${formatarSaldo(a.preco, carteira)}*\n` +
             `🛡️ Bônus de defesa: *+${a.bonusDefesa}*${mana}\n` +
             `${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
             statusTag +
@@ -85,7 +86,7 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
       const tipoTx = poc.tipo === 'ambos' ? 'HP e Mana' : poc.tipo.toUpperCase();
       return (
         `${poc.emoji} *${poc.nome}*\n` +
-        `📦 Preço: *${poc.preco} Gold*\n` +
+        `📦 Preço: *${formatarSaldo(poc.preco, carteira)}*\n` +
         `${tipoIc} Restaura: *+${poc.valor} ${tipoTx}*\n` +
         `${RARIDADE_EMOJI[poc.raridade] || '⚪'} Raridade: *${poc.raridade}*\n` +
         `🛒 \`!comprar ${chave}\``
@@ -100,7 +101,7 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
       text:
         `🏪 *LOJA MEDIEVAL* — Nível ${nivelJog} 🏪\n` +
         `━━━━━━━━━━━━━━━━━━━\n` +
-        `🪙 Seu saldo: *${gold} Gold*\n` +
+        `🪙 Seu saldo: *${formatarSaldo(gold, carteira)}*\n` +
         `🏅 Classe: *${p.classe}* ${classeData?.emoji || ''}\n\n` +
         `⚔️ *ARMAS DISPONÍVEIS*\n` +
         `━━━━━━━━━━━━━━━━━━━\n` +
@@ -172,49 +173,77 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
 
     const chave = `inventarioMedieval.${normalizarItemKey(item.nome)}`;
 
-    const session = await mongoose.startSession();
     let carteiraAtualizada;
-    try {
-      await session.withTransaction(async () => {
-        carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp: senderJid, idGrupo: jid, gold: { $gte: item.preco } },
-          { $inc: { gold: -item.preco } },
-          { new: true, upsert: false, session }
-        );
-        if (!carteiraAtualizada) {
-          throw new Error('GOLD_INSUFICIENTE');
-        }
-        await MedievalPersonagem.updateOne(
+    if (carteira.currencyInfo) {
+      let debitada;
+      try {
+        debitada = await alterarGold(senderJid, jid, -item.preco, `Compra medieval: ${item.nome}`);
+        const personagemAtualizado = await MedievalPersonagem.updateOne(
           { idWhatsApp: senderJid, idGrupo: jid },
           { $inc: { [chave]: 1 } },
-          { session }
         );
-      });
-    } catch (errTx) {
-      await session.endSession();
-      if (errTx.message === 'GOLD_INSUFICIENTE') {
-        const carteira = await CarteiraGrupo.findOne({ idWhatsApp: senderJid, idGrupo: jid }).lean();
-        const gold     = carteira?.gold || 0;
-        return sock.sendMessage(jid, {
-          text: `❌ Gold insuficiente!\n🪙 Você tem: *${gold}* | Necessário: *${item.preco}*`,
-        }, { quoted: msg });
+        if (personagemAtualizado.matchedCount !== 1) {
+          throw new Error('Personagem não encontrado para registrar o item comprado.');
+        }
+        carteiraAtualizada = { ...carteira, gold: debitada.gold, currencyInfo: debitada.currencyInfo };
+      } catch (error) {
+        if (debitada) {
+          try {
+            await alterarGold(senderJid, jid, item.preco, `Estorno compra medieval: ${item.nome}`);
+          } catch (refundError) {
+            console.error('❌ Estorno crítico de compra medieval falhou:', refundError.message);
+          }
+        }
+        if (error instanceof RangeError) {
+          return sock.sendMessage(jid, {
+            text: `❌ Saldo insuficiente!\n🪙 Você tem: *${formatarSaldo(carteira.gold, carteira)}* | Necessário: *${formatarSaldo(item.preco, carteira)}*`,
+          }, { quoted: msg });
+        }
+        throw error;
       }
-      console.error('⚠️ Erro na transação de compra (medieval):', errTx.message);
-      return sock.sendMessage(jid, {
-        text: `⚠️ Erro ao processar a compra. Nada foi debitado.`,
-      }, { quoted: msg });
+    } else {
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => {
+          carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
+            { idWhatsApp: senderJid, idGrupo: jid, gold: { $gte: item.preco } },
+            { $inc: { gold: -item.preco } },
+            { new: true, upsert: false, session },
+          );
+          if (!carteiraAtualizada) throw new Error('GOLD_INSUFICIENTE');
+          await MedievalPersonagem.updateOne(
+            { idWhatsApp: senderJid, idGrupo: jid },
+            { $inc: { [chave]: 1 } },
+            { session },
+          );
+        });
+      } catch (errTx) {
+        if (errTx.message === 'GOLD_INSUFICIENTE') {
+          const saldoAtual = await getCarteira(senderJid, jid);
+          return sock.sendMessage(jid, {
+            text: `❌ Saldo insuficiente!\n🪙 Você tem: *${formatarSaldo(saldoAtual?.gold ?? 0, saldoAtual)}* | Necessário: *${formatarSaldo(item.preco, saldoAtual)}*`,
+          }, { quoted: msg });
+        }
+        console.error('⚠️ Erro na transação de compra (medieval):', errTx.message);
+        return sock.sendMessage(jid, {
+          text: '⚠️ Erro ao processar a compra. Nada foi debitado.',
+        }, { quoted: msg });
+      } finally {
+        await session.endSession();
+      }
     }
-    await session.endSession();
 
-    const gold = carteiraAtualizada.gold + item.preco;
+    const saldoFinal = carteira.currencyInfo
+      ? carteiraAtualizada.gold
+      : carteiraAtualizada.gold - item.preco;
     const isPocao = !!pocao;
 
     await sock.sendMessage(jid, {
       text:
         `✅ *COMPRA REALIZADA!*\n\n` +
         `${item.emoji} *${item.nome}* adquirido!\n` +
-        `🪙 Gasto: *${item.preco} gold*\n` +
-        `🪙 Saldo restante: *${gold - item.preco} gold*\n\n` +
+        `🪙 Gasto: *${formatarSaldo(item.preco, carteiraAtualizada)}*\n` +
+        `🪙 Saldo restante: *${formatarSaldo(saldoFinal, carteiraAtualizada)}*\n\n` +
         (isPocao
           ? `_Use *!usarpocao ${item.nome}* para consumir!_`
           : `_Use *!equipar ${item.nome}* para equipar!_`),
@@ -594,11 +623,19 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
       }, { quoted: msg });
     }
 
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: senderJid, idGrupo: jid },
-      { $inc: { gold: valorTotal } },
-      { upsert: true }
-    );
+    let carteiraAtualizada;
+    try {
+      carteiraAtualizada = await alterarGold(senderJid, jid, valorTotal, `Venda medieval: ${item.nome}`);
+    } catch (error) {
+      const itemRestaurado = await MedievalPersonagem.updateOne(
+        { idWhatsApp: senderJid, idGrupo: jid },
+        { $inc: { [chaveMap]: quantidade } },
+      );
+      if (itemRestaurado.matchedCount !== 1) {
+        console.error('❌ Falha crítica ao restaurar item após falha no crédito da venda medieval:', error.message);
+      }
+      throw error;
+    }
 
     const qtdRestante = qtdAtual - quantidade;
 
@@ -606,8 +643,8 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
       text:
         `💰 *VENDA REALIZADA!*\n\n` +
         `${item.emoji} *${item.nome}* x${quantidade}\n\n` +
-        `🪙 Valor unitário: *${valorUnit} Gold*\n` +
-        `🪙 Total recebido: *+${valorTotal} Gold*\n\n` +
+        `🪙 Valor unitário: *${formatarSaldo(valorUnit, carteiraAtualizada)}*\n` +
+        `🪙 Total recebido: *+${formatarSaldo(valorTotal, carteiraAtualizada)}*\n\n` +
         `━━━━━━━━━━━━━━━━━━━\n` +
         (qtdRestante > 0
           ? `_Restam *${qtdRestante}x ${item.nome}* no inventário._`

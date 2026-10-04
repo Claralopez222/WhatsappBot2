@@ -1358,6 +1358,28 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     }
 
     if (!eGlobal) {
+      const carteiraAtual = await getCarteira(jidNorm, idGrupo);
+      if (carteiraAtual?.currencyInfo) {
+        if (!Number.isSafeInteger(valor)) {
+          return res.status(400).json({ error: 'valor deve ser um número inteiro de centavos para uma conta vinculada.' });
+        }
+        const delta = op === 'dar'
+          ? valor
+          : op === 'remover'
+            ? -valor
+            : valor - carteiraAtual.gold;
+        let carteira;
+        try {
+          carteira = delta === 0 ? carteiraAtual : await alterarGold(jidNorm, idGrupo, delta, 'Ajuste Admin');
+        } catch (error) {
+          if (error instanceof RangeError) {
+            return res.status(400).json({ error: 'Saldo insuficiente para remover esse valor.' });
+          }
+          throw error;
+        }
+        return res.json({ ok: true, idWhatsApp: jidNorm, goldAtual: carteira.gold });
+      }
+
       let update = {};
       if (op === 'dar') {
         update = {
@@ -1397,6 +1419,30 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
 
       return res.json({ ok: true, idWhatsApp: jidsBusca[0], goldAtual: carteira?.gold ?? valor });
     } else {
+      const saldoVinculado = await consultarSaldoPorIdentidade(jidNorm);
+      if (saldoVinculado) {
+        if (!Number.isSafeInteger(valor)) {
+          return res.status(400).json({ error: 'valor deve ser um número inteiro de centavos para uma conta vinculada.' });
+        }
+        const delta = op === 'dar'
+          ? valor
+          : op === 'remover'
+            ? -valor
+            : valor - saldoVinculado.balanceCents;
+        let saldoFinal = saldoVinculado;
+        try {
+          if (delta !== 0) {
+            saldoFinal = await ajustarSaldoPorIdentidade(jidNorm, delta, 'Ajuste Admin');
+          }
+        } catch (error) {
+          if (error instanceof RangeError) {
+            return res.status(400).json({ error: 'Saldo insuficiente para remover esse valor.' });
+          }
+          throw error;
+        }
+        return res.json({ ok: true, idWhatsApp: jidNorm, goldAtual: saldoFinal.balanceCents });
+      }
+
       let updateCarteira = {};
       let updateUsuario  = {};
 
@@ -1441,6 +1487,16 @@ router.delete('/admin/usuario/:idWhatsApp/gold/reset', adminAuth, async (req, re
     const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
     const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
     const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+
+    const saldoVinculado = await consultarSaldoPorIdentidade(jidNorm);
+    if (saldoVinculado?.balanceCents > 0) {
+      await ajustarSaldoPorIdentidade(
+        jidNorm,
+        -saldoVinculado.balanceCents,
+        'Reset Admin',
+        crypto.randomUUID(),
+      );
+    }
 
     const [resultadoCarteira, resultadoUsuario] = await Promise.all([
       CarteiraGrupo.updateMany(
@@ -1502,28 +1558,24 @@ router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
     }
 
     // Verifica saldo da origem
-    const carteiraOrigem = await CarteiraGrupo.findOne({ idWhatsApp: { $in: jidsOrigem }, idGrupo }).lean();
+    const carteiraOrigem = await getCarteira(jidsOrigem[0], idGrupo);
     if (!carteiraOrigem)
       return res.status(404).json({ error: 'Carteira de origem não encontrada.' });
     if ((carteiraOrigem.gold || 0) < valor)
-      return res.status(400).json({ error: `Saldo insuficiente. Origem tem ${carteiraOrigem.gold || 0} gold.` });
+      return res.status(400).json({ error: `Saldo insuficiente. Origem tem ${carteiraOrigem.gold || 0}.` });
 
-    const [, carteiraDestinoAtual] = await Promise.all([
-      CarteiraGrupo.updateMany(
-        { idWhatsApp: { $in: jidsOrigem }, idGrupo },
-        { $inc: { gold: -valor } }
-      ),
-      CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: { $in: jidsDestino }, idGrupo },
-        { $inc: { gold: valor } },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
-      ),
-    ]);
+    const { de, para } = await transferirGold(
+      jidsOrigem[0],
+      jidsDestino[0],
+      idGrupo,
+      valor,
+      'Transferência Admin',
+    );
 
     return res.json({
       ok: true,
-      goldOrigem:  (carteiraOrigem.gold || 0) - valor,
-      goldDestino: carteiraDestinoAtual.gold,
+      goldOrigem: de.gold,
+      goldDestino: para.gold,
     });
   } catch (err) {
     console.error('[API] POST /admin/gold/transferir:', err);
@@ -1982,7 +2034,7 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
       return res.status(400).json({ error: 'Aposta deve ser um número positivo.' });
 
     if (valorAposta > 100_000)
-      return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
+      return res.status(400).json({ error: `Aposta máxima: ${formatarSaldo(100_000)}.` });
 
     const vinculada = await contaVinculada(idWhatsApp);
     if (vinculada !== false) return respostaVinculada(res, vinculada);
@@ -2004,27 +2056,22 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
     if (!carteira)
       return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
 
-    // ── Verifica saldo ────────────────────────────────────────────────────────
-    if ((carteira.gold ?? 0) < valorAposta)
-      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
-
-    // ── Debita aposta atomicamente ────────────────────────────────────────────
-    const carteiraDebitada = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: idResolvido, idGrupo, gold: { $gte: valorAposta } },
-      {
-        $inc: { gold: -valorAposta },
-        $push: {
-          goldHistory: {
-            $each:  [{ type: 'gasto', item: 'Slots (aposta)', amount: valorAposta, date: new Date() }],
-            $slice: -50,
-          },
-        },
-      },
-      { new: true }
-    );
-
-    if (!carteiraDebitada)
-      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
+    const carteiraIntegrada = await getCarteira(idResolvido, idGrupo);
+    let carteiraDebitada;
+    try {
+      carteiraDebitada = await alterarGold(
+        idResolvido,
+        idGrupo,
+        -valorAposta,
+        'Slots (aposta)',
+        crypto.randomUUID(),
+      );
+    } catch (error) {
+      if (error instanceof RangeError) {
+        return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteiraIntegrada.gold });
+      }
+      throw error;
+    }
 
     // ── Sorteia resultado ─────────────────────────────────────────────────────
     const [r1, r2, r3]   = sortearSlotBackend();
@@ -2036,20 +2083,23 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
     let saldoFinal = carteiraDebitada.gold;
 
     if (premio > 0) {
-      const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: idResolvido, idGrupo },
-        {
-          $inc: { gold: premio },
-          $push: {
-            goldHistory: {
-              $each:  [{ type: 'recebido', item: `Slots (${mult}x)`, amount: premio, date: new Date() }],
-              $slice: -50,
-            },
-          },
-        },
-        { new: true }
-      );
-      saldoFinal = carteiraAtualizada?.gold ?? saldoFinal;
+      try {
+        const carteiraAtualizada = await alterarGold(
+          idResolvido,
+          idGrupo,
+          premio,
+          `Slots (${mult}x)`,
+          crypto.randomUUID(),
+        );
+        saldoFinal = carteiraAtualizada.gold;
+      } catch (error) {
+        try {
+          await alterarGold(idResolvido, idGrupo, valorAposta, 'Estorno de aposta: prêmio indisponível', crypto.randomUUID());
+        } catch (refundError) {
+          console.error('[API] Estorno crítico de Slots falhou:', refundError);
+        }
+        throw error;
+      }
     }
 
     return res.json({
@@ -2163,7 +2213,7 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
       return res.status(400).json({ error: 'Aposta deve ser um número positivo.' });
 
     if (valorAposta > 100_000)
-      return res.status(400).json({ error: 'Aposta máxima: 100.000 gold.' });
+      return res.status(400).json({ error: `Aposta máxima: ${formatarSaldo(100_000)}.` });
 
     const vinculada = await contaVinculada(idWhatsApp);
     if (vinculada !== false) return respostaVinculada(res, vinculada);
@@ -2172,25 +2222,22 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
     if (!carteira)
       return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
 
-    if ((carteira.gold ?? 0) < valorAposta)
-      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
-
-    const carteiraDebitada = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp, idGrupo, gold: { $gte: valorAposta } },
-      {
-        $inc: { gold: -valorAposta },
-        $push: {
-          goldHistory: {
-            $each:  [{ type: 'gasto', item: `Corrida (${CORRIDA_BICHOS_API[escolhaIdx].nome})`, amount: valorAposta, date: new Date() }],
-            $slice: -50,
-          },
-        },
-      },
-      { new: true }
-    );
-
-    if (!carteiraDebitada)
-      return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteira.gold ?? 0 });
+    const carteiraIntegrada = await getCarteira(idWhatsApp, idGrupo);
+    let carteiraDebitada;
+    try {
+      carteiraDebitada = await alterarGold(
+        idWhatsApp,
+        idGrupo,
+        -valorAposta,
+        `Corrida (${CORRIDA_BICHOS_API[escolhaIdx].nome})`,
+        crypto.randomUUID(),
+      );
+    } catch (error) {
+      if (error instanceof RangeError) {
+        return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteiraIntegrada.gold });
+      }
+      throw error;
+    }
 
     const vencedorIdx = sortearVencedorApi();
     const ganhou      = escolhaIdx === vencedorIdx;
@@ -2200,27 +2247,25 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
 
     let saldoFinal = carteiraDebitada.gold;
 
-if (premio > 0) {
-  const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp, idGrupo },
-    {
-      $inc: { gold: premio },
-      $push: {
-        goldHistory: {
-          $each: [{
-            type: 'recebido',
-            item: `Corrida (${bicho.odds}x)`,
-            amount: premio,
-            date: new Date(),
-          }],
-          $slice: -50,
-        },
-      },
-    },
-    { new: true }
-  );
-  saldoFinal = carteiraAtualizada?.gold ?? (carteiraDebitada.gold + premio);
-}
+    if (premio > 0) {
+      try {
+        const carteiraAtualizada = await alterarGold(
+          idWhatsApp,
+          idGrupo,
+          premio,
+          `Corrida (${bicho.odds}x)`,
+          crypto.randomUUID(),
+        );
+        saldoFinal = carteiraAtualizada.gold;
+      } catch (error) {
+        try {
+          await alterarGold(idWhatsApp, idGrupo, valorAposta, 'Estorno de aposta: prêmio indisponível', crypto.randomUUID());
+        } catch (refundError) {
+          console.error('[API] Estorno crítico de Corrida falhou:', refundError);
+        }
+        throw error;
+      }
+    }
 
     return res.json({
       vencedorIdx,

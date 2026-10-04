@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const crypto = require('crypto');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
@@ -49,10 +50,10 @@ const MSGS = {
     `⚠️ Prazo inválido! Escolha: *${EMPRESTIMO_CONFIG.prazosDias.join('*, *')}* dias.`,
 
   valorMinimo: () =>
-    `⚠️ Valor mínimo: *${EMPRESTIMO_CONFIG.minValor} gold*`,
+    `⚠️ Valor mínimo: *${formatarSaldo(EMPRESTIMO_CONFIG.minValor)}*`,
 
   valorMaximo: () =>
-    `⚠️ Valor máximo: *${EMPRESTIMO_CONFIG.maxValor} gold*`,
+    `⚠️ Valor máximo: *${formatarSaldo(EMPRESTIMO_CONFIG.maxValor)}*`,
 
   inadimplente: () =>
     `🚫 *ACESSO BLOQUEADO*\n\n` +
@@ -64,23 +65,23 @@ const MSGS = {
     `Você quitou um empréstimo recentemente.\n` +
     `Próximo disponível em: *${tempo}*`,
 
-  emprestimoAtivo: (divida) =>
+  emprestimoAtivo: (divida, carteira) =>
     `⚠️ *EMPRÉSTIMO ATIVO*\n\n` +
     `Você já possui um empréstimo em aberto!\n\n` +
-    `💰 Dívida atual: *${divida} gold*\n\n` +
+    `💰 Dívida atual: *${formatarSaldo(divida, carteira)}*\n\n` +
     `Use *!pay emprestimo* para quitar.`,
 
-  limiteExcedido: (level, limite) =>
+  limiteExcedido: (level, limite, carteira) =>
     `⚠️ *LIMITE EXCEDIDO*\n\n` +
-    `Seu nível (${level}) permite até *${limite} gold*.\n\n` +
+    `Seu nível (${level}) permite até *${formatarSaldo(limite, carteira)}*.\n\n` +
     `Suba de nível para aumentar seu limite!`,
 
-  aprovado: (valor, juros, totalDever, prazoArg, vencimento) =>
+  aprovado: (valor, juros, totalDever, prazoArg, vencimento, carteira) =>
     `✅ *EMPRÉSTIMO APROVADO!* ✅\n\n` +
     `━━━━━━━━━━━━━━━━\n` +
-    `💸 Valor recebido:  *${valor} gold*\n` +
-    `📈 Juros (20%):     *${juros} gold*\n` +
-    `💰 Total a pagar:   *${totalDever} gold*\n` +
+    `💸 Valor recebido:  *${formatarSaldo(valor, carteira)}*\n` +
+    `📈 Juros (20%):     *${formatarSaldo(juros, carteira)}*\n` +
+    `💰 Total a pagar:   *${formatarSaldo(totalDever, carteira)}*\n` +
     `⏰ Prazo:           *${prazoArg} dias*\n` +
     `📅 Vencimento:      *${vencimento.toLocaleDateString('pt-BR')}*\n` +
     `━━━━━━━━━━━━━━━━\n` +
@@ -90,36 +91,36 @@ const MSGS = {
   semEmprestimo: () =>
     `✅ Você não possui empréstimos ativos!`,
 
-  saldoInsuficiente: (saldoAtual, divida) =>
+  saldoInsuficiente: (saldoAtual, divida, carteira) =>
     `⚠️ *SALDO INSUFICIENTE*\n\n` +
-    `💰 Seu saldo:    *${saldoAtual} gold*\n` +
-    `💸 Dívida total: *${divida} gold*\n\n` +
-    `Faltam: *${divida - saldoAtual} gold*`,
+    `💰 Seu saldo:    *${formatarSaldo(saldoAtual, carteira)}*\n` +
+    `💸 Dívida total: *${formatarSaldo(divida, carteira)}*\n\n` +
+    `Faltam: *${formatarSaldo(divida - saldoAtual, carteira)}*`,
 
-  quitado: (divida, saldoRestante) =>
+  quitado: (divida, saldoRestante, carteira) =>
     `✅ *EMPRÉSTIMO QUITADO!* ✅\n\n` +
-    `💸 Valor pago:       *${divida} gold*\n` +
-    `💰 Saldo restante:   *${saldoRestante} gold*\n\n` +
+    `💸 Valor pago:       *${formatarSaldo(divida, carteira)}*\n` +
+    `💰 Saldo restante:   *${formatarSaldo(saldoRestante, carteira)}*\n\n` +
     `⏳ Próximo empréstimo em: *24 horas*\n\n` +
     `_Obrigado por pagar em dia!_ 🏆`,
 
-  quitadoAutomatico: (divida) =>
-    `✅ Seu empréstimo de *${divida} gold* foi quitado automaticamente!`,
+  quitadoAutomatico: (divida, carteira) =>
+    `✅ Seu empréstimo de *${formatarSaldo(divida, carteira)}* foi quitado automaticamente!`,
 
   semDividas: () =>
     `✅ *Você não possui dívidas ativas!*\n\nUse *!emprestimo <valor> [prazo]* para solicitar.`,
 
-  situacao: (emp, divida, atrasado, diasAtraso, tempoRestante, saldo) =>
+  situacao: (emp, divida, atrasado, diasAtraso, tempoRestante, saldo, carteira) =>
     `📋 *SITUAÇÃO DO EMPRÉSTIMO* 📋\n\n` +
     `━━━━━━━━━━━━━━━━\n` +
-    `💸 Valor original:  *${emp.valor} gold*\n` +
-    `💰 Total a pagar:   *${divida} gold*\n` +
+    `💸 Valor original:  *${formatarSaldo(emp.valor, carteira)}*\n` +
+    `💰 Total a pagar:   *${formatarSaldo(divida, carteira)}*\n` +
     `📅 Vencimento:      *${new Date(emp.vencimento).toLocaleDateString('pt-BR')}*\n` +
     (atrasado
       ? `⚠️ Status: *ATRASADO (${diasAtraso} dia${diasAtraso > 1 ? 's' : ''})*\n`
       : `✅ Status: *Em dia*\n⏰ Vence em: *${tempoRestante}*\n`) +
     `━━━━━━━━━━━━━━━━\n` +
-    `💎 Seu saldo: *${saldo} gold*\n\n` +
+    `💎 Seu saldo: *${formatarSaldo(saldo, carteira)}*\n\n` +
     `Use *!pay emprestimo* para quitar.`,
 };
 
@@ -205,20 +206,49 @@ async function getUserId(msg, idGrupo) {
  */
 async function _criarEmprestimo(userId, idGrupo, valor, prazoArg) {
   const vencimento = new Date(Date.now() + prazoArg * MS_POR_DIA);
+  const requestId = crypto.randomUUID();
+  const emprestimo = {
+    ativo: true,
+    valor,
+    vencimento,
+    solicitadoEm: new Date(),
+    prazo: prazoArg,
+    requestId,
+  };
+  const carteira = await getCarteira(userId, idGrupo);
+
+  if (carteira.currencyInfo) {
+    const criada = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: userId, idGrupo, 'emprestimo.ativo': { $ne: true } },
+      { $set: { emprestimo } },
+      { upsert: true, new: true },
+    );
+    if (!criada?.emprestimo?.ativo || criada.emprestimo.requestId !== requestId) return null;
+
+    try {
+      return await alterarGold(
+        userId,
+        idGrupo,
+        valor,
+        `Empréstimo (${prazoArg} dias)`,
+        requestId,
+      );
+    } catch (error) {
+      if (error instanceof RangeError) {
+        await CarteiraGrupo.updateOne(
+          { idWhatsApp: userId, idGrupo, 'emprestimo.requestId': requestId },
+          { $set: { 'emprestimo.ativo': false } },
+        );
+      }
+      throw error;
+    }
+  }
 
   return CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: userId, idGrupo, 'emprestimo.ativo': { $ne: true } },
     {
       $inc: { gold: valor },
-      $set: {
-        emprestimo: {
-          ativo:        true,
-          valor,
-          vencimento,
-          solicitadoEm: new Date(),
-          prazo:        prazoArg,
-        },
-      },
+      $set: { emprestimo },
       $push: {
         goldHistory: {
           $each:  [{ type: 'recebido', item: `Empréstimo (${prazoArg} dias)`, amount: valor }],
@@ -236,6 +266,40 @@ async function _criarEmprestimo(userId, idGrupo, valor, prazoArg) {
  * Retorna o documento atualizado ou `null` se já estava inativo.
  */
 async function _quitarEmprestimo(userId, idGrupo, divida, item = 'Quitação de empréstimo') {
+  const carteira = await getCarteira(userId, idGrupo);
+  const emprestimo = carteira?.emprestimo;
+  if (!emprestimo?.ativo) return null;
+
+  if (carteira.currencyInfo) {
+    const identidade = emprestimo.requestId
+      || `${emprestimo.solicitadoEm?.toISOString?.() || ''}:${emprestimo.valor}:${emprestimo.vencimento?.toISOString?.() || ''}`;
+    const requestId = crypto.createHash('sha256')
+      .update(`emprestimo-quitar:${userId}:${idGrupo}:${identidade}`)
+      .digest('hex')
+      .slice(0, 32);
+    const saldoAtualizado = await alterarGold(userId, idGrupo, -divida, item, requestId);
+    const filtroEmprestimo = {
+      idWhatsApp: userId,
+      idGrupo,
+      'emprestimo.ativo': true,
+      'emprestimo.valor': emprestimo.valor,
+      'emprestimo.vencimento': emprestimo.vencimento,
+    };
+    if (emprestimo.requestId) filtroEmprestimo['emprestimo.requestId'] = emprestimo.requestId;
+    const liquidado = await CarteiraGrupo.findOneAndUpdate(
+      filtroEmprestimo,
+      {
+        $set: {
+          'emprestimo.ativo': false,
+          'emprestimo.quitadoEm': new Date(),
+          'emprestimo.proximoEmprestimo': new Date(Date.now() + EMPRESTIMO_CONFIG.cooldownMs),
+        },
+      },
+      { new: true },
+    );
+    return liquidado ? { ...saldoAtualizado, emprestimo: liquidado.emprestimo } : null;
+  }
+
   return CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: userId, idGrupo, 'emprestimo.ativo': true, gold: { $gte: divida } },
     {
@@ -266,7 +330,7 @@ async function _quitarEmprestimo(userId, idGrupo, divida, item = 'Quitação de 
 async function verificarInadimplente(userId, idGrupo) {
   if (!userId || !idGrupo) return false;
   try {
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).lean();
+    const carteira = await getCarteira(userId, idGrupo);
     if (!carteira?.emprestimo?.ativo) return false;
 
     const vencimentoTs = new Date(carteira.emprestimo.vencimento).getTime();
@@ -287,7 +351,7 @@ async function verificarInadimplente(userId, idGrupo) {
 async function verificarDescontoAutomatico(userId, idGrupo) {
   if (!userId || !idGrupo) return null;
   try {
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).lean();
+    const carteira = await getCarteira(userId, idGrupo);
     if (!carteira?.emprestimo?.ativo) return null;
 
     const divida = calcularDivida(carteira.emprestimo);
@@ -296,7 +360,7 @@ async function verificarDescontoAutomatico(userId, idGrupo) {
     const atualizada = await _quitarEmprestimo(userId, idGrupo, divida, 'Quitação automática de empréstimo');
     if (!atualizada) return null;
 
-    return MSGS.quitadoAutomatico(divida);
+    return MSGS.quitadoAutomatico(divida, carteira);
   } catch (err) {
     console.error('[emprestimo] verificarDescontoAutomatico:', err);
     return null;
@@ -358,7 +422,7 @@ async function handleEmprestimo(sock, msg, jid, caption) {
     }
 
     // 2. Buscar nível e carteira em paralelo
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
+    const carteira = await getCarteira(userId, jid);
 
     const level  = CarteiraGrupo.levelFromXp(carteira?.xp ?? 0);
     const limite = getLimitePorNivel(level);
@@ -376,21 +440,30 @@ async function handleEmprestimo(sock, msg, jid, caption) {
 
     // 4. Empréstimo já ativo
     if (carteira?.emprestimo?.ativo) {
+      if (carteira.currencyInfo && carteira.emprestimo.requestId) {
+        await alterarGold(
+          userId,
+          jid,
+          carteira.emprestimo.valor,
+          `Empréstimo (${carteira.emprestimo.prazo} dias)`,
+          carteira.emprestimo.requestId,
+        );
+      }
       const divida = calcularDivida(carteira.emprestimo);
-      await sock.sendMessage(jid, { text: MSGS.emprestimoAtivo(divida) }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.emprestimoAtivo(divida, carteira) }, { quoted: msg });
       return;
     }
 
     // 5. Limite por nível
     if (valor > limite) {
-      await sock.sendMessage(jid, { text: MSGS.limiteExcedido(level, limite) }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.limiteExcedido(level, limite, carteira) }, { quoted: msg });
       return;
     }
 
     // 6. Criar empréstimo
     const docCriado = await _criarEmprestimo(userId, jid, valor, prazoArg);
     if (!docCriado) {
-      await sock.sendMessage(jid, { text: MSGS.emprestimoAtivo(valor) }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.emprestimoAtivo(valor, carteira) }, { quoted: msg });
       return;
     }
 
@@ -399,7 +472,7 @@ async function handleEmprestimo(sock, msg, jid, caption) {
     const totalDever = valor + juros;
 
     await sock.sendMessage(jid, {
-      text: MSGS.aprovado(valor, juros, totalDever, prazoArg, vencimento),
+      text: MSGS.aprovado(valor, juros, totalDever, prazoArg, vencimento, docCriado),
     }, { quoted: msg });
 
   } catch (err) {
@@ -421,7 +494,7 @@ async function handlePayEmprestimo(sock, msg, jid) {
   }
 
   try {
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
+    const carteira = await getCarteira(userId, jid);
 
     if (!carteira?.emprestimo?.ativo) {
       await sock.sendMessage(jid, { text: MSGS.semEmprestimo() }, { quoted: msg });
@@ -432,7 +505,7 @@ async function handlePayEmprestimo(sock, msg, jid) {
     const saldoAtual = carteira.gold ?? 0;
 
     if (saldoAtual < divida) {
-      await sock.sendMessage(jid, { text: MSGS.saldoInsuficiente(saldoAtual, divida) }, { quoted: msg });
+      await sock.sendMessage(jid, { text: MSGS.saldoInsuficiente(saldoAtual, divida, carteira) }, { quoted: msg });
       return;
     }
 
@@ -446,7 +519,7 @@ async function handlePayEmprestimo(sock, msg, jid) {
     }
 
     await sock.sendMessage(jid, {
-      text: MSGS.quitado(divida, atualizada.gold),
+      text: MSGS.quitado(divida, atualizada.gold, atualizada),
     }, { quoted: msg });
 
   } catch (err) {
@@ -468,7 +541,7 @@ async function handleDivida(sock, msg, jid) {
   }
 
   try {
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
+    const carteira = await getCarteira(userId, jid);
 
     if (!carteira?.emprestimo?.ativo) {
       await sock.sendMessage(jid, { text: MSGS.semDividas() }, { quoted: msg });
@@ -484,7 +557,7 @@ async function handleDivida(sock, msg, jid) {
     const tempoRestante = atrasado ? null : formatarTempo(vencimentoTs - agora);
 
     await sock.sendMessage(jid, {
-      text: MSGS.situacao(emp, divida, atrasado, diasAtraso, tempoRestante, carteira.gold ?? 0),
+      text: MSGS.situacao(emp, divida, atrasado, diasAtraso, tempoRestante, carteira.gold ?? 0, carteira),
     }, { quoted: msg });
 
   } catch (err) {

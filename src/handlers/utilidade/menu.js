@@ -290,7 +290,7 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
   ▸ ${P}renomearfilho _(nome)_ — Renomear um filho
 
 💊 *SAÚDE*
-  ▸ ${P}remediofil — Curar filho doente _(300 gold)_
+  ▸ ${P}remediofil — Curar filho doente _(R$ 3,00)_
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 📋 *REGRAS*

@@ -2,7 +2,7 @@
 
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const { getCarteira } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { resolveUserFromMsg } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const { formatWalletAmount } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 

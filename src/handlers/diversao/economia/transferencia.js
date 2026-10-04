@@ -9,10 +9,10 @@ const { LOOKUP_ITENS_LOJA, normalizarChaveItem } = require('./_shared');
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
 function mensagemErroTransferencia(error) {
-  if (error.message === 'LINKED_UNLINKED_TRANSFER_NOT_ALLOWED') {
+  if (error.code === 'LINKED_UNLINKED_TRANSFER_NOT_ALLOWED') {
     return '❌ A transferência não foi realizada: o remetente e o destinatário precisam estar vinculados ao app.';
   }
-  if (error.message === 'LINKED_TRANSFER_RECIPIENT_NOT_LINKED') {
+  if (error.code === 'LINKED_TRANSFER_RECIPIENT_NOT_LINKED') {
     return '❌ A transferência não foi realizada: o destinatário precisa vincular a conta ao app primeiro.';
   }
   return null;

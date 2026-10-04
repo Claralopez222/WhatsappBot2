@@ -3,7 +3,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { resolverJidCarteira, getCarteira, alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 // Usuario removido — level agora vem do grupo
 

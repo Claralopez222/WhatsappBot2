@@ -73,32 +73,6 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
   const numDe   = baseDe;
   const numPara = basePara;
 
-  const [identidadeDe, identidadePara] = await Promise.all([
-    resolvePhoneAndJid(deIdWhatsApp),
-    resolvePhoneAndJid(paraIdWhatsApp),
-  ]);
-  const jidDe = identidadeDe.pnJid;
-  const jidPara = identidadePara.pnJid;
-  if (jidDe && jidPara) {
-    const [saldoDe, saldoPara] = await Promise.all([
-      consultarSaldoVinculado(jidDe),
-      consultarSaldoVinculado(jidPara),
-    ]);
-    if (saldoDe && saldoPara) {
-      await transferirSaldoVinculado(
-        jidDe,
-        jidPara,
-        val,
-        `${label} para @${numPara}`,
-      );
-      const [de, para] = await Promise.all([
-        getCarteira(deIdWhatsApp, idGrupo),
-        getCarteira(paraIdWhatsApp, idGrupo),
-      ]);
-      return { de, para };
-    }
-  }
-
   const carteiraDE = await alterarGold(deIdWhatsApp, idGrupo, -val, `${label} para @${numPara}`);
 
   try {

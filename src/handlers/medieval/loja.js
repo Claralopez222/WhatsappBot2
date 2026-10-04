@@ -10,7 +10,7 @@ const { getCarteira, alterarGold, formatarSaldo } = require('../../utils/carteir
 const {
   ARMAS, ARMADURAS, POCOES, getClasse, getElemento, getArma, getArmadura, getPocao,
   getModoAtivo, getOuCriarPersonagem, somenteGrupo,
-  getInventarioMap, normalizarItemKey, itemKeyParaNome, contaVinculada,
+  getInventarioMap, normalizarItemKey, itemKeyParaNome, bloqueadoPorVinculo,
 } = require('../../utils/medievalUtils');
 
 // ─── !lojamedieval ────────────────────────────────────────────────────────────
@@ -128,11 +128,7 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
   if (!await getModoAtivo(jid)) return;
 
   try {
-    if (await contaVinculada(senderJid)) {
-      return sock.sendMessage(jid, {
-        text: '🏪 A compra de itens medievais está indisponível para contas vinculadas ao app.',
-      }, { quoted: msg });
-    }
+    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid)) return;
     const nomeItem = itemKeyParaNome((args || '').trim());
     if (!nomeItem) {
       return sock.sendMessage(jid, { text: '🏪 Diga o nome do item!\nExemplo: *!comprar Espada* ou *!comprar Espada_Rúnica*' }, { quoted: msg });
@@ -173,6 +169,7 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
 
     const chave = `inventarioMedieval.${normalizarItemKey(item.nome)}`;
 
+    const carteira = await getCarteira(senderJid, jid);
     let carteiraAtualizada;
     if (carteira.currencyInfo) {
       let debitada;
@@ -235,7 +232,7 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
 
     const saldoFinal = carteira.currencyInfo
       ? carteiraAtualizada.gold
-      : carteiraAtualizada.gold - item.preco;
+      : carteiraAtualizada.gold;
     const isPocao = !!pocao;
 
     await sock.sendMessage(jid, {
@@ -540,11 +537,7 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!await getModoAtivo(jid)) return;
 
   try {
-    if (await contaVinculada(senderJid)) {
-      return sock.sendMessage(jid, {
-        text: '🏪 A venda de itens medievais está indisponível para contas vinculadas ao app.',
-      }, { quoted: msg });
-    }
+    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid)) return;
     const partes      = (args || '').trim().split(/\s+/);
     const ultimaParte = partes[partes.length - 1];
     const temQtd      = /^\d+$/.test(ultimaParte) && partes.length > 1;

@@ -23,6 +23,11 @@ const crypto   = require('crypto');
 const mongoose = require('mongoose');
 const Usuario  = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
+const { formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const {
+  consultarSaldoPorIdentidade,
+  ajustarSaldoPorIdentidade,
+} = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'appWallet'));
 
 // ─── CATÁLOGO ─────────────────────────────────────────────────────────────────
 

@@ -11,7 +11,8 @@ const path = require('path');
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { prepareDailyMissionState } = require('./missoes');
-const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { resolverJidCarteira } = carteiraService;
 const { contaVinculada } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 

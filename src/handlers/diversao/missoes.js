@@ -10,6 +10,8 @@ const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMappin
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const crypto = require('crypto');
 const { getWalletBalance, adjustWalletLocal } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
+const { formatarSaldo, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { consultarSaldoPorIdentidade } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'appWallet'));
 
 // ─── DEFINIÇÃO DAS MISSÕES ──────────────────────────────────────────────────
 
@@ -298,7 +300,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
         .update(`${userId}:${state.date}:${mission.id}`)
         .digest('hex');
       const balanceAfter = linkedBalance
-        ? await alterarGold(userId, jid, mission.reward, `Missão diária: ${mission.label}`, requestId)
+        ? await alterarGold(userId, jid, mission.reward, `Missão diária: ${mission.label}`, { requestId, allowLinked: true })
         : null;
       const updated = await Usuario.findOneAndUpdate(
         {

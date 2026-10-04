@@ -10,6 +10,8 @@ const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
 const WalletMigration = require('../models/WalletMigration');
 const { contaVinculada } = require('../utils/carteira/vinculo');
+const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
+const { consultarSaldoPorIdentidade, ajustarSaldoPorIdentidade } = require('../utils/carteira/appWallet');
 const rateLimit      = require('express-rate-limit');
 
 function respostaVinculada(res, vinculada) {

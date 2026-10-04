@@ -8,6 +8,7 @@ const CasalEstado   = require(path.join(__dirname, '..', '..', 'models', 'CasalE
 const { getNivelInfo }  = require(path.join(__dirname, '..', '..', 'utils', 'levelUtils'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
+const { alterarGold, getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ═══════════════════════════════════════════════════════════════
 // ─── CONFIGURAÇÃO ──────────────────────────────────────────────
@@ -320,7 +321,7 @@ async function handleXpDobro(sock, msg, jid, senderJid, relacionamentos) {
 
     if (await bloqueadoPorVinculo(sock, msg, jid, normalizarJid(senderJid))) return;
 
-    const { ok, saldo } = await debitarGold(jid, senderJid, CONFIG.CUSTO_XP_DOBRO, 'XP Dobro');
+    const { ok, carteira } = await debitarGold(jid, senderJid, CONFIG.CUSTO_XP_DOBRO, 'XP Dobro');
     if (!ok) {
       await responder(sock, msg, jid,
         `🪙 Você precisa de *${formatarSaldo(CONFIG.CUSTO_XP_DOBRO, carteira)}* para ativar o XP Dobro por 1 hora!\n` +
@@ -395,7 +396,7 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
 
   if (await bloqueadoPorVinculo(sock, msg, jid, normalizarJid(senderJid))) return;
 
-  const { ok, saldo } = await debitarGold(jid, senderJid, CONFIG.CUSTO_SURPRESA, 'Surpresa romântica');
+  const { ok, carteira } = await debitarGold(jid, senderJid, CONFIG.CUSTO_SURPRESA, 'Surpresa romântica');
   if (!ok) {
     await responder(sock, msg, jid,
       `🪙 Você precisa de *${formatarSaldo(CONFIG.CUSTO_SURPRESA, carteira)}* para fazer uma surpresa!\n` +

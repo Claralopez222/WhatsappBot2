@@ -4,7 +4,7 @@ const path   = require('path');
 const Filho  = require(path.join(__dirname, '..', '..', 'models', 'Filho'));
 const Usuario= require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { resolverJidCarteira, formatarSaldo, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
@@ -386,13 +386,13 @@ async function handleRemedioFilho(sock, msg, jid) {
 
     // Débito atômico — evita corrida com outros comandos de gold
     const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: jid, gold: { $gte: CUSTO_REMEDIO } },
+      { idWhatsApp: userIdCarteira, idGrupo: jid, gold: { $gte: CUSTO_REMEDIO } },
       { $inc: { gold: -CUSTO_REMEDIO } },
       { new: true }
     );
 
     if (!carteiraAtualizada) {
-      const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).lean();
+      const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userIdCarteira, idGrupo: jid }).lean();
       return sock.sendMessage(jid, {
         text: `❌ Você precisa de *${formatarSaldo(CUSTO_REMEDIO, carteira)}* para comprar o remédio! Seu saldo é *${formatarSaldo(carteira?.gold ?? 0, carteira)}*.`,
       }, { quoted: msg });
@@ -408,7 +408,7 @@ async function handleRemedioFilho(sock, msg, jid) {
       await filhoDoente.save();
     } catch (e) {
       // Reverte o débito se não conseguir salvar o filho
-      await alterarGold(userId, jid, CUSTO_REMEDIO, 'Estorno do remédio para filho');
+      await alterarGold(userIdCarteira, jid, CUSTO_REMEDIO, 'Estorno do remédio para filho');
       throw e;
     }
 

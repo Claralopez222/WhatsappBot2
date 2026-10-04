@@ -15,7 +15,7 @@
 
 const path          = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const { getCarteira, alterarGold, resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { getCarteira, alterarGold, resolverJidCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
@@ -651,45 +651,21 @@ async function handleComprarPesca(sock, msg, jid, caption) {
       : {};
 
     // ── Verifica saldo (e, se for vara, ausência prévia) e debita de forma atômica ──
-    const linkedBalance = await consultarSaldoPorIdentidade(userId);
-    let operacaoCompra;
-    if (linkedBalance) {
-      try {
-        const carteiraDebitada = await alterarGold(userId, groupId, -custoTotal, `Compra de pesca: ${info.nome}`);
-        const itemAtualizado = await CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp: userId, idGrupo: groupId, ...guardaVaraUnica },
-          { $inc: { [`itensPesca.${itemKey}`]: qtdComprar } },
-          { new: true, upsert: false },
-        );
-        if (!itemAtualizado) {
-          await alterarGold(userId, groupId, custoTotal, `Estorno de compra de pesca: ${info.nome}`);
-        } else {
-          operacaoCompra = {
-            ...itemAtualizado.toObject(),
-            gold: carteiraDebitada.gold,
-            currencyInfo: carteiraDebitada.currencyInfo,
-          };
-        }
-      } catch (error) {
-        if (!(error instanceof RangeError)) throw error;
-      }
-    } else {
-      operacaoCompra = await CarteiraGrupo.findOneAndUpdate(
-        {
-          idWhatsApp: userId,
-          idGrupo: groupId,
-          gold: { $gte: custoTotal },
-          ...guardaVaraUnica,
+    const operacaoCompra = await CarteiraGrupo.findOneAndUpdate(
+      {
+        idWhatsApp: userId,
+        idGrupo: groupId,
+        gold: { $gte: custoTotal },
+        ...guardaVaraUnica,
+      },
+      {
+        $inc: {
+          gold: -custoTotal,
+          [`itensPesca.${itemKey}`]: qtdComprar,
         },
-        {
-          $inc: {
-            gold: -custoTotal,
-            [`itensPesca.${itemKey}`]: qtdComprar,
-          },
-        },
-        { new: true, upsert: false },
-      );
-    }
+      },
+      { new: true, upsert: false },
+    );
 
     if (!operacaoCompra) {
       // A guarda pode ter falhado por dois motivos diferentes — busca o

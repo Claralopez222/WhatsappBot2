@@ -15,6 +15,9 @@ function mensagemErroTransferencia(error) {
   if (error.code === 'LINKED_TRANSFER_RECIPIENT_NOT_LINKED') {
     return '❌ A transferência não foi realizada: o destinatário precisa vincular a conta ao app primeiro.';
   }
+  if (error.code === 'VALOR_MINIMO_CONVERSAO') {
+    return '❌ O valor é pequeno demais para ser convertido na moeda da conta. Tente uma quantia maior.';
+  }
   return null;
 }
 
@@ -154,7 +157,11 @@ async function handlePix(sock, msg, jid, caption) {
       await sock.sendMessage(jid, { text: mensagem }, { quoted: msg });
       return;
     }
-    throw e;
+    console.error(`[handlePix] ERRO code=${e.code || '-'} name=${e.name}: ${e.message}`);
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui concluir o PIX agora. Tente novamente em instantes e confira seu saldo com *!reais*.',
+    }, { quoted: msg });
+    return;
   }
 
   const saldoFinalRemetente = resultado?.de?.gold ?? 0;

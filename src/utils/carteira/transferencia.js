@@ -1,9 +1,11 @@
 'use strict';
 
+const crypto = require('crypto');
 const { alterarGold } = require('./gold');
 const {
   getWalletBalance,
   transferWallet,
+  adjustWalletLocal,
 } = require('./wallet');
 
 function getJidBase(jid) {
@@ -34,6 +36,62 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
     getWalletBalance(deIdWhatsApp),
     getWalletBalance(paraIdWhatsApp),
   ]);
+  // Vinculado -> não vinculado: debita o saldo do app e credita o gold legado do destinatário.
+  // Os requestIds são fixos: se a resposta se perder, repetir não debita nem estorna em dobro.
+  if (walletDe.linked && !walletPara.linked) {
+    const idDebito  = crypto.randomUUID();
+    const idEstorno = crypto.randomUUID();
+    const rotulo    = (descricao || 'transferência').trim();
+
+    let debito;
+    try {
+      debito = await adjustWalletLocal(
+        deIdWhatsApp,
+        -val,
+        `${rotulo} para @${basePara}`,
+        { requestId: idDebito },
+      );
+    } catch (e) {
+      if (/saldo insuficiente/i.test(e.message)) {
+        throw erroComCodigo('transferirGold: saldo insuficiente.', 'SALDO_INSUFICIENTE', RangeError);
+      }
+      if (e instanceof RangeError) {
+        throw erroComCodigo(e.message, 'VALOR_MINIMO_CONVERSAO');
+      }
+      throw e;
+    }
+
+    let carteiraPARA;
+    try {
+      carteiraPARA = await alterarGold(paraIdWhatsApp, idGrupo, val, `${rotulo} de @${baseDe}`);
+    } catch (e) {
+      try {
+        await adjustWalletLocal(
+          deIdWhatsApp,
+          val,
+          `estorno: falha ao transferir para @${basePara}`,
+          { requestId: idEstorno },
+        );
+      } catch (estornoErr) {
+        console.error(`❌ FALHA CRÍTICA: débito de ${val} de ${deIdWhatsApp} no app não pôde ser estornado. Motivo original: ${e.message} | Motivo do estorno: ${estornoErr.message}`);
+      }
+      throw e;
+    }
+
+    const carteiraDe = {
+      idWhatsApp: deIdWhatsApp,
+      idGrupo,
+      gold: debito.balanceCents,
+      balanceCents: debito.balanceCents,
+      walletLinked: true,
+      walletCurrencyCode: debito.currencyCode,
+      walletCountryCode: debito.countryCode,
+      walletRate: debito.rate,
+      walletRateDate: debito.rateDate,
+    };
+    return { de: carteiraDe, para: carteiraPARA };
+  }
+
   if (walletDe.linked || walletPara.linked) {
     if (!walletDe.linked || !walletPara.linked) {
       throw erroComCodigo('LINKED_UNLINKED_TRANSFER_NOT_ALLOWED', 'LINKED_UNLINKED_TRANSFER_NOT_ALLOWED');

@@ -10,7 +10,7 @@ const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 
 
 function mensagemErroTransferencia(error) {
   if (error.code === 'LINKED_UNLINKED_TRANSFER_NOT_ALLOWED') {
-    return '❌ A transferência não foi realizada: o remetente e o destinatário precisam estar vinculados ao app.';
+    return '❌ A transferência não foi realizada: contas não vinculadas ao app não podem enviar para contas vinculadas. Vincule a sua conta ao app para enviar.';
   }
   if (error.code === 'LINKED_TRANSFER_RECIPIENT_NOT_LINKED') {
     return '❌ A transferência não foi realizada: o destinatário precisa vincular a conta ao app primeiro.';

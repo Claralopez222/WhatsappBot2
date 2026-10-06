@@ -6,7 +6,13 @@ const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', '
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
 const { alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { getSenderJid } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
-const { formatWalletAmount, getWalletBalance } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
+const crypto = require('crypto');
+const {
+  adjustWalletLocal,
+  formatWalletAmount,
+  getWalletBalance,
+  localMinorUnitsToBrlCents,
+} = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 
 // Fallback seguro caso missoes não exporte prepareDailyMissionState/incrementMission
 let prepareDailyMissionState = async () => {};
@@ -83,13 +89,18 @@ async function handleGarimpar(sock, msg, jid) {
   const userId    = jidNormalizedUser(userIdRaw);
   const agora     = Date.now();
 
-  const walletGarimpo = await getWalletBalance(userId);
-  if (walletGarimpo.linked) {
+  // Falha fechada: sem saber se a conta é vinculada, não garimpa (evita pagar no saldo errado).
+  let walletGarimpo;
+  try {
+    walletGarimpo = await getWalletBalance(userId);
+  } catch (e) {
+    console.error('⚠️ Erro handleGarimpar (carteira):', e.message);
     await sock.sendMessage(jid, {
-      text: 'O garimpo está temporariamente indisponível para contas vinculadas ao app.',
+      text: '⚠️ Carteira temporariamente indisponível. Tente novamente em instantes.',
     }, { quoted: msg });
     return;
   }
+  const contaVinculada = walletGarimpo.linked === true;
 
   if (!global._garimpoInFlight) global._garimpoInFlight = new Set();
   if (global._garimpoInFlight.has(userId)) {
@@ -99,6 +110,7 @@ async function handleGarimpar(sock, msg, jid) {
   global._garimpoInFlight.add(userId);
 
   let docAtual;
+  let creditoFeito = false;
 
   try {
     const tsCache = garimpoCache.get(userId) ?? 0;
@@ -150,22 +162,58 @@ async function handleGarimpar(sock, msg, jid) {
         eventoTxt = evento.msg;
       }
 
-      await prepareDailyMissionState(userId);
+      let carteira;
+      if (contaVinculada) {
+        // Conta vinculada: o ouro vai para o saldo do app (1 gold = 1 centavo da moeda da conta,
+        // mesma regra do !pix). Missões ainda não suportam conta vinculada, então ficam de fora.
+        const saldo = await adjustWalletLocal(
+          userId,
+          goldFinal,
+          `Garimpo - ${minerio.nome}`,
+          { requestId: crypto.randomUUID() },
+        );
+        if (saldo?.linked !== true) throw new Error('A conta não está mais vinculada.');
+        creditoFeito = true;
+        carteira = {
+          gold: saldo.balanceCents,
+          balanceCents: saldo.balanceCents,
+          walletLinked: true,
+          walletCurrencyCode: saldo.currencyCode,
+          walletCountryCode: saldo.countryCode,
+          walletRate: saldo.rate,
+          walletRateDate: saldo.rateDate,
+        };
+        // O dinheiro já foi pago: erro no XP não pode devolver o cooldown.
+        await Promise.all([
+          Usuario.findOneAndUpdate(
+            { idWhatsApp: userId },
+            { $inc: { xp: xpFinal } },
+            { upsert: true }
+          ),
+          CarteiraGrupo.findOneAndUpdate(
+            { idWhatsApp: userId, idGrupo: jid },
+            { $inc: { xp: xpFinal } },
+            { upsert: true }
+          ),
+        ]).catch((xpErr) => console.error('⚠️ Erro ao gravar XP do garimpo:', xpErr.message));
+      } else {
+        await prepareDailyMissionState(userId);
 
-      const [carteira] = await Promise.all([
-        alterarGold(userId, jid, goldFinal, `Garimpo - ${minerio.nome}`),
-        Usuario.findOneAndUpdate(
-          { idWhatsApp: userId },
-          { $inc: { xp: xpFinal } },
-          { upsert: true }
-        ),
-        incrementMission(userId, 'gold500', goldFinal),
-        CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp: userId, idGrupo: jid },
-          { $inc: { xp: xpFinal } },
-          { upsert: true }
-        ),
-      ]);
+        [carteira] = await Promise.all([
+          alterarGold(userId, jid, goldFinal, `Garimpo - ${minerio.nome}`),
+          Usuario.findOneAndUpdate(
+            { idWhatsApp: userId },
+            { $inc: { xp: xpFinal } },
+            { upsert: true }
+          ),
+          incrementMission(userId, 'gold500', goldFinal),
+          CarteiraGrupo.findOneAndUpdate(
+            { idWhatsApp: userId, idGrupo: jid },
+            { $inc: { xp: xpFinal } },
+            { upsert: true }
+          ),
+        ]);
+      }
 
       const linhas = [
         `⛏️ *═══ GARIMPO ═══* ⛏️`,
@@ -180,8 +228,11 @@ async function handleGarimpar(sock, msg, jid) {
       if (evento) linhas.push(``, `⚡ *EVENTO:* ${eventoTxt}`);
 
       linhas.push(``);
+      const ganhoExibido = carteira?.walletLinked
+        ? localMinorUnitsToBrlCents(goldFinal, carteira)
+        : goldFinal;
       if (goldFinal > 0) {
-        linhas.push(`💰 Encontrado: *+${formatWalletAmount(goldFinal, carteira)}*`);
+        linhas.push(`💰 Encontrado: *+${formatWalletAmount(ganhoExibido, carteira)}*`);
       } else {
         linhas.push(`💰 Encontrado: *nada — evento destruiu tudo!*`);
       }
@@ -194,15 +245,23 @@ async function handleGarimpar(sock, msg, jid) {
       await sock.sendMessage(jid, { text: linhas.join('\n') }, { quoted: msg });
 
     } catch (e) {
-      await Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
-        { $set: { ultimoGarimpo: docAtual?.ultimoGarimpo ?? null } }
-      ).catch(() => {});
+      // Conta vinculada com timeout/rede: o servidor pode ter pago sem responder. Mantém o cooldown.
+      const resultadoIncerto = contaVinculada && /timeout|network|ECONN|socket/i.test(String(e.message));
+      if (!creditoFeito && !resultadoIncerto) {
+        await Usuario.findOneAndUpdate(
+          { idWhatsApp: userId },
+          { $set: { ultimoGarimpo: docAtual?.ultimoGarimpo ?? null } }
+        ).catch(() => {});
 
-      garimpoCache.delete(userId);
+        garimpoCache.delete(userId);
+      }
 
       console.error('⚠️ Erro handleGarimpar:', e.message);
-      await sock.sendMessage(jid, { text: '⚠️ Erro ao garimpar! Tente novamente.' }, { quoted: msg });
+      await sock.sendMessage(jid, {
+        text: resultadoIncerto
+          ? '⚠️ Não consegui confirmar o garimpo agora. Confira seu saldo com *!reais* antes de tentar de novo.'
+          : '⚠️ Erro ao garimpar! Tente novamente.',
+      }, { quoted: msg });
     }
   } finally {
     global._garimpoInFlight.delete(userId);

@@ -37,7 +37,7 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
     getWalletBalance(paraIdWhatsApp),
   ]);
   // Vinculado -> não vinculado: debita o saldo do app e credita o gold legado do destinatário.
-  // Os requestIds são fixos: se a resposta se perder, repetir não debita nem estorna em dobro.
+  // Os requestIds são gerados uma vez por chamada; não há nova tentativa automática.
   if (walletDe.linked && !walletPara.linked) {
     const idDebito  = crypto.randomUUID();
     const idEstorno = crypto.randomUUID();
@@ -59,6 +59,12 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
         throw erroComCodigo(e.message, 'VALOR_MINIMO_CONVERSAO');
       }
       throw e;
+    }
+
+    // Se a conversão deu 0 centavos, nada foi debitado: não pode creditar o destinatário.
+    if (!Number.isSafeInteger(debito?.balanceCents)
+        || (Number.isSafeInteger(walletDe.balanceCents) && debito.balanceCents >= walletDe.balanceCents)) {
+      throw erroComCodigo('Valor convertido não gerou débito.', 'VALOR_MINIMO_CONVERSAO');
     }
 
     let carteiraPARA;

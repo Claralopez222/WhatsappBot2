@@ -893,8 +893,16 @@ function _buildTextoCaptura(numeroLadrao, debitavel = 0) {
 // ─── !policia @ladrão ─────────────────────────────────────────────────────────
 
 async function handlePolicia(sock, msg, jid) {
-  const vitimaId  = getUserId(msg);
-  const ladraoRaw = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const vitimaId = getUserId(msg);
+  // O roteador aceita mensagens encapsuladas pelo WhatsApp (ex.: temporárias).
+  // Extrair a menção do mesmo conteúdo normalizado evita perder o alvo quando
+  // o comando chega dentro de ephemeral/view-once.
+  const content =
+    msg.message?.ephemeralMessage?.message ||
+    msg.message?.viewOnceMessage?.message ||
+    msg.message?.viewOnceMessageV2?.message ||
+    msg.message;
+  const ladraoRaw = content?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
   const ladrao    = ladraoRaw ? (normalizarJid(ladraoRaw) || ladraoRaw) : null;
   const idGrupo   = getGroupId(msg, jid);
   const agora     = Date.now();

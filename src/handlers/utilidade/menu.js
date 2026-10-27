@@ -379,9 +379,9 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
 
 📱 *VÍDEO & REDES SOCIAIS*
   ▸ ${P}tiktok _(link)_
-  ▸ ${P}save _(link)_ - manutenção
-  ▸ ${P}saverec _(link)_ _- manutenção_
-  ▸ ${P}pinterest _- manutenção_
+  ▸ ${P}save _(link)_ — baixar mídia de várias redes
+  ▸ ${P}saverec _(link)_ — recortar os primeiros 10 segundos
+  ▸ ${P}pinterest _(link)_ — baixar vídeo ou imagem
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 

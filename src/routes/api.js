@@ -33,25 +33,21 @@ function gerarVariantesNumero(numero = '') {
   if (!original) return [];
 
   const variantes = new Set([original]);
-  let codigoPais = '';
-  let nacional = original;
-
-  if (original.startsWith('55') && (original.length === 12 || original.length === 13)) {
-    codigoPais = '55';
-    nacional = original.slice(2);
-  } else if (original.length !== 10 && original.length !== 11) {
-    return [...variantes];
-  }
-
+  const temCodigoPais = original.startsWith('55') && (original.length === 12 || original.length === 13);
+  const nacional = temCodigoPais ? original.slice(2) : original;
   if (nacional.length !== 10 && nacional.length !== 11) return [...variantes];
 
   const ddd = nacional.slice(0, 2);
   const assinante = nacional.slice(2);
+  const prefixos = temCodigoPais ? ['55'] : ['', '55'];
 
-  if (assinante.length === 8) {
-    variantes.add(`${codigoPais}${ddd}9${assinante}`);
-  } else if (assinante.length === 9 && assinante.startsWith('9')) {
-    variantes.add(`${codigoPais}${ddd}${assinante.slice(1)}`);
+  for (const prefixo of prefixos) {
+    variantes.add(`${prefixo}${nacional}`);
+    if (assinante.length === 8) {
+      variantes.add(`${prefixo}${ddd}9${assinante}`);
+    } else if (assinante.length === 9 && assinante.startsWith('9')) {
+      variantes.add(`${prefixo}${ddd}${assinante.slice(1)}`);
+    }
   }
 
   return [...variantes];

@@ -51,8 +51,6 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
     if (targetJid === senderJid) {
       return sock.sendMessage(jid, { text: '😂 Você não pode saquear a si mesmo!' }, { quoted: msg });
     }
-
-    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid, targetJid)) return;
     const perdedor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid });
     if (!perdedor) {
       return sock.sendMessage(jid, { text: '❌ Esse jogador não tem personagem medieval.' }, { quoted: msg });
@@ -62,7 +60,7 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
 
     if (!perdedor.derrotadoEm) {
       return sock.sendMessage(jid, {
-        text: `❌ *@${targetJid.split('@')[0]}* não está derrotado no momento (ou a janela já passou).`,
+        text: `❌ *${perdedor.nome || targetJid.split('@')[0]}* não está derrotado no momento (ou a janela já passou).`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -70,7 +68,7 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
     const passouMs = Date.now() - new Date(perdedor.derrotadoEm).getTime();
     if (passouMs >= JANELA_SAQUE_MS) {
       return sock.sendMessage(jid, {
-        text: `⏳ A janela de *3 minutos* pra saquear *@${targetJid.split('@')[0]}* já expirou!`,
+        text: `⏳ A janela de *3 minutos* pra saquear *${perdedor.nome || targetJid.split('@')[0]}* já expirou!`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -104,7 +102,7 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
 
     if (!opcoes.length) {
       return sock.sendMessage(jid, {
-        text: `💨 *@${targetJid.split('@')[0]}* não tem nada pra saquear agora!`,
+        text: `💨 *${perdedor.nome || targetJid.split('@')[0]}* não tem nada pra saquear agora!`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -117,7 +115,7 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
 
     await sock.sendMessage(jid, {
       text:
-        `💰 *SAQUE — @${targetJid.split('@')[0]}* 💰\n` +
+        `💰 *SAQUE — ${perdedor.nome || targetJid.split('@')[0]}* 💰\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `${listaTexto}\n` +
         `━━━━━━━━━━━━━━━━\n` +
@@ -164,13 +162,6 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
     if (!await getModoAtivo(jid)) {
       limparEstado(jid, senderJid);
       await sock.sendMessage(jid, { text: '⚔️ O modo medieval foi desativado neste grupo — saque cancelado.' }, { quoted: msg });
-      return true;
-    }
-
-    // Reconfere no momento da confirmação: alguém pode ter vinculado a conta
-    // durante os 60 segundos de espera, e o gold iria para o saldo legado.
-    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid, estado.perdedorJid)) {
-      limparEstado(jid, senderJid);
       return true;
     }
 

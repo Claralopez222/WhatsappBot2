@@ -1,4 +1,4 @@
-# Piroquinhas Bot -- divide handlers/grupo.js em pasta
+# Tico Bot -- divide handlers/grupo.js em pasta
 $root = "D:\Project\Whatsapp"
 Set-Location $root
 

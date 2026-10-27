@@ -1,4 +1,4 @@
-﻿# Piroquinhas Bot -- reorganizacao estrutural completa
+﻿# Tico Bot -- reorganizacao estrutural completa
 # Roda a partir de qualquer lugar; o script entra na raiz sozinho.
 
 $root = "D:\Project\Whatsapp"

@@ -1,4 +1,4 @@
-# Piroquinhas Bot -- adiciona utils/carteira/compras.js e atualiza index.js
+# Tico Bot -- adiciona utils/carteira/compras.js e atualiza index.js
 $root = "D:\Project\Whatsapp"
 Set-Location $root
 

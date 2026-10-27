@@ -1,4 +1,4 @@
-# Piroquinhas Bot -- extrai loadData/saveData do bot.js para src/utils/persistence.js
+# Tico Bot -- extrai loadData/saveData do bot.js para src/utils/persistence.js
 $root = "D:\Project\Whatsapp"
 Set-Location $root
 

@@ -1,7 +1,6 @@
 const { createHash } = require('crypto');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
-const { contaVinculada } = require('../utils/carteira/vinculo');
 
 const PREMIOS = [1000, 500, 350];
 
@@ -76,13 +75,6 @@ async function executarPremiacao(sock, gruposAtivos) {
 
       if (!top3.length) continue;
 
-      // Se o Zeca estiver fora, adia o grupo inteiro: os pontos NÃO são zerados.
-      const estadosVinculo = await Promise.all(top3.map(u => contaVinculada(u.idWhatsApp)));
-      if (estadosVinculo.includes(null)) {
-        console.error(`[QuizRanking] Carteira indisponível; premiação adiada para ${groupJid}.`);
-        continue;
-      }
-
       let texto = `🏆 *PREMIAÇÃO SEMANAL DE QUIZ!* 🏆\n\n`;
       texto += `Parabéns aos campeões desta semana!\n\n`;
 
@@ -94,7 +86,7 @@ async function executarPremiacao(sock, gruposAtivos) {
         const gold = PREMIOS[i];
         const jidNorm = jidNormalizedUser(u.idWhatsApp);
 
-        const pagaGold = estadosVinculo[i] === false;
+        const pagaGold = true;
 
         await CarteiraGrupo.findOneAndUpdate(
           { idWhatsApp: u.idWhatsApp, idGrupo: groupJid },

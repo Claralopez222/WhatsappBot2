@@ -145,7 +145,7 @@ async function handleBanco(sock, msg, jid, caption) {
     if (!hasInvestment) {
       await sock.sendMessage(jid, {
         text:
-          `💼 ═══ BANCO PIROQUINHAS ═══ 💼\n\n` +
+          `💼 ═══ BANCO Tico ═══ 💼\n\n` +
           `💰 *Nenhum investimento ativo no momento!*\n\n` +
           `O seu dinheiro está seguro, mas ocioso...\n\n` +
           `━━━━━━━━━━━━━━━━\n` +

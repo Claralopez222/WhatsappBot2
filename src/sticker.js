@@ -15,7 +15,21 @@ const STICKER_SIZE   = 512;
 const VIDEO_SIZE     = 384;
 const VIDEO_FPS      = 8;
 const VIDEO_QUALITY  = 25;
-const VIDEO_MAX_FRAMES = 56;
+const VIDEO_MAX_FRAMES = 72;
+const VIDEO_STICKER_MAX_SECONDS = 9;
+const VIDEO_INPUT_MAX_SECONDS = 20;
+
+// Usa o binário empacotado quando existe; em Linux, pode usar o ffmpeg do sistema.
+function resolveFfmpegBin() {
+  let bundled = null;
+  try { bundled = require('ffmpeg-static'); } catch { /* pacote opcional/incompatível */ }
+  if (bundled && fs.existsSync(bundled)) return bundled;
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    const candidate = path.join(dir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    try { if (fs.statSync(candidate).isFile()) return candidate; } catch { /* tenta o próximo */ }
+  }
+  throw new Error('FFmpeg não encontrado. Instale ffmpeg no sistema ou reinstale ffmpeg-static para esta plataforma.');
+}
 const WEBP_QUALITY   = 85;
 
 // ═══════════════════════════════════════════════════════════════
@@ -212,8 +226,8 @@ function isSupportedRasterImage(buffer) {
  * @param {Buffer} buffer
  * @returns {Promise<Buffer>}
  */
-async function convertVideoToSticker(buffer) {
-  return _convertVideoViaFrames(buffer);
+async function convertVideoToSticker(buffer, durationHint = 0) {
+  return _convertVideoViaFrames(buffer, durationHint);
 }
 
 /**
@@ -221,7 +235,7 @@ async function convertVideoToSticker(buffer) {
  * @param {Buffer} buffer
  * @returns {Promise<Buffer>}
  */
-async function _convertVideoViaFrames(buffer) {
+async function _convertVideoViaFrames(buffer, durationHint = 0) {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
     throw new TypeError('convertVideoToSticker: buffer inválido ou vazio.');
   }
@@ -232,7 +246,7 @@ async function _convertVideoViaFrames(buffer) {
   const framesDir = path.join(tmpDir, `${tmpId}_frames`);
   const outPath   = path.join(tmpDir, `${tmpId}_out.webp`);
 
-  const ffmpegBin = require('ffmpeg-static');
+  const ffmpegBin = resolveFfmpegBin();
 
   /**
    * Executa o ffmpeg com os argumentos fornecidos e retorna uma Promise.
@@ -257,10 +271,36 @@ async function _convertVideoViaFrames(buffer) {
   fs.mkdirSync(framesDir, { recursive: true });
 
   try {
-    // ─── Extração de frames ──────────────────────────────────
+    let duration = Number(durationHint);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      const ffprobeBin = require('ffprobe-static').path;
+      duration = await new Promise((resolve) => {
+        execFile(ffprobeBin, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', inPath],
+          { timeout: 10_000 }, (err, stdout) => {
+            const parsed = Number(String(stdout || '').trim());
+            resolve(!err && Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
+          });
+      });
+    }
+    if (duration > VIDEO_INPUT_MAX_SECONDS + 0.25) {
+      const error = new Error(`VIDEO_TOO_LONG:${Math.ceil(duration)}`);
+      error.code = 'VIDEO_TOO_LONG';
+      throw error;
+    }
+    const playbackFactor = duration > VIDEO_STICKER_MAX_SECONDS
+      ? VIDEO_STICKER_MAX_SECONDS / duration
+      : 1;
+    const videoFilter = [
+      ...(playbackFactor < 1 ? [`setpts=${playbackFactor.toFixed(8)}*PTS`] : []),
+      `fps=${VIDEO_FPS}`,
+      `scale=${VIDEO_SIZE}:${VIDEO_SIZE}`,
+    ].join(',');
+
+    // Acelera o vídeo quando necessário, mantendo todo o conteúdo em até 9 segundos.
     await runFfmpeg([
       '-y', '-i', inPath,
-      '-vf', `fps=${VIDEO_FPS},scale=${VIDEO_SIZE}:${VIDEO_SIZE}`,
+      '-vf', videoFilter,
+      '-frames:v', String(VIDEO_MAX_FRAMES),
       '-f', 'image2',
       path.join(framesDir, 'f_%04d.png'),
     ]);
@@ -286,7 +326,7 @@ async function _convertVideoViaFrames(buffer) {
       '-method', '6',
       '-loop', '0',
       '-preset', 'default',
-      '-an', '-vsync', '0',
+      '-an', '-fps_mode', 'passthrough',
       '-f', 'webp',
       outPath,
     ]);
@@ -299,7 +339,8 @@ async function _convertVideoViaFrames(buffer) {
     const sizeKb = (result.length / 1024).toFixed(0);
     console.log(
       `✅ Sticker WebP: ${sizeKb}KB ` +
-      `(fps:${VIDEO_FPS}, quality:${VIDEO_QUALITY}, ` +
+      `(duração original:${duration ? duration.toFixed(2) + 's' : 'desconhecida'}, ` +
+      `aceleração:${playbackFactor < 1 ? (1 / playbackFactor).toFixed(2) + 'x' : 'normal'}, fps:${VIDEO_FPS}, quality:${VIDEO_QUALITY}, ` +
       `frames:${frameFiles.length}, size:${VIDEO_SIZE}×${VIDEO_SIZE})`
     );
     return result;

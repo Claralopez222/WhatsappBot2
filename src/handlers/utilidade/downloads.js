@@ -53,10 +53,15 @@ function isPublicAddress(address, family) {
 }
 
 async function resolvePublicAddress(hostname) {
-  const family = net.isIP(hostname);
+  // WHATWG URL pode manter colchetes no hostname IPv6 (ex.: [::1]), mas
+  // net.isIP/dns.lookup esperam o endereço sem colchetes.
+  const normalizedHost = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+  const family = net.isIP(normalizedHost);
   const addresses = family
-    ? [{ address: hostname, family }]
-    : await dns.lookup(hostname, { all: true, verbatim: true });
+    ? [{ address: normalizedHost, family }]
+    : await dns.lookup(normalizedHost, { all: true, verbatim: true });
   if (!addresses.length || addresses.some(({ address: resolved, family: resolvedFamily }) =>
     !isPublicAddress(resolved, resolvedFamily))) {
     throw new Error('O link aponta para um endereço de rede não permitido.');
@@ -1161,7 +1166,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   pendingMusic.set(senderJid, { audioBuffer, titulo, meta, nome });
   setTimeout(() => pendingMusic.delete(senderJid), 10 * 60 * 1000);
 
-  let texto = `━━━ [ 🎧 *Piroquinhas* 🎧 ] ━━━\n\n`;
+  let texto = `━━━ [ 🎧 *Tico* 🎧 ] ━━━\n\n`;
   texto += `🔎 *Pesquisa:* _${nome}_\n\n`;
   texto += `🎵 *Título:* _${titulo}_\n`;
   if (autor)      texto += `👤 *Artista/Canal:* _${autor}_\n`;

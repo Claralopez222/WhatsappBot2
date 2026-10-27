@@ -1,5 +1,5 @@
 /* =========================================================
-   admin-grupos.js — Piroquinhas Bot Admin
+   admin-grupos.js — Tico Bot Admin
    ...
    ========================================================= */
 (function() {

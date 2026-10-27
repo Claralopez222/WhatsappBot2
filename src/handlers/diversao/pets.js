@@ -394,6 +394,7 @@ async function handleAlimentarPet(sock, msg, jid) {
   }
 
   if (pet.fullness >= CONFIG.STAT_MAX) {
+    clearCooldown(`${userId}:${jid}`, 'alimentar');
     return reply(sock, jid, msg,
       `❌ *${pet.name}* está completamente cheio (🍽️ 100%) e recusou a comida!`
     );
@@ -415,6 +416,7 @@ async function handleAlimentarPet(sock, msg, jid) {
       { new: true, upsert: false }
     );
     if (!userComComida) {
+      clearCooldown(`${userId}:${jid}`, 'alimentar');
       return reply(sock, jid, msg,
         '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.'
       );
@@ -425,6 +427,19 @@ async function handleAlimentarPet(sock, msg, jid) {
       { new: true }
     );
   } catch (err) {
+    // Se a comida já foi debitada, tenta devolvê-la para não perder item
+    // quando a gravação do estado do pet falhar.
+    if (userComComida) {
+      try {
+        await Usuario.updateOne(
+          { idWhatsApp: userId },
+          { $inc: { 'inventory.comida': 1, 'dailyMissions.progress.pet10': -1 } }
+        );
+      } catch (rollbackErr) {
+        console.error('[alimentar] Falha ao devolver comida após erro:', rollbackErr);
+      }
+    }
+    clearCooldown(`${userId}:${jid}`, 'alimentar');
     console.error('[alimentar] Erro ao atualizar:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao alimentar o pet. Tente novamente!');
   }
@@ -600,6 +615,7 @@ async function handleCurarPet(sock, msg, jid) {
   const felicidadeCheia = (pet.happiness ?? 0) >= CONFIG.STAT_MAX;
 
   if (energiaCheia && felicidadeCheia) {
+    clearCooldown(`${userId}:${jid}`, 'curar');
     return reply(sock, jid, msg,
       `✅ *${pet.name}* já está completamente saudável!\n\n` +
       `⚡ Energia    : *${pet.energy}%*\n` +
@@ -632,16 +648,31 @@ async function handleCurarPet(sock, msg, jid) {
   }
 
   if (!userAtualizado) {
+    clearCooldown(`${userId}:${jid}`, 'curar');
     return reply(sock, jid, msg,
       '❌ Você não tem remédios no inventário! Compre na *!loja*.'
     );
   }
 
-  await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: userId, idGrupo: jid },
-    { $set: { pet: petAtualizado } },
-    { upsert: true }
-  );
+  try {
+    await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: userId, idGrupo: jid },
+      { $set: { pet: petAtualizado } },
+      { upsert: true }
+    );
+  } catch (err) {
+    try {
+      await Usuario.updateOne(
+        { idWhatsApp: userId },
+        { $inc: { 'inventory.remedio': 1 } }
+      );
+    } catch (rollbackErr) {
+      console.error('[curar] Falha ao devolver remédio após erro:', rollbackErr);
+    }
+    clearCooldown(`${userId}:${jid}`, 'curar');
+    console.error('[curar] Erro ao salvar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro interno ao salvar a cura. O remédio foi devolvido quando possível; tente novamente.');
+  }
 
   petCache.set(`${userId}:${jid}`, petAtualizado);
 
@@ -1239,7 +1270,7 @@ async function tentarSpawnComRetry(sock, jid, tentativas = 3, delayMs = 15_000) 
 
     if (ok) {
       if (i > 1) console.log(`[PetScheduler] Spawn concluído para ${jid} na tentativa ${i}.`);
-      return;
+      return true;
     }
 
     // triggerSpawn retornou false — verifica se vale tentar de novo
@@ -1255,13 +1286,25 @@ async function tentarSpawnComRetry(sock, jid, tentativas = 3, delayMs = 15_000) 
       );
     }
   }
+  return false;
 }
 
 // ─── SCHEDULER PRINCIPAL ──────────────────────────────────────────────────────
 
 const PetSpawn = require('../../models/PetSpawn');
 
-const INTERVALO_MS = 20 * 60 * 1000; // 20 minutos
+const INTERVALO_MS = 30 * 60 * 1000; // 30 minutos
+const CHECK_INTERVAL = 30 * 1000; // verifica a cada 30s
+const FUSO_PET = 'America/Cuiaba';
+
+// Pausa automática das 22:00 às 09:00, no fuso de Cuiabá.
+function dentroDaPausaDeSpawn(data = new Date()) {
+  const partes = new Intl.DateTimeFormat('en-GB', {
+    timeZone: FUSO_PET, hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(data);
+  const hora = Number(partes.find(p => p.type === 'hour')?.value ?? 0);
+  return hora >= 22 || hora < 9;
+}
 
 /**
  * Inicia o scheduler de spawn de pets com persistência no MongoDB.
@@ -1271,6 +1314,8 @@ const INTERVALO_MS = 20 * 60 * 1000; // 20 minutos
  */
 function initPetScheduler(sock) {
   let currentSock = sock;
+  let cicloEmAndamento = false;
+  let timerInicial = null;
 
   initPetScheduler.updateSock = (newSock) => {
     currentSock = newSock;
@@ -1278,6 +1323,19 @@ function initPetScheduler(sock) {
   };
 
   async function cicloSpawn() {
+    if (cicloEmAndamento) return;
+    cicloEmAndamento = true;
+    try {
+    // Recarrega os grupos participantes do WhatsApp para não depender de
+    // mensagens recebidas desde o boot para entrar no scheduler.
+    if (isSockReady(currentSock) && typeof currentSock.groupFetchAllParticipating === 'function') {
+      try {
+        const grupos = await currentSock.groupFetchAllParticipating();
+        for (const jid of Object.keys(grupos || {})) registerActiveGroup(jid);
+      } catch (err) {
+        console.warn('[PetScheduler] Não foi possível atualizar grupos:', err.message);
+      }
+    }
     const total = activeGroups.size;
 
     if (total === 0) {
@@ -1287,6 +1345,11 @@ function initPetScheduler(sock) {
 
     if (!isSockReady(currentSock)) {
       console.warn('[PetScheduler] Socket não pronto, ciclo ignorado.');
+      return;
+    }
+
+    if (dentroDaPausaDeSpawn()) {
+      console.log('[PetScheduler] Pausa noturna ativa (22:00–09:00, horário de Cuiabá); spawns automáticos suspensos.');
       return;
     }
 
@@ -1320,15 +1383,19 @@ function initPetScheduler(sock) {
           continue;
         }
 
-        // Salva o novo timestamp ANTES de enviar (evita spawn duplo em caso de crash)
-        await PetSpawn.findOneAndUpdate(
-          { idGrupo: jid },
-          { $set: { ultimoSpawn: new Date(agora) } },
-          { upsert: true }
-        );
-
-        await tentarSpawnComRetry(currentSock, jid);
-        sucessos++;
+        // Só registra o horário quando a mensagem realmente foi enviada.
+        // Falhas de conexão não devem consumir o intervalo de 30 minutos.
+        const enviado = await tentarSpawnComRetry(currentSock, jid);
+        if (enviado) {
+          await PetSpawn.findOneAndUpdate(
+            { idGrupo: jid },
+            { $set: { ultimoSpawn: new Date() }, $inc: { totalSpawns: 1 } },
+            { upsert: true }
+          );
+          sucessos++;
+        } else {
+          console.warn(`[PetScheduler] ${jid} não recebeu spawn; tentará novamente no próximo ciclo.`);
+        }
 
         if (total > 1) await sleep(500);
       } catch (err) {
@@ -1339,21 +1406,23 @@ function initPetScheduler(sock) {
     console.log(
       `[PetScheduler] Ciclo concluído — ✅ ${sucessos} spawn(s) | ⏭️ ${ignorados} aguardando | 🔇 ${desativados} desativado(s).`
     );
+    } finally {
+      cicloEmAndamento = false;
+    }
   }
 
-  // Roda a cada 5 minutos para verificar quais grupos precisam de spawn
-  // (em vez de exatamente o intervalo completo, pois o bot pode reiniciar no meio)
-  const CHECK_INTERVAL = 5 * 60 * 1000; // verifica a cada 5min
-
   if (initPetScheduler._timer) clearInterval(initPetScheduler._timer);
+  if (initPetScheduler._initialTimer) clearTimeout(initPetScheduler._initialTimer);
 
-  // Primeira verificação após 1 minuto do boot
-  setTimeout(() => {
-    cicloSpawn();
-    initPetScheduler._timer = setInterval(cicloSpawn, CHECK_INTERVAL);
-  }, 60 * 1000);
+  // Primeira verificação rápida após conectar; depois checa a cada 30 segundos.
+  initPetScheduler._initialTimer = setTimeout(() => {
+    cicloSpawn().catch(err => console.error('[PetScheduler] Falha no ciclo:', err.message));
+    initPetScheduler._timer = setInterval(() => {
+      cicloSpawn().catch(err => console.error('[PetScheduler] Falha no ciclo:', err.message));
+    }, CHECK_INTERVAL);
+  }, 10 * 1000);
 
-  console.log(`[PetScheduler] Iniciado. Intervalo de spawn: ${INTERVALO_MS / 60000}min.`);
+  console.log(`[PetScheduler] Iniciado. Intervalo entre spawns: ${INTERVALO_MS / 60000}min; pausa automática 22:00–09:00 (${FUSO_PET}); verificação a cada ${CHECK_INTERVAL / 1000}s.`);
 }
 
 // !statuspet
@@ -1479,12 +1548,13 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
     .trim()
     .toLowerCase();
 
-  if (!['on', 'off', 'status'].includes(arg)) {
+  if (!['on', 'off', 'status', 'spawn'].includes(arg)) {
     return reply(sock, jid, msg,
       `⚠️ Uso incorreto!\n\n` +
-      `*!pet on* — ativa o spawn de pets neste grupo\n` +
-      `*!pet off* — desativa o spawn de pets neste grupo\n` +
-      `*!pet status* — vê o status atual`
+      `*!pet on* — ativa o spawn automático neste grupo\n` +
+      `*!pet off* — desativa o spawn automático neste grupo\n` +
+      `*!pet status* — vê o status atual\n` +
+      `*!pet spawn* — admin pode invocar um pet manualmente, inclusive na pausa noturna`
     );
   }
 
@@ -1525,7 +1595,27 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
   }
 
   if (!souAdmin) {
-    return reply(sock, jid, msg, '❌ Apenas admins podem ativar/desativar o spawn de pets!');
+    return reply(sock, jid, msg, '❌ Apenas administradores podem usar este comando!');
+  }
+
+  if (arg === 'spawn') {
+    if (spawnedPets.has(jid)) {
+      return reply(sock, jid, msg, '🐾 Já existe um pet selvagem neste grupo. Capture-o antes de invocar outro.');
+    }
+    const enviado = await triggerSpawn(sock, jid);
+    if (!enviado) {
+      return reply(sock, jid, msg, '❌ Não foi possível invocar o pet. Tente novamente.');
+    }
+    try {
+      await PetSpawn.findOneAndUpdate(
+        { idGrupo: jid },
+        { $set: { ultimoSpawn: new Date() }, $inc: { totalSpawns: 1 } },
+        { upsert: true }
+      );
+    } catch (err) {
+      console.error('[handlePetToggle] Pet invocado, mas falhou ao registrar horário:', err.message);
+    }
+    return reply(sock, jid, msg, '✅ Pet invocado manualmente pelo administrador!');
   }
 
   const novoEstado = arg === 'on';

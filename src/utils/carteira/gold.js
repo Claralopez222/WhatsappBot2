@@ -3,11 +3,6 @@
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
 const LidMapping    = require('../../models/LidMapping');
 const { normalizarJid } = require('../identity');
-const {
-  getWalletBalance,
-  adjustWallet,
-  adjustWalletLocal,
-} = require('./wallet');
 
 const GOLD_HISTORY_LIMITE = 50;
 
@@ -63,27 +58,7 @@ async function getCarteira(idWhatsApp, idGrupo) {
   assertJid(idWhatsApp, 'idWhatsApp');
   assertJid(idGrupo,    'idGrupo');
 
-  const wallet = await getWalletBalance(idWhatsApp);
-  if (wallet.linked) {
-    const jidsBusca = await resolverJidsEquivalentes(idWhatsApp);
-    const carteira = await CarteiraGrupo.findOne({
-      idWhatsApp: { $in: jidsBusca },
-      idGrupo,
-    }).comment('legacy-wallet-read').sort({ xp: -1 }).lean();
-    return {
-      ...(carteira || { idWhatsApp: normalizarJid(idWhatsApp), idGrupo }),
-      gold: wallet.balanceCents,
-      balanceCents: wallet.balanceCents,
-      walletLinked: true,
-      walletCurrencyCode: wallet.currencyCode,
-      walletCountryCode: wallet.countryCode,
-      walletRate: wallet.rate,
-      walletRateDate: wallet.rateDate,
-    };
-  }
-
   const jidsBusca = await resolverJidsEquivalentes(idWhatsApp);
-
   const carteiras = await CarteiraGrupo.find({ idWhatsApp: { $in: jidsBusca }, idGrupo }).sort({ gold: -1, xp: -1 }).lean();
 
   if (carteiras.length > 0) {
@@ -159,31 +134,6 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema', op
   }
 
 
-  let wallet;
-  if (opts.allowLinked === true) {
-    wallet = await adjustWallet(idWhatsApp, valor, descricao, { requestId: opts.requestId });
-  } else {
-    wallet = await getWalletBalance(idWhatsApp);
-    if (wallet.linked) {
-      const erro = new Error('carteira/gold.alterarGold: este fluxo ainda não suporta conta vinculada.');
-      erro.code = 'LINKED_NOT_SUPPORTED';
-      throw erro;
-    }
-  }
-  if (wallet.linked) {
-    return {
-      idWhatsApp: normalizarJid(idWhatsApp),
-      idGrupo,
-      gold: wallet.balanceCents,
-      balanceCents: wallet.balanceCents,
-      walletLinked: true,
-      walletCurrencyCode: wallet.currencyCode,
-      walletCountryCode: wallet.countryCode,
-      walletRate: wallet.rate,
-      walletRateDate: wallet.rateDate,
-    };
-  }
-
   const tipo     = valor >= 0 ? 'recebido' : 'gasto';
   const absValor = Math.abs(valor);
   const pushGoldHistory = {
@@ -198,15 +148,20 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema', op
   if (valor >= 0) {
     const res = await CarteiraGrupo.updateMany(
       { idWhatsApp: { $in: jidsBusca }, idGrupo },
-      { $inc: { gold: valor }, ...pushGoldHistory }
+      { $inc: { gold: valor }, ...pushGoldHistory },
+      opts.session ? { session: opts.session } : {}
     );
     if (res.matchedCount === 0) {
       const primaryJid = jidsBusca[0];
       await CarteiraGrupo.findOneAndUpdate(
         { idWhatsApp: primaryJid, idGrupo },
         { $inc: { gold: valor }, ...pushGoldHistory },
-        { upsert: true, new: true }
+        { upsert: true, new: true, ...(opts.session ? { session: opts.session } : {}) }
       );
+    }
+    if (opts.session) {
+      const carteiraSessao = await CarteiraGrupo.findOne({ idWhatsApp: { $in: jidsBusca }, idGrupo }).session(opts.session).lean();
+      return carteiraSessao || { idWhatsApp: jidsBusca[0], idGrupo, gold: valor };
     }
     return getCarteira(idWhatsApp, idGrupo);
   }
@@ -214,7 +169,7 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema', op
   const atualizado = await CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: { $in: jidsBusca }, idGrupo, gold: { $gte: absValor } },
     { $inc: { gold: valor }, ...pushGoldHistory },
-    { new: true }
+    { new: true, ...(opts.session ? { session: opts.session } : {}) }
   );
 
   if (!atualizado) {
@@ -228,24 +183,8 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema', op
 }
 
 async function alterarGoldLocal(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
-  assertJid(idWhatsApp, 'idWhatsApp');
-  assertJid(idGrupo, 'idGrupo');
   if (typeof valor !== 'number' || !Number.isSafeInteger(valor)) {
-    throw new TypeError('carteira/gold.alterarGoldLocal: "valor" deve ser um inteiro seguro.');
-  }
-  const wallet = await adjustWalletLocal(idWhatsApp, valor, descricao);
-  if (wallet.linked) {
-    return {
-      idWhatsApp: normalizarJid(idWhatsApp),
-      idGrupo,
-      gold: wallet.balanceCents,
-      balanceCents: wallet.balanceCents,
-      walletLinked: true,
-      walletCurrencyCode: wallet.currencyCode,
-      walletCountryCode: wallet.countryCode,
-      walletRate: wallet.rate,
-      walletRateDate: wallet.rateDate,
-    };
+    throw new TypeError('carteira/gold.alterarGoldLocal: valor deve ser um inteiro seguro.');
   }
   return alterarGold(idWhatsApp, idGrupo, valor, descricao);
 }

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Handler de Figurinhas — Piroquinhas Bot
+ * Handler de Figurinhas — Tico Bot
  * Comandos: !s, !f, !desfig, !brat, !figtexto, !attp, !attp2,
  *           !toimg, !togif,
  *           !figemoji, !figroblox, !figmeme,
@@ -35,7 +35,21 @@ const { fetchBuffer } = require(path.join(__dirname, '..', 'fetchurl'));
 const VIDEO_FPS      = 8;
 const VIDEO_SIZE     = 384;
 const VIDEO_QUALITY  = 25;
-const VIDEO_MAX_FRAMES = 56;
+const VIDEO_MAX_FRAMES = 72;
+const VIDEO_STICKER_MAX_SECONDS = 9;
+const VIDEO_INPUT_MAX_SECONDS = 20;
+
+// Usa o binário empacotado quando existe; em Linux, pode usar o ffmpeg do sistema.
+function resolveFfmpegBin() {
+  let bundled = null;
+  try { bundled = require('ffmpeg-static'); } catch { /* pacote opcional/incompatível */ }
+  if (bundled && fs.existsSync(bundled)) return bundled;
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    const candidate = path.join(dir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    try { if (fs.statSync(candidate).isFile()) return candidate; } catch { /* tenta o próximo */ }
+  }
+  throw new Error('FFmpeg não encontrado. Instale ffmpeg no sistema ou reinstale ffmpeg-static para esta plataforma.');
+}
 
 // ─── Logger (substituível externamente) ──────────────────────
 let logger = { level: 'silent' };
@@ -103,8 +117,8 @@ function detectExt(buffer) {
  * @param {string} [inputExt='mp4']
  * @returns {Promise<Buffer|null>} WebP animado, ou null em caso de falha.
  */
-async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4') {
-  const ffmpegBin = require('ffmpeg-static');
+async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4', durationHint = 0) {
+  const ffmpegBin = resolveFfmpegBin();
   const tmpId     = crypto.randomUUID();
   const tmpDir    = os.tmpdir();
   const inPath    = path.join(tmpDir, `${tmpId}_in.${inputExt}`);
@@ -130,10 +144,38 @@ async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4') {
   fs.mkdirSync(framesDir, { recursive: true });
 
   try {
+    // Use a duração informada pelo WhatsApp; se faltar, consulte o arquivo via ffprobe.
+    let duration = Number(durationHint);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      const ffprobeBin = require('ffprobe-static').path;
+      duration = await new Promise((resolve) => {
+        execFile(ffprobeBin, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', inPath],
+          { timeout: 10_000 }, (err, stdout) => {
+            const parsed = Number(String(stdout || '').trim());
+            resolve(!err && Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
+          });
+      });
+    }
+    if (duration > VIDEO_INPUT_MAX_SECONDS + 0.25) {
+      const error = new Error(`VIDEO_TOO_LONG:${Math.ceil(duration)}`);
+      error.code = 'VIDEO_TOO_LONG';
+      throw error;
+    }
+    // Acelera apenas quando necessário para caber em 9s, mantendo o vídeo inteiro.
+    const playbackFactor = duration > VIDEO_STICKER_MAX_SECONDS
+      ? VIDEO_STICKER_MAX_SECONDS / duration
+      : 1;
+    const videoFilter = [
+      ...(playbackFactor < 1 ? [`setpts=${playbackFactor.toFixed(8)}*PTS`] : []),
+      `fps=${VIDEO_FPS}`,
+      `scale=${VIDEO_SIZE}:${VIDEO_SIZE}`,
+    ].join(',');
+
     // ─── Extração de frames ──────────────────────────────────
     const extractOk = await runFfmpeg([
       '-y', '-i', inPath,
-      '-vf', `fps=${VIDEO_FPS},scale=${VIDEO_SIZE}:${VIDEO_SIZE}`,
+      '-vf', videoFilter,
+      '-frames:v', String(VIDEO_MAX_FRAMES),
       '-f', 'image2',
       path.join(framesDir, 'f_%04d.png'),
     ]);
@@ -147,7 +189,7 @@ async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4') {
       .sort()
       .slice(0, VIDEO_MAX_FRAMES);
 
-    console.log(`📹 Frames extraídos: ${frameFiles.length} (máx:${VIDEO_MAX_FRAMES}, fps:${VIDEO_FPS}, size:${VIDEO_SIZE}x${VIDEO_SIZE})`);
+    console.log(`📹 Frames extraídos: ${frameFiles.length} (duração original:${duration ? duration.toFixed(2) + 's' : 'desconhecida'}, aceleração:${playbackFactor < 1 ? (1 / playbackFactor).toFixed(2) + 'x' : 'normal'}, fps:${VIDEO_FPS}, size:${VIDEO_SIZE}x${VIDEO_SIZE})`);
     if (frameFiles.length === 0) return null;
 
     // ─── Montagem do WebP animado ─────────────────────────────
@@ -161,7 +203,7 @@ async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4') {
       '-method', '6',
       '-loop', '0',
       '-preset', 'default',
-      '-an', '-vsync', '0',
+      '-an', '-fps_mode', 'passthrough',
       '-f', 'webp',
       outPath,
     ]);
@@ -270,26 +312,44 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
   let sticker = null;
 
   if (videoMsg) {
-    const durSec = videoMsg.seconds || 0;
-    if (durSec > 7) {
+    const durSec = Number(videoMsg.seconds) || 0;
+    if (durSec > VIDEO_INPUT_MAX_SECONDS) {
       await sock.sendMessage(jid, {
-        text: `⚠️ Vídeo com *${durSec}s* detectado!\n_O máximo suportado é *7 segundos*._\n🎬 Usando apenas os primeiros 7s...`,
+        text: `⚠️ O vídeo tem *${durSec}s*. O limite para criar figurinha é *${VIDEO_INPUT_MAX_SECONDS} segundos*. Envie um vídeo mais curto.`,
+      }, { quoted: msg });
+      return;
+    }
+    if (durSec > VIDEO_STICKER_MAX_SECONDS) {
+      await sock.sendMessage(jid, {
+        text: `🎬 Vídeo de *${durSec}s* detectado. Vou acelerar para caber em até *${VIDEO_STICKER_MAX_SECONDS}s*, preservando o conteúdo inteiro.`,
       }, { quoted: msg });
     }
 
     try {
-      sticker = await videoToStickerBuffer(buffer, detectExt(buffer));
+      sticker = await videoToStickerBuffer(buffer, detectExt(buffer), durSec);
       if (!sticker || sticker.length < 100) {
         console.log('⚠️ Tentando fallback convertVideoToSticker...');
-        sticker = await convertVideoToSticker(buffer);
+        sticker = await convertVideoToSticker(buffer, durSec);
       }
     } catch (e) {
       console.log('❌ Erro sticker vídeo:', e.message);
-      try {
-        sticker = await convertVideoToSticker(buffer);
-      } catch {
+      if (e.code === 'VIDEO_TOO_LONG' || e.message?.startsWith('VIDEO_TOO_LONG:')) {
         await sock.sendMessage(jid, {
-          text: '❌ Não consegui converter o vídeo para figurinha.\n_Tente com um vídeo mais curto (máx 7s)._',
+          text: `⚠️ O vídeo ultrapassa o limite de *${VIDEO_INPUT_MAX_SECONDS} segundos*. Envie um vídeo mais curto.`,
+        }, { quoted: msg });
+        return;
+      }
+      try {
+        sticker = await convertVideoToSticker(buffer, durSec);
+      } catch (fallbackError) {
+        if (fallbackError.code === 'VIDEO_TOO_LONG' || fallbackError.message?.startsWith('VIDEO_TOO_LONG:')) {
+          await sock.sendMessage(jid, {
+            text: `⚠️ O vídeo ultrapassa o limite de *${VIDEO_INPUT_MAX_SECONDS} segundos*. Envie um vídeo mais curto.`,
+          }, { quoted: msg });
+          return;
+        }
+        await sock.sendMessage(jid, {
+          text: '❌ Não consegui converter o vídeo para figurinha. Tente outro vídeo com até 20 segundos.',
         }, { quoted: msg });
         return;
       }
@@ -367,7 +427,7 @@ async function handleDesfig(sock, msg, content, jid) {
     // O ffmpeg-static não consegue ler WebP animado diretamente como input.
     // Solução: extrair cada frame com sharp (que suporta WebP animado nativamente)
     // e montar o MP4 a partir dos PNGs — igual ao pipeline do videoToStickerBuffer.
-    const ffmpegBin = require('ffmpeg-static');
+    const ffmpegBin = resolveFfmpegBin();
     const tmpId     = crypto.randomUUID();
     const framesDir = path.join(os.tmpdir(), `${tmpId}_frames`);
     const outPath   = path.join(os.tmpdir(), `${tmpId}_out.mp4`);
@@ -472,7 +532,7 @@ async function handleToGif(sock, msg, content, jid) {
     return;
   }
 
-  const ffmpegBin = require('ffmpeg-static');
+  const ffmpegBin = resolveFfmpegBin();
   const tmpId     = crypto.randomUUID();
   const framesDir = path.join(os.tmpdir(), `${tmpId}_frames`);
   const outPath   = path.join(os.tmpdir(), `${tmpId}_out.gif`);
@@ -582,7 +642,7 @@ async function handleEstourar(sock, msg, content, jid) {
     return;
   }
 
-  const ffmpegBin = require('ffmpeg-static');
+  const ffmpegBin = resolveFfmpegBin();
   const tmpId     = crypto.randomUUID();
 
   // ── Detectar extensão correta pelo mimetype ──────────────────

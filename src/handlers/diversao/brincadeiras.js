@@ -2792,7 +2792,89 @@ async function handleWorldCupKnockout(sock, msg, jid) {
   }
 }
 
+
+// ─── Mini-jogos extras (comandos independentes e sem dependência externa) ───
+const MINI_GAMES = {
+  sorte: {
+    titulo: '🍀 TESTE DA SORTE',
+    gerar: () => { const n = 1 + Math.floor(Math.random() * 100); return `Sua sorte hoje está em *${n}%* ${n >= 80 ? '✨ O universo está do seu lado!' : n >= 45 ? '🙂 Pode ser um bom dia, mas não vacile.' : '🫣 Melhor não apostar tudo hoje.'}`; },
+  },
+  mimica: {
+    titulo: '🎭 MÍMICA RELÂMPAGO',
+    gerar: () => { const itens = ['um pinguim tentando voar', 'um robô sem bateria', 'uma galinha atravessando a rua', 'um zumbi dançando', 'alguém pisando em LEGO', 'um gato derrubando um copo', 'um goleiro defendendo pênalti', 'um alienígena usando elevador', 'um bebê descobrindo limão', 'um turista perdido']; return `Faça a mímica sem falar e deixe o grupo adivinhar:\n\n👉 *${itens[Math.floor(Math.random()*itens.length)]}*`; },
+  },
+  animal: {
+    titulo: '🐾 QUAL É O ANIMAL?',
+    gerar: () => { const itens = [['Tenho uma tromba enorme e orelhas grandes.','Elefante'],['Sou conhecido por mudar de cor.','Camaleão'],['Durmo de cabeça para baixo.','Morcego'],['Tenho três corações.','Polvo'],['Sou o animal terrestre mais rápido.','Guepardo'],['Carrego minha casa nas costas e ando devagar.','Caracol'],['Sou um mamífero que põe ovos e tenho bico.','Ornitorrinco'],['Posso regenerar partes do meu corpo.','Axolote']]; const x=itens[Math.floor(Math.random()*itens.length)]; return `❓ *${x[0]}*\n\nResponda no grupo! (Gabarito: ||${x[1]}||)`; },
+  },
+  superpoder: {
+    titulo: '🦸 SEU SUPERPODER',
+    gerar: () => { const p=['ficar invisível por 10 segundos','teletransportar-se, mas só para lugares com fila','ler pensamentos, mas apenas de gatos','controlar o clima dentro de um banheiro','voar a 30 centímetros do chão','parar o tempo por 5 segundos por dia','falar todos os idiomas, mas cantando','duplicar qualquer lanche uma vez por semana','prever o passado com 2 minutos de atraso','transformar água em refrigerante sem gás']; return `Seu superpoder aleatório seria: *${p[Math.floor(Math.random()*p.length)]}* 🦸`; },
+  },
+  vilao: {
+    titulo: '🦹 SEU NOME DE VILÃO',
+    gerar: (nome) => { const a=['Doutor','Capitão','Barão','Mestre','Conde','General','Professor']; const b=['Caos','Wi-Fi Fraco','Lag','Soneca',' boleto','Miojo','Ctrl+Z','Spoiler','Chinelo']; const c=['Sombrio','Supremo','Implacável','do Apocalipse','Invisível','Desconectado']; return `A identidade secreta de *${nome}* é:\n🦹 *${a[Math.floor(Math.random()*a.length)]} ${b[Math.floor(Math.random()*b.length)].trim()} ${c[Math.floor(Math.random()*c.length)]}*`; },
+  },
+  heroi: {
+    titulo: '🦸 IDENTIDADE DE HERÓI',
+    gerar: (nome) => { const p=['Defensor dos Pets','Guardião do Último Pedaço','Mestre do Controle Remoto','Protetor do Sono','Vingador do Pix','Sentinela do Churrasco','Lenda do Wi-Fi','Salvador dos Prazos','Campeão da Soneca','Guardião da Geladeira']; return `*${nome}* foi escolhido(a) para ser o(a) *${p[Math.floor(Math.random()*p.length)]}*! 🦸‍♀️`; },
+  },
+  previsao: {
+    titulo: '🔮 PREVISÃO DO FUTURO',
+    gerar: () => { const p=['você vai rir de algo totalmente aleatório','uma mensagem inesperada vai chegar','você encontrará algo que achava perdido','um lanche delicioso cruzará seu caminho','alguém vai lembrar de você hoje','uma pequena sorte vai melhorar seu dia','você vai adiar uma tarefa e se arrepender','seu próximo meme será certeiro','uma boa ideia aparecerá no banho','você precisará escolher entre dormir e continuar online']; return `🔮 As estrelas dizem que *${p[Math.floor(Math.random()*p.length)]}*.\n\n_Lembrete: é só uma brincadeira, não uma previsão real._`; },
+  },
+  segredo: {
+    titulo: '🤫 SEGREDO ALEATÓRIO',
+    gerar: () => { const p=['alguém aqui ensaia discussões no banho','tem gente que diz “tô chegando” sem ter saído de casa','alguém já abriu a geladeira três vezes esperando novidade','uma pessoa daqui responde mentalmente e esquece de digitar','tem alguém que lê a mensagem pela notificação e finge que não viu','alguém já riu de uma piada antes de entender','uma pessoa daqui promete dormir cedo e perde para os vídeos']; return `🚨 *SEGREDO 100% INVENTADO:* ${p[Math.floor(Math.random()*p.length)]}.\n_Não é sobre ninguém específico — só zoeira!_`; },
+  },
+  detetive: {
+    titulo: '🕵️ CASO DO DETETIVE',
+    gerar: () => { const p=[['Um homem entra na chuva sem guarda-chuva, mas nenhum cabelo fica molhado. Por quê?','Ele é careca.'],['O que fica mais molhado quanto mais seca?','A toalha.'],['Tenho cidades, mas não casas; rios, mas não água. O que sou?','Um mapa.'],['Quanto mais você tira, maior eu fico. O que sou?','Um buraco.'],['Tem dentes, mas não morde. O que é?','Um pente.']]; const x=p[Math.floor(Math.random()*p.length)]; return `🔎 *Caso:* ${x[0]}\n\nPense antes de abrir a resposta: ||${x[1]}||`; },
+  },
+  sobrevivencia: {
+    titulo: '🏝️ DESAFIO DE SOBREVIVÊNCIA',
+    gerar: () => { const c=[['uma ilha deserta','um canivete, uma garrafa de água e um cobertor'],['um apocalipse zumbi','uma mochila, um rádio e um pacote de bolacha'],['um planeta alienígena','um mapa, uma lanterna e um comunicador quebrado'],['uma floresta à noite','uma bússola, uma corda e fósforos']]; const x=c[Math.floor(Math.random()*c.length)]; return `🏝️ Você acordou em *${x[0]}*. Pode levar só um item: *${x[1]}*.\n\nQual você escolheria? Defenda sua escolha no grupo!`; },
+  },
+  campeonato: {
+    titulo: '🏆 CAMPEONATO IMPROVÁVEL',
+    gerar: () => { const a=['um pato','um ninja sonolento','um robô aspirador','um hamster atleta','um avô de chinelo','um polvo cozinheiro','um pombo executivo']; const b=['uma corrida de carrinho de mercado','uma competição de dança','um campeonato de esconde-esconde','uma batalha de karaokê','uma disputa de pedra-papel-tesoura','uma prova de culinária']; return `🏆 Na final de *${b[Math.floor(Math.random()*b.length)]}*, quem vence?\n🥇 ${a[Math.floor(Math.random()*a.length)]}\n🆚 ${a[Math.floor(Math.random()*a.length)]}\n\nO grupo decide!`; },
+  },
+  dilema: {
+    titulo: '⚖️ DILEMA IMPOSSÍVEL',
+    gerar: () => { const p=['ficar sem música por um mês OU sem vídeos por um mês?','sempre chegar 20 minutos cedo OU 10 minutos atrasado?','ter bateria infinita OU internet infinita?','comer sua comida favorita todo dia OU nunca mais comer a mesma coisa duas vezes?','poder voltar 10 segundos no tempo OU pausar o tempo por 10 segundos?','só poder sussurrar OU só poder cantar?','perder todas as fotos OU todas as mensagens antigas?','ter que dizer tudo rimando OU dançar ao ouvir seu nome?']; return `🤔 *Você prefere:*\n\n${p[Math.floor(Math.random()*p.length)]}\n\nEscolha e explique o motivo!`; },
+  },
+  palavra: {
+    titulo: '🔤 PALAVRA EMBARALHADA',
+    gerar: () => { const w=['banana','planeta','janela','teclado','abacaxi','girassol','caderno','pipoca','dragao','sorvete']; const original=w[Math.floor(Math.random()*w.length)]; let chars=original.split(''); for(let i=chars.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[chars[i],chars[j]]=[chars[j],chars[i]];} if(chars.join('')===original) chars.reverse(); return `🔤 Desembaralhe esta palavra:\n\n*${chars.join(' ').toUpperCase()}*\n\nDica: tem ${original.length} letras. (Resposta: ||${original}||)`; },
+  },
+  memoria: {
+    titulo: '🧠 TESTE DE MEMÓRIA',
+    gerar: () => { const all=['🍎','🚗','🌙','🐶','⚽','🎸','🍕','🌵','🚀','🦋']; const x=all.sort(()=>Math.random()-.5).slice(0,5); return `🧠 Memorize esta sequência por 10 segundos e depois tente repeti-la sem olhar:\n\n${x.join('  ')}\n\n_Não vale voltar para conferir!_`; },
+  },
+  numero: {
+    titulo: '🔢 ADIVINHE O NÚMERO',
+    gerar: () => { const n=1+Math.floor(Math.random()*20); const dicas=[`é ${n%2===0?'par':'ímpar'}`,`está entre ${Math.max(1,n-3)} e ${Math.min(20,n+3)}`]; return `Pensei em um número de *1 a 20*.\nDica: ele ${dicas[Math.floor(Math.random()*dicas.length)]}.\n\nCada pessoa manda um palpite no grupo! (Resposta: ||${n}||)`; },
+  },
+};
+
+async function handleMiniGame(sock, msg, jid, gameKey, author = 'Jogador', caption = '') {
+  const game = MINI_GAMES[gameKey];
+  if (!game) {
+    await sock.sendMessage(jid, { text: '❌ Esse mini-jogo não existe. Confira o comando em !menujogos.' }, { quoted: msg });
+    return;
+  }
+  const nome = String(author || 'Jogador').replace(/[*_`]/g, '').slice(0, 40);
+  try {
+    const resultado = game.gerar(nome, caption);
+    await sock.sendMessage(jid, { text: `╭─ ${game.titulo} ─╮\n\n${resultado}\n\n╰──────────────╯` }, { quoted: msg });
+  } catch (err) {
+    console.error(`[mini-game:${gameKey}]`, err);
+    await sock.sendMessage(jid, { text: '⚠️ Não consegui iniciar esse jogo agora. Tente novamente.' }, { quoted: msg });
+  }
+}
+
 module.exports = {
+  handleMiniGame,
   handleGay,
   handleGado,
   handleNazista,

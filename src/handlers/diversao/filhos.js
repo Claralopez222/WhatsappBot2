@@ -382,8 +382,6 @@ async function handleRemedioFilho(sock, msg, jid) {
 
     // Conta vinculada ao app: o gold do grupo não vale mais (o saldo vive no app).
     const userIdCarteira = await resolverJidCarteira(userId, jid);
-    if (await bloqueadoPorVinculo(sock, msg, jid, userIdCarteira)) return;
-
     // Débito atômico — evita corrida com outros comandos de gold
     const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: userIdCarteira, idGrupo: jid, gold: { $gte: CUSTO_REMEDIO } },

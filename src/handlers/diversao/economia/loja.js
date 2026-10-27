@@ -5,7 +5,6 @@ const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
 const { getCarteira, comprarComGold, venderComGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
-const { consultarSaldoPorIdentidade } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'appWallet'));
 const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
@@ -26,8 +25,8 @@ async function getMoneyFormatter(msg) {
   return amount => formatWalletAmount(amount, wallet);
 }
 
-async function moedaDaConta(msg) {
-  return consultarSaldoPorIdentidade(resolveUserFromMsg(msg));
+async function moedaDaConta() {
+  return null; // Este bot usa somente a carteira local.
 }
 
 // !gold
@@ -77,7 +76,7 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
 async function handleLoja(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const texto =
-    `🛒 *LOJA PIROQUINHAS* 🛒\n\n` +
+    `🛒 *LOJA Tico* 🛒\n\n` +
     `📂 *CATEGORIAS DISPONÍVEIS*\n\n` +
     `🍔 *COMIDA* → ${P}lojafood\n` +
     `🐾 *PETS* → ${P}lojapet\n` +

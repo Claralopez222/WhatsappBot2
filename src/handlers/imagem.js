@@ -1,5 +1,5 @@
 /**
- * Handler de Filtros de Imagem — Piroquinhas Bot
+ * Handler de Filtros de Imagem — Tico Bot
  * Comandos: !blur, !pb, !pbiphone, !espelhar, !flipv, !girar, !girar180, !girar270,
  *           !pixelar, !pixel, !negativo, !sepia, !vintage, !brilho, !contraste,
  *           !saturar, !nitido, !desfazer, !corecore, !sfundo, !menuefeitos,

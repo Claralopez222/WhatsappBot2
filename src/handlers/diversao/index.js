@@ -1,5 +1,5 @@
 /**
- * Handler de Diversão — Piroquinhas Bot
+ * Handler de Diversão — Tico Bot
  * Arquivo principal que coordena brincadeiras, economia, menus, pets, missões, marketplace e pesca
  */
 
@@ -17,7 +17,7 @@ const {
 
 // brincadeiras
 const {
-  handleGay, handleSexo, handleNazista, handleLesbica, handleAura,
+  handleMiniGame, handleGay, handleSexo, handleNazista, handleLesbica, handleAura,
   handleDado, handleMoeda, handle8ball, handleShip, handleRolar,
   handleXingar, handleElogio, handleCrush, handleCantada, handleSafadeza,
   handleTiro, handleMorte, handleRoletaRussa, handleRoletaRussa2, handleRoletaRussa3,
@@ -122,6 +122,7 @@ async function initializePersistedData() {
 // ─── EXPORTS COMPLETO ───────────────────────────────────────────────────────
 
 module.exports = {
+  handleMiniGame,
   // ── Brincadeiras (33 funções) ──────────────────────────────────────────────
   handleGay,
   handleSexo,

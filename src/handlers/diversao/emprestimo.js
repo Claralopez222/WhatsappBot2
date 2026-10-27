@@ -378,9 +378,6 @@ async function handleEmprestimo(sock, msg, jid, caption) {
     await enviarErro(sock, msg, jid, 'Não foi possível identificar seu usuário.');
     return;
   }
-
-  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
-
   const args = (caption || '').trim().split(/\s+/);
 
   // Exibe ajuda se não houver argumentos

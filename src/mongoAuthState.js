@@ -1,7 +1,6 @@
 'use strict';
 
 const mongoose = require('mongoose');
-const crypto   = require('crypto');
 const { initAuthCreds, proto, BufferJSON } = require('@whiskeysockets/baileys');
 
 // ─── Schema: dados de autenticação (creds + chaves) ──────────────────────────
@@ -13,131 +12,54 @@ const authSchema = new mongoose.Schema({
 
 const AuthData = mongoose.models.AuthData || mongoose.model('AuthData', authSchema);
 
-// ─── Schema: lock de sessão (evita 2 processos escrevendo a mesma sessão) ────
-// Um único documento (_id fixo) guarda quem é o "dono" atual da conexão com
-// o WhatsApp. Isso existe porque suspender o processo no Render (hibernate)
-// nem sempre mata o processo instantaneamente — se você sobe uma instância
-// local enquanto o Render ainda está vivo, os dois processos ficam com uma
-// cópia própria de `creds` em memória e cada `saveCreds()` sobrescreve o
-// documento inteiro sem merge. Isso pode deixar as chaves do protocolo
-// Signal inconsistentes com o que o servidor do WhatsApp realmente aceitou
-// por último, e o WhatsApp reage forçando logout (pede QR de novo).
+// ─── Lock de sessão ──────────────────────────────────────────────────────────
+// O lock agora é UNICO e vive em utils/instanceLock.js (quem inicia o bot
+// já o adquire em bot.js → main()). Antes havia um segundo lock aqui, com
+// heartbeat próprio, que podia divergir do primeiro. `releaseLock` continua
+// exportado por compatibilidade.
+const { releaseLock } = require('./utils/instanceLock');
 
-const lockSchema = new mongoose.Schema({
-  _id:         { type: String, required: true },
-  instanceId:  { type: String, required: true },
-  heartbeatAt: { type: Date,   required: true },
-}, { timestamps: true });
+// ─── Cache em memória das chaves Signal ──────────────────────────────────────
+// Só UM processo (o dono do lock) escreve estas chaves, então um cache
+// write-through é seguro e evita uma ida ao Mongo para cada decrypt/encrypt.
+// Guardamos o JSON (string) e fazemos parse na leitura, assim o Baileys/libsignal
+// nunca recebe uma referência compartilhada que possa ser mutada por fora.
+const CACHE_MAX = 20_000;
+const keyCache  = new Map(); // id -> json string
 
-const AuthLock = mongoose.models.AuthLock || mongoose.model('AuthLock', lockSchema);
-
-const LOCK_ID                = 'bot-session-lock';
-const LOCK_STALE_MS          = 30 * 1000; // lock sem heartbeat há mais de 30s = dono morreu, pode assumir
-const HEARTBEAT_INTERVAL_MS  = 10 * 1000;
-
-// Identifica esta execução do processo de forma única (sobrevive a
-// reconexões do Baileys dentro do mesmo processo, já que é gerado uma vez
-// no carregamento do módulo).
-const instanceId = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
-
-let heartbeatTimer = null;
-let lockOwned       = false;
-
-/**
- * Tenta adquirir o lock de sessão. Retorna true se conseguiu (era livre,
- * já era nosso, ou o dono anterior está "morto" há mais de LOCK_STALE_MS).
- * Retorna false se outro processo é o dono atual e está com heartbeat vivo.
- */
-async function acquireLock() {
-  const now             = new Date();
-  const staleThreshold  = new Date(now.getTime() - LOCK_STALE_MS);
-
-  const assumido = await AuthLock.findOneAndUpdate(
-    {
-      _id: LOCK_ID,
-      $or: [
-        { heartbeatAt: { $lte: staleThreshold } }, // dono anterior parou de bater heartbeat
-        { instanceId },                             // já somos o dono (reconexão no mesmo processo)
-      ],
-    },
-    { $set: { instanceId, heartbeatAt: now } },
-    { upsert: false, new: true }
-  );
-
-  if (assumido) {
-    lockOwned = true;
-    return true;
-  }
-
-  // Documento ainda não existe (primeira vez rodando) — tenta criar.
-  try {
-    await AuthLock.create({ _id: LOCK_ID, instanceId, heartbeatAt: now });
-    lockOwned = true;
-    return true;
-  } catch (err) {
-    if (err?.code === 11000) return false; // outro processo criou primeiro, nesse instante
-    throw err;
-  }
-}
-
-function startHeartbeat() {
-  if (heartbeatTimer) return;
-  heartbeatTimer = setInterval(async () => {
-    try {
-      await AuthLock.updateOne(
-        { _id: LOCK_ID, instanceId },
-        { $set: { heartbeatAt: new Date() } }
-      );
-    } catch (e) {
-      console.error('⚠️ Erro ao renovar heartbeat da sessão:', e.message);
+function cacheSet(id, json) {
+  if (keyCache.has(id)) keyCache.delete(id); // reinsere no fim (LRU simples)
+  keyCache.set(id, json);
+  if (keyCache.size > CACHE_MAX) {
+    const remover = Math.ceil(CACHE_MAX * 0.1);
+    let i = 0;
+    for (const k of keyCache.keys()) {
+      keyCache.delete(k);
+      if (++i >= remover) break;
     }
-  }, HEARTBEAT_INTERVAL_MS);
-  heartbeatTimer.unref?.(); // não impede o processo de encerrar sozinho
-}
-
-/**
- * Libera o lock (chamado no shutdown gracioso). Só remove o documento se
- * ainda formos o dono — evita apagar o lock de outro processo por engano.
- */
-async function releaseLock() {
-  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-  if (!lockOwned) return;
-  try {
-    await AuthLock.deleteOne({ _id: LOCK_ID, instanceId });
-  } catch (e) {
-    console.error('⚠️ Erro ao liberar lock da sessão:', e.message);
-  } finally {
-    lockOwned = false;
   }
 }
 
-process.on('SIGINT',  () => { releaseLock().finally(() => process.exit()); });
-process.on('SIGTERM', () => { releaseLock().finally(() => process.exit()); });
+const stats = { sessoesCuradas: 0, cacheHits: 0, cacheMiss: 0 };
 
 // ─── useMongoAuthState ────────────────────────────────────────────────────────
 
 async function useMongoAuthState() {
-  const conseguiu = await acquireLock();
-
-  if (!conseguiu) {
-    const lockAtual = await AuthLock.findById(LOCK_ID).lean();
-    throw new Error(
-      `🔒 Sessão do WhatsApp já está em uso por outra instância ` +
-      `(instanceId: ${lockAtual?.instanceId ?? 'desconhecido'}, ` +
-      `último heartbeat: ${lockAtual?.heartbeatAt?.toISOString() ?? '?'}). ` +
-      `Encerre a outra instância (Render ou local) antes de iniciar esta. ` +
-      `Se tiver certeza de que a outra instância já morreu, aguarde até ` +
-      `${LOCK_STALE_MS / 1000}s desde o último heartbeat dela e tente de novo.`
-    );
+  async function readJson(id) {
+    const cached = keyCache.get(id);
+    if (cached !== undefined) { stats.cacheHits++; return cached; }
+    stats.cacheMiss++;
+    const doc = await AuthData.findById(id).lean();
+    if (!doc) return null;
+    cacheSet(id, doc.data);
+    return doc.data;
   }
-
-  startHeartbeat();
 
   async function readData(id) {
     try {
-      const doc = await AuthData.findById(id).lean();
-      if (!doc) return null;
-      return JSON.parse(doc.data, BufferJSON.reviver);
+      const json = await readJson(id);
+      if (json == null) return null;
+      return JSON.parse(json, BufferJSON.reviver);
     } catch {
       return null;
     }
@@ -145,17 +67,8 @@ async function useMongoAuthState() {
 
   async function writeData(id, data) {
     const json = JSON.stringify(data, BufferJSON.replacer);
-    await AuthData.findByIdAndUpdate(
-      id,
-      { data: json },
-      { upsert: true, new: true }
-    );
-  }
-
-  async function removeData(id) {
-    try {
-      await AuthData.findByIdAndDelete(id);
-    } catch {}
+    await AuthData.findByIdAndUpdate(id, { data: json }, { upsert: true });
+    return json;
   }
 
   let creds = await readData('creds');
@@ -177,15 +90,26 @@ async function useMongoAuthState() {
           return result;
         },
         async set(data) {
-          await Promise.all(
-            Object.entries(data).flatMap(([type, ids]) =>
-              Object.entries(ids).map(([id, val]) =>
-                val != null
-                  ? writeData(`${type}-${id}`, val)
-                  : removeData(`${type}-${id}`)
-              )
-            )
-          );
+          const ops     = [];
+          const depois  = []; // atualizações de cache aplicadas só se o Mongo aceitar
+
+          for (const [type, ids] of Object.entries(data)) {
+            for (const [id, val] of Object.entries(ids)) {
+              const docId = `${type}-${id}`;
+              if (val != null) {
+                const json = JSON.stringify(val, BufferJSON.replacer);
+                ops.push({ updateOne: { filter: { _id: docId }, update: { $set: { data: json } }, upsert: true } });
+                depois.push(() => cacheSet(docId, json));
+              } else {
+                ops.push({ deleteOne: { filter: { _id: docId } } });
+                depois.push(() => keyCache.delete(docId));
+              }
+            }
+          }
+
+          if (!ops.length) return;
+          await AuthData.bulkWrite(ops, { ordered: false });
+          depois.forEach(fn => fn());
         },
       },
     },
@@ -196,10 +120,48 @@ async function useMongoAuthState() {
 async function clearMongoAuthState() {
   try {
     await AuthData.deleteMany({});
+    keyCache.clear();
     console.log('🧹 Credenciais da sessão do WhatsApp limpas com sucesso no MongoDB.');
   } catch (err) {
     console.error('⚠️ Erro ao limpar credenciais da sessão no MongoDB:', err.message);
   }
 }
 
-module.exports = { useMongoAuthState, clearMongoAuthState, releaseLock };
+/**
+ * Apaga as sessões Signal (session-<user>.<device> / session-<user>_1.<device>)
+ * de UM contato. Usado para auto-corrigir "Over 2000 messages into the future":
+ * a sessão salva ficou defasada em relação ao remetente; sem ela o Baileys
+ * pede retry e o remetente renegocia uma sessão nova automaticamente.
+ * Também limpa o cache em memória, senão a sessão velha continuaria sendo usada.
+ */
+async function removeSessionsForUser(user) {
+  const clean = String(user || '').split('@')[0].split(':')[0].replace(/[^0-9A-Za-z]/g, '');
+  if (!clean) return 0;
+
+  const prefixo = `session-${clean}`;
+  for (const k of Array.from(keyCache.keys())) {
+    if (k.startsWith(prefixo) && /^[._]/.test(k.slice(prefixo.length))) keyCache.delete(k);
+  }
+
+  try {
+    const res = await AuthData.deleteMany({ _id: { $regex: new RegExp(`^session-${clean}[._]`) } });
+    const n = res.deletedCount || 0;
+    if (n > 0) stats.sessoesCuradas++;
+    return n;
+  } catch (err) {
+    console.error('⚠️ Erro ao remover sessões do contato:', err.message);
+    return 0;
+  }
+}
+
+function getAuthStats() {
+  return { ...stats, cacheSize: keyCache.size };
+}
+
+module.exports = {
+  useMongoAuthState,
+  clearMongoAuthState,
+  releaseLock,
+  removeSessionsForUser,
+  getAuthStats,
+};

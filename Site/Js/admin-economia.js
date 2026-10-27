@@ -1,5 +1,5 @@
 /* =========================================================
-   admin-economia.js — Piroquinhas Bot Admin
+   admin-economia.js — Tico Bot Admin
    Economia global e Logs em tempo real
    ========================================================= */
 (function() {

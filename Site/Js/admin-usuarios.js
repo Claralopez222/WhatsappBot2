@@ -1,5 +1,5 @@
 /* =========================================================
-   admin-usuarios.js — Piroquinhas Bot Admin
+   admin-usuarios.js — Tico Bot Admin
    Usuários, gold, level/XP, inventário,
    warns/bans, relacionamentos, pets
    ========================================================= */
@@ -201,7 +201,7 @@ $('btn-export-csv')?.addEventListener('click', () => {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url;
-  a.download = `warns_piroquinhas_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `warns_tico_${new Date().toISOString().slice(0,10)}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();

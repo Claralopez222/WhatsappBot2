@@ -8,18 +8,9 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
-const WalletMigration = require('../models/WalletMigration');
-const { contaVinculada } = require('../utils/carteira/vinculo');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
-const { consultarSaldoPorIdentidade, ajustarSaldoPorIdentidade } = require('../utils/carteira/appWallet');
 const rateLimit      = require('express-rate-limit');
 
-function respostaVinculada(res, vinculada) {
-  if (vinculada === null) {
-    return res.status(503).json({ error: 'Carteira temporariamente indisponível. Tente novamente.' });
-  }
-  return res.status(409).json({ error: 'Este recurso está indisponível para contas vinculadas ao app.' });
-}
 const { ipKeyGenerator } = require('express-rate-limit');
 
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
@@ -37,598 +28,7 @@ const CONTAS_KEY      = process.env.CONTAS_KEY || ADMIN_KEY;
 if (!ADMIN_KEY) console.warn('⚠️  ADMIN_KEY não definida — rotas /admin/* vão recusar acesso.');
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
-router.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key, x-zeca-jid, x-zeca-timestamp, x-zeca-signature');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-});
-
-router.get('/integration/economy', async (req, res) => {
-  const secret = process.env.WHATSAPP_LINK_SECRET;
-  if (!secret || secret.length < 32) {
-    console.error('[API integração] WHATSAPP_LINK_SECRET ausente ou curto demais.');
-    return res.status(503).json({ error: 'Consulta da economia indisponível.' });
-  }
-
-  const jid = String(req.get('x-zeca-jid') || '').trim().toLowerCase();
-  const timestamp = req.get('x-zeca-timestamp') || '';
-  const signature = req.get('x-zeca-signature') || '';
-  if (!/^\d+@s\.whatsapp\.net$/.test(jid)
-      || !/^\d{13}$/.test(timestamp)
-      || !/^[a-f\d]{64}$/i.test(signature)) {
-    return res.status(400).json({ error: 'Solicitação inválida.' });
-  }
-  if (Math.abs(Date.now() - Number(timestamp)) > 60_000) {
-    return res.status(401).json({ error: 'Solicitação expirada.' });
-  }
-
-  const payload = `${timestamp}\nGET\n/api/integration/economy\n${jid}`;
-  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
-  const received = Buffer.from(signature, 'hex');
-  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
-    return res.status(401).json({ error: 'Assinatura inválida.' });
-  }
-
-  try {
-    const numberVariants = gerarVariantesNumero(jid.split('@')[0])
-      .map(number => `${number}@s.whatsapp.net`);
-    const mapping = await LidMapping.findOne({ pn: { $in: numberVariants } }).select('lid').lean();
-    const identityVariants = [...new Set([
-      ...numberVariants,
-      ...(mapping?.lid ? [mapping.lid] : []),
-    ])];
-    const wallets = await CarteiraGrupo.find({
-      idWhatsApp: { $in: identityVariants },
-      idGrupo: { $regex: /@g\.us$/ },
-    })
-      .comment('legacy-wallet-read')
-      .select('idGrupo nome nomeGrupo nomeCustom gold banco.amount goldHistory')
-      .sort({ gold: -1 })
-      .lean();
-
-    const byGroup = new Map();
-    for (const wallet of wallets) {
-      const groupId = wallet.idGrupo;
-      const name = wallet.nomeCustom?.trim() || wallet.nomeGrupo?.trim()
-        || wallet.nome?.trim() || nomeGrupoFallback(groupId);
-      const previous = byGroup.get(groupId);
-      if (!previous) {
-        byGroup.set(groupId, {
-          name,
-          gold: Number(wallet.gold) || 0,
-          bankGold: Number(wallet.banco?.amount) || 0,
-          history: Array.isArray(wallet.goldHistory) ? wallet.goldHistory : [],
-        });
-
-
-      } else {
-        previous.gold = Math.max(previous.gold, Number(wallet.gold) || 0);
-        previous.bankGold = Math.max(previous.bankGold, Number(wallet.banco?.amount) || 0);
-        if (name.length > previous.name.length) previous.name = name;
-        previous.history.push(...(Array.isArray(wallet.goldHistory) ? wallet.goldHistory : []));
-      }
-    }
-
-    const groups = [...byGroup.values()]
-      .map(group => ({
-        name: group.name,
-        gold: group.gold,
-        bankGold: group.bankGold,
-      }))
-      .sort((left, right) => right.gold - left.gold)
-      .slice(0, 100);
-    const history = [...byGroup.values()]
-      .flatMap(group => group.history.map(entry => ({
-        groupName: group.name,
-        type: entry.type === 'gasto' ? 'spent' : 'received',
-        item: String(entry.item || 'Movimentação').slice(0, 80),
-        amount: Math.max(0, Number(entry.amount) || 0),
-        createdAtMs: entry.date ? new Date(entry.date).getTime() : 0,
-      })))
-      .filter(entry => Number.isFinite(entry.createdAtMs))
-      .sort((left, right) => right.createdAtMs - left.createdAtMs)
-      .slice(0, 30);
-    const totalGold = [...byGroup.values()].reduce((total, group) => total + group.gold, 0);
-    const totalBankGold = [...byGroup.values()].reduce((total, group) => total + group.bankGold, 0);
-
-    return res.json({ totalGold, totalBankGold, groups, history });
-  } catch (error) {
-    console.error('[API integração] Falha ao carregar economia vinculada:', error);
-    return res.status(500).json({ error: 'Não foi possível consultar a economia do WhatsApp.' });
-  }
-});
-
-router.post('/integration/wallet/migrate', async (req, res) => {
-  const secret = process.env.WHATSAPP_LINK_SECRET;
-  if (!secret || secret.length < 32) {
-    return res.status(503).json({ error: 'Migração da carteira indisponível.' });
-  }
-
-  const jid = String(req.get('x-zeca-jid') || '').trim().toLowerCase();
-  const timestamp = req.get('x-zeca-timestamp') || '';
-  const signature = req.get('x-zeca-signature') || '';
-  const linkedAtMs = req.body?.linkedAtMs;
-  if (!/^\d+@s\.whatsapp\.net$/.test(jid)
-      || !/^\d{13}$/.test(timestamp)
-      || !/^[a-f\d]{64}$/i.test(signature)
-      || req.body?.jid !== jid
-      || !Number.isSafeInteger(linkedAtMs)
-      || linkedAtMs < 0) {
-    return res.status(400).json({ error: 'Solicitação inválida.' });
-  }
-  if (Math.abs(Date.now() - Number(timestamp)) > 60_000) {
-    return res.status(401).json({ error: 'Solicitação expirada.' });
-  }
-
-  const payload = `${timestamp}\nPOST\n/api/integration/wallet/migrate\n${jid}\n${linkedAtMs}`;
-  const expected = crypto.createHmac('sha256', secret).update(payload, 'utf8').digest();
-  const received = Buffer.from(signature, 'hex');
-  if (received.length !== expected.length || !crypto.timingSafeEqual(expected, received)) {
-    return res.status(401).json({ error: 'Assinatura inválida.' });
-  }
-
-  try {
-    const migrationId = crypto.createHash('sha256')
-      .update(`${jid}\n${linkedAtMs}`, 'utf8')
-      .digest('hex');
-    const numberVariants = gerarVariantesNumero(jid.split('@')[0])
-      .map(number => `${number}@s.whatsapp.net`);
-    const mapping = await LidMapping.findOne({ pn: { $in: numberVariants } }).select('lid').lean();
-    const identityVariants = [...new Set([
-      ...numberVariants,
-      ...(mapping?.lid ? [mapping.lid] : []),
-    ])];
-    const migration = await WalletMigration.findOneAndUpdate(
-      { jid, linkedAtMs },
-      { $setOnInsert: { jid, linkedAtMs, migrationId, state: 'pending', goldCents: 0, bankCents: 0 } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    if (migration.state !== 'complete') {
-      const [wallets, users] = await Promise.all([
-        CarteiraGrupo.find({ idWhatsApp: { $in: identityVariants } })
-          .comment('legacy-wallet-read')
-          .select('idGrupo gold banco.amount +walletMigration').lean(),
-        Usuario.find({ idWhatsApp: { $in: identityVariants } })
-          .comment('legacy-wallet-read').select('gold +walletMigration').lean(),
-      ]);
-
-      await Promise.all([
-        ...wallets.map(wallet => wallet.walletMigration?.id === migrationId
-          ? Promise.resolve()
-          : CarteiraGrupo.updateOne(
-            { _id: wallet._id, 'walletMigration.id': { $ne: migrationId } },
-            {
-              $set: {
-                gold: 0,
-                'banco.amount': 0,
-                'banco.interest': 0,
-                'banco.startDate': null,
-                'banco.depositedToday': 0,
-                'banco.lastDepositDate': null,
-                walletMigration: {
-                  id: migrationId,
-                  goldCents: Math.round(Math.max(0, Number(wallet.gold) || 0)),
-                  bankCents: Math.round(Math.max(0, Number(wallet.banco?.amount) || 0)),
-                },
-              },
-            },
-            { comment: 'wallet-migration' },
-          )),
-        ...users.map(user => user.walletMigration?.id === migrationId
-          ? Promise.resolve()
-          : Usuario.updateOne(
-            { _id: user._id, 'walletMigration.id': { $ne: migrationId } },
-            {
-              $set: {
-                gold: 0,
-                walletMigration: {
-                  id: migrationId,
-                  goldCents: Math.round(Math.max(0, Number(user.gold) || 0)),
-                },
-              },
-            },
-            { comment: 'wallet-migration' },
-          )),
-      ]);
-
-      const [migratedWallets, migratedUsers] = await Promise.all([
-        CarteiraGrupo.find({ idWhatsApp: { $in: identityVariants } })
-          .comment('legacy-wallet-read')
-          .select('idGrupo +walletMigration').lean(),
-        Usuario.find({ idWhatsApp: { $in: identityVariants } })
-          .comment('legacy-wallet-read').select('+walletMigration').lean(),
-      ]);
-      const byGroup = new Map();
-      for (const wallet of migratedWallets) {
-        const entry = byGroup.get(wallet.idGrupo) || { gold: 0, bank: 0 };
-        entry.gold = Math.max(entry.gold, Number(wallet.walletMigration?.goldCents) || 0);
-        entry.bank = Math.max(entry.bank, Number(wallet.walletMigration?.bankCents) || 0);
-        byGroup.set(wallet.idGrupo, entry);
-      }
-      const availableGoldCents = [...byGroup.values()].reduce((sum, entry) => sum + entry.gold, 0)
-        + Math.max(0, ...migratedUsers.map(user => Number(user.walletMigration?.goldCents) || 0));
-      const migratedBankCents = [...byGroup.values()].reduce((sum, entry) => sum + entry.bank, 0);
-      const goldCents = availableGoldCents + migratedBankCents;
-      await WalletMigration.updateOne(
-        { jid, linkedAtMs, migrationId },
-        { $set: { goldCents, bankCents: 0, state: 'complete' } },
-      );
-      migration.goldCents = goldCents;
-      migration.bankCents = 0;
-      migration.state = 'complete';
-    }
-
-    return res.json({ goldCents: migration.goldCents, bankCents: migration.bankCents, migrationId });
-  } catch (error) {
-    console.error('[API integração] Falha ao migrar carteira vinculada:', error);
-    return res.status(500).json({ error: 'Não foi possível migrar a carteira.' });
-  }
-});
-
-router.get('/integration/dashboard', async (req, res) => {
-  const secret = process.env.WHATSAPP_LINK_SECRET;
-  if (!secret || secret.length < 32) {
-    console.error('[API integração] WHATSAPP_LINK_SECRET ausente ou curto demais.');
-    return res.status(503).json({ error: 'Sincronização do WhatsApp indisponível.' });
-  }
-
-  const jid = String(req.get('x-zeca-jid') || '').trim().toLowerCase();
-  const timestamp = req.get('x-zeca-timestamp') || '';
-  const signature = req.get('x-zeca-signature') || '';
-  const sections = String(req.query.sections || '').split(',').filter(Boolean).sort();
-  const allowedSections = new Set(['economy', 'missions', 'pets', 'profile', 'work']);
-  if (!/^\d+@s\.whatsapp\.net$/.test(jid)
-      || !/^\d{13}$/.test(timestamp)
-      || !/^[a-f\d]{64}$/i.test(signature)
-      || sections.some(section => !allowedSections.has(section))
-      || new Set(sections).size !== sections.length) {
-    return res.status(400).json({ error: 'Solicitação inválida.' });
-  }
-  if (Math.abs(Date.now() - Number(timestamp)) > 60_000) {
-    return res.status(401).json({ error: 'Solicitação expirada.' });
-  }
-
-  const canonicalPath = `/api/integration/dashboard?sections=${sections.join(',')}`;
-  const payload = `${timestamp}\nGET\n${canonicalPath}\n${jid}`;
-  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
-  const received = Buffer.from(signature, 'hex');
-  if (received.length !== expected.length || !crypto.timingSafeEqual(expected, received)) {
-    return res.status(401).json({ error: 'Assinatura inválida.' });
-  }
-
-  try {
-    const numberVariants = gerarVariantesNumero(jid.split('@')[0])
-      .map(number => `${number}@s.whatsapp.net`);
-    const mapping = await LidMapping.findOne({ pn: { $in: numberVariants } }).select('lid').lean();
-    const identityVariants = [...new Set([
-      ...numberVariants,
-      ...(mapping?.lid ? [mapping.lid] : []),
-    ])];
-    const usuario = await Usuario.findOne({ idWhatsApp: { $in: identityVariants } })
-      .select('nome username level xp quizPoints mensagens pet inventory dailyMissions')
-      .lean();
-    if (!usuario) return res.status(404).json({ error: 'Perfil do WhatsApp não encontrado.' });
-
-    const result = {};
-    if (sections.includes('profile')) {
-      const wallets = await CarteiraGrupo.find({
-        idWhatsApp: { $in: identityVariants },
-        idGrupo: { $regex: /@g\.us$/ },
-      })
-        .select('idGrupo nome nomeGrupo nomeCustom xp level mensagens quizPoints')
-        .sort({ xp: -1 })
-        .limit(100)
-        .lean();
-      result.profile = {
-        displayName: String(usuario.nome || usuario.username || 'Jogador').slice(0, 40),
-        level: Math.max(1, Number(usuario.level) || 1),
-        xp: Math.max(0, Number(usuario.xp) || 0),
-        quizPoints: Math.max(0, Number(usuario.quizPoints) || 0),
-        messages: Math.max(0, Number(usuario.mensagens) || 0),
-        groups: wallets.map(wallet => ({
-          name: wallet.nomeCustom?.trim() || wallet.nomeGrupo?.trim()
-            || wallet.nome?.trim() || nomeGrupoFallback(wallet.idGrupo),
-          xp: Math.max(0, Number(wallet.xp) || 0),
-          level: Math.max(1, Number(wallet.level) || 1),
-          messages: Math.max(0, Number(wallet.mensagens) || 0),
-          quizPoints: Math.max(0, Number(wallet.quizPoints) || 0),
-        })),
-      };
-    }
-    if (sections.includes('pets')) {
-      const inventoryValue = usuario.inventory instanceof Map
-        ? Object.fromEntries(usuario.inventory)
-        : usuario.inventory;
-      const inventory = inventoryValue && typeof inventoryValue === 'object' && !Array.isArray(inventoryValue)
-        ? Object.fromEntries(Object.entries(inventoryValue)
-          .filter(([key, value]) => /^[a-zA-Z0-9_-]{1,60}$/.test(key)
-            && Number.isSafeInteger(Number(value)) && Number(value) > 0)
-          .slice(0, 100)
-          .map(([key, value]) => [key, Number(value)]))
-        : {};
-      const pet = usuario.pet && typeof usuario.pet === 'object' ? {
-        type: String(usuario.pet.type || '').slice(0, 40),
-        name: String(usuario.pet.name || '').slice(0, 40),
-        rarity: String(usuario.pet.rarity || '').slice(0, 30),
-        level: Math.max(1, Number(usuario.pet.level) || 1),
-        happiness: Math.max(0, Math.min(100, Number(usuario.pet.happiness) || 0)),
-        energy: Math.max(0, Math.min(100, Number(usuario.pet.energy) || 0)),
-        fullness: Math.max(0, Math.min(100, Number(usuario.pet.fullness) || 0)),
-      } : null;
-      result.pets = { pet, inventory };
-    }
-    if (sections.includes('missions')) {
-      const { dailyMissionDefinitions, getTodayStr } = require('../handlers/diversao/missoes');
-      const state = usuario.dailyMissions?.date === getTodayStr()
-        ? usuario.dailyMissions
-        : null;
-      result.missions = {
-        date: getTodayStr(),
-        items: dailyMissionDefinitions.map(mission => {
-          const progress = Math.max(0, Math.min(
-            mission.target,
-            Number(state?.progress?.[mission.id]) || 0,
-          ));
-          return {
-            id: mission.id,
-            title: mission.label,
-            target: mission.target,
-            progress,
-            completed: state?.completed?.[mission.id] === true || progress >= mission.target,
-            claimedInBot: state?.claimed?.[mission.id] === true,
-          };
-        }),
-      };
-    }
-    if (sections.includes('work')) {
-      const [empregoAtual] = await CarteiraGrupo.find({
-        idWhatsApp: { $in: identityVariants },
-        idGrupo: { $regex: /@g\.us$/ },
-        empregoAtual: { $nin: [null, '', 'desempregado'] },
-      })
-        .select('empregoAtual totalTrabalhosComSucesso ultimoTrabalho demissaoVoluntariaAte')
-        .sort({ totalTrabalhosComSucesso: -1 })
-        .limit(1)
-        .lean();
-      const ms = (valor) => {
-        const t = valor ? new Date(valor).getTime() : 0;
-        return Number.isFinite(t) ? Math.max(0, Math.floor(t)) : 0;
-      };
-      result.work = {
-        legacyCareer: empregoAtual ? {
-          jobSlug: empregoAtual.empregoAtual,
-          shiftsInTier: Math.max(0, Math.floor(Number(empregoAtual.totalTrabalhosComSucesso) || 0)),
-          lastShiftAtMs: ms(empregoAtual.ultimoTrabalho),
-          resignUntilMs: ms(empregoAtual.demissaoVoluntariaAte),
-        } : null,
-      };
-    }
-    if (sections.includes('economy')) {
-      const wallets = await CarteiraGrupo.find({
-        idWhatsApp: { $in: identityVariants },
-        idGrupo: { $regex: /@g\.us$/ },
-      })
-        .comment('legacy-wallet-read')
-        .select('idGrupo nome nomeGrupo nomeCustom gold banco.amount goldHistory')
-        .sort({ gold: -1 })
-        .limit(100)
-        .lean();
-      const walletsByGroup = new Map();
-      for (const wallet of wallets) {
-        const name = wallet.nomeCustom?.trim() || wallet.nomeGrupo?.trim()
-          || wallet.nome?.trim() || nomeGrupoFallback(wallet.idGrupo);
-        const existing = walletsByGroup.get(wallet.idGrupo);
-        if (!existing) {
-          walletsByGroup.set(wallet.idGrupo, {
-            name,
-            gold: Math.max(0, Number(wallet.gold) || 0),
-            bankGold: Math.max(0, Number(wallet.banco?.amount) || 0),
-            history: Array.isArray(wallet.goldHistory) ? [...wallet.goldHistory] : [],
-          });
-        } else {
-          existing.gold = Math.max(existing.gold, Math.max(0, Number(wallet.gold) || 0));
-          existing.bankGold = Math.max(existing.bankGold, Math.max(0, Number(wallet.banco?.amount) || 0));
-          if (name.length > existing.name.length) existing.name = name;
-          if (Array.isArray(wallet.goldHistory)) existing.history.push(...wallet.goldHistory);
-        }
-      }
-      const uniqueWallets = [...walletsByGroup.values()];
-      result.economy = {
-        totalGold: uniqueWallets.reduce((total, wallet) => total + wallet.gold, 0),
-        totalBankGold: uniqueWallets.reduce((total, wallet) => total + wallet.bankGold, 0),
-        groups: uniqueWallets.map(wallet => ({
-          name: wallet.name,
-          gold: wallet.gold,
-          bankGold: wallet.bankGold,
-        })),
-        history: uniqueWallets.flatMap(wallet => wallet.history
-          .map(entry => ({
-            groupName: wallet.name,
-            type: entry.type === 'gasto' ? 'spent' : 'received',
-            item: String(entry.item || 'Movimentação').slice(0, 80),
-            amount: Math.max(0, Number(entry.amount) || 0),
-            createdAtMs: entry.date ? new Date(entry.date).getTime() : 0,
-          })))
-          .sort((left, right) => right.createdAtMs - left.createdAtMs)
-          .slice(0, 30),
-      };
-    }
-    return res.json(result);
-  } catch (error) {
-    console.error('[API integração] Falha ao sincronizar painel do bot:', error);
-    return res.status(500).json({ error: 'Não foi possível sincronizar os dados do WhatsApp.' });
-  }
-});
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function mapParaObjeto(valor) {
-  if (!valor) return {};
-  if (valor instanceof Map) return Object.fromEntries(valor);
-  if (typeof valor === 'object' && !Array.isArray(valor)) return valor;
-  return {};
-}
-
-function somarMap(m) {
-  const obj = mapParaObjeto(m);
-  return Object.values(obj).reduce((acc, v) => acc + (Number(v) || 0), 0);
-}
-
-function nomeGrupoFallback(jid) {
-  if (!jid) return 'Grupo sem nome';
-  const numero = jid.replace('@g.us', '').replace('@s.whatsapp.net', '');
-  return `Grupo ${numero.slice(0, 10)}…`;
-}
-
-function nomeGrupo(doc, jid) {
-  const custom = doc && typeof doc.nomeCustom === 'string' ? doc.nomeCustom.trim() : '';
-  if (custom) return custom;
-  const real = doc && typeof doc.nomeGrupo === 'string' ? doc.nomeGrupo.trim()
-    : (doc && typeof doc.nomeReal === 'string' ? doc.nomeReal.trim() : '');
-  return real || nomeGrupoFallback(jid);
-}
-
-// Normaliza número/JID para JID completo
-function normalizarJid(termo) {
-  const t = String(termo || '').trim().toLowerCase();
-  if (t.includes('@')) return t;
-  // Remove tudo que não é dígito
-  const digitos = t.replace(/\D/g, '');
-  return `${digitos}@s.whatsapp.net`;
-}
-
-// Gera as possíveis variantes de JID para números brasileiros (55 + DDD + número),
-// já que o WhatsApp pode ter o contato salvo com ou sem o "9" extra na frente
-// do número (números antigos vs. novos). Sem isso, digitar o número "errado"
-// cria uma carteira nova em vez de achar a pessoa que já existe no grupo.
-// Gera variantes de DÍGITOS (sem domínio) pra números brasileiros, cobrindo
-// o "9" extra que pode estar presente ou não, dependendo de quando o
-// contato foi salvo.
-function gerarVariantesNumero(termo) {
-  const digitos = String(termo || '').replace(/\D/g, '');
-  const variantes = new Set([digitos]);
-
-  if (digitos.startsWith('55') && digitos.length >= 12) {
-    const ddd   = digitos.slice(2, 4);
-    const resto = digitos.slice(4);
-
-    if (resto.length === 8) {
-      variantes.add(`55${ddd}9${resto}`);
-    } else if (resto.length === 9 && resto.startsWith('9')) {
-      variantes.add(`55${ddd}${resto.slice(1)}`);
-    }
-  }
-
-  return [...variantes];
-}
-
-// Resolve o que o admin digitou (telefone OU JID) pro idWhatsApp REAL usado
-// nas carteiras desse grupo. Ordem de prioridade:
-//   1. Já veio como JID completo (@lid ou @s.whatsapp.net) -> usa direto.
-//   2. É um telefone com LID mapeado (capturado pelo bot.js)  -> usa o LID.
-//   3. Telefone sem mapeamento, mas já tem carteira nesse grupo -> usa essa.
-//   4. Nada encontrado -> usa a variante "completa" (com o 9) pra criar.
-async function resolverIdWhatsApp(termo, idGrupo) {
-  const t = String(termo || '').trim().toLowerCase();
-  if (t.includes('@')) return t;
-
-  const variantesDigitos = gerarVariantesNumero(t);
-  const variantesPn      = variantesDigitos.map(d => `${d}@s.whatsapp.net`);
-
-  // 1. Tenta achar LID pelo número de telefone
-  const mapeamento = await LidMapping.findOne({ pn: { $in: variantesPn } }).lean();
-  if (mapeamento) return mapeamento.lid;
-
-  // 2. Tenta achar carteira existente pelo pn
-  const existente = await CarteiraGrupo.findOne({
-    idWhatsApp: { $in: variantesPn },
-    idGrupo,
-  }).select('idWhatsApp').lean();
-  if (existente) return existente.idWhatsApp;
-
-  // 3. Busca direta na CarteiraGrupo por qualquer @lid nesse grupo,
-  //    depois cruza com LidMapping pra ver se o pn bate
-  const todasCarteiras = await CarteiraGrupo.find({
-    idGrupo,
-    idWhatsApp: { $regex: /@lid$/ },
-  }).select('idWhatsApp').lean();
-
-  if (todasCarteiras.length) {
-    const lids = todasCarteiras.map(c => c.idWhatsApp);
-    const lidMatch = await LidMapping.findOne({
-      lid: { $in: lids },
-      pn:  { $in: variantesPn },
-    }).lean();
-    if (lidMatch) return lidMatch.lid;
-  }
-
-  // 4. Fallback: usa a variante mais longa
-  return variantesPn.sort((a, b) => b.length - a.length)[0];
-}
-
-// Resolve todas as variantes de JIDs (PN e LID) de forma bidirecional e segura
-async function resolverJidsBusca(termoOriginal) {
-  if (!termoOriginal || typeof termoOriginal !== 'string') return [];
-  const jidNorm = normalizarJid(termoOriginal);
-  let digitos = termoOriginal.split('@')[0].replace(/\D/g, '');
-
-  let lidMap = null;
-  if (jidNorm.endsWith('@lid')) {
-    lidMap = await LidMapping.findOne({ lid: jidNorm }).lean();
-    if (lidMap?.pn) {
-      digitos = lidMap.pn.split('@')[0].replace(/\D/g, '');
-    }
-  } else {
-    const vars = digitos ? gerarVariantesNumero(digitos).map(d => `${d}@s.whatsapp.net`) : [];
-    lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: vars } }, { lid: jidNorm }] }).lean();
-  }
-
-  const variantesPn = digitos ? gerarVariantesNumero(digitos).map(d => `${d}@s.whatsapp.net`) : [];
-  const jids = [...new Set([
-    jidNorm,
-    ...(lidMap ? [lidMap.lid, lidMap.pn] : []),
-    ...variantesPn
-  ].filter(Boolean))];
-
-  return jids;
-}
-
-// Calcula nível a partir do XP (mesma fórmula usada no bot e no frontend)
-function calcularLevel(xp) {
-  return Math.max(1, Math.floor(Math.pow((xp || 0) / 80, 1 / 1.4)) + 1);
-}
-
-// ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
-function auth(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token  = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Token ausente.' });
-  try {
-    req.user = jwt.verify(token, getJwtSecret());
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Token inválido ou expirado.' });
-  }
-}
-
-// ─── MIDDLEWARE: chave de admin ───────────────────────────────────────────────
-function adminAuth(req, res, next) {
-  const chave = req.headers['x-admin-key'];
-  if (!ADMIN_KEY || !chave) return res.status(401).json({ error: 'Chave de admin inválida.' });
-  const a = Buffer.from(String(chave));
-  const b = Buffer.from(String(ADMIN_KEY));
-  const valido = a.length === b.length && crypto.timingSafeEqual(a, b);
-  if (!valido) return res.status(401).json({ error: 'Chave de admin inválida.' });
-  next();
-}
+router.use(require('../utils/cors').corsMiddleware);
 
 // ─── RATE LIMIT de login admin ────────────────────────────────────────────────
 const LOGIN_MAX       = 10;
@@ -1350,37 +750,8 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     const jidsBusca = await resolverJidsBusca(termoOriginal);
     const jidNorm   = jidsBusca[0] || normalizarJid(termoOriginal);
 
-    const vinculada = await contaVinculada(jidsBusca.find(j => j.endsWith('@s.whatsapp.net')) || jidNorm);
-    if (vinculada !== false) {
-      return res.status(vinculada === null ? 503 : 409).json({
-        error: vinculada === null
-          ? 'Carteira temporariamente indisponível.'
-          : 'Conta vinculada: ajuste o saldo pelo painel administrativo do app.',
-      });
-    }
-
     if (!eGlobal) {
       const carteiraAtual = await getCarteira(jidNorm, idGrupo);
-      if (carteiraAtual?.currencyInfo) {
-        if (!Number.isSafeInteger(valor)) {
-          return res.status(400).json({ error: 'valor deve ser um número inteiro de centavos para uma conta vinculada.' });
-        }
-        const delta = op === 'dar'
-          ? valor
-          : op === 'remover'
-            ? -valor
-            : valor - carteiraAtual.gold;
-        let carteira;
-        try {
-          carteira = delta === 0 ? carteiraAtual : await alterarGold(jidNorm, idGrupo, delta, 'Ajuste Admin');
-        } catch (error) {
-          if (error instanceof RangeError) {
-            return res.status(400).json({ error: 'Saldo insuficiente para remover esse valor.' });
-          }
-          throw error;
-        }
-        return res.json({ ok: true, idWhatsApp: jidNorm, goldAtual: carteira.gold });
-      }
 
       let update = {};
       if (op === 'dar') {
@@ -1420,57 +791,6 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
       const carteira = await CarteiraGrupo.findOne({ idWhatsApp: { $in: jidsBusca }, idGrupo }).lean();
 
       return res.json({ ok: true, idWhatsApp: jidsBusca[0], goldAtual: carteira?.gold ?? valor });
-    } else {
-      const saldoVinculado = await consultarSaldoPorIdentidade(jidNorm);
-      if (saldoVinculado) {
-        if (!Number.isSafeInteger(valor)) {
-          return res.status(400).json({ error: 'valor deve ser um número inteiro de centavos para uma conta vinculada.' });
-        }
-        const delta = op === 'dar'
-          ? valor
-          : op === 'remover'
-            ? -valor
-            : valor - saldoVinculado.balanceCents;
-        let saldoFinal = saldoVinculado;
-        try {
-          if (delta !== 0) {
-            saldoFinal = await ajustarSaldoPorIdentidade(jidNorm, delta, 'Ajuste Admin');
-          }
-        } catch (error) {
-          if (error instanceof RangeError) {
-            return res.status(400).json({ error: 'Saldo insuficiente para remover esse valor.' });
-          }
-          throw error;
-        }
-        return res.json({ ok: true, idWhatsApp: jidNorm, goldAtual: saldoFinal.balanceCents });
-      }
-
-      let updateCarteira = {};
-      let updateUsuario  = {};
-
-      if (op === 'dar') {
-        updateCarteira = { $inc: { gold: valor } };
-        updateUsuario  = { $inc: { gold: valor } };
-      } else if (op === 'remover') {
-        updateCarteira = { $inc: { gold: -valor } };
-        updateUsuario  = { $inc: { gold: -valor } };
-      } else {
-        updateCarteira = { $set: { gold: valor } };
-        updateUsuario  = { $set: { gold: valor } };
-      }
-
-      const [resCarteiras] = await Promise.all([
-        CarteiraGrupo.updateMany(
-          { idWhatsApp: { $in: jidsBusca }, idGrupo: { $regex: /@g\.us$/ } },
-          updateCarteira
-        ),
-        Usuario.updateMany(
-          { idWhatsApp: { $in: jidsBusca } },
-          updateUsuario
-        )
-      ]);
-
-      return res.json({ ok: true, idWhatsApp: jidNorm, gruposAtualizados: resCarteiras.modifiedCount });
     }
   } catch (err) {
     console.error('[API] PATCH /admin/usuario/gold:', err);
@@ -1478,10 +798,7 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DELETE /api/admin/usuario/:idWhatsApp/gold/reset
-// Zera o gold do usuário em todos os grupos.
-// ─────────────────────────────────────────────────────────────────────────────
+// Zera o saldo local de um usuário em todos os grupos.
 router.delete('/admin/usuario/:idWhatsApp/gold/reset', adminAuth, async (req, res) => {
   try {
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
@@ -1489,31 +806,13 @@ router.delete('/admin/usuario/:idWhatsApp/gold/reset', adminAuth, async (req, re
     const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
     const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
     const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
-
-    const saldoVinculado = await consultarSaldoPorIdentidade(jidNorm);
-    if (saldoVinculado?.balanceCents > 0) {
-      await ajustarSaldoPorIdentidade(
-        jidNorm,
-        -saldoVinculado.balanceCents,
-        'Reset Admin',
-        crypto.randomUUID(),
-      );
-    }
-
     const [resultadoCarteira, resultadoUsuario] = await Promise.all([
-      CarteiraGrupo.updateMany(
-        { idWhatsApp: { $in: jidsBusca } },
-        { $set: { gold: 0 } }
-      ),
-      Usuario.updateMany(
-        { idWhatsApp: { $in: jidsBusca } },
-        { $set: { gold: 0 } }
-      )
+      CarteiraGrupo.updateMany({ idWhatsApp: { $in: jidsBusca } }, { $set: { gold: 0 } }),
+      Usuario.updateMany({ idWhatsApp: { $in: jidsBusca } }, { $set: { gold: 0 } }),
     ]);
-
-    if (!resultadoCarteira.matchedCount && !resultadoUsuario.matchedCount)
+    if (!resultadoCarteira.matchedCount && !resultadoUsuario.matchedCount) {
       return res.status(404).json({ error: 'Nenhuma carteira encontrada para esse usuário.' });
-
+    }
     return res.json({ ok: true, gruposAtualizados: resultadoCarteira.modifiedCount });
   } catch (err) {
     console.error('[API] DELETE /admin/usuario/gold/reset:', err);
@@ -1549,15 +848,6 @@ router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
 
     if (jidsOrigem.some(j => jidsDestino.includes(j)))
       return res.status(400).json({ error: 'Origem e destino não podem ser o mesmo usuário.' });
-
-    const pnOf = (jids) => jids.find(j => j.endsWith('@s.whatsapp.net')) || jids[0];
-    const [vincOrigem, vincDestino] = await Promise.all([
-      contaVinculada(pnOf(jidsOrigem)),
-      contaVinculada(pnOf(jidsDestino)),
-    ]);
-    if (vincOrigem !== false || vincDestino !== false) {
-      return res.status(409).json({ error: 'Conta vinculada envolvida: use o painel administrativo do app.' });
-    }
 
     // Verifica saldo da origem
     const carteiraOrigem = await getCarteira(jidsOrigem[0], idGrupo);
@@ -2038,9 +1328,6 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
     if (valorAposta > 100_000)
       return res.status(400).json({ error: `Aposta máxima: ${formatarSaldo(100_000)}.` });
 
-    const vinculada = await contaVinculada(idWhatsApp);
-    if (vinculada !== false) return respostaVinculada(res, vinculada);
-
     // ── Confirma que o usuário pertence ao grupo (resolve @lid se necessário) ─
     let idResolvido = idWhatsApp;
     let carteira = await CarteiraGrupo.findOne({ idWhatsApp: idResolvido, idGrupo });
@@ -2216,9 +1503,6 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
 
     if (valorAposta > 100_000)
       return res.status(400).json({ error: `Aposta máxima: ${formatarSaldo(100_000)}.` });
-
-    const vinculada = await contaVinculada(idWhatsApp);
-    if (vinculada !== false) return respostaVinculada(res, vinculada);
 
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
     if (!carteira)
@@ -2614,7 +1898,7 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
 
     const numeroDestino = `${digitosBase}@s.whatsapp.net`;
     await botSock.sendMessage(numeroDestino, {
-      text: `🔐 *Piroquinhas Bot — Verificação de Conta*\n\nSeu código de verificação é:\n\n*${codigo}*\n\n⏰ Válido por 10 minutos. Não compartilhe com ninguém.`,
+      text: `🔐 *Tico Bot — Verificação de Conta*\n\nSeu código de verificação é:\n\n*${codigo}*\n\n⏰ Válido por 10 minutos. Não compartilhe com ninguém.`,
     });
 
     return res.json({ ok: true, message: 'Código enviado no seu WhatsApp!' });

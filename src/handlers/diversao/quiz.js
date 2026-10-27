@@ -1,5 +1,5 @@
 /**
- * Sistema de Quiz — Piroquinhas Bot
+ * Sistema de Quiz — Tico Bot
  * Comandos: !quiz, !quizfut, !quizctec, !quizgeo, !quizmat, !quizhis, !quizbsq
  *           !pontos, !rankjogos
  * - 185+ questões
@@ -13,7 +13,6 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const { prepareDailyMissionState } = require('./missoes');
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { resolverJidCarteira } = carteiraService;
-const { contaVinculada } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 
 const quizState      = new Map(); // senderJid → { r, resolvedJid, timeout }
@@ -574,23 +573,17 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       const pts = (pontosMap.get(effectiveJid) || 0) + 10;
       pontosMap.set(effectiveJid, pts);
 
-      // true = vinculada, false = não vinculada, null = Zeca indisponível (falha fechada)
-      const contaApp   = await contaVinculada(effectiveJid);
-      const goldReward = contaApp === false ? 15 : 0;
+      const goldReward = 15;
       const [, novoSaldoGold] = await Promise.all([
         saveQuizPointsToDB(effectiveJid, jid),
-        goldReward > 0 ? changeGold(effectiveJid, goldReward, jid) : Promise.resolve(0),
+        changeGold(effectiveJid, goldReward, jid),
         Usuario.findOneAndUpdate(
           { idWhatsApp: effectiveJid },
           { $inc: { 'dailyMissions.progress.quiz5': 1 } }
         ).catch(e => console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message)),
       ]);
 
-      const linhaGold = goldReward > 0
-        ? `💵 *+${goldReward} gold!* Saldo: *${novoSaldoGold} gold*`
-        : contaApp === true
-          ? `ℹ️ _Contas vinculadas ao app ganham só pontos no quiz._`
-          : `ℹ️ _O gold do quiz está indisponível agora. Seus pontos foram salvos._`;
+      const linhaGold = `💵 *+${goldReward} gold!* Saldo: *${novoSaldoGold} gold*`;
 
       await sock.sendMessage(jid, {
         text:

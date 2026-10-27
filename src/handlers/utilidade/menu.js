@@ -28,7 +28,7 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
 
   const menu =
 `╔══════════════════════╗
-       🔥 PIROQUINHAS 🔥
+       🔥 Tico 🔥
 ╚══════════════════════╝
 
 ${greeting}, ${userMention}! São ${timeStr} ⏰
@@ -127,11 +127,57 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
   ▸ ${P}extrato
 
 🧩 *MINI-JOGOS*
-  ▸ ${P}quiz _(tema)_
-  ▸ ${P}anagrama
+  ▸ ${P}quiz _(tema)_ — perguntas por tema
+  ▸ ${P}quizfut — quiz de futebol
+  ▸ ${P}quizgeo — quiz de geografia
+  ▸ ${P}quizhis — quiz de história
+  ▸ ${P}quizmat — quiz de matemática
+  ▸ ${P}quizctec — ciência e tecnologia
+  ▸ ${P}quizbsq — conhecimentos gerais
+  ▸ ${P}quizanime — quiz de anime
+  ▸ ${P}anagrama — desembaralhe uma palavra
   ▸ ${P}ppt _(pedra/papel/tesoura)_
-  ▸ ${P}eununca
-  ▸ ${P}brincadeiras
+  ▸ ${P}dado _(lados)_ — role um dado
+  ▸ ${P}moeda — cara ou coroa
+  ▸ ${P}8ball _(pergunta)_ — bola mágica
+  ▸ ${P}rolar _(mín) (máx)_ — número aleatório
+  ▸ ${P}charada — resolva uma charada
+  ▸ ${P}contas — desafio de matemática
+  ▸ ${P}termo — descubra a palavra
+  ▸ ${P}eununca — eu nunca
+  ▸ ${P}verdadeoudesafio — verdade ou desafio
+  ▸ ${P}fortuna — receba sua fortuna
+  ▸ ${P}brincadeiras — mais diversão
+  ▸ ${P}ship @pessoa — veja a combinação do casal
+  ▸ ${P}compatibilidade @pessoa — teste a compatibilidade
+  ▸ ${P}aura @pessoa — descubra a aura de alguém
+  ▸ ${P}podre — resultado aleatório engraçado
+  ▸ ${P}frango — descubra quem é o frangão
+  ▸ ${P}crush @pessoa — brincadeira sobre seu crush
+  ▸ ${P}cantada @pessoa — gere uma cantada
+  ▸ ${P}elogio @pessoa — envie um elogio
+  ▸ ${P}julgamento @pessoa — julgamento divertido
+  ▸ ${P}maldizer @pessoa — maldição de brincadeira
+  ▸ ${P}falta — desafio de falta no futebol
+  ▸ ${P}baterfalta @pessoa — disputa de cobrança de falta
+  ▸ ${P}tiro @pessoa — resultado de duelo fictício
+  ▸ ${P}morte @pessoa — cena fictícia aleatória
+  ▸ ${P}confissao — envie uma confissão
+  ▸ ${P}sorte — teste sua sorte do dia
+  ▸ ${P}mimica — desafio de mímica para o grupo
+  ▸ ${P}animal — adivinhe o animal pelas pistas
+  ▸ ${P}superpoder — descubra seu superpoder aleatório
+  ▸ ${P}vilao — gere seu nome de vilão
+  ▸ ${P}heroi — descubra sua identidade de herói
+  ▸ ${P}previsao — previsão divertida do futuro
+  ▸ ${P}segredo — receba um segredo fictício aleatório
+  ▸ ${P}detetive — resolva um pequeno mistério
+  ▸ ${P}sobrevivencia — escolha como sobreviver
+  ▸ ${P}campeonato — disputa improvável
+  ▸ ${P}dilema — responda a um dilema impossível
+  ▸ ${P}palavra — desembaralhe uma palavra
+  ▸ ${P}memoria — teste rápido de memória
+  ▸ ${P}numero — adivinhe o número secreto
 
 🕹️ *JOGOS DE GRUPO*
   ▸ ${P}forca — adivinhe a palavra
@@ -191,6 +237,7 @@ _Responda uma mídia com o comando desejado_
   ▸ ${P}videorapido
   ▸ ${P}videocontrario
   ▸ ${P}reversevideo
+  ▸ ${P}videosemaudio
 
 🎵 *ÁUDIO*
   ▸ ${P}audiolento
@@ -199,6 +246,11 @@ _Responda uma mídia com o comando desejado_
   ▸ ${P}grave
   ▸ ${P}esquilo
   ▸ ${P}bass
+  ▸ ${P}graveprofundo
+  ▸ ${P}normalizaraudio
+  ▸ ${P}limparaudio
+  ▸ ${P}audiovolume
+  ▸ ${P}reverb
 
 🎭 *VOZ*
   ▸ ${P}vozmenino
@@ -209,6 +261,7 @@ _Responda uma mídia com o comando desejado_
   ▸ ${P}vozvelho
   ▸ ${P}vozcrianca
   ▸ ${P}vozdemonio
+  ▸ ${P}nightcore
 
 🔊 *AMBIENTE*
   ▸ ${P}eco

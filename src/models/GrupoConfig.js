@@ -31,6 +31,7 @@ const grupoConfigSchema = new mongoose.Schema(
     medievalAtivo:      { type: Boolean, default: false },
     botAtivo:           { type: Boolean, default: true  },
     xpAtivo:            { type: Boolean, default: true  },
+    rankingSemanal:     { type: Boolean, default: false },
 
     // ── Bem-vindo ────────────────────────────────────────────────
     bemVindoAtivo:    { type: Boolean, default: false },

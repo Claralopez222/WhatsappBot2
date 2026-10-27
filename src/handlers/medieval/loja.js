@@ -128,7 +128,6 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
   if (!await getModoAtivo(jid)) return;
 
   try {
-    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid)) return;
     const nomeItem = itemKeyParaNome((args || '').trim());
     if (!nomeItem) {
       return sock.sendMessage(jid, { text: '🏪 Diga o nome do item!\nExemplo: *!comprar Espada* ou *!comprar Espada_Rúnica*' }, { quoted: msg });
@@ -315,10 +314,12 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
       }
     } else {
       updateFields.armaduraEquipada = item.nome;
-      if (item.bonusMana) {
+      // Ao trocar uma armadura com bônus de mana por outra sem bônus,
+      // também é necessário remover o bônus anterior.
+      if (item.bonusMana || p.armaduraEquipada) {
         const armaduraAnt     = p.armaduraEquipada ? ARMADURAS.find(a => a.nome === p.armaduraEquipada) : null;
         const bonusAnt        = armaduraAnt?.bonusMana || 0;
-        const bonusNovo       = item.bonusMana;
+        const bonusNovo       = item.bonusMana || 0;
         const deltaMana       = bonusNovo - bonusAnt;
         const novoManaMax     = Math.max(1, p.manaMax + deltaMana);
         updateFields.manaMax  = novoManaMax;
@@ -537,7 +538,6 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
   if (!await getModoAtivo(jid)) return;
 
   try {
-    if (await bloqueadoPorVinculo(sock, msg, jid, senderJid)) return;
     const partes      = (args || '').trim().split(/\s+/);
     const ultimaParte = partes[partes.length - 1];
     const temQtd      = /^\d+$/.test(ultimaParte) && partes.length > 1;
@@ -723,7 +723,7 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
       }, { quoted: msg });
     }
 
-    await getOuCriarPersonagem(targetJid, jid, targetJid.split('@')[0]);
+    await getOuCriarPersonagem(targetJid, jid, (typeof sock.getName === 'function' && sock.getName(targetJid)) || targetJid.split('@')[0]);
 
     const session = await mongoose.startSession();
     try {

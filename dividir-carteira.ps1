@@ -1,4 +1,4 @@
-# Piroquinhas Bot -- cria utils/identity.js e divide utils/carteira.js em pasta
+# Tico Bot -- cria utils/identity.js e divide utils/carteira.js em pasta
 $root = "D:\Project\Whatsapp"
 Set-Location $root
 

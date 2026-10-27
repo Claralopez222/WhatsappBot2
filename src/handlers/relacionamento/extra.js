@@ -318,9 +318,6 @@ async function handleXpDobro(sock, msg, jid, senderJid, relacionamentos) {
       await responder(sock, msg, jid, `⚡ O bônus de XP Dobro já está ATIVO por mais ${restMins} minuto(s)!`);
       return;
     }
-
-    if (await bloqueadoPorVinculo(sock, msg, jid, normalizarJid(senderJid))) return;
-
     const { ok, carteira } = await debitarGold(jid, senderJid, CONFIG.CUSTO_XP_DOBRO, 'XP Dobro');
     if (!ok) {
       await responder(sock, msg, jid,
@@ -393,9 +390,6 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
   const found = await exigirRelacionamento(sock, msg, jid, senderNorm, relacionamentos,
     '💔 Você precisa estar em um relacionamento para dar uma surpresa!');
   if (!found) return;
-
-  if (await bloqueadoPorVinculo(sock, msg, jid, normalizarJid(senderJid))) return;
-
   const { ok, carteira } = await debitarGold(jid, senderJid, CONFIG.CUSTO_SURPRESA, 'Surpresa romântica');
   if (!ok) {
     await responder(sock, msg, jid,

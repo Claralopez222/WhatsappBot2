@@ -5,10 +5,9 @@ const { rankingGold, rankingXp }                       = require('./ranking');
 const { transferirGold }                               = require('./transferencia');
 const { comprarComGold, venderComGold }                = require('./compras');
 const { resolveJidComLid }                             = require('../identity');
-const { formatarMoeda }                                 = require('./appWallet');
 
 function formatarSaldo(centavos, carteira) {
-  return formatarMoeda(centavos, carteira?.currencyInfo || carteira);
+  return `${Number(centavos)} gold`;
 }
 
 module.exports = {

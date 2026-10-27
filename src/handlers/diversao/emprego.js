@@ -22,7 +22,6 @@ try {
   console.error('[Emprego] ERRO CRÍTICO ao importar dependências:', err.message);
   process.exit(1);
 }
-const { operarCarreiraVinculada } = require('../../utils/carteira/appWallet');
 
 const { bloqueadoPorVinculo } = require('../../utils/carteira/vinculo');
 
@@ -524,52 +523,12 @@ function _msgForaHorario() {
   );
 }
 
-async function carregarCarreiraCompartilhada(userId, carteira) {
-  if (!carteira?.currencyInfo) return null;
-  return operarCarreiraVinculada(userId, 'status');
-}
+// O sistema de emprego deste bot usa exclusivamente a carteira local.
+// A carreira usa somente os dados locais deste bot.
 
 function formatarVaga(vaga, carteira) {
   return `  *${vaga.id}.* ${vaga.name}\n` +
     `     💰 Salário: *${formatarSaldo(vaga.salaryMinCents, carteira)}–${formatarSaldo(vaga.salaryMaxCents, carteira)}*`;
-}
-
-async function responderTurnoCompartilhado(sock, msg, jid, userId, carteira, state, caption = '') {
-  const resposta = (caption || '').trim().split(/\s+/).slice(1)[0] || '';
-  const indiceResposta = /^[1-4]$/.test(resposta) ? Number(resposta) - 1 : -1;
-  if (resposta && indiceResposta < 0) {
-    return reply(sock, jid, msg, 'Informe uma opção de *1 a 4* para responder ao minijogo do turno.');
-  }
-  if (indiceResposta >= 0 && !state.activeSession) {
-    return reply(sock, jid, msg, 'Não há um desafio aberto. Use *!trabalhar* para iniciar o turno.');
-  }
-
-  let desafio = state.activeSession;
-  if (indiceResposta >= 0 && desafio) {
-    const result = await operarCarreiraVinculada(userId, 'complete', {
-      sessionId: desafio.sessionId,
-      answerIndex: indiceResposta,
-    });
-    const nivel = result.correct ? '✅ Resposta correta!' : '⚠️ Resposta incorreta; o salário do turno foi reduzido.';
-    return reply(sock, jid, msg,
-      `${nivel}\n\n` +
-      `💼 Cargo: *${result.jobName}*\n` +
-      `💰 Salário recebido: *+${formatarSaldo(result.salaryCents, carteira)}*\n` +
-      `📊 Turnos na categoria: *${result.shiftsInTier}/${result.shiftsToPromote}*\n` +
-      `⏱️ Próximo turno em *40 minutos*.\n` +
-      `💳 O pagamento foi sincronizado com a carteira do app.`
-    );
-  }
-
-  if (!desafio) {
-    desafio = await operarCarreiraVinculada(userId, 'start', { requestId: randomUUID() });
-  }
-  return reply(sock, jid, msg,
-    `🧩 *MINIJOGO DO TURNO — ${desafio.jobName}*\n\n` +
-    `${desafio.question}\n\n` +
-    desafio.options.map((opcao, index) => `  *${index + 1}.* ${opcao}`).join('\n') +
-    `\n\nResponda com *!trabalhar <1-4>* em até 5 minutos.`
-  );
 }
 
 // ─── !procuraremprego ─────────────
@@ -585,40 +544,6 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
 
   try {
     const carteira = await getCarteira(userId, groupId);
-    const carreiraCompartilhada = await carregarCarreiraCompartilhada(userId, carteira);
-    if (carreiraCompartilhada) {
-      const tier = Math.max(1, carreiraCompartilhada.career.unlockedTier || 1);
-      const vagas = carreiraCompartilhada.jobs
-        .filter(vaga => vaga.tier === tier && vaga.minLevel <= carreiraCompartilhada.level)
-        .map((vaga, index) => ({ ...vaga, id: index + 1 }));
-      const args = (caption || '').trim().split(/\s+/).slice(1);
-      const escolha = args[0]?.trim().toLowerCase();
-      if (!escolha) {
-        return reply(sock, jid, msg,
-          `🏢 *AGÊNCIA DE EMPREGOS COMPARTILHADA*\n\n` +
-          `📊 Nível: *${carreiraCompartilhada.level}* · Categoria liberada: *${tier}*\n\n` +
-          (vagas.length
-            ? vagas.map(vaga => `${formatarVaga(vaga, carteira)}\n     📝 _${vaga.name}_`).join('\n\n')
-            : 'Nenhuma vaga da categoria está disponível para o seu nível.') +
-          `\n\nEscolha com *!procuraremprego <1-7>*.\n` +
-          `_Cargo, progresso e pagamentos são compartilhados entre o app e o WhatsApp._`
-        );
-      }
-      const vaga = /^[1-7]$/.test(escolha)
-        ? vagas[Number(escolha) - 1]
-        : carreiraCompartilhada.jobs.find(item => item.slug === escolha);
-      if (!vaga || vaga.tier > tier || vaga.minLevel > carreiraCompartilhada.level) {
-        return reply(sock, jid, msg, 'Vaga inválida ou ainda bloqueada. Use *!procuraremprego* para consultar as vagas liberadas.');
-      }
-      const contratado = await operarCarreiraVinculada(userId, 'apply', { jobSlug: vaga.slug });
-      return reply(sock, jid, msg,
-        `🎉 *VOCÊ FOI CONTRATADO!*\n\n` +
-        `💼 Cargo: *${contratado.job.name}*\n` +
-        `🎖️ Categoria: *${contratado.job.tierName}*\n` +
-        `💰 Salário por turno: *${formatarSaldo(contratado.job.salaryMinCents, carteira)}–${formatarSaldo(contratado.job.salaryMaxCents, carteira)}*\n\n` +
-        `Seu cargo e progresso estão sincronizados com o aplicativo. Use *!trabalhar* para iniciar um turno.`
-      );
-    }
     const userLevel = CarteiraGrupo.levelFromXp(carteira?.xp ?? 0);
 
     // 1. Cooldown de demissão voluntária
@@ -743,24 +668,8 @@ async function handleTrabalhar(sock, msg, jid, caption = '') {
   const ctx = await resolverContexto(sock, msg, jid);
   if (!ctx) return;
   const { userId, groupId } = ctx;
-
-  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
-
   try {
     const carteira = await getCarteira(userId, groupId);
-    const carreiraCompartilhada = await carregarCarreiraCompartilhada(userId, carteira);
-    if (carreiraCompartilhada) {
-      if (!carreiraCompartilhada.currentJob) {
-        return reply(sock, jid, msg, '😴 Você ainda não tem emprego. Use *!procuraremprego* para escolher um cargo.');
-      }
-      if (carreiraCompartilhada.cooldownRemainingMs > 0 && !carreiraCompartilhada.activeSession) {
-        return reply(sock, jid, msg,
-          `⏳ Próximo turno em *${formatMs(carreiraCompartilhada.cooldownRemainingMs)}*.\n` +
-          `Seu emprego e pagamento são compartilhados com o app.`
-        );
-      }
-      return await responderTurnoCompartilhado(sock, msg, jid, userId, carteira, carreiraCompartilhada, caption);
-    }
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
       return reply(sock, jid, msg,
         `😴 *VOCÊ ESTÁ DESEMPREGADO!*\n\n` +
@@ -895,18 +804,6 @@ async function handlePromocao(sock, msg, jid) {
 
   try {
     const carteira = await getCarteira(userId, groupId);
-    const carreiraCompartilhada = await carregarCarreiraCompartilhada(userId, carteira);
-    if (carreiraCompartilhada) {
-      try {
-        const result = await operarCarreiraVinculada(userId, 'promote');
-        return reply(sock, jid, msg,
-          `🎊 Categoria *${result.career.unlockedTier}* desbloqueada!\n\n` +
-          `Agora escolha uma das novas vagas com *!procuraremprego*.`
-        );
-      } catch (error) {
-        return reply(sock, jid, msg, `📋 ${error.message}`);
-      }
-    }
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
       return reply(sock, jid, msg, `😴 *VOCÊ ESTÁ DESEMPREGADO!*\n\nUse *!procuraremprego* primeiro.`);
     }
@@ -975,25 +872,6 @@ async function handleEmprego(sock, msg, jid) {
 
   try {
     const carteira = await getCarteira(userId, groupId);
-    const carreiraCompartilhada = await carregarCarreiraCompartilhada(userId, carteira);
-    if (carreiraCompartilhada) {
-      const job = carreiraCompartilhada.currentJob;
-      if (!job) {
-        return reply(sock, jid, msg, '😴 Você está desempregado. Use *!procuraremprego* para ver as vagas.');
-      }
-      const espera = carreiraCompartilhada.cooldownRemainingMs > 0
-        ? `Próximo turno em *${formatMs(carreiraCompartilhada.cooldownRemainingMs)}*.`
-        : '🟢 Disponível para iniciar um turno!';
-      return reply(sock, jid, msg,
-        `💼 *SEU EMPREGO COMPARTILHADO*\n\n` +
-        `🏢 Cargo: *${job.name}*\n` +
-        `🎖️ Categoria: *${job.tierName}*\n` +
-        `💰 Salário: *${formatarSaldo(job.salaryMinCents, carteira)}–${formatarSaldo(job.salaryMaxCents, carteira)}*\n` +
-        `📊 Turnos concluídos: *${carreiraCompartilhada.career.shiftsInTier}/${job.shiftsToPromote}*\n` +
-        `⏱️ ${espera}\n\n` +
-        `_O progresso e os pagamentos são sincronizados com o app._`
-      );
-    }
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
       return reply(sock, jid, msg,
         `😴 *VOCÊ ESTÁ DESEMPREGADO*\n\n` +
@@ -1060,18 +938,6 @@ async function handleDemitir(sock, msg, jid) {
 
   try {
     const carteira = await getCarteira(userId, groupId);
-    const carreiraCompartilhada = await carregarCarreiraCompartilhada(userId, carteira);
-    if (carreiraCompartilhada) {
-      try {
-        const result = await operarCarreiraVinculada(userId, 'resign');
-        return reply(sock, jid, msg,
-          `👋 Você saiu do cargo *${carreiraCompartilhada.currentJob?.name || 'atual'}*.\n` +
-          `Novas vagas serão liberadas em 20 minutos.`
-        );
-      } catch (error) {
-        return reply(sock, jid, msg, `⚠️ ${error.message}`);
-      }
-    }
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
       return reply(sock, jid, msg, `😴 *VOCÊ JÁ ESTÁ DESEMPREGADO!*\n\nUse *!procuraremprego* para se candidatar.`);
     }

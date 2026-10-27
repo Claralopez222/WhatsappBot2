@@ -1,5 +1,5 @@
 /* =========================================================
-   admin-core.js — Piroquinhas Bot Admin
+   admin-core.js — Tico Bot Admin
    Utilitários, login, sidebar, navegação, modal, toast
    ========================================================= */
 

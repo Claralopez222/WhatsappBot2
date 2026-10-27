@@ -68,6 +68,31 @@ function levelFromXpGlobal(xp) {
  * @param {string|null} [pushName]
  * @returns {Promise<object|null>}
  */
+// ── Cache de resolução LID → idAlvo (evita 2 queries por mensagem) ──
+const _lidResolveCache = new Map();  // userIdNorm → { idAlvo, ts }
+const LID_CACHE_TTL    = 5 * 60_000; // 5 minutos
+
+async function resolveIdAlvo(userIdNorm) {
+  const cached = _lidResolveCache.get(userIdNorm);
+  if (cached && (Date.now() - cached.ts) < LID_CACHE_TTL) return cached.idAlvo;
+
+  let idAlvo = userIdNorm;
+  if (!userIdNorm.endsWith('@lid')) {
+    const lidMap = await LidMapping.findOne({ pn: userIdNorm }).lean();
+    if (lidMap?.lid && await Usuario.exists({ idWhatsApp: lidMap.lid })) {
+      idAlvo = lidMap.lid;
+    }
+  }
+
+  _lidResolveCache.set(userIdNorm, { idAlvo, ts: Date.now() });
+  // Limitar tamanho do cache
+  if (_lidResolveCache.size > 5000) {
+    const first = _lidResolveCache.keys().next().value;
+    _lidResolveCache.delete(first);
+  }
+  return idAlvo;
+}
+
 async function addUserXp(userId, xpOverride = null, pushName = null) {
   if (!userId) return null;
 
@@ -78,15 +103,10 @@ async function addUserXp(userId, xpOverride = null, pushName = null) {
   const xpGanho = (typeof xpOverride === 'number' && xpOverride > 0) ? xpOverride : bonus.xp;
 
   try {
-    let idAlvo = userIdNorm;
-    if (!userIdNorm.endsWith('@lid')) {
-      const lidMap = await LidMapping.findOne({ pn: userIdNorm }).lean();
-      if (lidMap?.lid && await Usuario.exists({ idWhatsApp: lidMap.lid })) {
-        idAlvo = lidMap.lid;
-      }
-    }
+    const idAlvo = await resolveIdAlvo(userIdNorm);
 
-    await prepareDailyMissionState(idAlvo);
+    // prepareDailyMissionState + missões podem rodar em paralelo com o update de XP
+    const dailyPromise = prepareDailyMissionState(idAlvo).catch(() => {});
 
     const hojeISO = new Date().toISOString().slice(0, 10);
 
@@ -100,23 +120,29 @@ async function addUserXp(userId, xpOverride = null, pushName = null) {
     };
     if (pushName) update.$set = { nome: pushName };
 
-    const updated = await Usuario.findOneAndUpdate(
-      { idWhatsApp: idAlvo },
-      update,
-      { new: true, upsert: true }
-    );
+    const [updated] = await Promise.all([
+      Usuario.findOneAndUpdate(
+        { idWhatsApp: idAlvo },
+        update,
+        { new: true, upsert: true }
+      ),
+      dailyPromise,
+    ]);
 
-    await incrementMission(idAlvo, 'xp100', xpGanho);
-    await incrementMission(idAlvo, 'msg50', 1);
+    // Missões em paralelo (fire-and-forget)
+    Promise.all([
+      incrementMission(idAlvo, 'xp100', xpGanho),
+      incrementMission(idAlvo, 'msg50', 1),
+    ]).catch(() => {});
 
     const xpAtual   = updated?.xp ?? 0;
     const levelNovo = levelFromXpGlobal(xpAtual);
 
     if ((updated?.level ?? 1) !== levelNovo) {
-      await Usuario.findOneAndUpdate(
+      Usuario.findOneAndUpdate(
         { idWhatsApp: idAlvo },
         { $set: { level: levelNovo } }
-      );
+      ).catch(() => {});
       updated.level = levelNovo;
     }
 

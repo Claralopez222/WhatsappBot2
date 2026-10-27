@@ -94,7 +94,7 @@ function calcularResultado(r1, r2, r3, aposta) {
 function buildFrame(s1, s2, s3, girando = true) {
   const status = girando ? `_Girando..._` : `_Resultado_`;
   return (
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+    `🎰 *CASSINO Tico* 🎰\n\n` +
     `┌─────────────────┐\n` +
     `│   ${s1}  │  ${s2}  │  ${s3}   │\n` +
     `└─────────────────┘\n\n` +
@@ -108,7 +108,7 @@ function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal, w
   const sinal   = lucroLiq >= 0 ? '+' : '-';
 
   return (
-    `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+    `🎰 *CASSINO Tico* 🎰\n\n` +
     `┌─────────────────┐\n` +
     `│   ${r1}  │  ${r2}  │  ${r3}   │\n` +
     `└─────────────────┘\n\n` +
@@ -133,7 +133,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   if (!aposta || isNaN(aposta) || aposta <= 0) {
     await sock.sendMessage(jid, {
       text:
-        `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+        `🎰 *CASSINO Tico* 🎰\n\n` +
         `⚠️ Uso correto: *!slots [valor]*\n` +
         `Exemplo: *!slots 100*\n\n` +
         `💎 Símbolos e multiplicadores (3x iguais):\n` +
@@ -157,7 +157,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
   if (saldo < aposta) {
     await sock.sendMessage(jid, {
       text:
-        `🎰 *CASSINO PIROQUINHAS* 🎰\n\n` +
+        `🎰 *CASSINO Tico* 🎰\n\n` +
         `❌ *Saldo insuficiente!*\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `💰 Seu saldo:  *${formatWalletAmount(saldo, carteira)}*\n` +

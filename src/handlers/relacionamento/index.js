@@ -1,5 +1,5 @@
 ﻿/**
- * Handler de Relacionamentos — Piroquinhas Bot
+ * Handler de Relacionamentos — Tico Bot
  * Comandos: !casar, !namorar, !euaceito, !eurecuso, !cancelarpedido,
  *           !cancelarcasamento, !terminar, !flores, !doces, !carta,
  *           !mimo, !beijo, !rankcasais, !fixar, !pinned, !desfixar,

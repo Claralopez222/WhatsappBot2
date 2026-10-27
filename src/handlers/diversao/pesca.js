@@ -327,8 +327,6 @@ async function handlePescar(sock, msg, jid) {
   }
 
   userId = await resolverJidCarteira(userId, groupId);
-  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
-
   try {
     const carteira = await getCarteira(userId, groupId);
     const cooldownLimite = CONFIG_PESCA.COOLDOWN_MS;
@@ -593,8 +591,6 @@ async function handleComprarPesca(sock, msg, jid, caption) {
   }
 
   userId = await resolverJidCarteira(userId, groupId);
-  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
-
   // ── Remove o prefixo do comando antes de parsear os argumentos ──
   // Sem isso, partes[0] capturaria "!buypesca" como nome do item.
   const args     = (caption ?? '').replace(/^[!.,\/]buypesca\s*/i, '').trim().split(/\s+/);
@@ -832,8 +828,6 @@ async function handleVenderPesca(sock, msg, jid, caption) {
   if (!groupId) return reply(sock, jid, msg, '🎣 Venda de pesca só funciona em grupos!');
 
   userId = await resolverJidCarteira(userId, groupId);
-  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
-
   const args    = (caption ?? '').replace(/^[!.,\/]sellpesca\s*/i, '').trim().split(/\s+/);
   const itemKey = (args[0] ?? '').toLowerCase() || null;
   const qtd     = Math.max(1, parseInt(args[1] ?? '1', 10) || 1);

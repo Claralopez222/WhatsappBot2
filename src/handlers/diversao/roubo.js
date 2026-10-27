@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Sistema de Roubo — Piroquinhas Bot
+ * Sistema de Roubo — Tico Bot
  * Comandos: !menuroubar, !roubar, !roubarbanco, !menusec, !equiparroubo, !equiparsec
  *           !buyroubarbanco, !equiparroubarbanco, !invroubarbanco
  *           !meusitensroubo, !meussec, !meiosec, !comprarroubo, !comprarsec
@@ -220,9 +220,6 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 async function handleComprarRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-
-  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
-
   const match = String(caption || '').match(/buyroubo\s+(\S+)/i);
   if (!match) {
     await sock.sendMessage(jid, {
@@ -301,9 +298,6 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
 async function handleComprarSec(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-
-  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
-
   const match = caption.match(/buysec\s+(\S+)/i);
   if (!match) {
     await sock.sendMessage(jid, {
@@ -646,9 +640,6 @@ async function handleRoubar(sock, msg, jid) {
     await sock.sendMessage(jid, { text: '❌ Você não pode se roubar!' }, { quoted: msg });
     return;
   }
-
-  if (await bloqueadoPorVinculo(sock, msg, jid, atacanteId, vitimaId)) return;
-
   // ── Buscar carteiras em paralelo ─────────────────────────────────────────────
   const [carteiraAtacante, carteiraVitima] = await Promise.all([
     getCarteira(atacanteId, idGrupo),
@@ -922,9 +913,6 @@ async function handlePolicia(sock, msg, jid) {
     }, { quoted: msg });
     return;
   }
-
-  if (await bloqueadoPorVinculo(sock, msg, jid, vitimaId, ladrao)) return;
-
   // ── Buscar carteiras em paralelo ──────────────────────────────────────────
   const [carteiraVitima, carteiraLadrao] = await Promise.all([
     getCarteira(vitimaId, idGrupo),
@@ -1074,9 +1062,6 @@ async function handleRoubarBanco(sock, msg, jid) {
     }, { quoted: msg });
     return;
   }
-
-  if (await bloqueadoPorVinculo(sock, msg, jid, atacanteId, vitimaId)) return;
-
   // ── Buscar carteiras em paralelo ──────────────────────────────────────────
   const [carteiraAtacante, carteiraVitima] = await Promise.all([
     getCarteira(atacanteId, idGrupo),

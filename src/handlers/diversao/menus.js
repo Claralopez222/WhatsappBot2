@@ -136,17 +136,17 @@ async function handleSistemaPet(sock, msg, jid, getPrefix) {
 ╚══════════════════════╝
 
 🐾 *O QUE SÃO PETS?*
-Pets são companheiros virtuais que você pode capturar e cuidar!
+Pets são companheiros virtuais que você pode capturar, alimentar, curar, renomear e levar ao abrigo!
 
 📊 *ATRIBUTOS*
-  • ❤️ Energia — diminui com o tempo
-  • 🍖 Fome — precisa alimentar
-  • 😊 Felicidade — brinque com ele
-  • ⚡ XP e Level — sobe com interações
+  • ⚡ Energia — diminui ao brincar
+  • 🍽️ Fome — diminui ao brincar; recupere alimentando
+  • 😊 Felicidade — melhora ao brincar e cuidar
+  • 🏆 XP e nível — aumentam com interações
 
 🎯 *RARIDADES*
-  ⚪ Comum → 🟢 Incomum → 🔵 Raro
-  🟣 Épico → 🟡 Lendário
+  ⭐ Comum → 🌟 Raro
+  💎 Ultra-raro → 👑 Lendário
 
 ⚠️ *ATENÇÃO*
   • Pet sem cuidados pode fugir

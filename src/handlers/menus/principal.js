@@ -17,7 +17,7 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
 
   const menu =
 `╔══════════════════════╗
-       🔥 PIROQUINHAS 🔥
+       🔥 Tico 🔥
 ╚══════════════════════╝
 
 ${greeting}, ${userMention}! São ${timeStr} ⏰

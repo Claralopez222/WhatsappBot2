@@ -24,10 +24,6 @@ const mongoose = require('mongoose');
 const Usuario  = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 const { formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
-const {
-  consultarSaldoPorIdentidade,
-  ajustarSaldoPorIdentidade,
-} = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'appWallet'));
 
 // ─── CATÁLOGO ─────────────────────────────────────────────────────────────────
 
@@ -935,50 +931,17 @@ async function executarCompra({
   };
 }
 
-function requestIdLiquidacaoMarket(purchaseId, participant) {
-  return crypto.createHash('sha256')
-    .update(`market:${purchaseId}:${participant}`)
-    .digest('hex')
-    .slice(0, 32);
-}
-
 async function liquidarCompraPendente(registro) {
   if (registro.settlementStatus === 'completed') return;
   if (registro.settlementStatus !== 'pending' || !registro.purchaseId) {
     throw new Error('Registro de liquidação do marketplace inválido.');
   }
 
+  if (registro.buyerWalletLinked || registro.sellerWalletLinked) {
+    throw new Error('Compra pendente da antiga carteira vinculada exige reconciliação manual; nenhuma chamada externa foi feita.');
+  }
   let buyerBalance = null;
   let sellerBalance = null;
-  if (registro.buyerWalletLinked) {
-    let debit;
-    try {
-      debit = await ajustarSaldoPorIdentidade(
-        registro.compradorId,
-        -registro.totalBruto,
-        `Marketplace: compra ${registro.itemNome}`,
-        requestIdLiquidacaoMarket(registro.purchaseId, 'buyer'),
-      );
-    } catch (error) {
-      if (error instanceof RangeError) {
-        await reverterCompraSemSaldo(registro);
-        error.settlementReversed = true;
-      }
-      throw error;
-    }
-    if (!debit) throw new Error('A carteira do comprador deixou de estar vinculada ao app.');
-    buyerBalance = debit.balanceCents;
-  }
-  if (registro.sellerWalletLinked) {
-    const credit = await ajustarSaldoPorIdentidade(
-      registro.vendedorId,
-      registro.totalLiquido,
-      `Marketplace: venda ${registro.itemNome}`,
-      requestIdLiquidacaoMarket(registro.purchaseId, 'seller'),
-    );
-    if (!credit) throw new Error('A carteira do vendedor deixou de estar vinculada ao app.');
-    sellerBalance = credit.balanceCents;
-  }
 
   const updated = await MarketLog.updateOne(
     { purchaseId: registro.purchaseId, settlementStatus: 'pending' },
@@ -1276,8 +1239,6 @@ async function handleOfertar(sock, msg, jid, caption) {
   }
 
   // Contas vinculadas ao app não usam o marketplace (ele paga em Usuario.gold, saldo legado).
-  if (await bloqueadoPorVinculo(sock, msg, jid, userId)) return;
-
   // ── 2. Parse dos argumentos ──────────────────────────────────────────────
 
   const match = caption.match(/ofertar\s+([A-Za-z0-9_-]+)\s+(\d+)\s+(\d+)/i);
@@ -1522,8 +1483,6 @@ async function handleBuy(sock, msg, jid, caption) {
   }
 
   // Bloqueia se comprador OU vendedor estiver vinculado (o vendedor receberia gold legado).
-  if (await bloqueadoPorVinculo(sock, msg, jid, compradorId, vendedorId)) return;
-
   if (quantidade > CONFIG.MAX_QTD_COMPRA) {
     return reply(sock, jid, msg,
       `❌ Quantidade máxima por compra: *${CONFIG.MAX_QTD_COMPRA}*\n` +
@@ -1580,11 +1539,11 @@ async function handleBuy(sock, msg, jid, caption) {
 
   // ── 4. Verificação prévia de saldo (antes de abrir transação) ────────────
 
-  const [compradorPreview, buyerWallet, sellerWallet] = await Promise.all([
+  const [compradorPreview] = await Promise.all([
     Usuario.findOne({ idWhatsApp: compradorId }, { gold: 1, nome: 1 }).lean(),
-    consultarSaldoPorIdentidade(compradorId),
-    consultarSaldoPorIdentidade(vendedorId),
   ]);
+  const buyerWallet = null;
+  const sellerWallet = null;
 
   if (!compradorPreview) {
     return reply(sock, jid, msg, '⚠️ Seu usuário não foi encontrado. Tente novamente.');

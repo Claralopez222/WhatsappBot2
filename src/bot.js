@@ -1,5 +1,5 @@
 /**
- * WhatsApp Sticker Bot – Piroquinhas
+ * WhatsApp Sticker Bot – Tico
  * bot.js principal – Integrado com o router modular (router.js)
  */
 require('dotenv').config();
@@ -19,7 +19,7 @@ const {
   fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
 
-const { useMongoAuthState, clearMongoAuthState } = require('./mongoAuthState');
+const { useMongoAuthState, clearMongoAuthState, removeSessionsForUser } = require('./mongoAuthState');
 const { Boom }  = require('@hapi/boom');
 const pino      = require('pino');
 const QRCode    = require('qrcode');
@@ -48,6 +48,7 @@ const NOISE = [
   'lastRemoteEphemeralKey', 'previousCounter', 'rootKey', 'baseKey',
   'remoteIdentityKey', 'Bad MAC', 'MessageCounterError', 'Failed to decrypt',
   'chainKey', 'chainType', 'messageKeys', 'pubKey', 'privKey',
+  'Over 2000 messages into the future', 'Session error',
 ];
 const isNoise = (...args) => {
   try {
@@ -86,7 +87,54 @@ process.on('SIGINT',  async () => { saveData(); await releaseLock(); process.exi
 process.on('SIGTERM', async () => { saveData(); await releaseLock(); process.exit(); });
 
 // ─── Logger global ───────────────────────────────────────────────────────────
-const logger = pino({ level: 'silent' });
+// Silencioso, exceto por um "ouvido" para falhas de decrypt Signal. Quando a
+// sessão salva de um contato fica defasada ("Over 2000 messages into the
+// future" / Bad MAC em loop), apagamos só a sessão DELE no Mongo: o Baileys
+// pede retry e o remetente renegocia uma sessão nova sozinho.
+const _healCooldown = new Map(); // user -> timestamp da última limpeza
+const HEAL_COOLDOWN_MS = 60 * 1000;
+
+function healSessionFromLog(line) {
+  if (!line.includes('Over 2000 messages into the future')) return;
+
+  let obj;
+  try { obj = JSON.parse(line); } catch { return; }
+
+  // Baileys pode aninhar a chave dentro de `data`, `context` ou `err`; não
+  // presuma que ela estará sempre na raiz do objeto Pino.
+  const jids = new Set();
+  const vistos = new Set();
+  const visitar = (valor, profundidade = 0) => {
+    if (!valor || typeof valor !== 'object' || profundidade > 7 || vistos.has(valor)) return;
+    vistos.add(valor);
+
+    const possiveis = [
+      valor.remoteJid, valor.participant, valor.remoteJidAlt, valor.participantAlt,
+    ];
+    for (const jid of possiveis) {
+      if (typeof jid === 'string' && jid.includes('@') &&
+          !jid.endsWith('@g.us') && !jid.endsWith('@broadcast')) jids.add(jid);
+    }
+    for (const filho of Object.values(valor)) visitar(filho, profundidade + 1);
+  };
+  visitar(obj);
+
+  for (const jid of jids) {
+    const user = jid.split('@')[0].split(':')[0];
+    if (!user) continue;
+    const last = _healCooldown.get(user) || 0;
+    if (Date.now() - last < HEAL_COOLDOWN_MS) continue;
+    _healCooldown.set(user, Date.now());
+    removeSessionsForUser(user)
+      .then(n => _log(`🩹 Sessão Signal defasada de ${user} removida (${n} registro(s)). Aguardando renegociação.`))
+      .catch(err => _err('⚠️ Falha ao corrigir sessão Signal:', err?.message || err));
+  }
+}
+
+const logger = pino(
+  { level: 'error' },
+  { write: (line) => { try { healSessionFromLog(String(line)); } catch {} } }
+);
 
 // ─── Iniciar bot ───────────────────────────────────────────────────────────────
 async function startBot() {

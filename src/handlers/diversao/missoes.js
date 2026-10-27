@@ -1,17 +1,13 @@
 /**
- * Sistema de Missões Diárias — Piroquinhas Bot
+ * Sistema de Missões Diárias — Tico Bot
  * Comando: !missao
  */
 
 const path = require('path');
-const { createHash } = require('crypto');
 const Usuario    = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
-const crypto = require('crypto');
-const { getWalletBalance, adjustWalletLocal } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
-const { formatarSaldo, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
-const { consultarSaldoPorIdentidade } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'appWallet'));
+const { formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ─── DEFINIÇÃO DAS MISSÕES ──────────────────────────────────────────────────
 
@@ -234,9 +230,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
     if (!isCompleted) {
       const bar = buildProgressBar(progress, mission.target);
       const pct = Math.min(Math.floor((progress / mission.target) * 100), 99); // nunca mostra 100% sem completar
-      const walletInfo = mission.id === 'gold500'
-        ? await consultarSaldoPorIdentidade(userId)
-        : null;
+      const walletInfo = null;
       await sock.sendMessage(jid, {
         text:
           `⏳ *Missão em andamento!*\n\n` +
@@ -251,57 +245,8 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       return;
     }
 
-    // ── Conta vinculada: credita no saldo do app, não em Usuario.gold ──
-    try {
-      const walletMissao = await getWalletBalance(userId);
-      if (walletMissao.linked) {
-        // requestId determinístico (usuário + dia + missão): repetir o crédito não duplica.
-        const requestId = crypto.createHash('sha256')
-          .update(`missao:${userId}:${state.date || getTodayStr()}:${mission.id}`)
-          .digest('hex');
-
-        // 1) Credita primeiro (idempotente no servidor).
-        await adjustWalletLocal(userId, mission.reward, `Missão: ${mission.label}`, { requestId });
-
-        // 2) Só então marca como resgatada. Se duas requisições corrierem, o servidor
-        //    reconhece o mesmo requestId e a segunda cai no "já resgatou".
-        const marcado = await Usuario.findOneAndUpdate(
-          { idWhatsApp: userId, [`dailyMissions.claimed.${mission.id}`]: { $ne: true } },
-          { $set: {
-            [`dailyMissions.completed.${mission.id}`]: true,
-            [`dailyMissions.claimed.${mission.id}`]: true,
-          } },
-          { new: true }
-        );
-        if (!marcado) {
-          await sock.sendMessage(jid, {
-            text: `✅ Você já resgatou *${mission.label}* hoje!\n\n🔄 Missões renovam à meia-noite.`
-          }, { quoted: msg });
-          return;
-        }
-        await sock.sendMessage(jid, {
-          text:
-            `🎉 *MISSÃO CONCLUÍDA!* 🎉\n\n` +
-            `${mission.emoji} *${mission.label}*\n` +
-            `💰 Recompensa creditada na sua conta do app.`
-        }, { quoted: msg });
-        return;
-      }
-    } catch (e) {
-      console.error('[missao] Erro ao creditar na carteira vinculada:', e.message);
-      await sock.sendMessage(jid, { text: '❌ Erro ao creditar a recompensa. Tente novamente!' }, { quoted: msg });
-      return;
-    }
-
     // ── Concede recompensa atomicamente ───────────────────────────
     try {
-      const linkedBalance = await consultarSaldoPorIdentidade(userId);
-      const requestId = createHash('sha256')
-        .update(`${userId}:${state.date}:${mission.id}`)
-        .digest('hex');
-      const balanceAfter = linkedBalance
-        ? await alterarGold(userId, jid, mission.reward, `Missão diária: ${mission.label}`, { requestId, allowLinked: true })
-        : null;
       const updated = await Usuario.findOneAndUpdate(
         {
           idWhatsApp: userId,
@@ -312,7 +257,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
             [`dailyMissions.completed.${mission.id}`]: true,
             [`dailyMissions.claimed.${mission.id}`]:   true,
           },
-          ...(linkedBalance ? {} : { $inc: { gold: mission.reward } }),
+          $inc: { gold: mission.reward },
         },
         { new: true }
       );
@@ -328,8 +273,8 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
         text:
           `🎉 *MISSÃO CONCLUÍDA!* 🎉\n\n` +
           `${mission.emoji} *${mission.label}*\n` +
-          `💰 Recompensa: *${formatarSaldo(mission.reward, balanceAfter || linkedBalance || {})}* adicionada!\n` +
-          `💵 Seu saldo atual: *${formatarSaldo(balanceAfter?.gold ?? updated.gold, balanceAfter || linkedBalance || {})}*\n\n` +
+          `💰 Recompensa: *${formatarSaldo(mission.reward)}* adicionada!\n` +
+          `💵 Seu saldo atual: *${formatarSaldo(updated.gold)}*\n\n` +
           `_${mission.desc}_`
       }, { quoted: msg });
     } catch (e) {
@@ -340,7 +285,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
   }
 
   // ── Listagem de todas as missões ──────────────────────────────
-  const walletInfo = await consultarSaldoPorIdentidade(userId);
+  const walletInfo = null;
   let totalGoldDisponivel = 0;
   const lines = [];
 

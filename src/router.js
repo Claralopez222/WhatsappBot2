@@ -48,9 +48,28 @@ const utilidadeHandler      = require('./handlers/utilidade');
 const aniversarioHandler    = require('./handlers/aniversario');
 const alteradoresHandler    = require('./handlers/alteradores');
 const downloadsHandler      = require('./handlers/utilidade/downloads');
-const appLinkHandler        = require('./handlers/appLink');
 const pinnedHandler         = require('./handlers/diversao/pinned');
 const pescaHandler          = require('./handlers/diversao/pesca');
+
+// ─── Cache de GrupoConfig (evita query no Mongo a cada mensagem) ──────────
+const _grupoConfigCache = new Map();  // jid → { data, ts }
+const GRUPO_CONFIG_TTL  = 60_000;     // 60 segundos
+
+async function getCachedGrupoConfig(jid) {
+  const cached = _grupoConfigCache.get(jid);
+  if (cached && (Date.now() - cached.ts) < GRUPO_CONFIG_TTL) return cached.data;
+
+  const GrupoConfig = require('./models/GrupoConfig');
+  const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+  _grupoConfigCache.set(jid, { data: cfg, ts: Date.now() });
+  return cfg;
+}
+
+// Invalida cache quando um config é alterado (chamado pelos handlers de grupo)
+function invalidateGrupoConfigCache(jid) {
+  if (jid) _grupoConfigCache.delete(jid);
+  else _grupoConfigCache.clear();
+}
 
 const { handleRankGold, handleGive }                                 = require('./handlers/diversao/economia');
 const { handleEmprestimo, handlePayEmprestimo, handleDivida }        = require('./handlers/diversao/emprestimo');
@@ -135,16 +154,6 @@ async function handleMessage(sock, msg) {
     activeGroups.add(jid);
   }
 
-  if (matchPrefixCmd(caption, 'vincular', jid)) {
-    await appLinkHandler.handleAppLink(
-      sock,
-      msg,
-      jid,
-      senderJid,
-      extractPrefixArgs(caption, 'vincular', jid),
-    );
-    return;
-  }
 
   // ── Guard bot on/off (funciona com qualquer prefixo !, ., /, ,, # ou customizado) ──
   if (isGroup && matchPrefixCmd(caption, 'bot', jid)) {
@@ -156,8 +165,7 @@ async function handleMessage(sock, msg) {
 
   // ── Guard bot ativo no grupo ──────────────────────────────────
   if (isGroup) {
-    const GrupoConfig = require('./models/GrupoConfig');
-    const cfgGrupo    = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    const cfgGrupo = await getCachedGrupoConfig(jid);
     if (cfgGrupo?.botAtivo === false) return;
   }
 
@@ -197,19 +205,22 @@ async function handleMessage(sock, msg) {
     const bonusInfo = getBonusHorario();
     const xpGanho   = bonusInfo.xp;
 
-    await addUserXp(senderJid, xpGanho, msg.pushName || author);
+    // ── Fire-and-forget: XP + LID tracking (não bloqueia o comando) ──
+    const xpPromise = addUserXp(senderJid, xpGanho, msg.pushName || author).catch(() => {});
 
     if (isGroup) {
       const senderNorm = normalizarJid(senderJid);
-      const resGroup   = await CarteiraGrupo.incrementXp(senderNorm, jid, xpGanho);
-
-      if (resGroup?.levelUp) {
-        await sock.sendMessage(jid, {
-          text: `🎉 *@${senderNorm.split('@')[0]}* subiu para o *Nível ${resGroup.level}*! 🏅\n` +
-                `_${bonusInfo.emoji} ${bonusInfo.bonusName}: +${xpGanho} XP por mensagem!_`,
-          mentions: [senderJid],
-        }).catch(() => {});
-      }
+      CarteiraGrupo.incrementXp(senderNorm, jid, xpGanho)
+        .then(resGroup => {
+          if (resGroup?.levelUp) {
+            sock.sendMessage(jid, {
+              text: `🎉 *@${senderNorm.split('@')[0]}* subiu para o *Nível ${resGroup.level}*! 🏅\n` +
+                    `_${bonusInfo.emoji} ${bonusInfo.bonusName}: +${xpGanho} XP por mensagem!_`,
+              mentions: [senderJid],
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
 
     registrarLidEMapping(msg, msg.pushName || author).catch(() => {});
@@ -269,8 +280,7 @@ async function handleMessage(sock, msg) {
   if (isGroup) {
     const hasLink = /(https?:\/\/|wa\.me\/|chat\.whatsapp\.com)/i.test(caption);
     if (hasLink) {
-      const GrupoConfig = require('./models/GrupoConfig');
-      const cfgLink = await GrupoConfig.findOne({ idGrupo: jid }, { antiLink: 1 }).lean();
+      const cfgLink = await getCachedGrupoConfig(jid);
       if (cfgLink?.antiLink) {
         const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
         if (!isAdm) {
@@ -361,6 +371,13 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'radio'))           { await alteradoresHandler.handleRadio(sock, msg, jid);          return; }
   if (matchCmd(cmdWord, 'megafone'))        { await alteradoresHandler.handleMegafone(sock, msg, jid);       return; }
   if (matchCmd(cmdWord, 'underwater'))      { await alteradoresHandler.handleUnderwater(sock, msg, jid);     return; }
+  if (matchCmd(cmdWord, 'videosemaudio'))  { await alteradoresHandler.handleVideoSemAudio(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'normalizaraudio')) { await alteradoresHandler.handleAudioNormalizar(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'limparaudio'))     { await alteradoresHandler.handleAudioLimpar(sock, msg, jid);     return; }
+  if (matchCmd(cmdWord, 'audiovolume'))     { await alteradoresHandler.handleAudioVolume(sock, msg, jid);     return; }
+  if (matchCmd(cmdWord, 'reverb'))          { await alteradoresHandler.handleAudioReverb(sock, msg, jid);     return; }
+  if (matchCmd(cmdWord, 'nightcore'))       { await alteradoresHandler.handleVozNightcore(sock, msg, jid);    return; }
+  if (matchCmd(cmdWord, 'graveprofundo'))   { await alteradoresHandler.handleGraveProfundo(sock, msg, jid); return; }
 
   // ── ACESSÓRIOS DE CASAL ───────────────────────────────────────
   const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'givemed', 'saquear', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval'];
@@ -903,6 +920,23 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'passar'))    { await diversaoHandler.handlePassar(sock, msg, content, jid); return; }
   if (matchCmd(cmdWord, 'duelo'))     { await diversaoHandler.handleDuelo(sock, msg, content, jid); return; }
 
+  // ── MINI-JOGOS NOVOS ──────────────────────────────────────────
+  if (matchCmdStart(cmd, 'sorte'))          { await diversaoHandler.handleMiniGame(sock, msg, jid, 'sorte', author, caption); return; }
+  if (matchCmdStart(cmd, 'mimica'))         { await diversaoHandler.handleMiniGame(sock, msg, jid, 'mimica', author, caption); return; }
+  if (matchCmdStart(cmd, 'animal'))         { await diversaoHandler.handleMiniGame(sock, msg, jid, 'animal', author, caption); return; }
+  if (matchCmdStart(cmd, 'superpoder'))     { await diversaoHandler.handleMiniGame(sock, msg, jid, 'superpoder', author, caption); return; }
+  if (matchCmdStart(cmd, 'vilao'))          { await diversaoHandler.handleMiniGame(sock, msg, jid, 'vilao', author, caption); return; }
+  if (matchCmdStart(cmd, 'heroi'))          { await diversaoHandler.handleMiniGame(sock, msg, jid, 'heroi', author, caption); return; }
+  if (matchCmdStart(cmd, 'previsao'))       { await diversaoHandler.handleMiniGame(sock, msg, jid, 'previsao', author, caption); return; }
+  if (matchCmdStart(cmd, 'segredo'))        { await diversaoHandler.handleMiniGame(sock, msg, jid, 'segredo', author, caption); return; }
+  if (matchCmdStart(cmd, 'detetive'))       { await diversaoHandler.handleMiniGame(sock, msg, jid, 'detetive', author, caption); return; }
+  if (matchCmdStart(cmd, 'sobrevivencia'))  { await diversaoHandler.handleMiniGame(sock, msg, jid, 'sobrevivencia', author, caption); return; }
+  if (matchCmdStart(cmd, 'campeonato'))     { await diversaoHandler.handleMiniGame(sock, msg, jid, 'campeonato', author, caption); return; }
+  if (matchCmdStart(cmd, 'dilema'))         { await diversaoHandler.handleMiniGame(sock, msg, jid, 'dilema', author, caption); return; }
+  if (matchCmdStart(cmd, 'palavra'))        { await diversaoHandler.handleMiniGame(sock, msg, jid, 'palavra', author, caption); return; }
+  if (matchCmdStart(cmd, 'memoria'))        { await diversaoHandler.handleMiniGame(sock, msg, jid, 'memoria', author, caption); return; }
+  if (matchCmdStart(cmd, 'numero'))         { await diversaoHandler.handleMiniGame(sock, msg, jid, 'numero', author, caption); return; }
+
   // ── DIVERSÃO ──────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'gay'))           { await diversaoHandler.handleGay(sock, msg, content, jid, author, contactNames); return; }
   if (matchCmdStart(cmd, 'sexo'))          { await diversaoHandler.handleSexo(sock, msg, content, jid, author, contactNames); return; }
@@ -961,4 +995,5 @@ module.exports = {
   setBotJid,
   getBotJid,
   contactNames, // exportado para bot.js poder popular via contacts.upsert/update
+  invalidateGrupoConfigCache,
 };

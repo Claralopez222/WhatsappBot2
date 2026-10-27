@@ -45,9 +45,26 @@ function getInventarioMap(personagem) {
   return new Map(Object.entries(personagem.inventarioMedieval || {}));
 }
 
+function nomeFallbackDoJid(idWhatsApp) {
+  return String(idWhatsApp || '').split('@')[0].split(':')[0].replace(/\D/g, '') || 'Usuário';
+}
+
 async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
+  const nomeLimpo = sanitizarNome(nome, nomeFallbackDoJid(idWhatsApp));
   const existente = await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
-  if (existente) return existente;
+  if (existente) {
+    // Personagens antigos podiam guardar apenas o número, porque eram criados
+    // quando o alvo era mencionado. Atualiza o nome assim que o WhatsApp
+    // fornecer um nome de exibição válido numa interação posterior.
+    const nomeAtual = String(existente.nome || '').trim();
+    const pareceNumero = /^[+\d\s().-]+$/.test(nomeAtual);
+    const nomeRecebidoEhUtil = nomeLimpo && !/^[+\d\s().-]+$/.test(nomeLimpo);
+    if (nomeRecebidoEhUtil && pareceNumero) {
+      existente.nome = nomeLimpo;
+      await existente.save();
+    }
+    return existente;
+  }
 
   const classe   = sortearAleatorio(CLASSES);
   const elemento = sortearAleatorio(ELEMENTOS);
@@ -60,7 +77,7 @@ async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
     return await MedievalPersonagem.create({
       idWhatsApp,
       idGrupo,
-      nome:     sanitizarNome(nome, idWhatsApp.split('@')[0]),
+      nome:     nomeLimpo,
       classe:   classe.nome,
       elemento: elemento.nome,
       nivel:    1,
@@ -84,7 +101,7 @@ async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
 
 function gerarBarra(atual, maximo, emoji = '❤️', tamanho = 8) {
   if (!maximo || maximo <= 0) return '░'.repeat(tamanho);
-  const filled = Math.min(Math.round((atual / maximo) * tamanho), tamanho);
+  const filled = Math.max(0, Math.min(Math.round((atual / maximo) * tamanho), tamanho));
   return emoji.repeat(filled) + '░'.repeat(tamanho - filled);
 }
 

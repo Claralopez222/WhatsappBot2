@@ -224,7 +224,19 @@ function getQtdItem(carteira, key) {
   const mapa = carteira?.itensPesca;
   if (!mapa) return 0;
   const val = mapa instanceof Map ? mapa.get(key) : mapa[key];
-  return val ?? 0;
+  const quantidade = Number(val ?? 0);
+  return Number.isSafeInteger(quantidade) && quantidade > 0 ? quantidade : 0;
+}
+
+// Impede quantidades negativas, decimais, notação parcial e números enormes
+// nos comandos de compra, venda e transferência.
+function parseQuantidade(valor, padrao = 1, maximo = 1000) {
+  if (valor == null || String(valor).trim() === '') return padrao;
+  const texto = String(valor).trim();
+  if (!/^\d+$/.test(texto)) return null;
+  const quantidade = Number(texto);
+  if (!Number.isSafeInteger(quantidade) || quantidade < 1 || quantidade > maximo) return null;
+  return quantidade;
 }
 
 /**
@@ -399,7 +411,7 @@ async function handlePescar(sock, msg, jid) {
           ],
         },
         { $set: { ultimaPesca: new Date(agora) } },
-        { upsert: true, new: true }
+        { upsert: false, new: true }
       );
 
       if (!tentouSemIsca) {
@@ -595,7 +607,7 @@ async function handleComprarPesca(sock, msg, jid, caption) {
   // Sem isso, partes[0] capturaria "!buypesca" como nome do item.
   const args     = (caption ?? '').replace(/^[!.,\/]buypesca\s*/i, '').trim().split(/\s+/);
   const buscaRaw = (args[0] ?? '').toLowerCase();
-  const qtd      = Math.max(1, parseInt(args[1] ?? '1', 10) || 1);
+  const qtd      = parseQuantidade(args[1]);
 
   if (!buscaRaw) {
     return reply(sock, jid, msg,
@@ -606,6 +618,10 @@ async function handleComprarPesca(sock, msg, jid, caption) {
       `📋 Ver varas: *!varas*\n` +
       `📋 Ver iscas: *!iscas*`
     );
+  }
+
+  if (qtd === null) {
+    return reply(sock, jid, msg, '⚠️ Quantidade inválida. Use um número inteiro entre 1 e 1000.');
   }
 
   // ── Resolve o item: tenta chave exata primeiro, depois busca parcial por nome ──
@@ -830,7 +846,7 @@ async function handleVenderPesca(sock, msg, jid, caption) {
   userId = await resolverJidCarteira(userId, groupId);
   const args    = (caption ?? '').replace(/^[!.,\/]sellpesca\s*/i, '').trim().split(/\s+/);
   const itemKey = (args[0] ?? '').toLowerCase() || null;
-  const qtd     = Math.max(1, parseInt(args[1] ?? '1', 10) || 1);
+  const qtd     = parseQuantidade(args[1]);
 
   if (!itemKey) {
     return reply(sock, jid, msg,
@@ -842,6 +858,10 @@ async function handleVenderPesca(sock, msg, jid, caption) {
       `  • *!sellpesca isca_minhoca 3*\n\n` +
       `📦 Ver seus itens: *!inventariopesca*`
     );
+  }
+
+  if (qtd === null) {
+    return reply(sock, jid, msg, '⚠️ Quantidade inválida. Use um número inteiro entre 1 e 1000.');
   }
 
   // ── Resolve catálogo: equipamentos têm `preco`, itens pescados têm `gold` ──
@@ -915,8 +935,16 @@ async function handleVenderPesca(sock, msg, jid, caption) {
       );
     }
 
-    // ── Credita o gold ───────────────────────────────────────────────────────
-    await alterarGold(userId, groupId, totalGold, `Venda pesca: ${info.nome} ×${qtdVender}`);
+    // ── Credita o gold; se o crédito falhar, devolve os itens debitados ────
+    try {
+      await alterarGold(userId, groupId, totalGold, `Venda pesca: ${info.nome} ×${qtdVender}`);
+    } catch (erroCredito) {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: groupId },
+        { $inc: { [`itensPesca.${itemKey}`]: qtdVender } }
+      );
+      throw erroCredito;
+    }
 
     const carteiraFinal = await getCarteira(userId, groupId);
 
@@ -972,7 +1000,9 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
     ];
 
     const candidatosBrutos = await CarteiraGrupo.aggregate([
-      { $match: { idGrupo: groupId } },
+      // Filtra membros atuais antes do limite, para que carteiras de ex-membros
+      // não ocupem as vagas do Top 50 e escondam pescadores ativos.
+      { $match: { idGrupo: groupId, idWhatsApp: { $in: [...membrosAtuais] } } },
       { $addFields: {
           _itensArray: { $objectToArray: { $ifNull: ['$itensPesca', {}] } },
         },
@@ -1200,7 +1230,11 @@ async function handleGivePesca(sock, msg, jid, caption) {
   const semMencao  = semPrefixo.replace(/@\S+/g, '').replace(/\s{2,}/g, ' ').trim();
   const partes     = semMencao.split(/\s+/);
   const itemKey    = partes[0]?.toLowerCase() || null;
-  const qtd        = Math.max(1, parseInt(partes[1] ?? '1', 10) || 1);
+  const qtd        = parseQuantidade(partes[1]);
+
+  if (qtd === null) {
+    return reply(sock, jid, msg, '⚠️ Quantidade inválida. Use um número inteiro entre 1 e 1000.');
+  }
 
   if (!itemKey) {
     return reply(sock, jid, msg,
@@ -1277,11 +1311,23 @@ async function handleGivePesca(sock, msg, jid, caption) {
     // ── Credita ao destinatário ───────────────────────────────────────────────
     // upsert: true garante criação do documento caso o destinatário ainda
     // não tenha registro neste grupo (ex: nunca pescou antes).
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: mentionedJid, idGrupo: groupId },
-      { $inc: { [`itensPesca.${itemKey}`]: qtd } },
-      { upsert: true }
-    );
+    try {
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: mentionedJid, idGrupo: groupId },
+        {
+          $setOnInsert: { idWhatsApp: mentionedJid, idGrupo: groupId },
+          $inc: { [`itensPesca.${itemKey}`]: qtd },
+        },
+        { upsert: true }
+      );
+    } catch (erroCredito) {
+      // Não deixar o item desaparecer se a carteira do destinatário falhar.
+      await CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: userId, idGrupo: groupId },
+        { $inc: { [`itensPesca.${itemKey}`]: qtd } }
+      );
+      throw erroCredito;
+    }
 
     const numeroAlvo    = alvoNumero;
     const qtdLabel      = qtd > 1 ? ` × ${qtd}` : '';

@@ -518,6 +518,76 @@ const perguntasQuiz = [
   { p: '⚔️ Qual é o sobrenome da família de Mikasa?', r: 'ackerman', d: 'Anime' },
   { p: '⚔️ Qual é o nome do tita que devorou a mãe de Eren?', r: 'tita sorridente', d: 'Anime' },
   { p: '⚔️ Qual é a arma usada pelos soldados para se mover entre os telhados?', r: 'equipamento de mobilidade', d: 'Anime' },
+
+  // ── NOVAS PERGUNTAS: MAIS VARIEDADE NOS TEMAS EXISTENTES ───────────────────
+  // Futebol
+  { p: '⚽ Quantos jogadores de cada equipe começam uma partida de futebol em campo?', r: '11', d: 'Futebol' },
+  { p: '⚽ Qual país sediou a Copa do Mundo masculina de 2022?', r: 'catar', d: 'Futebol' },
+  { p: '⚽ Qual é o nome do estádio do Real Madrid?', r: 'santiago bernabeu', d: 'Futebol' },
+  { p: '⚽ Qual seleção é conhecida como Albiceleste?', r: 'argentina', d: 'Futebol' },
+  { p: '⚽ Qual é a duração regulamentar de uma partida de futebol, sem acréscimos?', r: '90 minutos', d: 'Futebol' },
+  { p: '⚽ Qual país venceu a Copa do Mundo feminina de 2023?', r: 'espanha', d: 'Futebol' },
+  { p: '⚽ Qual clube brasileiro manda seus jogos no Allianz Parque?', r: 'palmeiras', d: 'Futebol' },
+  { p: '⚽ Como se chama quando um jogador marca três gols na mesma partida?', r: 'hat-trick', d: 'Futebol' },
+
+  // História
+  { p: '📜 Qual civilização antiga construiu Machu Picchu?', r: 'inca', d: 'História' },
+  { p: '📜 Em que ano caiu o Muro de Berlim?', r: '1989', d: 'História' },
+  { p: '📜 Qual navio afundou em sua viagem inaugural em 1912?', r: 'titanic', d: 'História' },
+  { p: '📜 Quem foi a primeira pessoa a viajar para o espaço?', r: 'yuri gagarin', d: 'História' },
+  { p: '📜 Qual império tinha Constantinopla como capital?', r: 'imperio bizantino', d: 'História' },
+  { p: '📜 Em que ano foi proclamada a Independência do Brasil?', r: '1822', d: 'História' },
+  { p: '📜 Qual documento inglês de 1215 limitou os poderes do rei?', r: 'magna carta', d: 'História' },
+  { p: '📜 Qual povo antigo desenvolveu a escrita cuneiforme na Mesopotâmia?', r: 'sumérios', d: 'História' },
+
+  // Geografia
+  { p: '🗺️ Qual é a capital do Canadá?', r: 'ottawa', d: 'Geografia' },
+  { p: '🗺️ Qual país tem formato aproximado de uma bota?', r: 'italia', d: 'Geografia' },
+  { p: '🗺️ Em qual país fica a cidade de Kyoto?', r: 'japao', d: 'Geografia' },
+  { p: '🗺️ Qual linha imaginária divide a Terra em hemisférios Norte e Sul?', r: 'linha do equador', d: 'Geografia' },
+  { p: '🗺️ Qual é a capital da Nova Zelândia?', r: 'wellington', d: 'Geografia' },
+  { p: '🗺️ Qual país sul-americano não faz fronteira com o Brasil: Chile ou Bolívia?', r: 'chile', d: 'Geografia' },
+  { p: '🗺️ Em qual continente fica o deserto de Gobi?', r: 'asia', d: 'Geografia' },
+  { p: '🗺️ Qual é a capital de Portugal?', r: 'lisboa', d: 'Geografia' },
+
+  // Ciência, tecnologia e natureza
+  { p: '🔬 Qual órgão bombeia o sangue pelo corpo humano?', r: 'coracao', d: 'Biologia' },
+  { p: '🧪 Qual é a fórmula química da água?', r: 'h2o', d: 'Química' },
+  { p: '🌱 Como se chama o processo pelo qual as plantas usam luz para produzir alimento?', r: 'fotossintese', d: 'Biologia' },
+  { p: '🌍 Qual camada da atmosfera ajuda a absorver grande parte da radiação ultravioleta?', r: 'camada de ozonio', d: 'Ciência' },
+  { p: '🪐 Qual planeta é famoso por seus anéis visíveis?', r: 'saturno', d: 'Astronomia' },
+  { p: '⚡ Qual é a unidade de medida da resistência elétrica?', r: 'ohm', d: 'Física' },
+  { p: '🦴 Qual é o maior osso do corpo humano?', r: 'femur', d: 'Biologia' },
+  { p: '💻 O que significa a sigla CPU em computadores?', r: 'unidade central de processamento', d: 'Tecnologia' },
+  { p: '🌡️ Qual instrumento mede a pressão atmosférica?', r: 'barometro', d: 'Física' },
+  { p: '🧬 Qual molécula carrega grande parte da informação genética dos seres vivos?', r: 'dna', d: 'Biologia' },
+
+  // Matemática
+  { p: '🔢 Quanto é 15% de 200?', r: '30', d: 'Matemática' },
+  { p: '📐 Como se chama um polígono de oito lados?', r: 'octogono', d: 'Geometria' },
+  { p: '🧮 Resolva: 7 × (8 − 3).', r: '35', d: 'Matemática' },
+  { p: '📊 Qual é a média aritmética de 4, 6 e 8?', r: '6', d: 'Estatística' },
+  { p: '📐 Quantos centímetros há em um metro?', r: '100', d: 'Matemática' },
+  { p: '🔢 Qual é o menor número primo?', r: '2', d: 'Matemática' },
+  { p: '📐 Qual é o perímetro de um quadrado com lados de 5 cm?', r: '20 cm', d: 'Geometria' },
+  { p: '🧮 Resolva a equação 3x = 21. Qual é o valor de x?', r: '7', d: 'Matemática' },
+
+  // Basquete
+  { p: '🏀 Quantos jogadores de cada equipe ficam em quadra durante uma partida de basquete?', r: '5', d: 'Basquete' },
+  { p: '🏀 Quantos pontos vale uma cesta feita dentro da linha de três pontos, durante uma jogada normal?', r: '2', d: 'Basquete' },
+  { p: '🏀 Qual liga profissional é conhecida pela sigla NBA?', r: 'national basketball association', d: 'Basquete' },
+  { p: '🏀 Qual fundamento reinicia o jogo com a bola lançada ao alto pelo árbitro?', r: 'bola ao alto', d: 'Basquete' },
+  { p: '🏀 Qual jogador brasileiro ficou conhecido como Nenê?', r: 'nene hilario', d: 'Basquete' },
+
+  // Anime — novas séries e perguntas variadas
+  { p: '🏴‍☠️ Em One Piece, qual é o sonho de Monkey D. Luffy?', r: 'ser o rei dos piratas', d: 'Anime' },
+  { p: '🏴‍☠️ Qual é o nome do espadachim que viaja com Luffy em One Piece?', r: 'roronoa zoro', d: 'Anime' },
+  { p: '🦸 Em My Hero Academia, qual é o nome do herói que passa seu poder a Deku?', r: 'all might', d: 'Anime' },
+  { p: '🧪 Em Fullmetal Alchemist, quais irmãos procuram a Pedra Filosofal?', r: 'edward e alphonse elric', d: 'Anime' },
+  { p: '👊 Em One Punch Man, quantos socos Saitama normalmente precisa para derrotar um inimigo?', r: 'um', d: 'Anime' },
+  { p: '🗡️ Em Demon Slayer, qual é o nome da irmã de Tanjiro?', r: 'nezuko', d: 'Anime' },
+  { p: '🏐 Qual esporte é o foco principal do anime Haikyuu!!?', r: 'volei', d: 'Anime' },
+  { p: '🧠 Em Code Geass, qual poder permite a Lelouch dar ordens absolutas?', r: 'geass', d: 'Anime' },
 ];
 
 // handleQuiz

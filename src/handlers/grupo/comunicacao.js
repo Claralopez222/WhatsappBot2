@@ -87,12 +87,14 @@ function limparPollsAntigos() {
 }
 
 // Limpeza agendada automática a cada 30 minutos (evita vazamento de memória)
-setInterval(limparPollsAntigos, 30 * 60 * 1000);
+const pollCleanupTimer = setInterval(limparPollsAntigos, 30 * 60 * 1000);
+// O temporizador não deve impedir o processo de encerrar em testes ou scripts.
+pollCleanupTimer.unref?.();
 
 async function handleEnquete(sock, msg, jid, caption) {
   limparPollsAntigos();
 
-  const texto = caption.replace(/^[!.,\/#]enquete\s*/i, '').trim();
+  const texto = String(caption || '').replace(/^[!.,\/#]enquete\s*/i, '').trim();
   if (!texto) {
     await sock.sendMessage(jid, {
       text: '⚠️ Digite a pergunta!\nExemplo: *!enquete Pizza ou hambúrguer?*',
@@ -100,9 +102,18 @@ async function handleEnquete(sock, msg, jid, caption) {
     return;
   }
 
-  const partes = texto.split('|').map(p => p.trim()).filter(Boolean);
-  const pergunta = partes[0];
-  let opcoesBrutas = partes.slice(1);
+  const partes = texto.split('|').map(p => p.trim());
+  const pergunta = partes.shift() || '';
+  let opcoesBrutas = partes.filter(Boolean);
+
+  if (pergunta.length > 255) {
+    await sock.sendMessage(jid, { text: '⚠️ A pergunta da enquete deve ter no máximo 255 caracteres.' }, { quoted: msg });
+    return;
+  }
+  if (opcoesBrutas.some(op => op.length > 100)) {
+    await sock.sendMessage(jid, { text: '⚠️ Cada opção deve ter no máximo 100 caracteres.' }, { quoted: msg });
+    return;
+  }
 
   let isMulti = false;
   if (opcoesBrutas.length && /^multi(pla)?$/i.test(opcoesBrutas[opcoesBrutas.length - 1])) {

@@ -23,11 +23,12 @@ async function handleAntiLink(sock, msg, content, jid) {
   }
   if (!await checkAdmin(sock, msg, jid, 'antilink')) return;
 
-  const textMsg = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+  const textoComando = (content.conversation || content.extendedTextMessage?.text || '');
+  const arg = textoComando.replace(/^[!.,\/#]antilink\s*/i, '').trim().toLowerCase();
   const cfg     = await GrupoConfig.findOne({ idGrupo: jid }).lean();
   const ativo   = cfg?.antiLink === true;
 
-  if (textMsg.includes('on') || textMsg.includes('ativ')) {
+  if (['on', 'ativar', 'ativado'].includes(arg)) {
     if (ativo) {
       await sock.sendMessage(jid, { text: 'O anti-link já tá ativado aqui 😅' }, { quoted: msg });
       return;
@@ -41,7 +42,7 @@ async function handleAntiLink(sock, msg, content, jid) {
       text: '🔗 Anti-link ativado! Quem mandar link leva ban.',
     }, { quoted: msg });
 
-  } else if (textMsg.includes('off') || textMsg.includes('desativ')) {
+  } else if (['off', 'desativar', 'desativado'].includes(arg)) {
     if (!ativo) {
       await sock.sendMessage(jid, { text: 'O anti-link já tá desativado 😅' }, { quoted: msg });
       return;
@@ -70,15 +71,16 @@ async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, sav
   }
   if (!await checkAdmin(sock, msg, jid, 'autosticker')) return;
 
-  const textMsg = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+  const textoComando = content.conversation || content.extendedTextMessage?.text || '';
+  const arg = textoComando.replace(/^[!.,\/#]autosticker\s*/i, '').trim().toLowerCase();
 
-  if (textMsg.includes('on') || textMsg.includes('ativ')) {
+  if (['on', 'ativar', 'ativado'].includes(arg)) {
     autoStickerGroups.add(jid);
     try { saveData?.(); } catch {}
     await sock.sendMessage(jid, {
       text: '🖼️✅ *Auto-Sticker ATIVADO!*\n_Imagens/vídeos viram figurinhas automaticamente._',
     }, { quoted: msg });
-  } else if (textMsg.includes('off') || textMsg.includes('desativ')) {
+  } else if (['off', 'desativar', 'desativado'].includes(arg)) {
     autoStickerGroups.delete(jid);
     try { saveData?.(); } catch {}
     await sock.sendMessage(jid, { text: '🖼️❌ *Auto-Sticker DESATIVADO!*' }, { quoted: msg });
@@ -183,7 +185,7 @@ async function verificarSlowMode(jid, userJid) {
   if (!cfgCache.ativo) return true;
 
   if (!global._slowModeLastMsg) global._slowModeLastMsg = new Map();
-  const chave  = `${jid}:${userJid}`;
+  const chave  = `${jid}:${String(userJid || '').split('@')[0].split(':')[0]}`;
   const ultimo = global._slowModeLastMsg.get(chave) || 0;
 
   if (agora - ultimo < cfgCache.segundos * 1000) return false;
@@ -243,7 +245,7 @@ async function handleAntiFlood(sock, msg, jid, caption) {
   const limite = match ? parseInt(match[1], 10) : NaN;
   const janela = match ? parseInt(match[2], 10) * 1000 : NaN;
 
-  if (isNaN(limite) || isNaN(janela) || limite < 2 || limite > 50 || janela < 2000) {
+  if (!Number.isSafeInteger(limite) || !Number.isSafeInteger(janela) || limite < 2 || limite > 50 || janela < 2000 || janela > 24 * 60 * 60 * 1000) {
     await sock.sendMessage(jid, {
       text:
         '⚠️ Formato: *!antiflood [msgs]/[segundos]*\n\n' +
@@ -251,7 +253,7 @@ async function handleAntiFlood(sock, msg, jid, caption) {
         '• *!antiflood 5/10* → max 5 msgs em 10s\n' +
         '• *!antiflood status* → ver status atual\n' +
         '• *!antiflood off* → desativar\n\n' +
-        '_Limite: 2–50 msgs | Janela mínima: 2s_',
+        '_Limite: 2–50 msgs | Janela: 2s a 24h_',
     }, { quoted: msg });
     return;
   }
@@ -309,9 +311,12 @@ async function verificarAntiFlood(sock, jid, userJid, botJid) {
 
   if (!global._antiFloodMsgs.has(jid)) global._antiFloodMsgs.set(jid, new Map());
   const msgsGrupo = global._antiFloodMsgs.get(jid);
-  const lista = (msgsGrupo.get(userJid) || []).filter(t => agora - t < cfgCache.janelaMs);
+  // Usa a identidade base para que sufixos de dispositivo não permitam
+  // contornar o limite com outra representação do mesmo JID.
+  const userKey = String(userJid || '').split('@')[0].split(':')[0];
+  const lista = (msgsGrupo.get(userKey) || []).filter(t => agora - t < cfgCache.janelaMs);
   lista.push(agora);
-  msgsGrupo.set(userJid, lista);
+  msgsGrupo.set(userKey, lista);
 
   return lista.length > cfgCache.limite;
 }

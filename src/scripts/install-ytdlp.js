@@ -16,23 +16,18 @@ function run(cmd) {
   return execSync(cmd, { timeout: 60000, stdio: 'inherit' });
 }
 
-// Já instalado?
+// Sempre atualiza: o extractor do Pinterest muda com frequência e uma versão
+// antiga pode falhar com "No video formats found" mesmo para Pins com vídeo.
+console.log('⬆️  Instalando/atualizando yt-dlp via pip...');
 try {
-  const ver = execSync('yt-dlp --version', { timeout: 5000 }).toString().trim();
-  console.log('✅ yt-dlp já instalado:', ver);
-  process.exit(0);
-} catch {}
-
-console.log('⬇️  Instalando yt-dlp via pip...');
-try {
-  run('pip install -q yt-dlp');
+  run('pip install -q --upgrade yt-dlp');
   const ver = execSync('yt-dlp --version', { timeout: 5000 }).toString().trim();
   console.log('✅ yt-dlp', ver, 'instalado com sucesso!');
 } catch (e) {
   console.error('❌ Falha ao instalar yt-dlp via pip:', e.message);
   // Tenta pip3
   try {
-    run('pip3 install -q yt-dlp');
+    run('pip3 install -q --upgrade yt-dlp');
     const ver = execSync('yt-dlp --version', { timeout: 5000 }).toString().trim();
     console.log('✅ yt-dlp', ver, 'instalado via pip3!');
   } catch (e2) {

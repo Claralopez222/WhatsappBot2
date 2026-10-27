@@ -71,8 +71,11 @@ function buildDefaultMissions() {
 }
 
 function buildProgressBar(current, target, length = 10) {
-  const filled = Math.min(Math.floor((current / target) * length), length);
-  return '█'.repeat(filled) + '░'.repeat(length - filled);
+  const safeTarget = Number.isFinite(target) && target > 0 ? target : 1;
+  const safeLength = Number.isFinite(length) ? Math.max(1, Math.floor(length)) : 10;
+  const safeCurrent = Number.isFinite(current) ? Math.max(0, current) : 0;
+  const filled = Math.max(0, Math.min(Math.floor((safeCurrent / safeTarget) * safeLength), safeLength));
+  return '█'.repeat(filled) + '░'.repeat(safeLength - filled);
 }
 
 // ─── prepareDailyMissionState ────────────────────────────────────────────────
@@ -110,17 +113,23 @@ async function prepareDailyMissionState(userId) {
     return updated?.dailyMissions ?? fresh;
   } catch (e) {
     console.error('⚠️ Erro ao preparar missões:', e.message);
-    return buildDefaultMissions();
+    // Não devolver um estado fictício: isso faria o comando exibir progresso
+    // zerado e poderia esconder falhas reais de persistência.
+    throw e;
   }
 }
 
 // ─── incrementMission ────────────────────────────────────────────────────────
 
 async function incrementMission(userId, missionId, amount = 1) {
+  if (typeof userId !== 'string' || !userId.trim()) return;
   if (!MISSION_IDS.has(missionId)) return;
+  if (!Number.isFinite(amount) || amount <= 0) return;
 
   const mission = dailyMissionDefinitions.find(m => m.id === missionId);
   if (!mission) return;
+  amount = Math.floor(amount);
+  if (amount <= 0) return;
 
   try {
     // Garante que as missões de hoje existem — se o dia virou, isso já
@@ -147,7 +156,7 @@ async function incrementMission(userId, missionId, amount = 1) {
     // — $min trava o valor exibido no teto sem nova corrida, e completed
     // só é marcado true uma vez que a meta realmente foi atingida.
     await Usuario.updateOne(
-      { idWhatsApp: userId },
+      { idWhatsApp: userId, 'dailyMissions.date': state.date },
       {
         $min: { [`dailyMissions.progress.${missionId}`]: mission.target },
         $set: { [`dailyMissions.completed.${missionId}`]: true },
@@ -159,7 +168,9 @@ async function incrementMission(userId, missionId, amount = 1) {
 }
 
 function findDailyMission(missionKey) {
-  return dailyMissionDefinitions.find(m => m.id === missionKey.toLowerCase());
+  if (typeof missionKey !== 'string' || !missionKey.trim()) return undefined;
+  const key = missionKey.trim().toLowerCase();
+  return dailyMissionDefinitions.find(m => m.id === key);
 }
 
 // !missao
@@ -250,7 +261,12 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       const updated = await Usuario.findOneAndUpdate(
         {
           idWhatsApp: userId,
+          'dailyMissions.date': state.date,
           [`dailyMissions.claimed.${mission.id}`]: { $ne: true }, // evita duplo resgate em race condition
+          $or: [
+            { [`dailyMissions.progress.${mission.id}`]: { $gte: mission.target } },
+            { [`dailyMissions.completed.${mission.id}`]: true },
+          ],
         },
         {
           $set: {
@@ -263,8 +279,19 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       );
 
       if (!updated) {
+        // O estado pode ter mudado entre a leitura e a gravação (ex.: duas
+        // tentativas simultâneas ou virada do dia). Não afirmar que já
+        // resgatou se a atualização falhou por outro motivo.
+        const atual = await Usuario.findOne(
+          { idWhatsApp: userId },
+          { dailyMissions: 1 }
+        ).lean();
+        const missaoAtual = atual?.dailyMissions;
+        const jaResgatou = missaoAtual?.date === state.date && missaoAtual?.claimed?.[mission.id] === true;
         await sock.sendMessage(jid, {
-          text: `✅ Você já resgatou *${mission.label}* hoje!\n\n🔄 Missões renovam à meia-noite.`
+          text: jaResgatou
+            ? `✅ Você já resgatou *${mission.label}* hoje!\n\n🔄 Missões renovam à meia-noite.`
+            : '⚠️ O estado da missão mudou. Use o comando novamente para atualizar o progresso.'
         }, { quoted: msg });
         return;
       }

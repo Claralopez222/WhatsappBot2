@@ -13,6 +13,19 @@ const rateLimit      = require('express-rate-limit');
 
 const { ipKeyGenerator } = require('express-rate-limit');
 
+// Helpers usados pelas rotas públicas de ranking e grupos.
+// Mantêm a fórmula de nível igual à usada no site.
+function calcularLevel(xp = 0) {
+  const valor = Math.max(0, Number(xp) || 0);
+  return Math.max(1, Math.floor(Math.pow(valor / 100, 1 / 1.5)) + 1);
+}
+
+function nomeGrupo(grupo = {}, jid = '') {
+  const nome = grupo.nomeCustom || grupo.nomeGrupo;
+  if (typeof nome === 'string' && nome.trim()) return nome.trim();
+  return String(jid).split('@')[0] || 'Grupo sem nome';
+}
+
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET;

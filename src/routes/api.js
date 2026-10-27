@@ -27,6 +27,30 @@ const ADMIN_KEY       = process.env.ADMIN_KEY;
 const CONTAS_KEY      = process.env.CONTAS_KEY || ADMIN_KEY;
 if (!ADMIN_KEY) console.warn('⚠️  ADMIN_KEY não definida — rotas /admin/* vão recusar acesso.');
 
+// ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
+function auth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Token ausente.' });
+  try {
+    req.user = jwt.verify(token, getJwtSecret());
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Token inválido ou expirado.' });
+  }
+}
+
+// ─── MIDDLEWARE: chave de admin ───────────────────────────────────────────────
+function adminAuth(req, res, next) {
+  const chave = req.headers['x-admin-key'];
+  if (!ADMIN_KEY || !chave) return res.status(401).json({ error: 'Chave de admin inválida.' });
+  const a = Buffer.from(String(chave));
+  const b = Buffer.from(String(ADMIN_KEY));
+  const valido = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!valido) return res.status(401).json({ error: 'Chave de admin inválida.' });
+  next();
+}
+
 // ─── CORS ────────────────────────────────────────────────────────────────────
 router.use(require('../utils/cors').corsMiddleware);
 

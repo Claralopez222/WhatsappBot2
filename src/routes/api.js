@@ -26,6 +26,37 @@ function nomeGrupo(grupo = {}, jid = '') {
   return String(jid).split('@')[0] || 'Grupo sem nome';
 }
 
+// Retorna variantes de números brasileiros com e sem o nono dígito.
+// Para números de outros países, mantém apenas o número original.
+function gerarVariantesNumero(numero = '') {
+  const original = String(numero).replace(/\D/g, '');
+  if (!original) return [];
+
+  const variantes = new Set([original]);
+  let codigoPais = '';
+  let nacional = original;
+
+  if (original.startsWith('55') && (original.length === 12 || original.length === 13)) {
+    codigoPais = '55';
+    nacional = original.slice(2);
+  } else if (original.length !== 10 && original.length !== 11) {
+    return [...variantes];
+  }
+
+  if (nacional.length !== 10 && nacional.length !== 11) return [...variantes];
+
+  const ddd = nacional.slice(0, 2);
+  const assinante = nacional.slice(2);
+
+  if (assinante.length === 8) {
+    variantes.add(`${codigoPais}${ddd}9${assinante}`);
+  } else if (assinante.length === 9 && assinante.startsWith('9')) {
+    variantes.add(`${codigoPais}${ddd}${assinante.slice(1)}`);
+  }
+
+  return [...variantes];
+}
+
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET;

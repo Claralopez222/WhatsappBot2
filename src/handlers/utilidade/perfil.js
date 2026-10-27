@@ -23,15 +23,50 @@ function extractNumber(jidStr) {
 }
 
 function isLidJid(jidStr) {
-  return jidStr?.endsWith('@lid');
+  return typeof jidStr === 'string' && jidStr.endsWith('@lid');
+}
+
+function numeroSeguro(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function jidEquivalentes(userInfo, alvoJid) {
+  return new Set([
+    alvoJid, userInfo?.jid, userInfo?.resolvedJid, userInfo?.pnJid, userInfo?.lidJid,
+  ].filter(value => typeof value === 'string' && value.length > 0));
+}
+
+function formatarDataAniversario(dataString, agora = new Date()) {
+  const partes = String(dataString || '').split('/');
+  if (partes.length !== 3) return '';
+  const [dia, mes, ano] = partes.map(Number);
+  if (!dia || !mes || !ano || mes < 1 || mes > 12 || dia < 1 || dia > 31 || ano > agora.getFullYear()) return '';
+
+  const nascimento = new Date(ano, mes - 1, dia);
+  if (nascimento.getFullYear() !== ano || nascimento.getMonth() !== mes - 1 || nascimento.getDate() !== dia) return '';
+
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  let idade = agora.getFullYear() - ano;
+  const aniversarioEsteAno = new Date(agora.getFullYear(), mes - 1, dia);
+  if (aniversarioEsteAno > hoje) idade--;
+
+  let proximo = aniversarioEsteAno;
+  if (proximo < hoje) proximo = new Date(agora.getFullYear() + 1, mes - 1, dia);
+  const dias = Math.round((proximo - hoje) / 86400000);
+  return `🎂 ${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${ano}  ·  ${idade} anos  ·  ${dias === 0 ? '🥳 Hoje!' : `em ${dias} dia(s)`}`;
 }
 
 async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
   const contextInfo = content?.extendedTextMessage?.contextInfo
                     || msg?.message?.extendedTextMessage?.contextInfo;
-  const mentions  = contextInfo?.mentionedJid || [];
-  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const mentions  = Array.isArray(contextInfo?.mentionedJid) ? contextInfo.mentionedJid : [];
+  const senderJid = msg?.key?.participant || msg?.key?.remoteJid;
   const alvoJid   = mentions[0] || contextInfo?.participant || senderJid;
+  if (!alvoJid || !jid) {
+    await sock.sendMessage(jid || senderJid, { text: '⚠️ Não consegui identificar o usuário para montar o perfil.' }, { quoted: msg });
+    return;
+  }
 
   // Resolve informações completas do usuário (LID, PN, Telefone, Nome, Model Usuario)
   const userInfo = await resolveUsuarioInfo(alvoJid, sock, contactNames);
@@ -60,9 +95,17 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  const msgsRec = userData?.mensagens ?? (msgCount?.get?.(alvoJid)?.count ?? msgCount?.get?.(resolvedJid)?.count ?? 0);
-  const cmdsRec = (cmdCount?.get?.(alvoJid) ?? cmdCount?.get?.(resolvedJid) ?? 0);
-  const sticks  = (stickerCount?.get?.(alvoJid) ?? stickerCount?.get?.(resolvedJid) ?? 0);
+  const identities = jidEquivalentes(userInfo, alvoJid);
+  const findCount = (map, field = null) => {
+    for (const id of identities) {
+      const value = map?.get?.(id);
+      if (value !== undefined && value !== null) return numeroSeguro(field ? value?.[field] : value);
+    }
+    return 0;
+  };
+  const msgsRec = numeroSeguro(userData?.mensagens, findCount(msgCount, 'count'));
+  const cmdsRec = findCount(cmdCount);
+  const sticks  = findCount(stickerCount);
   const total   = msgsRec + cmdsRec + sticks;
   const activity =
     total > 1000 ? '🔥 Hiperativo' :
@@ -72,7 +115,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   let rankText = '';
   try {
     const ranks = [...(msgCount?.entries?.() ?? [])].sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0));
-    const idx   = ranks.findIndex(([k]) => k === alvoJid || k === resolvedJid || (userInfo.lidJid && k === userInfo.lidJid));
+    const idx   = ranks.findIndex(([k]) => identities.has(k));
     if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
   } catch {}
 
@@ -90,11 +133,11 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 
     if (carteiraXp) {
       const prog = carteiraXp.getProgressoXp();
-      xp      = prog.xp;
-      level   = prog.level;
-      xpNext  = prog.xpNecessario;
-      xpPct   = prog.progresso;
-      const barsOn = Math.floor(xpPct / 10);
+      xp      = numeroSeguro(prog.xp);
+      level   = Math.max(1, Math.floor(numeroSeguro(prog.level, 1)));
+      xpNext  = Math.max(1, numeroSeguro(prog.xpNecessario, 100));
+      xpPct   = Math.min(100, numeroSeguro(prog.progresso));
+      const barsOn = Math.max(0, Math.min(10, Math.floor(xpPct / 10)));
       xpBar   = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
     }
   } catch {}
@@ -138,44 +181,40 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     const dataPath = path.resolve(__dirname, '../../../data.json');
     if (fs.existsSync(dataPath)) {
       const dataFile = JSON.parse(fs.readFileSync(dataPath, 'utf8') || '{}');
-      const bday     = dataFile?.birthdays?.[alvoJid]?.date;
-      if (bday) {
-        const [day, month, year] = bday.split('/');
-        const today       = new Date();
-        const next        = new Date(today.getFullYear(), Number(month) - 1, Number(day));
-        if (next < today) next.setFullYear(today.getFullYear() + 1);
-        const age       = next.getFullYear() - Number(year);
-        const daysUntil = Math.ceil((next - today) / 86400000);
-        birthdayText = `🎂 ${day}/${month}/${year}  ·  ${age} anos  ·  ${daysUntil === 0 ? '🥳 Hoje!' : `em ${daysUntil} dia(s)`}`;
+      let birthday = null;
+      for (const id of identities) {
+        if (dataFile?.birthdays?.[id]?.date) { birthday = dataFile.birthdays[id].date; break; }
       }
+      if (birthday) birthdayText = formatarDataAniversario(birthday);
     }
-  } catch {}
+  } catch (err) {
+    console.warn('⚠️ Não foi possível carregar o aniversário do perfil:', err.message);
+  }
 
   let relStatus   = '💔 Solteiro(a)';
   let parceiroJid = null;
   try {
-    if (relacionamentos) {
-      for (const [k, v] of relacionamentos) {
-        if (!k.startsWith(jid + '|')) continue;
-        const ehA = v.jidA === resolvedJid || v.jidA === alvoJid;
-        const ehB = v.jidB === resolvedJid || v.jidB === alvoJid;
-        if (!ehA && !ehB) continue;
+    if (relacionamentos && typeof relacionamentos[Symbol.iterator] === 'function') {
+      const idsAlvo = identities;
+      for (const [key, rel] of relacionamentos) {
+        if (!key.startsWith(`${jid}|`) || !rel?.jidA || !rel?.jidB) continue;
+        const ehA = idsAlvo.has(rel.jidA);
+        const ehB = idsAlvo.has(rel.jidB);
+        if (ehA === ehB) continue;
 
-        parceiroJid = ehA ? v.jidB : v.jidA;
-        relStatus = v.tipo === 'casamento'
-          ? `💍 Casado(a) com @${extractNumber(parceiroJid)}`
-          : `❤️ Namorando com @${extractNumber(parceiroJid)}`;
+        parceiroJid = ehA ? rel.jidB : rel.jidA;
+        const parceiroNumero = extractNumber(parceiroJid);
+        const tipo = rel.tipo === 'casamento' ? 'casamento' : 'namoro';
+        relStatus = tipo === 'casamento'
+          ? `💍 Casado(a) com @${parceiroNumero}`
+          : `❤️ Namorando com @${parceiroNumero}`;
         break;
       }
     }
 
-    if (relStatus === '💔 Solteiro(a)' && userData?.casadoCom) {
-      parceiroJid = userData.casadoCom;
-      if (!parceiroJid.includes('@')) parceiroJid = `${parceiroJid.split(':')[0]}@s.whatsapp.net`;
-      relStatus = userData.casadoTipo === 'namoro'
-        ? `❤️ Namorando com @${extractNumber(parceiroJid)}`
-        : `💍 Casado(a) com @${extractNumber(parceiroJid)}`;
-    }
+    // O Map de relacionamentos ativos é a fonte de verdade para o perfil.
+    // Não usar Usuario.casadoCom como fallback: dados persistidos antigos/inconsistentes
+    // podem continuar exibindo "casado" depois que o casal terminou.
 
     if (parceiroJid) mentionsList.push(parceiroJid);
   } catch {}
@@ -193,7 +232,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  const bio = userData?.bio?.trim() || '';
+  const bio = typeof userData?.bio === 'string' ? userData.bio.trim().slice(0, 150) : '';
 
   let picBuffer = null;
   try {
@@ -220,13 +259,13 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   L.push(
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `📊 *ATIVIDADE*`,
-    `💬 Mensagens: *${msgsRec}*${rankText}`,
-    `🤖 Comandos:  *${cmdsRec}*`,
-    `😄 Figurinhas: *${sticks}*`,
-    `🔁 Total: *${total}*  ${activity}`,
+    `💬 Mensagens: *${msgsRec.toLocaleString('pt-BR')}*${rankText}`,
+    `🤖 Comandos:  *${cmdsRec.toLocaleString('pt-BR')}*`,
+    `😄 Figurinhas: *${sticks.toLocaleString('pt-BR')}*`,
+    `🔁 Total: *${total.toLocaleString('pt-BR')}*  ${activity}`,
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `⭐ *PROGRESSO*`,
-    `🏅 Level *${level}*  ·  XP ${xp}/${xpNext} (${xpPct}%)`,
+    `🏅 Level *${level}*  ·  XP ${xp.toLocaleString('pt-BR')}/${xpNext.toLocaleString('pt-BR')} (${Math.round(xpPct)}%)`,
     `[${xpBar}]`,
   );
 
@@ -235,7 +274,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   L.push(
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `💰 *ECONOMIA*`,
-    `👛 Carteira: *${formatarSaldo(userGold, walletInfo)}*`,
+    `👛 Carteira: *${formatarSaldo(numeroSeguro(userGold), walletInfo)}*`,
     `🏦 Banco: ${bankText}`,
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
     `🐾 *PET ATIVO*`,
@@ -256,7 +295,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 
   L.push(
     `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`,
-    `🤖 _Piroquinhas Bot_`,
+    `🤖 _Tico Bot_`,
   );
 
   const texto = L.join('\n');
@@ -275,7 +314,12 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 
 async function handleBio(sock, msg, jid, caption) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const bio       = caption.replace(/^[!.,\/]bio\s*/i, '').trim();
+  const bio       = String(caption || '').replace(/^[!.,\/]bio\s*/i, '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  if (!senderJid) {
+    await sock.sendMessage(jid, { text: '⚠️ Não consegui identificar sua conta do WhatsApp.' }, { quoted: msg });
+    return;
+  }
 
   if (!bio) {
     await sock.sendMessage(jid, {

@@ -77,7 +77,8 @@ let _botSock = null;
 
 // ─── Guards de crash ──────────────────────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
-  console.error('⚠️ unhandledRejection capturado:', reason?.message || reason);
+  // Stack completo para identificar a origem das falhas assíncronas do Baileys.
+  console.error('⚠️ unhandledRejection capturado:', reason?.stack || reason?.message || reason);
 });
 process.on('uncaughtException', (err) => {
   console.error('⚠️ uncaughtException capturado:', err?.message || err);
